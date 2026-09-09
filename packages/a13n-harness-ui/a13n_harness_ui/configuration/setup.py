@@ -151,7 +151,11 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
                 "thinking": selection.codex_thinking,
                 "openai_reasoning_summary": "detailed",
                 "openai_store": False,
-                **({"service_tier": selection.codex_service_tier} if selection.codex_service_tier is not None else {}),
+                **(
+                    {"openai_service_tier": selection.codex_service_tier}
+                    if selection.codex_service_tier is not None
+                    else {}
+                ),
             }
             if codex
             else {},
