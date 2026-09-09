@@ -242,8 +242,9 @@ async def test_search_requires_environment_before_harness_entry(
 
 
 @pytest.mark.parametrize("access", ["full", "read_only"])
+@pytest.mark.parametrize("directory", ["", "downloads"])
 async def test_web_tools_fetch_and_download_through_environment(
-    interaction_sessions, interaction_object_store, tmp_path, monkeypatch, access
+    interaction_sessions, interaction_object_store, tmp_path, monkeypatch, access, directory
 ):
     outgoing = []
 
@@ -273,12 +274,12 @@ async def test_web_tools_fetch_and_download_through_environment(
         access=access,
         operations=[
             ("fetch", {"url": "https://example.com/page"}),
-            ("download", {"urls": ["https://example.com/file.txt"], "save_dir": "/workspace/downloads"}),
+            ("download", {"urls": ["https://example.com/file.txt"], "save_dir": f"/workspace/{directory}"}),
         ],
     )
     assert result.output_or_raise() == "done"
     assert "page evidence" in repr(result.state)
-    files = list((tmp_path / "workspace" / "downloads").glob("*"))
+    files = list((tmp_path / "workspace" / directory).glob("*.txt"))
     if access == "full":
         assert len(outgoing) == 2
         assert len(files) == 1 and files[0].read_bytes() == b"page evidence"

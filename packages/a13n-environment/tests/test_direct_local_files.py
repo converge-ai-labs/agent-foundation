@@ -30,6 +30,30 @@ async def test_small_file_accepts_large_requested_page(tmp_path: Path) -> None:
     assert result.truncated_lines == ()
 
 
+async def test_ensuring_existing_root_allows_child_writes_without_mutating_root(tmp_path: Path) -> None:
+    files = LocalFileOperator(
+        root=tmp_path,
+        read_only=False,
+        policy=_DirectLocalFilePolicy(max_value_bytes=64),
+        mount_id="workspace",
+        generation="test",
+    )
+    root_identity = tmp_path.stat().st_ino
+    await files.mkdir("/", parents=True, exist_ok=True)
+    await files.write_text("/download.txt", "downloaded", mode="create")
+    assert (tmp_path / "download.txt").read_bytes() == b"downloaded"
+    assert tmp_path.stat().st_ino == root_identity
+    with pytest.raises(EnvironmentError, match="root cannot be mutated"):
+        await files.mkdir("/", exist_ok=False)
+    with pytest.raises(EnvironmentError, match="read-only"):
+        await _files(tmp_path, 64).mkdir("/", exist_ok=True)
+    (tmp_path / "download.txt").unlink()
+    tmp_path.rmdir()
+    with pytest.raises(EnvironmentError):
+        await files.mkdir("/", parents=True, exist_ok=True)
+    assert not tmp_path.exists()
+
+
 @pytest.mark.parametrize("line", ["abcd\n", "中文\r\n", "𐐀𐐁\n"])
 async def test_byte_budget_pages_complete_lines_without_skipping(tmp_path: Path, line: str) -> None:
     content = line * 7 + "tail"

@@ -340,10 +340,21 @@ def _terminal_receipt(context: AttemptContext) -> AttemptOutcome:
     )
 
 
-@pytest.mark.parametrize("reject_preparation", [False, True])
+@pytest.mark.parametrize(
+    ("reject_preparation", "preflight_code"),
+    [
+        (False, None),
+        (True, None),
+        (False, "environment_required"),
+        (False, "search_provider_unavailable"),
+        (False, "web_operation_unavailable"),
+        (False, "untrusted_provider_code"),
+    ],
+)
 async def test_executor_supervises_two_children_before_cleanup_and_capacity_release(
     interaction_object_store: ObjectStore,
     reject_preparation: bool,
+    preflight_code: str | None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     trace: list[str] = []
@@ -394,6 +405,15 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
             await control.reconcile()
             read.assert_not_awaited()
 
+    committer = _Committer(trace)
+    failure_commit = AsyncMock(return_value=_terminal_receipt(context))
+    if preflight_code is not None:
+        monkeypatch.setattr(
+            ClosingPreparer,
+            "validate_dependencies",
+            AsyncMock(side_effect=RunError("private diagnostic", code=preflight_code)),
+        )
+        monkeypatch.setattr(committer, "commit_failure", failure_commit)
     executor = RunAttemptExecutor(
         activate_publication=AsyncMock(side_effect=lambda context: trace.append("publication:activate")),
         context=context,
@@ -402,11 +422,21 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
         preparer=ClosingPreparer(context, invocation, wakeups, execution.heartbeat_seen, trace),
         wakeups=wakeups,
         adapter=_Adapter,
-        committer=_Committer(trace),
+        committer=committer,
         capacity_slot=capacity,
     )
 
     receipt = await executor.run()
+    if preflight_code is not None:
+        failure_commit.assert_awaited_once()
+        failure = failure_commit.call_args.args[1]
+        expected = preflight_code if preflight_code != "untrusted_provider_code" else "attempt_execution_failed"
+        assert failure.code == expected
+        assert failure.message == "The RunAttempt could not complete execution."
+        assert "attempt:enter" not in trace
+        assert not projector.events
+        assert capacity.releases == 1
+        return
     await control.reconcile()
     await control.renew_lease()
 

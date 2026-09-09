@@ -678,6 +678,9 @@ class LocalFileOperator:
 
     async def mkdir(self, path: str, *, parents: bool = False, exist_ok: bool = False) -> FileMutationResult:
         native = await asyncio.to_thread(self._resolve, path, follow_final=False, require_exists=False)
+        # Ensuring the existing writable root is a no-op, not root creation.
+        if native == self._root and exist_ok and not self._read_only and await asyncio.to_thread(native.is_dir):
+            return FileMutationResult(path=path, receipt=self._receipt())
         self._require_writable(native)
         try:
             await asyncio.to_thread(native.mkdir, parents=parents, exist_ok=exist_ok)
