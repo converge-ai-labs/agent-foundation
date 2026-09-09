@@ -97,7 +97,7 @@ async def seed(settings: Settings, *, session_count: int = 120, model_port: int 
                 conversation_scenarios.update(await execution(client, base, catalog))
                 connectivity_scenarios = await connectivity(client, base, catalog, identity_scenarios, model_url)
                 catalog["scenarios"].update(await environments(client, base, catalog, settings))
-                catalog["scenarios"].update(await resource_history(client, catalog))
+                catalog["scenarios"].update(await resource_history(client, base, catalog))
                 sessions = await client.collection(base + "/sessions")
                 manifest = {
                     "workspace_id": workspace["id"],

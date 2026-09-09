@@ -99,7 +99,7 @@ async def verify(client: Client, manifest: dict) -> dict:
     if by_id[scenes["feedback_completed"]]["parent_run_id"] != scenes["feedback_source"]:
         raise RuntimeError("Feedback lineage is missing")
     first_agent = manifest["agent_ids"][0]
-    agent = await client.request("GET", f"/api/v1/agents/{first_agent}")
+    agent = await client.request("GET", f"{base}/agents/{first_agent}")
     if not any(
         item["agent_id"] == first_agent and item["agent_revision_id"] != agent["current_revision_id"]
         for item in all_runs

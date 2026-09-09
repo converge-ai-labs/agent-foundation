@@ -3,10 +3,10 @@
 from .seed_client import Client
 
 
-async def resource_history(client: Client, catalog: dict) -> dict:
+async def resource_history(client: Client, base: str, catalog: dict) -> dict:
     agents = catalog["agents"]
     scenarios = {}
-    path = f"/api/v1/agents/{agents[0]}"
+    path = f"{base}/agents/{agents[0]}"
     agent = await client.request("GET", path)
     original = await client.request("GET", f"/api/v1/agent-revisions/{agent['current_revision_id']}")
     updated = await client.request(
@@ -43,7 +43,7 @@ async def resource_history(client: Client, catalog: dict) -> dict:
     )
     scenarios["agent_duplicate_without_runs"] = duplicate["id"]
     for action, identifier in (("disable", agents[-2]), ("archive", agents[-1])):
-        path = f"/api/v1/agents/{identifier}"
+        path = f"{base}/agents/{identifier}"
         if action == "archive":
             await client.request("POST", path + "/disable", headers=await client.etag(path))
         resource = await client.request("POST", path + "/" + action, headers=await client.etag(path))
