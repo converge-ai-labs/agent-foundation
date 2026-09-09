@@ -1,3 +1,4 @@
+import { PageActions } from "../../shared/page-actions";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Dialog, Input } from "a13n-ui";
@@ -56,18 +57,11 @@ export function ApiKeys({
   });
   return (
     <div className={styles.stack}>
-      <div className={styles.toolbar}>
-        <p className={styles.muted}>
-          {t(
-            memberKeys
-              ? "Inspect and revoke member keys. Bearer values cannot be recovered."
-              : "These keys only grant access within this workspace.",
-          )}
-        </p>
+      <PageActions>
         {!memberKeys && (!accountId || can("api_key.manage")) && (
           <CreateKey accountId={accountId} />
         )}
-      </div>
+      </PageActions>
       {query.isPending ? (
         <Loading />
       ) : query.error ? (
@@ -126,6 +120,7 @@ export function ApiKeys({
               },
               {
                 label: t("Actions"),
+                align: "right",
                 render: (item) =>
                   !item.revoked_at && (
                     <Confirm

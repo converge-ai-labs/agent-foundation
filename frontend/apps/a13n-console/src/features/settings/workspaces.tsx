@@ -1,3 +1,4 @@
+import { PageActions } from "../../shared/page-actions";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -14,12 +15,9 @@ export function Workspaces() {
     { t } = useTranslation();
   return (
     <div className={styles.stack}>
-      <div className={styles.toolbar}>
-        <p className={styles.muted}>
-          {t("Separate agents, resources, and access into workspaces.")}
-        </p>
+      <PageActions>
         <CreateWorkspace organizationId={organization.id} />
-      </div>
+      </PageActions>
       <Table
         items={workspaces}
         columns={[
@@ -38,6 +36,7 @@ export function Workspaces() {
           },
           {
             label: t("Actions"),
+            align: "right",
             render: (item) => (
               <Confirm
                 title={t("Delete workspace")}

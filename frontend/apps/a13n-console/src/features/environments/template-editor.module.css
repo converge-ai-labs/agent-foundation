@@ -1,0 +1,47 @@
+.form {
+  display: grid;
+  gap: 20px;
+}
+.section {
+  display: grid;
+  gap: 12px;
+}
+.sectionHeading h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.sectionHeading p {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.advanced {
+  border-top: 1px solid var(--a13n-border-soft);
+  padding-top: 20px;
+  font-size: 13px;
+}
+.advanced summary {
+  cursor: pointer;
+  color: var(--a13n-secondary);
+}
+.advancedBody {
+  display: grid;
+  gap: 20px;
+  margin-top: 16px;
+  padding: 0;
+}
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid var(--a13n-border-soft);
+  padding-top: 20px;
+}
+@media (max-width: 600px) {
+  .section {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+}

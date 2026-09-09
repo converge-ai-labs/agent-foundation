@@ -22,6 +22,7 @@ import {
 import { JsonView } from "../../shared/form";
 import { conversationApi, isActiveRun, runPath } from "./api";
 import { useLiveRun } from "./live";
+import { useRun, useRunAgent } from "./queries";
 import { InputContent, PresentedItems } from "./items";
 import { Composer } from "./composer";
 import { OptionsComposer } from "./options";
@@ -64,23 +65,9 @@ function RunContent({
     [mode, setMode] = useState("message"),
     [notice, setNotice] = useState(""),
     [steerIds, setSteerIds] = useState<string[]>([]);
-  const runQuery = useQuery({
-    queryKey: ["run", workspace.id, runId],
-    queryFn: ({ signal }) => api.run(runId, signal),
-  });
+  const runQuery = useRun(runId);
   const run = runQuery.data;
-  const agent = useQuery({
-    queryKey: ["run-agent", workspace.id, run?.agent_id],
-    enabled: !!run,
-    queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/agents/{agent_id}", {
-          params: { path: { agent_id: run!.agent_id } },
-          headers: workspaceHeaders(workspace.id),
-          signal,
-        })
-        .then(data),
-  });
+  const agent = useRunAgent(run?.agent_id);
   const transcript = useRef<HTMLDivElement>(null);
   const [following, setFollowing] = useState(true);
   const threadQuery = useQuery({
@@ -115,16 +102,8 @@ function RunContent({
     };
   }, [!!run, !!thread, threadId]);
 
-  const currentRun = useQuery({
-    queryKey: ["run", workspace.id, thread?.current_run_id],
-    enabled: !!thread?.current_run_id,
-    queryFn: ({ signal }) => api.run(thread!.current_run_id!, signal),
-  });
-  const headRun = useQuery({
-    queryKey: ["run", workspace.id, thread?.head_run_id],
-    enabled: !!thread?.head_run_id,
-    queryFn: ({ signal }) => api.run(thread!.head_run_id!, signal),
-  });
+  const currentRun = useRun(thread?.current_run_id);
+  const headRun = useRun(thread?.head_run_id);
   const retry = useMutation({
     mutationFn: () =>
       client.http
@@ -199,7 +178,7 @@ function RunContent({
         <div>
           <StateBadge state={run.status} />
           <span>
-            <Timestamp value={run.created_at} />
+            <Timestamp value={run.created_at} relative />
           </span>
         </div>
         <div className={styles.inline}>

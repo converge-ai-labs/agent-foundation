@@ -1,3 +1,4 @@
+import { PageActions } from "../../shared/page-actions";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Dialog, Input, SelectField } from "a13n-ui";
@@ -47,12 +48,9 @@ export function Invitations({ scope }: { scope: MembershipScope }) {
   });
   return (
     <div className={styles.stack}>
-      <div className={styles.toolbar}>
-        <p className={styles.muted}>
-          {t("Invite people by email and select their access level.")}
-        </p>
+      <PageActions>
         <InvitationEditor scope={scope} />
-      </div>
+      </PageActions>
       {query.isPending ? (
         <Loading />
       ) : query.error ? (
@@ -96,6 +94,7 @@ export function Invitations({ scope }: { scope: MembershipScope }) {
               },
               {
                 label: t("Actions"),
+                align: "right",
                 render: (item) =>
                   !item.accepted_at &&
                   !item.revoked_at && (
@@ -209,7 +208,7 @@ function InvitationEditor({
       trigger={
         <Button
           variant={invitation ? "secondary" : "primary"}
-          size="sm"
+          size={invitation ? "sm" : "md"}
           icon={!invitation && <Plus size={14} />}
         >
           {t(invitation ? "Resend" : "Invite member")}

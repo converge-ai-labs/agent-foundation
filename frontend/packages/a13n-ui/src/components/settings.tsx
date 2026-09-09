@@ -8,7 +8,7 @@ export function SettingsSection({
   variant = "grouped",
 }: {
   variant?: "grouped" | "plain";
-  title: string;
+  title?: string;
   description?: ReactNode;
   children: ReactNode;
 }) {
@@ -17,12 +17,14 @@ export function SettingsSection({
     <section
       className={styles.section}
       data-variant={variant}
-      aria-labelledby={id}
+      aria-labelledby={title ? id : undefined}
     >
-      <div className={styles.heading}>
-        <h3 id={id}>{title}</h3>
-        {description && <p>{description}</p>}
-      </div>
+      {title && (
+        <div className={styles.heading}>
+          <h3 id={id}>{title}</h3>
+          {description && <p>{description}</p>}
+        </div>
+      )}
       <div className={styles.group}>{children}</div>
     </section>
   );

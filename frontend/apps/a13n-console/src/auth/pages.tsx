@@ -7,7 +7,7 @@ import {
   useParams,
 } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Button, Input, Logo } from "a13n-ui";
+import { Button, Input, Logo, Wordmark } from "a13n-ui";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useAuth, useClient } from "./context";
@@ -114,11 +114,10 @@ export function AuthPage() {
   return (
     <main className={styles.screen}>
       <div className={styles.brand}>
-        <Logo alt="a13n" />
-        <span>Console</span>
+        <Logo alt="" />
+        <Wordmark />
       </div>
       <section className={styles.card}>
-        <span className={styles.eyebrow}>a13n CONSOLE</span>
         <h1>{titles[mode]}</h1>
         <p>{descriptions[mode]}</p>
         {mutation.isSuccess && ["forgot", "reset", "email"].includes(mode) ? (

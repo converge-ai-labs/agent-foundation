@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Button, Input, Select } from "a13n-ui";
-import { Bot, Plus, ArrowUpRight } from "lucide-react";
+import { Button, SearchInput, Select } from "a13n-ui";
+import { Bot, Plus, Layers } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -67,17 +67,18 @@ export function Agents() {
   return (
     <Page
       title={t("Agents")}
-      description={t("Build the agents that move your work forward.")}
+      description={t("The agents your workspace runs on.")}
       actions={create}
     >
       <div className={shared.toolbar}>
-        <Input
+        <SearchInput
           label={t("Search this page")}
           placeholder={t("Find an agent…")}
           value={search}
           onChange={(event) => setSearch(event.target.value)}
         />
         <Select
+          size="sm"
           label={t("Agent status")}
           placeholder={t("Status")}
           value={filter}
@@ -117,7 +118,7 @@ export function Agents() {
                 <ResourceIdentity
                   to={agent.id}
                   name={agent.name}
-                  description={agent.description || t("No description")}
+                  description={agent.description || undefined}
                   icon={<Bot size={18} strokeWidth={1.5} />}
                 />
               ),
@@ -143,30 +144,20 @@ export function Agents() {
               ),
             },
             {
-              label: t("Version"),
-              render: (agent) => (
-                <span className={styles.version}>v{agent.version}</span>
-              ),
-            },
-            {
               label: t("Updated"),
-              render: (agent) => <Timestamp value={agent.updated_at} />,
-            },
-            {
-              label: t("Open"),
               render: (agent) => (
-                <Link
-                  to={agent.id}
-                  aria-label={t("Open {{name}}", { name: agent.name })}
-                >
-                  <ArrowUpRight size={15} />
-                </Link>
+                <Timestamp value={agent.updated_at} relative />
               ),
             },
           ]}
         />
       )}
-      {query.data && <Pagination page={page} next={query.data.next_cursor} />}
+      {query.data && (
+        <footer className={shared.collectionFooter}>
+          <p>{t("{{count}} agents on this page", { count: visible.length })}</p>
+          <Pagination page={page} next={query.data.next_cursor} />
+        </footer>
+      )}
     </Page>
   );
 }
@@ -188,7 +179,8 @@ function AgentModel({ revisionId }: { revisionId: string }) {
         .then(data),
   });
   return (
-    <span className={styles.version}>
+    <span className={styles.modelName}>
+      <Layers size={13} aria-hidden="true" />
       {revision.isPending
         ? "…"
         : (revision.data?.config.model.model_key ?? t("Unavailable"))}

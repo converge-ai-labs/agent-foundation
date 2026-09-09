@@ -1,3 +1,4 @@
+import { PageActions } from "../../shared/page-actions";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Dialog, Input, SelectField } from "a13n-ui";
@@ -48,12 +49,9 @@ export function ServiceAccounts() {
     );
   return (
     <div className={styles.stack}>
-      <div className={styles.toolbar}>
-        <p className={styles.muted}>
-          {t("Workspace identities for automated applications.")}
-        </p>
+      <PageActions>
         <AccountEditor />
-      </div>
+      </PageActions>
       {query.isPending ? (
         <Loading />
       ) : query.error ? (
@@ -82,6 +80,7 @@ export function ServiceAccounts() {
               },
               {
                 label: t("Actions"),
+                align: "right",
                 render: (item) => (
                   <div className={styles.actions}>
                     <AccountEditor account={item} />
@@ -195,7 +194,7 @@ function AccountEditor({ account }: { account?: Schema["ServiceAccount"] }) {
       }}
       trigger={
         <Button
-          size="sm"
+          size={account ? "sm" : "md"}
           variant={account ? "secondary" : "primary"}
           icon={!account && <Plus size={14} />}
         >

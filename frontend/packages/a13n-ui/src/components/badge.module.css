@@ -17,3 +17,17 @@
 .badge[data-tone="danger"] {
   color: var(--a13n-danger);
 }
+.badge[data-variant="status"] {
+  padding: 0;
+  gap: 7px;
+  background: transparent;
+  white-space: nowrap;
+}
+.badge[data-variant="status"]::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}

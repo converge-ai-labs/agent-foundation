@@ -244,6 +244,7 @@ function Revisions({ skill }: { skill: Schema["Skill"] }) {
                 },
                 {
                   label: t("Actions"),
+                  align: "right",
                   render: (item) => (
                     <Button
                       size="sm"

@@ -49,7 +49,7 @@ export function SchemaFields({
     onChange(draft);
   }
   return (
-    <div className={styles.stack}>
+    <div className={styles.schemaFields}>
       {Object.entries(properties).map(([key, definition]) => {
         const field = fieldSchema(definition, schema),
           label = t(typeof field.title === "string" ? field.title : key),

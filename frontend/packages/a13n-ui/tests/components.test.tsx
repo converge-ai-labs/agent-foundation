@@ -2,7 +2,7 @@ import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Button, Checkbox, Dialog, Input, Switch } from "../src";
+import { Button, Checkbox, Dialog, Input, SearchInput, Switch } from "../src";
 describe("component interaction contracts", () => {
   it("keeps button content mounted and prevents submission while loading", async () => {
     const click = vi.fn();
@@ -14,6 +14,7 @@ describe("component interaction contracts", () => {
     );
     const button = screen.getByRole("button", { name: "Save" });
     expect(ref.current).toBe(button);
+    expect(button.children).toHaveLength(1);
     expect(button.getAttribute("type")).toBe("button");
     const content = button.textContent;
     rerender(
@@ -85,4 +86,24 @@ describe("component interaction contracts", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(document.activeElement).toBe(trigger);
   });
+});
+
+it("exposes a named search field and preserves native editing and description semantics", async () => {
+  const user = userEvent.setup(),
+    ref = createRef<HTMLInputElement>();
+  render(
+    <>
+      <p id="search-help">Search the current page</p>
+      <SearchInput
+        label="Find agents"
+        ref={ref}
+        aria-describedby="search-help"
+      />
+    </>,
+  );
+  const input = screen.getByRole("searchbox", { name: "Find agents" });
+  expect(ref.current).toBe(input);
+  expect(input.getAttribute("aria-describedby")).toBe("search-help");
+  await user.type(input, "research");
+  expect(ref.current?.value).toBe("research");
 });

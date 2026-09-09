@@ -1,7 +1,8 @@
-import { Boxes } from "lucide-react";
+import { PageActions } from "../../shared/page-actions";
+import { Layers } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Badge, Input, Tabs } from "a13n-ui";
+import { Badge, SearchInput } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace, useAccess } from "../../layout/workspace";
@@ -12,53 +13,33 @@ import {
   Page,
   StateBadge,
 } from "../../shared/feedback";
-import {
-  Pagination,
-  Table,
-  ResourceIdentity,
-  useCursor,
-} from "../../shared/collection";
+import { Pagination, useCursor } from "../../shared/collection";
+import { allPages, type Schema } from "../../shared/api";
 import { modelApi, type ModelScope } from "./api";
 import { Providers } from "./providers";
 import { ModelEditor, ModelTest } from "./model-editor";
 import styles from "../../shared/shared.module.css";
+import modelStyles from "./models.module.css";
 
-export function ModelsPage() {
+export function ModelsPage({ providers = false }: { providers?: boolean }) {
   const { t } = useTranslation(),
     { workspace } = useWorkspace();
   return (
     <Page
-      title={t("Models")}
+      title={t(providers ? "Model providers" : "Models")}
       description={t(
         "Connect providers and choose the models your agents can use.",
       )}
     >
-      <Models scope={{ kind: "workspace", id: workspace.id }} />
+      {providers ? (
+        <Providers scope={{ kind: "workspace", id: workspace.id }} />
+      ) : (
+        <Models scope={{ kind: "workspace", id: workspace.id }} />
+      )}
     </Page>
   );
 }
 export function Models({ scope }: { scope: ModelScope }) {
-  const { t } = useTranslation();
-  return (
-    <Tabs
-      label={t("Model resources")}
-      defaultValue="models"
-      items={[
-        {
-          value: "models",
-          label: t("Models"),
-          content: <ModelList scope={scope} />,
-        },
-        {
-          value: "providers",
-          label: t("Providers"),
-          content: <Providers scope={scope} />,
-        },
-      ]}
-    />
-  );
-}
-function ModelList({ scope }: { scope: ModelScope }) {
   const { t } = useTranslation(),
     { can, organization, organizationAdmin } = useAccess(),
     client = useClient(),
@@ -70,12 +51,24 @@ function ModelList({ scope }: { scope: ModelScope }) {
     queryFn: ({ signal }) =>
       api.models(signal, page.cursor, search || undefined),
   });
+  const providers = useQuery({
+    queryKey: ["model-provider-choices", scope.kind, scope.id],
+    queryFn: ({ signal }) =>
+      allPages((cursor) => api.providers(signal, cursor)),
+  });
+  const groups = new Map<string, Schema["Model"][]>();
+  for (const model of query.data?.items ?? []) {
+    const group = groups.get(model.provider_id) ?? [];
+    group.push(model);
+    groups.set(model.provider_id, group);
+  }
   const manage =
     scope.kind === "organization" ? organizationAdmin : can("models.manage");
   return (
     <div className={styles.stack}>
+      <PageActions>{manage && <ModelEditor scope={scope} />}</PageActions>
       <div className={styles.toolbar}>
-        <Input
+        <SearchInput
           label={t("Search models")}
           placeholder={t("Name or model key…")}
           value={search}
@@ -84,7 +77,6 @@ function ModelList({ scope }: { scope: ModelScope }) {
             page.reset();
           }}
         />
-        {manage && <ModelEditor scope={scope} />}
       </div>
       {query.isPending ? (
         <Loading />
@@ -92,60 +84,76 @@ function ModelList({ scope }: { scope: ModelScope }) {
         <ErrorNotice error={query.error} />
       ) : query.data?.items.length ? (
         <>
-          <Table
-            items={query.data.items}
-            columns={[
-              {
-                label: t("Model"),
-                render: (item) => (
-                  <ResourceIdentity
-                    name={item.name}
-                    description={item.key}
-                    icon={<Boxes size={17} />}
-                  />
-                ),
-              },
-              {
-                label: t("Upstream model"),
-                render: (item) => (
-                  <>
-                    {item.upstream_model}
-                    <small>{item.model_api}</small>
-                  </>
-                ),
-              },
-              {
-                label: t("Scope"),
-                render: (item) => (
-                  <Badge>
-                    {t(item.workspace_id ? "Workspace" : "Organization")}
-                  </Badge>
-                ),
-              },
-              {
-                label: t("Status"),
-                render: (item) => (
-                  <StateBadge state={item.enabled ? "enabled" : "disabled"} />
-                ),
-              },
-              {
-                label: t("Actions"),
-                render: (item) => {
-                  const owner: ModelScope = item.workspace_id
-                    ? { kind: "workspace", id: item.workspace_id }
-                    : { kind: "organization", id: organization.id };
-                  return (
-                    (item.workspace_id ? manage : organizationAdmin) && (
-                      <div className={styles.actions}>
-                        <ModelEditor scope={owner} modelId={item.id} />
-                        <ModelTest scope={owner} modelId={item.id} />
-                      </div>
-                    )
-                  );
-                },
-              },
-            ]}
+          <ErrorNotice
+            error={providers.error}
+            retry={() => void providers.refetch()}
           />
+          {Array.from(groups, ([providerId, models]) => {
+            const provider = providers.data?.find(
+              (item) => item.id === providerId,
+            );
+            return (
+              <section className={modelStyles.providerGroup} key={providerId}>
+                <header>
+                  <span className={modelStyles.providerIcon}>
+                    <Layers size={14} />
+                  </span>
+                  <h2>
+                    {provider?.name ??
+                      t(
+                        providers.isPending
+                          ? "Loading…"
+                          : "Provider unavailable",
+                      )}
+                  </h2>
+                  <span>{t("{{count}} models", { count: models.length })}</span>
+                  {provider && (
+                    <span className={modelStyles.providerState}>
+                      <StateBadge
+                        state={provider.enabled ? "enabled" : "disabled"}
+                      />
+                    </span>
+                  )}
+                </header>
+                <div className={modelStyles.modelGrid}>
+                  {models.map((item) => {
+                    const owner: ModelScope = item.workspace_id
+                      ? { kind: "workspace", id: item.workspace_id }
+                      : { kind: "organization", id: organization.id };
+                    return (
+                      <article className={modelStyles.modelCard} key={item.id}>
+                        <header>
+                          <Layers size={16} strokeWidth={1.5} />
+                          <h3>{item.name}</h3>
+                          <StateBadge
+                            state={item.enabled ? "enabled" : "disabled"}
+                          />
+                        </header>
+                        <p>{item.description || item.upstream_model}</p>
+                        <div className={modelStyles.modelDetails}>
+                          <Badge>
+                            {t(
+                              item.workspace_id ? "Workspace" : "Organization",
+                            )}
+                          </Badge>
+                          <span title={t("Calling API")}>{item.model_api}</span>
+                        </div>
+                        <footer>
+                          <code title={t("Model key")}>{item.key}</code>
+                          {(item.workspace_id ? manage : organizationAdmin) && (
+                            <div className={styles.actions}>
+                              <ModelEditor scope={owner} modelId={item.id} />
+                              <ModelTest scope={owner} modelId={item.id} />
+                            </div>
+                          )}
+                        </footer>
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })}
           <Pagination page={page} next={query.data.next_cursor} />
         </>
       ) : (

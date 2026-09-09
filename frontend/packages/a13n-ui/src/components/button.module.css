@@ -3,18 +3,21 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--a13n-space-2);
-  height: var(--a13n-control-md);
-  padding: 0 var(--a13n-space-3);
+  gap: 6px;
+  height: var(--a13n-button-md);
+  padding: 0 10px;
   cursor: pointer;
   white-space: nowrap;
   line-height: 1.2;
+  font-size: 12px;
+  font-weight: 500;
 }
 .button[data-size="sm"] {
-  height: var(--a13n-control-sm);
+  height: var(--a13n-button-sm);
+  padding-inline: 8px;
 }
 .button[data-size="lg"] {
-  height: var(--a13n-control-lg);
+  height: var(--a13n-button-lg);
 }
 .button:hover:not(:disabled) {
   background: var(--a13n-hover);

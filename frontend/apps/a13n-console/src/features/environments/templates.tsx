@@ -1,3 +1,4 @@
+import { PageActions } from "../../shared/page-actions";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Dialog, Input, SelectField, Switch, Tabs } from "a13n-ui";
@@ -19,6 +20,7 @@ import { useIdempotency } from "../../shared/idempotency";
 import { environmentApi, type EnvironmentScope } from "./api";
 import { useEnvironmentTypes } from "./providers";
 import styles from "../../shared/shared.module.css";
+import editorStyles from "./template-editor.module.css";
 
 export function EnvironmentTemplates({ scope }: { scope: EnvironmentScope }) {
   const client = useClient(),
@@ -36,12 +38,7 @@ export function EnvironmentTemplates({ scope }: { scope: EnvironmentScope }) {
       : can("environment_template.manage");
   return (
     <div className={styles.stack}>
-      <div className={styles.toolbar}>
-        <p className={styles.muted}>
-          {t("Versioned recipes for new working environments.")}
-        </p>
-        {manage && <TemplateEditor scope={scope} />}
-      </div>
+      <PageActions>{manage && <TemplateEditor scope={scope} />}</PageActions>
       <ErrorNotice error={query.error} />
       {query.isPending ? (
         <Loading />
@@ -75,6 +72,7 @@ export function EnvironmentTemplates({ scope }: { scope: EnvironmentScope }) {
               },
               {
                 label: t("Actions"),
+                align: "right",
                 render: (item) => (
                   <TemplateEditor
                     scope={
@@ -134,17 +132,23 @@ function TemplateEditor({
   }
   return (
     <Dialog
+      size="wide"
       title={t(
         templateId ? "Environment template" : "Create environment template",
       )}
       description={t(
-        "New revisions apply to newly allocated environments. Existing environments keep their original recipe.",
+        templateId
+          ? "New revisions apply to newly allocated environments. Existing environments keep their original recipe."
+          : "Choose a provider and define the environment recipe.",
       )}
       closeLabel={t("Close")}
       open={open}
       onOpenChange={setOpen}
       trigger={
-        <Button size="sm" variant={templateId ? "secondary" : "primary"}>
+        <Button
+          size={templateId ? "sm" : "md"}
+          variant={templateId ? "secondary" : "primary"}
+        >
           {t(templateId ? "Details" : "Create template")}
         </Button>
       }
@@ -322,6 +326,7 @@ function TemplateHistory({
                 },
                 {
                   label: t("Actions"),
+                  align: "right",
                   render: (item) =>
                     editable &&
                     item.id !== template.current_revision_id && (
@@ -429,7 +434,7 @@ function TemplateRecipe({
   });
   return (
     <form
-      className={styles.form}
+      className={editorStyles.form}
       onSubmit={(event) => {
         event.preventDefault();
         save.mutate();
@@ -437,120 +442,146 @@ function TemplateRecipe({
     >
       <ErrorNotice error={providers.error ?? types.error} />
       {!basis && (
-        <>
-          <Input
-            label={t("Name")}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            required
-            maxLength={128}
-          />
-          <Input
-            label={t("Description")}
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            maxLength={4096}
-          />
-        </>
+        <section className={editorStyles.section}>
+          <div className={styles.twoColumns}>
+            <Input
+              label={t("Name")}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              required
+              maxLength={128}
+            />
+            <Input
+              label={t("Description")}
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              maxLength={4096}
+            />
+          </div>
+        </section>
       )}
-      <SelectField
-        label={t("Provider")}
-        placeholder={t("Select provider")}
-        required
-        value={providerId}
-        onValueChange={setProviderId}
-        options={
-          providers.data
-            ?.filter(
-              (provider) =>
-                provider.id === providerId ||
-                (provider.enabled &&
-                  types.data?.items.some(
-                    (type) =>
-                      type.type === provider.type &&
-                      type.supports_managed === true,
-                  )),
-            )
-            .map((provider) => ({
-              value: provider.id,
-              label: provider.name,
-            })) ?? []
-        }
-      />
-      <SelectField
-        label={t("Access ceiling")}
-        placeholder={t("Select access")}
-        value={access}
-        onValueChange={(value) => {
-          if (
-            value === "full" ||
-            value === "read_only" ||
-            value === "read_write"
-          )
-            setAccess(value);
-        }}
-        options={[
-          { value: "full", label: t("Full access") },
-          { value: "read_write", label: t("Read and write") },
-          { value: "read_only", label: t("Read only") },
-        ]}
-      />
-      <SelectField
-        label={t("Prepare environment")}
-        placeholder={t("Select timing")}
-        value={preparation}
-        onValueChange={(value) =>
-          setPreparation(value === "on_use" ? "on_use" : "on_run")
-        }
-        options={[
-          { value: "on_run", label: t("When a run starts") },
-          { value: "on_use", label: t("On first use") },
-        ]}
-      />
-      <Input
-        label={t("Configuration schema version")}
-        value={version}
-        onChange={(event) => setVersion(event.target.value)}
-        required
-      />
-      <TextArea
-        label={t("Environment recipe (JSON)")}
-        hint={t("Use the configuration accepted by this environment provider.")}
-        value={configuration}
-        onChange={setConfiguration}
-        code
-        rows={8}
-      />
-      <Input
-        label={t("Stop after idle seconds")}
-        hint={t("Leave empty to disable automatic stopping.")}
-        type="number"
-        min={0}
-        step={1}
-        value={stop}
-        disabled={definition?.supports_stop === false}
-        onChange={(event) => setStop(event.target.value)}
-      />
-      <Input
-        label={t("Delete after idle seconds")}
-        hint={t(
-          "Leave empty to disable automatic deletion. If both are set, deletion must be later than stopping.",
-        )}
-        type="number"
-        min={0}
-        step={1}
-        value={destroy}
-        disabled={definition?.supports_destroy === false}
-        onChange={(event) => setDestroy(event.target.value)}
-      />
+      <section className={editorStyles.section}>
+        <div className={editorStyles.sectionHeading}>
+          <h3>{t("Runtime")}</h3>
+        </div>
+        <div className={styles.stack}>
+          <div className={styles.twoColumns}>
+            <SelectField
+              label={t("Provider")}
+              placeholder={t("Select provider")}
+              required
+              value={providerId}
+              onValueChange={setProviderId}
+              options={
+                providers.data
+                  ?.filter(
+                    (provider) =>
+                      provider.id === providerId ||
+                      (provider.enabled &&
+                        types.data?.items.some(
+                          (type) =>
+                            type.type === provider.type &&
+                            type.supports_managed === true,
+                        )),
+                  )
+                  .map((provider) => ({
+                    value: provider.id,
+                    label: provider.name,
+                  })) ?? []
+              }
+            />
+            <SelectField
+              label={t("Access ceiling")}
+              placeholder={t("Select access")}
+              value={access}
+              onValueChange={(value) => {
+                if (
+                  value === "full" ||
+                  value === "read_only" ||
+                  value === "read_write"
+                )
+                  setAccess(value);
+              }}
+              options={[
+                { value: "full", label: t("Full access") },
+                { value: "read_write", label: t("Read and write") },
+                { value: "read_only", label: t("Read only") },
+              ]}
+            />
+          </div>
+          <TextArea
+            label={t("Environment recipe (JSON)")}
+            hint={t(
+              "Use the configuration accepted by this environment provider.",
+            )}
+            value={configuration}
+            onChange={setConfiguration}
+            code
+            rows={5}
+          />
+        </div>
+      </section>
+      <details className={editorStyles.advanced}>
+        <summary>{t("Lifecycle and advanced settings")}</summary>
+        <div className={editorStyles.advancedBody}>
+          <div className={styles.twoColumns}>
+            <SelectField
+              label={t("Prepare environment")}
+              placeholder={t("Select timing")}
+              value={preparation}
+              onValueChange={(value) =>
+                setPreparation(value === "on_use" ? "on_use" : "on_run")
+              }
+              options={[
+                { value: "on_run", label: t("When a run starts") },
+                { value: "on_use", label: t("On first use") },
+              ]}
+            />
+            <Input
+              label={t("Configuration schema version")}
+              value={version}
+              onChange={(event) => setVersion(event.target.value)}
+              required
+            />
+          </div>
+          <div className={styles.twoColumns}>
+            <Input
+              label={t("Stop after idle seconds")}
+              hint={t("Leave empty to disable automatic stopping.")}
+              type="number"
+              min={0}
+              step={1}
+              value={stop}
+              disabled={definition?.supports_stop === false}
+              onChange={(event) => setStop(event.target.value)}
+            />
+            <Input
+              label={t("Delete after idle seconds")}
+              hint={t(
+                "Leave empty to disable automatic deletion. If both are set, deletion must be later than stopping.",
+              )}
+              type="number"
+              min={0}
+              step={1}
+              value={destroy}
+              disabled={definition?.supports_destroy === false}
+              onChange={(event) => setDestroy(event.target.value)}
+            />
+          </div>
+        </div>
+      </details>
       <ErrorNotice
         error={save.error}
         retry={reload ? () => void reload() : undefined}
       />
-      <FormActions
-        pending={save.isPending}
-        label={t(basis ? "Publish revision" : "Create template")}
-      />
+      <div data-a13n-form-actions className={editorStyles.footer}>
+        <Button onClick={close} disabled={save.isPending}>
+          {t("Cancel")}
+        </Button>
+        <Button type="submit" variant="primary" loading={save.isPending}>
+          {t(basis ? "Publish revision" : "Create template")}
+        </Button>
+      </div>
     </form>
   );
 }

@@ -13,7 +13,7 @@ import {
   Monitor,
   Smartphone,
 } from "lucide-react";
-import { Button, CommandPalette, Kbd, Select } from "../src";
+import { Button, CommandPalette, Kbd, Select, Logo, Wordmark } from "../src";
 import "../src/styles/index.css";
 import "./showcase.css";
 import { Foundations } from "./foundations";
@@ -79,11 +79,10 @@ function Showcase() {
       </a>
       <aside className="showroom-sidebar">
         <a className="brand" href="#settings">
-          <span className="brand-icon">
-            <Boxes size={18} />
-          </span>
+          <Logo alt="" width={28} height={28} />
           <span>
-            a13n<span className="brand-subtitle">Design system</span>
+            <Wordmark />
+            <span className="brand-subtitle">Design system</span>
           </span>
         </a>
         <div className="nav-label">{t("DESIGN LIBRARY", "设计资源库")}</div>

@@ -178,6 +178,7 @@ export function AssetsPage() {
               },
               {
                 label: t("Actions"),
+                align: "right",
                 render: (item) => (
                   <div className={styles.actions}>
                     <Button

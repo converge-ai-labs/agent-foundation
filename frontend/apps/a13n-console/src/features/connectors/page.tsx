@@ -1,39 +1,24 @@
-import { Tabs } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
 import { Page } from "../../shared/feedback";
 import { ConnectorProviders } from "./providers";
 import { ConnectorConnections } from "./connections";
-export function ConnectorsPage() {
+
+export function ConnectorsPage({ providers = false }: { providers?: boolean }) {
   const { workspace } = useWorkspace(),
     { t } = useTranslation();
   return (
     <Page
-      title={t("Connectors")}
+      title={t(providers ? "Connector providers" : "Connectors")}
       description={t(
         "Connect external accounts through your integration providers.",
       )}
     >
-      <Tabs
-        label={t("Connectors")}
-        defaultValue="connections"
-        items={[
-          {
-            value: "connections",
-            label: t("Connections"),
-            content: <ConnectorConnections />,
-          },
-          {
-            value: "providers",
-            label: t("Providers"),
-            content: (
-              <ConnectorProviders
-                scope={{ kind: "workspace", id: workspace.id }}
-              />
-            ),
-          },
-        ]}
-      />
+      {providers ? (
+        <ConnectorProviders scope={{ kind: "workspace", id: workspace.id }} />
+      ) : (
+        <ConnectorConnections />
+      )}
     </Page>
   );
 }

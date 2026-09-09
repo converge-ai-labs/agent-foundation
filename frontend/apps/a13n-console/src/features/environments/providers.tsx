@@ -1,3 +1,4 @@
+import { PageActions } from "../../shared/page-actions";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Dialog, Input, SelectField, Switch } from "a13n-ui";
@@ -53,12 +54,7 @@ export function EnvironmentProviders({ scope }: { scope: EnvironmentScope }) {
       : can("environment_provider.manage");
   return (
     <div className={styles.stack}>
-      <div className={styles.toolbar}>
-        <p className={styles.muted}>
-          {t("Configure access to environment backends.")}
-        </p>
-        {manage && <ProviderEditor scope={scope} />}
-      </div>
+      <PageActions>{manage && <ProviderEditor scope={scope} />}</PageActions>
       <ErrorNotice error={query.error} />
       {query.isPending ? (
         <Loading />
@@ -98,6 +94,7 @@ export function EnvironmentProviders({ scope }: { scope: EnvironmentScope }) {
               },
               {
                 label: t("Actions"),
+                align: "right",
                 render: (item) =>
                   (item.workspace_id ? manage : organizationAdmin) && (
                     <ProviderEditor
@@ -162,7 +159,10 @@ function ProviderEditor({
       open={open}
       onOpenChange={setOpen}
       trigger={
-        <Button size="sm" variant={providerId ? "secondary" : "primary"}>
+        <Button
+          size={providerId ? "sm" : "md"}
+          variant={providerId ? "secondary" : "primary"}
+        >
           {t(providerId ? "Edit" : "Add provider")}
         </Button>
       }

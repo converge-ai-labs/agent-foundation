@@ -49,6 +49,7 @@ export function ApplicationAccountsPage() {
       actions={
         can("application_account.manage") && (
           <Dialog
+            size="wide"
             title={t("Add application account")}
             description={t(
               "Configure one concrete external identity and its reception settings.",

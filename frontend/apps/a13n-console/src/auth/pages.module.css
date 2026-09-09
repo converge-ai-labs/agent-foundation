@@ -12,17 +12,14 @@
   align-items: center;
   gap: 13px;
   margin-bottom: 36px;
-  font-size: 15px;
-  color: var(--a13n-secondary);
+  font-size: 36px;
+  color: var(--a13n-text);
 }
 .brand img {
   width: 42px;
   height: auto;
 }
-.brand span {
-  padding-left: 13px;
-  border-left: 1px solid var(--a13n-border);
-}
+
 .card {
   background: var(--a13n-elevated);
   border: 1px solid var(--a13n-border);
@@ -32,14 +29,9 @@
   max-width: 440px;
   box-shadow: var(--a13n-shadow-subtle);
 }
-.eyebrow {
-  font-size: 10px;
-  letter-spacing: 1.8px;
-  color: var(--a13n-secondary);
-  font-weight: 600;
-}
+
 .card h1 {
-  margin: 14px 0 10px;
+  margin: 0 0 10px;
   font-size: 26px;
   letter-spacing: -0.8px;
   font-weight: 600;

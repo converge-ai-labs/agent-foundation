@@ -1,7 +1,7 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useId, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Input, SettingsRow, SettingsSection } from "a13n-ui";
-import { Upload, Trash2, Check } from "lucide-react";
+import { Upload, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { representation, type Schema } from "../../shared/api";
@@ -184,24 +184,24 @@ function ProfileForm({
       void cache.invalidateQueries();
     },
   });
+  const nameId = useId();
   const pending = save.isPending || image.isPending;
+  const nameLabel = t(
+    target.kind === "personal"
+      ? "Display name"
+      : target.kind === "workspace"
+        ? "Workspace name"
+        : "Organization name",
+  );
   return (
-    <div className={styles.profile}>
-      <SettingsSection
-        variant="plain"
-        title={t(
-          target.kind === "personal"
-            ? "Profile image"
-            : target.kind === "workspace"
-              ? "Workspace identity"
-              : "Organization identity",
-        )}
-        description={t(
-          target.kind === "personal"
-            ? "Choose an image people will recognize."
-            : "Make this space easy to recognize.",
-        )}
-      >
+    <form
+      className={styles.profile}
+      onSubmit={(event: FormEvent) => {
+        event.preventDefault();
+        save.mutate();
+      }}
+    >
+      <SettingsSection>
         <SettingsRow
           label={t(target.kind === "personal" ? "Avatar" : "Icon")}
           description={t("PNG, JPEG, or WebP. Up to 5 MB.")}
@@ -242,57 +242,46 @@ function ProfileForm({
             )}
           </div>
         </SettingsRow>
-      </SettingsSection>
-      <form
-        className={styles.profileForm}
-        onSubmit={(event: FormEvent) => {
-          event.preventDefault();
-          save.mutate();
-        }}
-      >
-        <Input
-          label={t(
-            target.kind === "personal"
-              ? "Display name"
-              : target.kind === "workspace"
-                ? "Workspace name"
-                : "Organization name",
-          )}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          required
-          maxLength={128}
-          disabled={!editable || pending}
-        />
-        <ErrorNotice
-          error={save.error ?? image.error}
-          retry={() => void reload()}
-        />
-        {editable && (
-          <div className={styles.saveRow}>
-            <Button
-              type="submit"
-              disabled={pending || !name.trim() || name === current.value.name}
-              loading={save.isPending}
-            >
-              {t("Save changes")}
-            </Button>
-            <span role="status">
-              {save.isSuccess && name === current.value.name ? (
-                <>
-                  <Check size={12} /> {t("Changes saved")}
-                </>
-              ) : name !== current.value.name ? (
-                t("Unsaved changes")
-              ) : null}
-            </span>
+        <SettingsRow label={nameLabel} controlId={nameId}>
+          <div className={styles.nameControl}>
+            <Input
+              id={nameId}
+              label={nameLabel}
+              hideLabel
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              required
+              maxLength={128}
+              disabled={!editable || pending}
+            />
           </div>
-        )}
-        <div className={styles.identityNote}>
-          <span>{t("ID")}</span>
-          <code>{current.value.id}</code>
+        </SettingsRow>
+        <SettingsRow label={t("ID")}>
+          <code className={styles.resourceId}>{current.value.id}</code>
+        </SettingsRow>
+      </SettingsSection>
+      <ErrorNotice
+        error={save.error ?? image.error}
+        retry={() => void reload()}
+      />
+      {editable && name !== current.value.name && (
+        <div className={styles.saveRow}>
+          <Button
+            disabled={pending}
+            onClick={() => setName(current.value.name)}
+          >
+            {t("Cancel")}
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={pending || !name.trim()}
+            loading={save.isPending}
+          >
+            {t("Save changes")}
+          </Button>
         </div>
-      </form>
-    </div>
+      )}
+    </form>
   );
 }

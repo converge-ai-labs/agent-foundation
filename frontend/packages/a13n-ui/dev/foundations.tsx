@@ -1,3 +1,4 @@
+import { Logo, Wordmark } from "../src";
 import type { Translate } from "./showcase";
 const colors = [
   "app",
@@ -17,6 +18,26 @@ const colors = [
 export function Foundations({ t }: { t: Translate }) {
   return (
     <>
+      <section>
+        <h2>{t("Brand", "品牌")}</h2>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 16,
+            fontSize: 48,
+          }}
+        >
+          <Logo alt="" width={48} height={48} />
+          <Wordmark />
+        </div>
+        <p>
+          {t(
+            "Space Grotesk Bold. Use Wordmark for the a13n name across product surfaces.",
+            "Space Grotesk Bold。产品中的 a13n 名称统一使用 Wordmark。",
+          )}
+        </p>
+      </section>
       <section>
         <h2>{t("Foundations", "基础规范")}</h2>
         <p>
@@ -50,11 +71,11 @@ export function Foundations({ t }: { t: Translate }) {
           <div>
             <p className="secondary">
               {t(
-                "Spacing follows a shared scale. Controls use one consistent height and radius.",
-                "使用统一间距尺度，控件保持一致的高度和圆角。",
+                "Navigation uses compact rows. Forms, toolbars, and settings share a spacing scale and use controls sized for their context.",
+                "导航使用紧凑行高；表单、工具栏和设置共用间距尺度，并按使用场景选择控件尺寸。",
               )}
             </p>
-            {[1, 2, 3, 4, 6, 8, 12].map((space) => (
+            {[1, 2, 3, 4, 5, 6, 8, 12].map((space) => (
               <div className="space-row" key={space}>
                 <code>space-{space}</code>
                 <span style={{ width: `var(--a13n-space-${space})` }} />

@@ -79,6 +79,7 @@ export function ConnectorConnections() {
               },
               {
                 label: t("Actions"),
+                align: "right",
                 render: (item) => (
                   <ConnectionDetails connection={item} onCleanup={setCleanup} />
                 ),
@@ -129,6 +130,7 @@ function ConnectionDetails({
   }
   return (
     <Dialog
+      size="wide"
       title={connection.name}
       description={t(
         "Manage this workspace connection and its external authorization.",

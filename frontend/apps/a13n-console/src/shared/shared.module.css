@@ -1,17 +1,17 @@
 .page {
-  max-width: 1280px;
+  max-width: 1400px;
   margin: 0 auto;
-  padding: 36px 40px 64px;
+  padding: 28px 32px 56px;
 }
 .pageHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  margin-bottom: 28px;
+  margin-bottom: 24px;
 }
 .pageHeader h1 {
-  font-size: 23px;
+  font-size: 22px;
   font-weight: 600;
   letter-spacing: -0.6px;
   line-height: 1.35;
@@ -19,7 +19,7 @@
 }
 .pageHeader p {
   color: var(--a13n-secondary);
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   font-size: 13px;
 }
 .actions,
@@ -31,7 +31,7 @@
 }
 .formActions {
   justify-content: flex-end;
-  margin-top: 24px;
+  margin-top: 12px;
 }
 .loading {
   min-height: 180px;
@@ -104,13 +104,13 @@
 }
 .form {
   display: grid;
-  gap: 20px;
+  gap: 16px;
   max-width: 760px;
 }
 .twoColumns {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 20px;
+  gap: 16px;
 }
 .card {
   background: var(--a13n-elevated);
@@ -120,10 +120,10 @@
 }
 .toolbar {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 16px;
-  margin-bottom: 20px;
-  align-items: flex-end;
+  margin-bottom: 0;
+  align-items: center;
 }
 .table {
   width: 100%;
@@ -135,15 +135,24 @@
   color: var(--a13n-secondary);
   font-size: 11px;
   font-weight: 500;
-  background: var(--a13n-surface);
+  background: transparent;
 }
 .table td,
 .table th {
-  padding: 13px 16px;
+  padding: 12px 12px;
   border-bottom: 1px solid var(--a13n-border-soft);
 }
+.table th {
+  padding-block: 10px;
+}
 .table td:last-child {
-  text-align: right;
+  white-space: nowrap;
+}
+.table td {
+  color: var(--a13n-secondary);
+}
+.table td:first-child {
+  color: var(--a13n-text);
 }
 .table tr:hover td {
   background: var(--a13n-hover);
@@ -159,9 +168,6 @@
   margin-top: 3px;
 }
 .tableWrap {
-  border: 1px solid var(--a13n-border-soft);
-  border-radius: 8px;
-  background: var(--a13n-elevated);
   overflow-x: auto;
 }
 .pagination {
@@ -175,7 +181,7 @@
 }
 .stack {
   display: grid;
-  gap: 20px;
+  gap: 16px;
 }
 .divider {
   border: 0;
@@ -198,24 +204,6 @@
     flex-wrap: wrap;
   }
 }
-.filters {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-  align-items: end;
-  margin-bottom: 24px;
-}
-@media (max-width: 900px) {
-  .filters {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-@media (max-width: 520px) {
-  .filters {
-    grid-template-columns: 1fr;
-  }
-}
-
 .resourceIdentity {
   display: flex;
   align-items: center;
@@ -228,10 +216,10 @@
   width: 34px;
   height: 34px;
   flex: 0 0 34px;
-  border-radius: 8px;
+  border-radius: 7px;
   border: 1px solid var(--a13n-border-soft);
-  background: var(--a13n-surface);
-  color: var(--a13n-secondary);
+  background: var(--a13n-accent-soft);
+  color: var(--a13n-accent);
 }
 .resourceCopy {
   min-width: 0;
@@ -246,7 +234,7 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.table td > .actions {
+.table td[data-align="right"] > .actions {
   justify-content: flex-end;
 }
 .table td:first-child > .actions {
@@ -256,4 +244,75 @@
   font-size: 12px;
   line-height: 1.7;
   margin: 0;
+}
+
+.collectionFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 12px;
+  color: var(--a13n-secondary);
+  font-size: 11px;
+}
+.collectionFooter p {
+  margin: 0;
+}
+.collectionFooter > div {
+  margin: 0;
+}
+
+.toolbar:empty {
+  display: none;
+}
+
+.form h3 {
+  font-size: 13px;
+  font-weight: 550;
+  margin: 8px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.form details > summary {
+  cursor: pointer;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  padding: 8px 0;
+}
+.form details[open] > summary {
+  margin-bottom: 12px;
+}
+
+.table [data-align="right"] {
+  text-align: right;
+}
+
+.field input[type="file"] {
+  font: inherit;
+  color: var(--a13n-secondary);
+  border: 1px dashed var(--a13n-border);
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--a13n-elevated);
+  width: 100%;
+}
+.field input[type="file"]::file-selector-button {
+  font: inherit;
+  color: var(--a13n-text);
+  padding: 6px 10px;
+  margin-right: 12px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 6px;
+  background: var(--a13n-surface);
+  cursor: pointer;
+}
+
+.schemaFields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.schemaFields > :has(textarea) {
+  grid-column: 1 / -1;
 }

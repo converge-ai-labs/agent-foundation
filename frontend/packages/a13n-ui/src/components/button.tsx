@@ -31,7 +31,7 @@ export function Button({
       data-size={size}
       data-icon-only={children == null && !loadingLabel ? true : undefined}
     >
-      {(icon || loading !== undefined || loadingLabel) && (
+      {(icon || loading) && (
         <span className={styles.icon} aria-hidden="true">
           {loading ? <Spinner /> : icon}
         </span>

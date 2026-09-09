@@ -14,13 +14,19 @@ import {
   workspaceHeaders,
   type Schema,
 } from "../../shared/api";
-import { ErrorNotice, Loading, Page, Timestamp } from "../../shared/feedback";
+import {
+  ErrorNotice,
+  Loading,
+  StateBadge,
+  Timestamp,
+} from "../../shared/feedback";
 import { Confirm, FormActions, JsonView } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
 import { Pagination, Table, useCursor } from "../../shared/collection";
 import { AgentForm } from "./form";
 import { initialConfig, type AgentConfig } from "./configuration";
 import styles from "../../shared/shared.module.css";
+import agentStyles from "./agents.module.css";
 
 export function CreateAgent() {
   const { t } = useTranslation(),
@@ -49,21 +55,16 @@ export function CreateAgent() {
     },
   });
   return (
-    <Page
-      title={t("Create agent")}
-      description={t("Start with clear instructions and the right model.")}
+    <AgentForm
       back={`/workspaces/${workspace.id}/agents`}
-    >
-      <AgentForm
-        initial={initialConfig("")}
-        creating
-        pending={create.isPending}
-        error={create.error}
-        submit={(config, name, description) =>
-          create.mutate({ config, name, description: description || null })
-        }
-      />
-    </Page>
+      initial={initialConfig("")}
+      creating
+      pending={create.isPending}
+      error={create.error}
+      submit={(config, name, description) =>
+        create.mutate({ config, name, description: description || null })
+      }
+    />
   );
 }
 export function AgentDetail() {
@@ -135,13 +136,12 @@ export function AgentDetail() {
     setGeneration((value) => value + 1);
   };
   return (
-    <Page
-      title={agent.name}
-      description={
-        agent.description ?? t("Configure, version, and run this agent.")
-      }
+    <AgentForm
+      key={`${agent.id}:${generation}`}
       back={`/workspaces/${workspace.id}/agents`}
-      actions={
+      name={agent.name}
+      description={agent.description ?? ""}
+      primaryAction={
         can("agent.invoke") && (
           <Button
             variant="primary"
@@ -157,53 +157,69 @@ export function AgentDetail() {
           </Button>
         )
       }
-    >
-      <AgentForm
-        key={`${agent.id}:${generation}`}
-        context={
-          <div className={styles.stack}>
-            <Dialog
-              title={t("Version history")}
-              description={t("Review and restore saved configurations.")}
-              closeLabel={t("Close")}
-              trigger={
-                <Button variant="ghost" icon={<History size={14} />}>
-                  {t("Version history")}
-                </Button>
+      metadata={
+        <dl className={agentStyles.metadata}>
+          <dt>{t("Status")}</dt>
+          <dd>
+            <StateBadge
+              state={
+                agent.archived_at
+                  ? "archived"
+                  : agent.enabled
+                    ? "enabled"
+                    : "disabled"
               }
-            >
-              <AgentVersions agent={agent} />
-            </Dialog>
-            <Dialog
-              title={t("Agent settings")}
-              description={t("Manage this agent’s identity and availability.")}
-              closeLabel={t("Close")}
-              trigger={
-                <Button variant="ghost" icon={<Settings size={14} />}>
-                  {t("Agent settings")}
-                </Button>
-              }
-            >
-              <AgentSettings
-                key={`${agent.id}:${generation}`}
-                resource={query.data}
-                reload={() => void reload()}
-              />
-            </Dialog>
-          </div>
-        }
-        initial={query.data.revision.config}
-        version={agent.version}
-        pending={save.isPending}
-        error={save.error}
-        readonly={!can("agent.revision.create")}
-        submit={(config, _name, _description, version) => {
-          if (version !== undefined)
-            save.mutate({ config, expected_version: version });
-        }}
-        reload={() => void reload()}
-      />
-    </Page>
+            />
+          </dd>
+          <dt>{t("Updated")}</dt>
+          <dd>
+            <Timestamp value={agent.updated_at} relative />
+          </dd>
+        </dl>
+      }
+      context={
+        <div className={styles.stack}>
+          <Dialog
+            title={t("Version history")}
+            description={t("Review and restore saved configurations.")}
+            closeLabel={t("Close")}
+            trigger={
+              <Button variant="ghost" icon={<History size={14} />}>
+                {t("Version history")}
+              </Button>
+            }
+          >
+            <AgentVersions agent={agent} />
+          </Dialog>
+          <Dialog
+            title={t("Agent settings")}
+            description={t("Manage this agent’s identity and availability.")}
+            closeLabel={t("Close")}
+            trigger={
+              <Button variant="ghost" icon={<Settings size={14} />}>
+                {t("Agent settings")}
+              </Button>
+            }
+          >
+            <AgentSettings
+              key={`${agent.id}:${generation}`}
+              resource={query.data}
+              reload={() => void reload()}
+            />
+          </Dialog>
+        </div>
+      }
+      initial={query.data.revision.config}
+      version={agent.version}
+      pending={save.isPending}
+      error={save.error}
+      readonly={!can("agent.revision.create")}
+      submit={(config, _name, _description, version) => {
+        if (version !== undefined)
+          save.mutate({ config, expected_version: version });
+      }}
+      reload={() => void reload()}
+    />
   );
 }
 function AgentSettings({
@@ -435,6 +451,7 @@ function AgentVersions({ agent }: { agent: Schema["Agent"] }) {
           },
           {
             label: t("Actions"),
+            align: "right",
             render: (item) =>
               can("agent.revision.create") &&
               item.id !== agent.current_revision_id && (

@@ -20,7 +20,7 @@ summary,
 select {
   outline-offset: 3px;
 }
-:focus-visible {
+:where(:focus-visible) {
   outline: 1px solid var(--a13n-focus);
 }
 .fieldset-reset {

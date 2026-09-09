@@ -1,12 +1,31 @@
 .layout {
   display: grid;
   grid-template-columns: 232px minmax(0, 1fr);
-  min-height: calc(100dvh - 55px);
+  min-height: 100dvh;
+  background: var(--a13n-surface);
 }
 .outline {
-  padding: 26px 16px;
-  border-right: 1px solid var(--a13n-border-soft);
-  background: var(--a13n-surface);
+  padding: 18px 10px;
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.surface {
+  min-width: 0;
+  margin: 8px 8px 8px 0;
+  background: var(--a13n-canvas);
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 12px;
+}
+.scopeGroup {
+  margin-bottom: 16px;
+}
+.sectionLinks {
+  margin-top: 6px;
+  display: grid;
+  gap: 0;
 }
 .back {
   display: flex;
@@ -15,37 +34,7 @@
   color: var(--a13n-secondary);
   font-size: 12px;
   text-decoration: none;
-  margin: 0 8px 30px;
-}
-.identity {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  margin: 0 8px 25px;
-}
-.identity > span {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: var(--a13n-selected);
-  flex-shrink: 0;
-}
-.identity > div {
-  min-width: 0;
-}
-.identity strong {
-  display: block;
-  font-size: 12px;
-  font-weight: 550;
-  overflow-wrap: anywhere;
-}
-.identity small {
-  display: block;
-  color: var(--a13n-secondary);
-  font-size: 11px;
-  margin-top: 4px;
+  margin: 0 10px 20px;
 }
 .outline nav {
   display: grid;
@@ -56,7 +45,9 @@
   gap: 9px;
   align-items: center;
   border-radius: 6px;
-  padding: 9px 10px;
+  padding: 5px 10px;
+  min-height: var(--a13n-navigation-row);
+  line-height: 20px;
   color: var(--a13n-secondary);
   text-decoration: none;
   font-size: 12px;
@@ -74,23 +65,28 @@
   font-weight: 550;
 }
 .content {
-  padding: 42px clamp(24px, 5vw, 76px) 80px;
+  padding: 40px 40px 64px;
   width: 100%;
-  max-width: 1000px;
+  max-width: 800px;
   min-width: 0;
+  margin: 0 auto;
 }
 .heading {
-  margin-bottom: 34px;
+  margin-bottom: var(--a13n-space-8);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
 }
-.heading > span {
+.heading > div > span {
   font-size: 11px;
   color: var(--a13n-secondary);
 }
 .heading h1 {
-  font-size: 23px;
+  font-size: 20px;
   letter-spacing: -0.6px;
   font-weight: 580;
-  margin: 10px 0 8px;
+  margin: 0 0 6px;
 }
 .heading p {
   color: var(--a13n-secondary);
@@ -100,7 +96,7 @@
 }
 .profile {
   display: grid;
-  gap: 32px;
+  gap: 16px;
 }
 .profileImage {
   display: flex;
@@ -108,31 +104,17 @@
   align-items: center;
 }
 .profileImage > span {
-  width: 48px;
-  height: 48px;
-  flex-basis: 48px;
-  font-size: 15px;
-}
-.profileForm {
-  display: grid;
-  gap: 24px;
-  max-width: 520px;
-}
-.identityNote {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--a13n-secondary);
-  border-top: 1px solid var(--a13n-border-soft);
-  padding-top: 20px;
+  width: 32px;
+  height: 32px;
+  flex-basis: 32px;
   font-size: 11px;
-  overflow-wrap: anywhere;
 }
 .saveRow {
   display: flex;
   align-items: center;
   gap: 12px;
   min-height: 36px;
+  justify-content: flex-end;
 }
 .saveRow > span {
   color: var(--a13n-secondary);
@@ -146,44 +128,60 @@
     padding: 30px 24px 60px;
   }
 }
+.mobileNavigation {
+  display: none;
+}
 @media (max-width: 650px) {
   .layout {
     display: block;
   }
-  .outline {
-    padding: 16px;
-    border-right: 0;
+  .mobileNavigation {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
     border-bottom: 1px solid var(--a13n-border-soft);
+    font-size: 12px;
+    color: var(--a13n-secondary);
   }
-  .back {
+  .mobileNavigation button[aria-expanded="true"] svg {
+    transform: rotate(180deg);
+  }
+  .outline {
+    display: none;
+    position: static;
+    height: auto;
+    padding: 16px 14px;
+  }
+  .outline[data-open="true"] {
+    display: block;
+  }
+  .surface > .settingsTopbar {
     display: none;
   }
-  .identity {
-    margin: 0 4px 14px;
-  }
-  .outline nav {
-    display: flex;
-    overflow-x: auto;
-    gap: 4px;
-  }
-  .outline nav a {
-    white-space: nowrap;
+  .surface {
+    margin: 0;
+    border-radius: 0;
+    border: 0;
   }
   .content {
     padding: 26px 18px 48px;
   }
 }
 
-.preferences {
+.sections {
   display: grid;
-  gap: 36px;
+  gap: var(--a13n-space-8);
+}
+.preferences {
+  composes: sections;
   max-width: 760px;
 }
 .themeOptions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
-  padding-top: 22px;
+  padding: 18px 0;
 }
 .themeChoice {
   border: 1px solid var(--a13n-border-soft);
@@ -266,4 +264,85 @@
   .themePreview > span:last-child {
     padding: 8px;
   }
+}
+.settingsSearch {
+  margin: 0 0 20px;
+}
+.scopeLabel {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--a13n-secondary);
+  margin: 0 10px 6px;
+}
+.scopeName {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 4px 4px;
+  padding: 5px 6px;
+  font-size: 12px;
+  font-weight: 550;
+  border-radius: 6px;
+  color: var(--a13n-text);
+  overflow-wrap: anywhere;
+}
+.settingsTopbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 44px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--a13n-border-soft);
+  font-size: 12px;
+}
+.settingsTopbar span {
+  color: var(--a13n-muted);
+}
+.noResults {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  padding: 0 10px;
+}
+
+.nameControl {
+  width: 256px;
+  max-width: 100%;
+}
+.resourceId {
+  font: 11px var(--a13n-mono);
+  color: var(--a13n-secondary);
+  overflow-wrap: anywhere;
+}
+.headingActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.headingActions:empty {
+  display: none;
+}
+@media (max-width: 650px) {
+  .heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 16px;
+  }
+}
+
+.securityForm {
+  padding: 0 0 16px;
+}
+.securityForm > p {
+  font-size: 12px;
+  color: var(--a13n-secondary);
+  margin: 8px 0 0;
+}
+
+.scopeName svg {
+  flex: none;
+  color: var(--a13n-secondary);
+}
+.scopeGroup:not([data-scope="personal"]) .sectionLinks {
+  margin-left: 16px;
 }

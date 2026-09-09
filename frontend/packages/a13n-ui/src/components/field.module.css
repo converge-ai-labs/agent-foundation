@@ -1,7 +1,7 @@
 .field {
   display: flex;
   flex-direction: column;
-  gap: var(--a13n-space-2);
+  gap: 6px;
   min-width: 0;
   font-family: var(--a13n-font);
 }
@@ -20,4 +20,15 @@
 }
 .error {
   color: var(--a13n-danger);
+}
+
+.hiddenLabel {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

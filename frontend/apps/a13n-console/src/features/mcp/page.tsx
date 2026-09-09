@@ -98,6 +98,7 @@ export function MCPPage() {
               },
               {
                 label: t("Actions"),
+                align: "right",
                 render: (item) => (
                   <MCPEditor connectionId={item.id} onCleanup={setCleanup} />
                 ),
@@ -150,6 +151,7 @@ function MCPEditor({
   }
   return (
     <Dialog
+      size={id ? "wide" : "default"}
       title={t(id ? "MCP connection" : "Connect MCP server")}
       description={t(
         "Endpoint and authentication mode are fixed after creation. Credentials are never returned.",
@@ -161,7 +163,10 @@ function MCPEditor({
         if (!value) setCreated(undefined);
       }}
       trigger={
-        <Button size="sm" variant={connectionId ? "secondary" : "primary"}>
+        <Button
+          size={connectionId ? "sm" : "md"}
+          variant={connectionId ? "secondary" : "primary"}
+        >
           {t(connectionId ? "Details" : "Connect MCP server")}
         </Button>
       }

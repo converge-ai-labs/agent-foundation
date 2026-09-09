@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Button, Input } from "a13n-ui";
+import { Button, SearchInput } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { data, type Schema } from "../../shared/api";
@@ -45,7 +45,7 @@ export function MCPTools({
       <ErrorNotice error={discovery.error} />
       {discovery.data && (
         <>
-          <Input
+          <SearchInput
             label={t("Search tools")}
             value={search}
             onChange={(event) => {

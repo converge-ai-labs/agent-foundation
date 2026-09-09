@@ -4,11 +4,13 @@ import { Field, fieldDescription } from "./field";
 import styles from "./input.module.css";
 export type InputProps = ComponentProps<"input"> & {
   label: string;
+  hideLabel?: boolean;
   hint?: string;
   error?: string;
 };
 export function Input({
   label,
+  hideLabel,
   hint,
   error,
   id: providedId,
@@ -19,7 +21,13 @@ export function Input({
   const generatedId = useId();
   const id = providedId ?? generatedId;
   return (
-    <Field id={id} label={label} hint={hint} error={error}>
+    <Field
+      id={id}
+      label={label}
+      hideLabel={hideLabel}
+      hint={hint}
+      error={error}
+    >
       <input
         {...props}
         id={id}

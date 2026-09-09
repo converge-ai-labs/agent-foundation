@@ -1,3 +1,4 @@
+import { PageActions } from "../../shared/page-actions";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Dialog, Input, SelectField } from "a13n-ui";
@@ -35,14 +36,7 @@ export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
       : can("connector_provider.manage");
   return (
     <div className={styles.stack}>
-      <div className={styles.toolbar}>
-        <p className={styles.muted}>
-          {t(
-            "Connect integration services, then authorize the accounts your agents can use.",
-          )}
-        </p>
-        {manage && <ProviderEditor scope={scope} />}
-      </div>
+      <PageActions>{manage && <ProviderEditor scope={scope} />}</PageActions>
       <ErrorNotice error={query.error} />
       {query.isPending ? (
         <Loading />
@@ -71,6 +65,7 @@ export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
               },
               {
                 label: t("Actions"),
+                align: "right",
                 render: (item) => (
                   <div className={styles.actions}>
                     {(item.workspace_id ? manage : organizationAdmin) && (
@@ -149,7 +144,10 @@ function ProviderEditor({
       open={open}
       onOpenChange={setOpen}
       trigger={
-        <Button size="sm" variant={providerId ? "secondary" : "primary"}>
+        <Button
+          size={providerId ? "sm" : "md"}
+          variant={providerId ? "secondary" : "primary"}
+        >
           {t(providerId ? "Manage" : "Add provider")}
         </Button>
       }

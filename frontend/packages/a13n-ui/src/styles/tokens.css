@@ -1,4 +1,5 @@
 :root {
+  --a13n-font-brand: "Space Grotesk", var(--a13n-font);
   --a13n-font: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --a13n-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
   --a13n-text-xs: 11px;
@@ -12,14 +13,19 @@
   --a13n-space-2: 8px;
   --a13n-space-3: 12px;
   --a13n-space-4: 16px;
+  --a13n-space-5: 20px;
   --a13n-space-6: 24px;
   --a13n-space-8: 32px;
   --a13n-space-12: 48px;
-  --a13n-control-sm: 30px;
-  --a13n-control-md: 34px;
-  --a13n-control-lg: 40px;
+  --a13n-navigation-row: 30px;
+  --a13n-button-sm: 24px;
+  --a13n-button-md: 28px;
+  --a13n-button-lg: 34px;
+  --a13n-control-sm: 28px;
+  --a13n-control-md: 32px;
+  --a13n-control-lg: 38px;
   --a13n-radius-sm: 4px;
-  --a13n-radius: 8px;
+  --a13n-radius: 6px;
   --a13n-radius-lg: 12px;
   --a13n-radius-pill: 999px;
   --a13n-border-width: 1px;
@@ -32,19 +38,19 @@
 :root,
 [data-a13n-theme="light"] {
   color-scheme: light;
-  --a13n-app: #ededf0;
-  --a13n-canvas: #f8f8fa;
+  --a13n-app: #ededee;
+  --a13n-canvas: #fafafa;
   --a13n-elevated: #ffffff;
   --a13n-shadow-subtle: 0 1px 2px #19192006;
-  --a13n-surface: #f7f7f8;
-  --a13n-hover: #f3f3f5;
-  --a13n-selected: #e8e8ec;
+  --a13n-surface: #f3f3f4;
+  --a13n-hover: #ececee;
+  --a13n-selected: #e5e5e8;
   --a13n-accent-soft: #eeecf7;
-  --a13n-text: #25252c;
-  --a13n-secondary: #60606d;
-  --a13n-muted: #666674;
-  --a13n-border: #dedee5;
-  --a13n-border-soft: #ededf0;
+  --a13n-text: #252529;
+  --a13n-secondary: #626268;
+  --a13n-muted: #65656d;
+  --a13n-border: #e0e0e3;
+  --a13n-border-soft: #ededee;
   --a13n-accent: #6255cc;
   --a13n-on-accent: #ffffff;
   --a13n-focus: #7767d5;

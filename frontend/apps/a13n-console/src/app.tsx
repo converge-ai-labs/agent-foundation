@@ -231,12 +231,28 @@ function AppContent() {
                     element={<ApplicationAccountDetail />}
                   />
                   <Route path="connectors" element={<ConnectorsPage />} />
+                  <Route
+                    path="connectors/providers"
+                    element={<ConnectorsPage providers />}
+                  />
                   <Route path="mcp" element={<MCPPage />} />
                   <Route path="environments" element={<EnvironmentsPage />} />
+                  <Route
+                    path="environments/providers"
+                    element={<EnvironmentsPage section="providers" />}
+                  />
+                  <Route
+                    path="environments/instances"
+                    element={<EnvironmentsPage section="instances" />}
+                  />
                   <Route path="assets" element={<AssetsPage />} />
                   <Route path="skills" element={<SkillsPage />} />
                   <Route path="skills/:skillId" element={<SkillDetail />} />
                   <Route path="models" element={<ModelsPage />} />
+                  <Route
+                    path="models/providers"
+                    element={<ModelsPage providers />}
+                  />
                   <Route path="settings" element={<WorkspaceSettings />} />
                   <Route path="usage" element={<ComingSoon />} />
                   <Route path="schedules" element={<ComingSoon />} />

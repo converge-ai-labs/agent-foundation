@@ -2,7 +2,6 @@ import { useState } from "react";
 import {
   BookOpen,
   FileText,
-  Search,
   MoreHorizontal,
   SlidersHorizontal,
   ArrowLeft,
@@ -13,6 +12,7 @@ import {
   Button,
   EmptyState,
   Input,
+  SearchInput,
   Menu,
   Picker,
   Select,
@@ -96,15 +96,12 @@ export function CollectionDemo({ t }: { t: Translate }) {
             content: (
               <div className="collection-panel">
                 <div className="collection-toolbar">
-                  <div className="inline-search">
-                    <Search size={15} aria-hidden="true" />
-                    <input
-                      aria-label={t("Search documents", "搜索文档")}
-                      placeholder={t("Search documents…", "搜索文档…")}
-                      value={query}
-                      onChange={(event) => setQuery(event.target.value)}
-                    />
-                  </div>
+                  <SearchInput
+                    label={t("Search documents", "搜索文档")}
+                    placeholder={t("Search documents…", "搜索文档…")}
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                  />
                   <div className="row">
                     <Picker
                       label={t("Document type", "文档类型")}

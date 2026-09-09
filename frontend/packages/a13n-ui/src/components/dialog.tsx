@@ -10,6 +10,7 @@ export interface DialogProps {
   closeLabel: string;
   children?: ReactNode;
   footer?: ReactNode;
+  size?: "default" | "wide";
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }
@@ -20,6 +21,7 @@ export function Dialog({
   closeLabel,
   children,
   footer,
+  size = "default",
   open,
   onOpenChange,
 }: DialogProps) {
@@ -28,21 +30,25 @@ export function Dialog({
       <Primitive.Trigger asChild>{trigger}</Primitive.Trigger>
       <Primitive.Portal>
         <Primitive.Overlay className={styles.backdrop} />
-        <Primitive.Content className={styles.dialog}>
-          <div className={styles.heading}>
-            <Primitive.Title className={styles.title}>{title}</Primitive.Title>
-            <Primitive.Close asChild>
-              <Button
-                variant="ghost"
-                aria-label={closeLabel}
-                icon={<X size={16} />}
-              />
-            </Primitive.Close>
+        <Primitive.Content className={styles.dialog} data-size={size}>
+          <div className={styles.header}>
+            <div className={styles.heading}>
+              <Primitive.Title className={styles.title}>
+                {title}
+              </Primitive.Title>
+              <Primitive.Close asChild>
+                <Button
+                  variant="ghost"
+                  aria-label={closeLabel}
+                  icon={<X size={16} />}
+                />
+              </Primitive.Close>
+            </div>
+            <Primitive.Description className={styles.description}>
+              {description}
+            </Primitive.Description>
           </div>
-          <Primitive.Description className={styles.description}>
-            {description}
-          </Primitive.Description>
-          {children}
+          {children && <div className={styles.body}>{children}</div>}
           {footer && <div className={styles.footer}>{footer}</div>}
         </Primitive.Content>
       </Primitive.Portal>

@@ -10,7 +10,11 @@ export function Table<T extends { id: string }>({
   caption,
 }: {
   items: readonly T[];
-  columns: readonly { label: string; render: (item: T) => ReactNode }[];
+  columns: readonly {
+    label: string;
+    align?: "left" | "right";
+    render: (item: T) => ReactNode;
+  }[];
   caption?: string;
 }) {
   return (
@@ -20,7 +24,7 @@ export function Table<T extends { id: string }>({
         <thead>
           <tr>
             {columns.map((column) => (
-              <th scope="col" key={column.label}>
+              <th scope="col" key={column.label} data-align={column.align}>
                 {column.label}
               </th>
             ))}
@@ -30,7 +34,9 @@ export function Table<T extends { id: string }>({
           {items.map((item) => (
             <tr key={item.id}>
               {columns.map((column) => (
-                <td key={column.label}>{column.render(item)}</td>
+                <td key={column.label} data-align={column.align}>
+                  {column.render(item)}
+                </td>
               ))}
             </tr>
           ))}

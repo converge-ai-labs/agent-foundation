@@ -1,10 +1,12 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { PageActionsTarget } from "./page-actions";
 import { AlertCircle, ArrowLeft, Inbox, RefreshCw } from "lucide-react";
 import { ApiError } from "@converge.ai/a13n";
 import { Button, EmptyState, Spinner, Badge } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import styles from "./shared.module.css";
+import { relativeTime } from "./time";
 
 export function Loading() {
   const { t } = useTranslation();
@@ -76,23 +78,30 @@ export function Page({
   children: ReactNode;
 }) {
   const { t } = useTranslation();
+  const [actionsTarget, setActionsTarget] = useState<HTMLDivElement | null>(
+    null,
+  );
   return (
-    <div className={styles.page}>
-      {back && (
-        <Link className={styles.back} to={back}>
-          <ArrowLeft size={14} />
-          {t("Back")}
-        </Link>
-      )}
-      <header className={styles.pageHeader}>
-        <div>
-          <h1>{title}</h1>
-          {description && <p>{description}</p>}
-        </div>
-        <div className={styles.actions}>{actions}</div>
-      </header>
-      {children}
-    </div>
+    <PageActionsTarget value={actionsTarget}>
+      <div className={styles.page}>
+        {back && (
+          <Link className={styles.back} to={back}>
+            <ArrowLeft size={14} />
+            {t("Back")}
+          </Link>
+        )}
+        <header className={styles.pageHeader}>
+          <div>
+            <h1>{title}</h1>
+            {description && <p>{description}</p>}
+          </div>
+          <div className={styles.actions} ref={setActionsTarget}>
+            {actions}
+          </div>
+        </header>
+        {children}
+      </div>
+    </PageActionsTarget>
   );
 }
 export function Empty({
@@ -123,27 +132,36 @@ export function StateBadge({ state }: { state: string }) {
     "enabled",
   ].includes(state)
     ? "success"
-    : ["failed", "error", "disabled", "canceled", "cancelled"].includes(state)
+    : ["failed", "error"].includes(state)
       ? "danger"
       : ["waiting", "queued", "pending"].includes(state)
         ? "warning"
         : "neutral";
   return (
-    <Badge tone={tone}>
+    <Badge tone={tone} variant="status">
       {t(`state.${state}`, { defaultValue: state.replaceAll("_", " ") })}
     </Badge>
   );
 }
-export function Timestamp({ value }: { value?: string | null }) {
+export function Timestamp({
+  value,
+  relative = false,
+}: {
+  value?: string | null;
+  relative?: boolean;
+}) {
   const { i18n, t } = useTranslation();
+  const date = value ? new Date(value) : undefined;
+  const valid = date && Number.isFinite(date.getTime());
+  const full = valid
+    ? new Intl.DateTimeFormat(i18n.resolvedLanguage, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(date)
+    : t("Unavailable");
   return (
-    <time dateTime={value ?? undefined}>
-      {value
-        ? new Intl.DateTimeFormat(i18n.resolvedLanguage, {
-            dateStyle: "medium",
-            timeStyle: "short",
-          }).format(new Date(value))
-        : t("Unavailable")}
+    <time dateTime={valid ? value! : undefined} title={full}>
+      {valid && relative ? relativeTime(date, i18n.resolvedLanguage) : full}
     </time>
   );
 }

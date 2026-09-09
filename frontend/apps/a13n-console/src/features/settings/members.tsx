@@ -1,3 +1,4 @@
+import { PageActions } from "../../shared/page-actions";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Dialog, SelectField, Picker } from "a13n-ui";
@@ -98,14 +99,11 @@ export function Members({ scope }: { scope: MembershipScope }) {
   };
   return (
     <div className={styles.stack}>
-      <div className={styles.toolbar}>
-        <p className={styles.muted}>
-          {t("Manage access with roles scoped to this space.")}
-        </p>
+      <PageActions>
         {scope.kind === "workspace" && organizationAdmin && (
           <AddMember scope={scope} organizationId={organization.id} />
         )}
-      </div>
+      </PageActions>
       {members.isPending || bindings.isPending ? (
         <Loading />
       ) : members.error || bindings.error ? (
@@ -142,6 +140,7 @@ export function Members({ scope }: { scope: MembershipScope }) {
               },
               {
                 label: t("Actions"),
+                align: "right",
                 render: (item) => (
                   <div className={styles.actions}>
                     <ChangeRole
@@ -323,11 +322,7 @@ function AddMember({
       closeLabel={t("Close")}
       open={open}
       onOpenChange={setOpen}
-      trigger={
-        <Button size="sm" icon={<Plus size={14} />}>
-          {t("Add member")}
-        </Button>
-      }
+      trigger={<Button icon={<Plus size={14} />}>{t("Add member")}</Button>}
     >
       <form
         className={styles.form}

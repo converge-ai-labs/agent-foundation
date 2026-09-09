@@ -1,3 +1,4 @@
+import { PageActions } from "../../shared/page-actions";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Dialog, Input, SelectField } from "a13n-ui";
@@ -41,12 +42,9 @@ export function EnvironmentInstances() {
   });
   return (
     <div className={styles.stack}>
-      <div className={styles.toolbar}>
-        <p className={styles.muted}>
-          {t("Working environments shared by threads in this workspace.")}
-        </p>
+      <PageActions>
         {can("environment.manage") && <CreateEnvironment />}
-      </div>
+      </PageActions>
       <ErrorNotice error={query.error} />
       {query.isPending ? (
         <Loading />
@@ -83,6 +81,7 @@ export function EnvironmentInstances() {
               },
               {
                 label: t("Actions"),
+                align: "right",
                 render: (item) => <EnvironmentDetails environment={item} />,
               },
             ]}
@@ -219,11 +218,7 @@ function CreateEnvironment() {
         "Allocate from a template or connect an externally managed target.",
       )}
       closeLabel={t("Close")}
-      trigger={
-        <Button variant="primary" size="sm">
-          {t("Create environment")}
-        </Button>
-      }
+      trigger={<Button variant="primary">{t("Create environment")}</Button>}
     >
       {open && <EnvironmentForm close={() => setOpen(false)} />}
     </Dialog>

@@ -2,6 +2,8 @@ export { Button } from "./components/button";
 export type { ButtonProps } from "./components/button";
 export { Input } from "./components/input";
 export type { InputProps } from "./components/input";
+export { SearchInput } from "./components/search-input";
+export type { SearchInputProps } from "./components/search-input";
 export { Select } from "./components/select";
 export type { SelectProps, SelectOption } from "./components/select";
 export { Checkbox } from "./components/checkbox";
@@ -33,3 +35,6 @@ export type { TabsProps, TabItem } from "./components/tabs";
 export { EmptyState } from "./components/empty-state";
 export { Logo } from "./components/logo";
 export type { LogoProps } from "./components/logo";
+
+export { Wordmark } from "./components/wordmark";
+export type { WordmarkProps } from "./components/wordmark";

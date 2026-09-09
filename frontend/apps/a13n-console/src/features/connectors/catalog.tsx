@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button, Dialog, Input } from "a13n-ui";
+import { Button, Dialog, Input, SearchInput } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -70,7 +70,7 @@ export function ConnectorCatalog({
         ) : (
           <>
             <div className={styles.toolbar}>
-              <Input
+              <SearchInput
                 label={t("Search connectors")}
                 placeholder={t("Search connectors")}
                 value={search}

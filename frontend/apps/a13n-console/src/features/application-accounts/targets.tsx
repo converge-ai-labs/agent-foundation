@@ -87,6 +87,7 @@ export function AccountTargets({ account }: { account: Schema["Account"] }) {
               },
               {
                 label: t("Actions"),
+                align: "right",
                 render: (item) =>
                   can("account_target.manage") && (
                     <div className={styles.actions}>

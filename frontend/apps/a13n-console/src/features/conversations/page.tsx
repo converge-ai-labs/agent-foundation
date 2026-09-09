@@ -18,6 +18,7 @@ import { allPages, commandHeaders, data, type Schema } from "../../shared/api";
 import { Empty, ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
 import { Pagination, useCursor } from "../../shared/collection";
 import { conversationApi, runPath } from "./api";
+import { SessionIdentity } from "./identity";
 import { Composer } from "./composer";
 import { OptionsComposer, RunOptions, useRunOptions } from "./options";
 import { ThreadQueue } from "./queue";
@@ -132,22 +133,25 @@ function SessionLink({
       to={session.id}
       className={styles.sessionLink}
       aria-current={selected ? "page" : undefined}
-      title={session.id}
+      title={preview.data?.input_text || t("Untitled session")}
     >
       <div>
-        <MessageSquare size={14} />
         <strong>{preview.data?.input_text || t("Untitled session")}</strong>
+        <small>
+          <Timestamp value={session.updated_at} relative />
+        </small>
       </div>
       <p>
         {preview.data?.output_text
           ? preview.data.output_text
               .replace(/[`#*_>]/g, "")
               .replace(/\s+/g, " ")
-          : t("Open session")}
+          : preview.data
+            ? t(`state.${preview.data.status}`, {
+                defaultValue: preview.data.status,
+              })
+            : t("Loading…")}
       </p>
-      <small>
-        <Timestamp value={session.updated_at} />
-      </small>
     </Link>
   );
 }
@@ -189,6 +193,7 @@ export function NewConversation() {
         </div>
         <ErrorNotice error={agents.error} />
         <Select
+          variant="ghost"
           label={t("Agent")}
           placeholder={t("Choose an agent")}
           value={agentId}
@@ -250,35 +255,38 @@ export function SessionLayout() {
   return (
     <div className={styles.sessionDetail}>
       <header className={styles.sessionHeader}>
-        <Link
-          className={styles.backToSessions}
-          to={`/workspaces/${workspace.id}/sessions`}
-        >
-          {t("Sessions")}
-        </Link>
-        <Select
-          size="sm"
-          variant="ghost"
-          label={t("Threads")}
-          placeholder={t("Thread")}
-          value={threadId ?? ""}
-          onValueChange={(id) => navigate(`threads/${id}`)}
-          options={(threads.data ?? []).map((thread, index) => ({
-            value: thread.id,
-            label: `${t(thread.origin_kind === "fork" ? "Branch" : "Thread")} ${index + 1}`,
-          }))}
-        />
-        {threadId && <RunHistory />}
-        {can("agent.invoke") && (
+        <SessionIdentity />
+        <div className={styles.sessionControls}>
           <Link
-            className={styles.newThread}
-            aria-label={t("New thread")}
-            to={`/workspaces/${workspace.id}/sessions/new?session=${sessionId}`}
+            className={styles.backToSessions}
+            to={`/workspaces/${workspace.id}/sessions`}
           >
-            <Plus size={14} />
-            <span>{t("New thread")}</span>
+            {t("Sessions")}
           </Link>
-        )}
+          <Select
+            size="sm"
+            variant="ghost"
+            label={t("Threads")}
+            placeholder={t("Thread")}
+            value={threadId ?? ""}
+            onValueChange={(id) => navigate(`threads/${id}`)}
+            options={(threads.data ?? []).map((thread, index) => ({
+              value: thread.id,
+              label: `${t(thread.origin_kind === "fork" ? "Branch" : "Thread")} ${index + 1}`,
+            }))}
+          />
+          {threadId && <RunHistory />}
+          {can("agent.invoke") && (
+            <Link
+              className={styles.newThread}
+              aria-label={t("New thread")}
+              to={`/workspaces/${workspace.id}/sessions/new?session=${sessionId}`}
+            >
+              <Plus size={14} />
+              <span>{t("New thread")}</span>
+            </Link>
+          )}
+        </div>
       </header>
       <ErrorNotice error={threads.error} retry={() => void threads.refetch()} />
       {threadId ? (

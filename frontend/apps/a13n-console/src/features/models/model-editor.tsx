@@ -43,6 +43,7 @@ export function ModelEditor({
   });
   return (
     <Dialog
+      size="wide"
       title={t(modelId ? "Edit model" : "Add model")}
       description={t(
         "A stable model key connects your agents to one provider and calling API.",
@@ -52,8 +53,8 @@ export function ModelEditor({
       onOpenChange={setOpen}
       trigger={
         <Button
-          size="sm"
-          variant={modelId || candidate ? "secondary" : "primary"}
+          size={modelId || candidate ? "sm" : "md"}
+          variant={modelId ? "ghost" : candidate ? "secondary" : "primary"}
           icon={!modelId && <Plus size={14} />}
         >
           {t(modelId ? "Edit" : "Add model")}
@@ -335,7 +336,11 @@ export function ModelTest({
         "This makes a model request and may consume quota or incur cost.",
       )}
       closeLabel={t("Close")}
-      trigger={<Button size="sm">{t("Test")}</Button>}
+      trigger={
+        <Button size="sm" variant="ghost">
+          {t("Test")}
+        </Button>
+      }
     >
       <Button loading={test.isPending} onClick={() => test.mutate()}>
         {t("Run model test")}

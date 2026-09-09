@@ -86,13 +86,18 @@ export function Confirm({
       description={description}
       closeLabel={t("Close")}
       footer={
-        <Button
-          loading={mutation.isPending}
-          variant={danger ? "danger" : "primary"}
-          onClick={() => mutation.mutate()}
-        >
-          {t("Confirm")}
-        </Button>
+        <>
+          <Button disabled={mutation.isPending} onClick={() => setOpen(false)}>
+            {t("Cancel")}
+          </Button>
+          <Button
+            loading={mutation.isPending}
+            variant={danger ? "danger" : "primary"}
+            onClick={() => mutation.mutate()}
+          >
+            {t("Confirm")}
+          </Button>
+        </>
       }
     >
       {children}
@@ -114,11 +119,11 @@ export function FormActions({
 }) {
   const { t } = useTranslation();
   return (
-    <div className={styles.formActions}>
+    <footer data-a13n-form-actions className={styles.formActions}>
       {onCancel && <Button onClick={onCancel}>{t("Cancel")}</Button>}
       <Button type="submit" variant="primary" loading={pending}>
         {label ?? t("Save changes")}
       </Button>
-    </div>
+    </footer>
   );
 }

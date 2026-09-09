@@ -4,7 +4,7 @@
   color: var(--a13n-text);
 }
 .heading {
-  margin: 0 16px 12px;
+  margin: 0 0 10px;
 }
 .heading h3 {
   margin: 0;
@@ -20,14 +20,13 @@
   border: 1px solid var(--a13n-border-soft);
   border-radius: var(--a13n-radius-lg);
   padding: 0 16px;
-  box-shadow: var(--a13n-shadow-subtle);
 }
 .row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  padding: 16px 0;
+  padding: 14px 0;
   min-width: 0;
 }
 .row + .row {
@@ -51,15 +50,16 @@
 }
 @container (max-width:420px) {
   .row {
-    flex-wrap: wrap;
+    flex-direction: column;
+    align-items: stretch;
     gap: 10px;
   }
   .control {
     max-width: 100%;
-    margin-inline-start: auto;
+    justify-content: flex-start;
   }
   .copy {
-    flex: 1 1 min-content;
+    flex: none;
   }
 }
 
@@ -76,4 +76,8 @@
 }
 .section[data-variant="plain"] .group > form {
   padding-top: 20px;
+}
+
+:where(.section[data-variant="grouped"] .group) > form {
+  padding: 20px 0;
 }

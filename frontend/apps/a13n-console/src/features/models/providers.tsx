@@ -1,3 +1,4 @@
+import { PageActions } from "../../shared/page-actions";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge, Button, Dialog, Input, SelectField, Switch } from "a13n-ui";
@@ -34,12 +35,7 @@ export function Providers({ scope }: { scope: ModelScope }) {
     scope.kind === "organization" ? organizationAdmin : can("models.manage");
   return (
     <div className={styles.stack}>
-      <div className={styles.toolbar}>
-        <p className={styles.muted}>
-          {t("Connect the accounts and endpoints that power your models.")}
-        </p>
-        {manage && <ProviderEditor scope={scope} />}
-      </div>
+      <PageActions>{manage && <ProviderEditor scope={scope} />}</PageActions>
       {query.isPending ? (
         <Loading />
       ) : query.error ? (
@@ -83,6 +79,7 @@ export function Providers({ scope }: { scope: ModelScope }) {
               },
               {
                 label: t("Actions"),
+                align: "right",
                 render: (item) => {
                   const owner: ModelScope = item.workspace_id
                     ? { kind: "workspace", id: item.workspace_id }
@@ -150,7 +147,7 @@ function ProviderEditor({
       onOpenChange={setOpen}
       trigger={
         <Button
-          size="sm"
+          size={providerId ? "sm" : "md"}
           variant={providerId ? "secondary" : "primary"}
           icon={!providerId && <Plus size={14} />}
         >

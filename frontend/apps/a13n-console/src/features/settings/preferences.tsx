@@ -9,11 +9,7 @@ export function Preferences() {
     { theme, setTheme } = useAppearance();
   return (
     <div className={styles.preferences}>
-      <SettingsSection
-        variant="plain"
-        title={t("Appearance")}
-        description={t("Make Console feel at home.")}
-      >
+      <SettingsSection title={t("Appearance")}>
         <div
           className={styles.themeOptions}
           role="group"
@@ -53,7 +49,7 @@ export function Preferences() {
           })}
         </div>
       </SettingsSection>
-      <SettingsSection variant="plain" title={t("Language and region")}>
+      <SettingsSection title={t("Language and region")}>
         <SettingsRow
           label={t("Display language")}
           description={t("Used for navigation, dates, and controls.")}

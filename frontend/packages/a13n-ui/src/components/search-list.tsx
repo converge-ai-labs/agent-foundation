@@ -46,7 +46,10 @@ export function SearchList({
       <Command.List label={label} className={styles.list}>
         <Command.Empty className={styles.empty}>{emptyMessage}</Command.Empty>
         {groups.map((group) => (
-          <Command.Group key={group.label} heading={group.label}>
+          <Command.Group
+            key={group.label}
+            heading={groups.length > 1 ? group.label : undefined}
+          >
             {group.options.map((option) => (
               <Command.Item
                 key={option.value}

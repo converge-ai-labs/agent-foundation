@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Input, SettingsSection } from "a13n-ui";
+import { Button, Input, SettingsRow, SettingsSection } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import { useAuth, useClient } from "../../auth/context";
@@ -17,37 +17,19 @@ import { Preferences } from "./preferences";
 import { Profile } from "./profile";
 import { Audit } from "./audit";
 import styles from "../../shared/shared.module.css";
+import settingsStyles from "./settings.module.css";
 
 export function PersonalSettings() {
-  const { t } = useTranslation();
-  const auth = useAuth();
   return (
     <SettingsLayout
       scope="personal"
-      name={auth.data!.user.value.name}
-      items={[
-        {
-          value: "profile",
-          label: t("Profile"),
-          content: <Profile target={{ kind: "personal" }} />,
-        },
-        {
-          value: "preferences",
-          label: t("Preferences"),
-          content: <Preferences />,
-        },
-        { value: "security", label: t("Security"), content: <Security /> },
-        {
-          value: "sessions",
-          label: t("Sessions"),
-          content: <BrowserSessions />,
-        },
-        {
-          value: "activity",
-          label: t("Activity"),
-          content: <Audit scope={{ kind: "personal" }} />,
-        },
-      ]}
+      content={{
+        profile: <Profile target={{ kind: "personal" }} />,
+        preferences: <Preferences />,
+        security: <Security />,
+        sessions: <BrowserSessions />,
+        activity: <Audit scope={{ kind: "personal" }} />,
+      }}
     />
   );
 }
@@ -85,36 +67,45 @@ function Security() {
     },
   });
   return (
-    <div className={styles.stack}>
+    <div className={settingsStyles.sections}>
       <SettingsSection
-        variant="plain"
         title={t("Email address")}
         description={t(
           "Verify a new address before it becomes your sign-in email.",
         )}
       >
         <form
-          className={styles.form}
+          className={settingsStyles.securityForm}
           onSubmit={(event) => {
             event.preventDefault();
             changeEmail.mutate();
           }}
         >
-          <Input
-            label={t("Email address")}
-            type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            required
-          />
-          <Input
-            label={t("Current password")}
-            type="password"
-            autoComplete="current-password"
-            value={emailPassword}
-            onChange={(event) => setEmailPassword(event.target.value)}
-            required
-          />
+          <SettingsRow label={t("Email address")}>
+            <div className={settingsStyles.nameControl}>
+              <Input
+                hideLabel
+                label={t("Email address")}
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                required
+              />
+            </div>
+          </SettingsRow>
+          <SettingsRow label={t("Current password")}>
+            <div className={settingsStyles.nameControl}>
+              <Input
+                hideLabel
+                label={t("Current password")}
+                type="password"
+                autoComplete="current-password"
+                value={emailPassword}
+                onChange={(event) => setEmailPassword(event.target.value)}
+                required
+              />
+            </div>
+          </SettingsRow>
           {config.data?.email_delivery === false ? (
             <p className={styles.muted}>
               {t(
@@ -136,38 +127,47 @@ function Security() {
         </form>
       </SettingsSection>
       <SettingsSection
-        variant="plain"
         title={t("Change password")}
         description={t(
           "Changing your password signs out all browser sessions. API keys remain active.",
         )}
       >
         <form
-          className={styles.form}
+          className={settingsStyles.securityForm}
           onSubmit={(event) => {
             event.preventDefault();
             changePassword.mutate();
           }}
         >
-          <Input
-            label={t("Current password")}
-            type="password"
-            autoComplete="current-password"
-            value={currentPassword}
-            onChange={(event) => setCurrentPassword(event.target.value)}
-            required
-          />
-          <Input
-            label={t("New password")}
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            required
-            minLength={15}
-            maxLength={128}
-            hint={t("Use at least 15 characters.")}
-          />
+          <SettingsRow label={t("Current password")}>
+            <div className={settingsStyles.nameControl}>
+              <Input
+                hideLabel
+                label={t("Current password")}
+                type="password"
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+                required
+              />
+            </div>
+          </SettingsRow>
+          <SettingsRow label={t("New password")}>
+            <div className={settingsStyles.nameControl}>
+              <Input
+                hideLabel
+                label={t("New password")}
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+                minLength={15}
+                maxLength={128}
+                hint={t("Use at least 15 characters.")}
+              />
+            </div>
+          </SettingsRow>
           <ErrorNotice error={changePassword.error} />
           <FormActions
             pending={changePassword.isPending}

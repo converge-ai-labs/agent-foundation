@@ -16,7 +16,7 @@ import {
   Timestamp,
 } from "../../shared/feedback";
 import { Table, Pagination, useCursor } from "../../shared/collection";
-import styles from "../../shared/shared.module.css";
+import traceStyles from "./traces.module.css";
 function localTime(date: Date) {
   if (!Number.isFinite(date.getTime())) date = new Date();
   return new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
@@ -56,7 +56,7 @@ export function TracesPage() {
       )}
     >
       <form
-        className={styles.filters}
+        className={traceStyles.filterForm}
         onSubmit={(event) => {
           event.preventDefault();
           const start = new Date(from),
@@ -85,62 +85,74 @@ export function TracesPage() {
           });
         }}
       >
-        <Input
-          label={t("From")}
-          type="datetime-local"
-          value={from}
-          onChange={(event) => setFrom(event.target.value)}
-          required
-        />
-        <Input
-          label={t("To")}
-          type="datetime-local"
-          value={to}
-          onChange={(event) => setTo(event.target.value)}
-          required
-        />
-        <Input
-          label={t("Search content")}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          maxLength={512}
-        />
-        <SelectField
-          label={t("Search in")}
-          placeholder={t("Select content")}
-          value={searchIn}
-          onValueChange={(value) => {
-            if (
-              value === "input" ||
-              value === "output" ||
-              value === "input_output"
-            )
-              setSearchIn(value);
-          }}
-          options={[
-            { value: "input_output", label: t("Input and output") },
-            { value: "input", label: t("Input") },
-            { value: "output", label: t("Output") },
-          ]}
-        />
-        <Input
-          label={t("Thread ID")}
-          value={thread}
-          onChange={(event) => setThread(event.target.value)}
-        />
-        <Input
-          label={t("Run ID")}
-          value={run}
-          onChange={(event) => setRun(event.target.value)}
-        />
-        <Input
-          label={t("Attempt ID")}
-          value={attempt}
-          onChange={(event) => setAttempt(event.target.value)}
-        />
-        <Button type="submit" variant="primary">
-          {t("Apply filters")}
-        </Button>
+        <div className={traceStyles.primaryFilters}>
+          <Input
+            label={t("From")}
+            type="datetime-local"
+            value={from}
+            onChange={(event) => setFrom(event.target.value)}
+            required
+          />
+          <Input
+            label={t("To")}
+            type="datetime-local"
+            value={to}
+            onChange={(event) => setTo(event.target.value)}
+            required
+          />
+          <Input
+            label={t("Search content")}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            maxLength={512}
+          />
+          <Button type="submit">{t("Apply filters")}</Button>
+        </div>
+        <details
+          className={traceStyles.moreFilters}
+          open={Boolean(
+            searchParams.get("thread_id") ||
+            searchParams.get("run_id") ||
+            searchParams.get("run_attempt_id"),
+          )}
+        >
+          <summary>{t("More filters")}</summary>
+          <div className={traceStyles.advancedFilters}>
+            <SelectField
+              label={t("Search in")}
+              placeholder={t("Select content")}
+              value={searchIn}
+              onValueChange={(value) => {
+                if (
+                  value === "input" ||
+                  value === "output" ||
+                  value === "input_output"
+                )
+                  setSearchIn(value);
+              }}
+              options={[
+                { value: "input_output", label: t("Input and output") },
+                { value: "input", label: t("Input") },
+                { value: "output", label: t("Output") },
+              ]}
+            />
+            <Input
+              label={t("Thread ID")}
+              value={thread}
+              onChange={(event) => setThread(event.target.value)}
+            />
+            <Input
+              label={t("Run ID")}
+              value={run}
+              onChange={(event) => setRun(event.target.value)}
+            />
+            <Input
+              label={t("Attempt ID")}
+              value={attempt}
+              onChange={(event) => setAttempt(event.target.value)}
+            />
+          </div>
+        </details>
       </form>
       <ErrorNotice error={error} />
       <TraceList filters={filters} page={page} />

@@ -3,15 +3,26 @@ import styles from "./field.module.css";
 export interface FieldProps {
   id: string;
   label: string;
+  hideLabel?: boolean;
   hint?: string;
   error?: string;
   children: ReactNode;
 }
 /** Internal layout shared by labeled inputs and selection controls. */
-export function Field({ id, label, hint, error, children }: FieldProps) {
+export function Field({
+  id,
+  label,
+  hideLabel,
+  hint,
+  error,
+  children,
+}: FieldProps) {
   return (
     <div className={styles.field}>
-      <label htmlFor={id} className={styles.label}>
+      <label
+        htmlFor={id}
+        className={hideLabel ? styles.hiddenLabel : styles.label}
+      >
         {label}
       </label>
       {children}

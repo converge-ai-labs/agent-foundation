@@ -1,0 +1,94 @@
+.providerGroup > header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.providerGroup h2 {
+  font-size: 13px;
+  font-weight: 550;
+  margin: 0;
+}
+.providerGroup > header > span {
+  color: var(--a13n-secondary);
+  font-size: 11px;
+}
+.providerIcon {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 5px;
+}
+.providerState {
+  margin-left: 4px;
+}
+.modelGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.modelCard {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 7px;
+}
+.modelCard > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--a13n-secondary);
+  margin-bottom: 12px;
+}
+.modelCard h3 {
+  font-size: 14px;
+  font-weight: 550;
+  margin: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.modelCard p {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--a13n-secondary);
+  margin: 0 0 12px;
+  overflow-wrap: anywhere;
+}
+.modelDetails {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--a13n-secondary);
+  margin-top: auto;
+  overflow-wrap: anywhere;
+}
+.modelCard footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 12px;
+  margin-top: 14px;
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.modelCard code {
+  font: 10px var(--a13n-mono);
+  color: var(--a13n-secondary);
+  overflow-wrap: anywhere;
+}
+@media (max-width: 760px) {
+  .modelGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .providerGroup > header {
+    flex-wrap: wrap;
+  }
+}

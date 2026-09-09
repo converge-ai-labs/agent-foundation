@@ -15,14 +15,12 @@ import {
   Activity,
   Settings,
   ChevronsUpDown,
-  User,
-  Building2,
   LogOut,
-  Languages,
   Menu as MenuIcon,
   X,
+  ChevronDown,
 } from "lucide-react";
-import { Button, Logo, Menu, Picker } from "a13n-ui";
+import { Button, Logo, Wordmark, Menu } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth/context";
 import { useWorkspace } from "./workspace";
@@ -30,7 +28,7 @@ import { ErrorNotice, Loading } from "../shared/feedback";
 import styles from "./shell.module.css";
 
 export function Shell() {
-  const { t, i18n } = useTranslation(),
+  const { t } = useTranslation(),
     auth = useAuth(),
     context = useWorkspace(),
     navigate = useNavigate(),
@@ -43,7 +41,10 @@ export function Shell() {
     location.pathname === "/organization/settings";
   const user = auth.data!.user.value;
   const base = `/workspaces/${context.workspace.id}`;
-  const groups: { label: string; entries: [string, string, LucideIcon][] }[] = [
+  const groups: {
+    label: string;
+    entries: [string, string, LucideIcon, [string, string][]?][];
+  }[] = [
     {
       label: "",
       entries: [
@@ -54,17 +55,42 @@ export function Shell() {
     {
       label: "Resources",
       entries: [
-        ["models", "Models", Boxes],
+        [
+          "models",
+          "Models",
+          Boxes,
+          [
+            ["models", "All models"],
+            ["models/providers", "Providers"],
+          ],
+        ],
         ["skills", "Skills", Sparkles],
         ["assets", "Assets", File],
-        ["environments", "Environments", Monitor],
+        [
+          "environments",
+          "Environments",
+          Monitor,
+          [
+            ["environments", "Templates"],
+            ["environments/instances", "Instances"],
+            ["environments/providers", "Providers"],
+          ],
+        ],
       ],
     },
     {
       label: "Integrations",
       entries: [
         ["application-accounts", "Application accounts", Cable],
-        ["connectors", "Connectors", Plug],
+        [
+          "connectors",
+          "Connectors",
+          Plug,
+          [
+            ["connectors", "Connections"],
+            ["connectors/providers", "Providers"],
+          ],
+        ],
         ["mcp", "MCP connections", Network],
       ],
     },
@@ -80,6 +106,9 @@ export function Shell() {
   const current = groups
     .flatMap((group) => group.entries)
     .find(([path]) => location.pathname.includes(`/${path}`));
+  const currentChild = current?.[3]?.find(
+    ([path]) => path !== current[0] && location.pathname === `${base}/${path}`,
+  );
   return (
     <div className={styles.shell} data-contextual={contextual}>
       {open && !contextual && (
@@ -97,8 +126,7 @@ export function Shell() {
         >
           <div className={styles.brand}>
             <Logo alt="" />
-            <strong>a13n</strong>
-            <span>Console</span>
+            <Wordmark />
             <Button
               variant="ghost"
               className={styles.mobileClose}
@@ -108,35 +136,66 @@ export function Shell() {
             />
           </div>
           <div className={styles.workspace}>
-            <span>{t("Workspace")}</span>
-            <Picker
-              label={t("Switch workspace")}
-              placeholder={t("Select workspace")}
-              emptyMessage={t("No workspaces found")}
-              value={context.workspace.id}
+            <Menu
+              label={t("Workspace menu")}
+              align="start"
+              trigger={
+                <button
+                  className={styles.workspaceTrigger}
+                  aria-label={t("Workspace menu")}
+                >
+                  <span className={styles.workspaceIcon}>
+                    {context.workspace.image_url ? (
+                      <img src={context.workspace.image_url} alt="" />
+                    ) : (
+                      context.workspace.name.slice(0, 2).toUpperCase()
+                    )}
+                  </span>
+                  <span className={styles.workspaceName}>
+                    {context.workspace.name}
+                  </span>
+                  <ChevronDown size={13} />
+                </button>
+              }
               groups={[
                 {
-                  label: t("Workspaces"),
-                  options: context.workspaces.map((item) => ({
-                    value: item.id,
-                    label: item.name,
-                    icon: (
-                      <span className={styles.workspaceIcon}>
-                        {item.name.slice(0, 1).toUpperCase()}
-                      </span>
-                    ),
-                  })),
+                  actions: [
+                    {
+                      id: "settings",
+                      label: t("Settings"),
+                      icon: <Settings size={15} />,
+                      onSelect: () => {
+                        setOpen(false);
+                        navigate("/settings/profile?section=preferences");
+                      },
+                    },
+                  ],
+                },
+                {
+                  actions: [
+                    {
+                      id: "switch-workspace",
+                      label: t("Switch workspace"),
+                      items: context.workspaces.map((item) => ({
+                        id: item.id,
+                        label: item.name,
+                        selected: item.id === context.workspace.id,
+                        onSelect: () => {
+                          if (item.id !== context.workspace.id) {
+                            void cache.cancelQueries();
+                            cache.removeQueries({
+                              predicate: (query) =>
+                                query.queryKey.includes(context.workspace.id),
+                            });
+                            navigate(`/workspaces/${item.id}/agents`);
+                          }
+                          setOpen(false);
+                        },
+                      })),
+                    },
+                  ],
                 },
               ]}
-              onValueChange={(id) => {
-                void cache.cancelQueries();
-                cache.removeQueries({
-                  predicate: (query) =>
-                    query.queryKey.includes(context.workspace.id),
-                });
-                navigate(`/workspaces/${id}/agents`);
-                setOpen(false);
-              }}
             />
           </div>
           <nav>
@@ -145,33 +204,46 @@ export function Shell() {
                 {group.label && (
                   <span className={styles.groupLabel}>{t(group.label)}</span>
                 )}
-                {group.entries.map(([path, label, Icon]) => (
-                  <NavLink
-                    key={path}
-                    to={`${base}/${path}`}
-                    onClick={() => setOpen(false)}
-                    className={({ isActive }) =>
-                      `${styles.navItem} ${isActive ? styles.active : ""}`
-                    }
-                  >
-                    <Icon size={16} strokeWidth={1.7} />
-                    <span>{t(label)}</span>
-                  </NavLink>
+                {group.entries.map(([path, label, Icon, children]) => (
+                  <div key={path}>
+                    <NavLink
+                      to={`${base}/${path}`}
+                      onClick={() => setOpen(false)}
+                      className={({ isActive }) =>
+                        `${styles.navItem} ${isActive ? styles.active : ""}`
+                      }
+                    >
+                      <Icon size={16} strokeWidth={1.7} />
+                      <span>{t(label)}</span>
+                      {children && (
+                        <ChevronDown size={12} className={styles.navChevron} />
+                      )}
+                    </NavLink>
+                    {children &&
+                      (location.pathname === `${base}/${path}` ||
+                        location.pathname.startsWith(`${base}/${path}/`)) && (
+                        <div className={styles.navChildren}>
+                          {children.map(([childPath, childLabel]) => (
+                            <NavLink
+                              key={childPath}
+                              to={`${base}/${childPath}`}
+                              end
+                              onClick={() => setOpen(false)}
+                              className={({ isActive }) =>
+                                `${styles.navChild} ${isActive ? styles.active : ""}`
+                              }
+                            >
+                              {t(childLabel)}
+                            </NavLink>
+                          ))}
+                        </div>
+                      )}
+                  </div>
                 ))}
               </div>
             ))}
           </nav>
           <div className={styles.sidebarFooter}>
-            <NavLink
-              to={`${base}/settings`}
-              onClick={() => setOpen(false)}
-              className={({ isActive }) =>
-                `${styles.navItem} ${isActive ? styles.active : ""}`
-              }
-            >
-              <Settings size={16} />
-              {t("Workspace settings")}
-            </NavLink>
             <Menu
               label={t("Your account")}
               align="start"
@@ -180,48 +252,13 @@ export function Shell() {
                   <Avatar name={user.name} url={user.image_url} />
                   <span>
                     <strong>{user.name}</strong>
-                    <small>{user.email}</small>
                   </span>
                   <ChevronsUpDown size={14} />
                 </button>
               }
               groups={[
                 {
-                  actions: [
-                    {
-                      id: "profile",
-                      label: t("Personal settings"),
-                      icon: <User size={15} />,
-                      onSelect: () => navigate("/settings/profile"),
-                    },
-                    ...(context.organizationAdmin
-                      ? [
-                          {
-                            id: "organization",
-                            label: t("Organization settings"),
-                            icon: <Building2 size={15} />,
-                            onSelect: () => navigate("/organization/settings"),
-                          },
-                        ]
-                      : []),
-                  ],
-                },
-                {
-                  actions: [
-                    {
-                      id: "language",
-                      label:
-                        i18n.resolvedLanguage === "en" ? "简体中文" : "English",
-                      icon: <Languages size={15} />,
-                      onSelect: () => {
-                        void i18n.changeLanguage(
-                          i18n.resolvedLanguage === "en" ? "zh-CN" : "en",
-                        );
-                      },
-                    },
-                  ],
-                },
-                {
+                  label: user.email,
                   actions: [
                     {
                       id: "logout",
@@ -238,21 +275,26 @@ export function Shell() {
         </aside>
       )}
       <div className={styles.main}>
-        <header className={styles.topbar}>
-          {!contextual && (
-            <Button
-              className={styles.mobileMenu}
-              aria-label={t("Open navigation")}
-              variant="ghost"
-              icon={<MenuIcon size={18} />}
-              onClick={() => setOpen(true)}
-            />
-          )}
-          <span>{context.workspace.name}</span>
-          <span className={styles.slash}>/</span>
-          <strong>{t(current?.[1] ?? "Settings")}</strong>
-          <span className={styles.topbarEnd}>{context.organization.name}</span>
-        </header>
+        {!contextual && (
+          <header className={styles.topbar}>
+            {!contextual && (
+              <Button
+                className={styles.mobileMenu}
+                aria-label={t("Open navigation")}
+                variant="ghost"
+                icon={<MenuIcon size={18} />}
+                onClick={() => setOpen(true)}
+              />
+            )}
+            <strong>{t(current?.[1] ?? "Settings")}</strong>
+            {currentChild && (
+              <>
+                <span className={styles.slash}>/</span>
+                <strong>{t(currentChild[1])}</strong>
+              </>
+            )}
+          </header>
+        )}
         <ErrorNotice error={logout.error} />
         <main id="main-content">
           <Suspense fallback={<Loading />}>
