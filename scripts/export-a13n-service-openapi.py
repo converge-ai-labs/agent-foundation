@@ -15,7 +15,7 @@ def main() -> None:
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     target = Path(__file__).resolve().parents[1] / "sdk/typescript/openapi.json"
-    schema = create_app(Settings(_env_file=None)).openapi()
+    schema = create_app(Settings()).openapi()
     schema["paths"] = {path: value for path, value in schema["paths"].items() if path.startswith("/api/v1/")}
     for model in (RunStreamEvent, NotificationSubscription):
         model_schema = model.model_json_schema(ref_template="#/components/schemas/{model}")
