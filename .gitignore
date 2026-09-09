@@ -22,6 +22,7 @@ wheels/
 # Python environments
 .env
 /dev/live_tests/.state/
+/dev/live_tests/providers.local.toml
 .env.*
 !.env.example
 !.env.harness.example

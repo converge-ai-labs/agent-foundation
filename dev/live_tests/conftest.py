@@ -11,6 +11,7 @@ def pytest_addoption(parser):
     parser.addoption("--live", action="store_true", help="Run real local Foundation HTTP journeys")
     parser.addoption("--live-round-two", action="store_true", help="Run isolated process and dependency fault journeys")
     parser.addoption("--live-management", action="store_true", help="Run isolated Service/Harness management journeys")
+    parser.addoption("--live-providers", action="store_true", help="Run configured real-provider integration journeys")
 
 
 @pytest.fixture
@@ -57,3 +58,21 @@ async def management(request):
 
     async with open_lab(suite="management") as lab:
         yield ManagementJourney(lab)
+
+
+@pytest.fixture
+async def configured_provider(request):
+    if not any(
+        request.config.getoption(option)
+        for option in ("--live", "--live-round-two", "--live-management", "--live-providers")
+    ):
+        pytest.skip("Opt in with a live-test target; private Provider configuration is not read by offline checks")
+    from .provider_config import load_provider_settings
+
+    settings = getattr(load_provider_settings(), request.param)
+    if settings is None:
+        pytest.skip(f"Optional {request.param} Provider is not configured; existing defaults are unchanged")
+    from .real_providers import configured_provider_lab
+
+    async with configured_provider_lab(request.param, settings) as configured:
+        yield configured

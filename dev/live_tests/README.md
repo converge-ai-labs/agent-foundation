@@ -22,6 +22,80 @@ answers. This tests Foundation orchestration and real tool execution, not extern
 model quality or provider compatibility. The approval tool is uploaded as a real
 plugin wheel through the API.
 
+## Optional real Provider configuration
+
+Create `dev/live_tests/providers.local.toml` from the committed blank example:
+
+```sh
+cp -n dev/live_tests/providers.example.toml dev/live_tests/providers.local.toml
+chmod 600 dev/live_tests/providers.local.toml
+```
+
+The local file is gitignored. Every section is optional and independent. A missing
+default file or an entirely blank section leaves the current deterministic tests
+unchanged and skips that section's additional integration journey. Fill only the
+sections you want to exercise. A partially filled, invalid or unsupported section
+fails instead of silently falling back. `LIVE_TEST_PROVIDERS_CONFIG` can select a
+different TOML file; an explicitly selected missing file is an error. Keep custom
+files outside Git too. Keys are never taken implicitly from application `.env`
+settings, existing Provider records or previous test state.
+
+| Parameter              | Meaning when enabled                                        | Empty/default behavior                                                                                             |
+| ---------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `environment.type`     | `a13n.e2b`, the native E2B Environment implementation       | No additional cloud Environment test; existing direct-local and explicit Docker cases keep their current providers |
+| `environment.api_key`  | E2B account API key; required with `type`                   | No credentials required by the existing local cases                                                                |
+| `environment.template` | Optional E2B template ID or alias                           | `base` when E2B is enabled                                                                                         |
+| `connector.provider`   | `composio`                                                  | No additional external Connector test; case 27 keeps its local TLS Composio fixture and local MCP server           |
+| `connector.api_key`    | Composio project API key; required with `provider`          | Existing connectivity fixtures use a generated lab-only credential                                                 |
+| `connector.toolkits`   | Optional nonempty list of Composio toolkit keys to discover | `["github"]` when Composio is enabled; leave the example line commented when the section is disabled               |
+| `model.provider`       | `openrouter` or `openai_compatible`                         | No additional external Model test; existing cases keep their scripted local model                                  |
+| `model.api_key`        | Model provider API key; required with `provider`            | Existing scripted model uses a generated lab-only credential                                                       |
+| `model.model`          | Required upstream model ID supporting Chat Completions      | No implicit model selection; choose a model available to your account                                              |
+| `model.base_url`       | Required HTTPS API base URL for `openai_compatible`         | Leave blank for `openrouter`, which uses the service's built-in endpoint                                           |
+
+OpenRouter uses the native `openrouter` Provider and `openrouter.chat_completions`
+API. Its endpoint is `https://openrouter.ai/api/v1`, as described in the
+[OpenRouter quickstart](https://openrouter.ai/docs/quickstart). A custom compatible
+endpoint uses `openai_compatible` and `openai.chat_completions`; URLs must not
+contain credentials, query strings or fragments.
+
+```sh
+# Run only the three additional Provider journeys (blank sections skip):
+make live-test-providers
+# Run management cases plus the configured Provider journeys:
+make live-test-management
+# Select just one configured Provider:
+make live-test-providers LIVE_TEST_ARGS='-k configured_model'
+```
+
+`test_31_real_providers.py` is also collected by `make live-test` and
+`make live-test-round-two`. `make live-test-local` runs the first-round files only;
+run `make live-test-providers` alongside it for external integration coverage.
+Existing timing, fault injection and management assertions always retain their
+deterministic dependencies, even when all three sections are configured.
+`make live-test-check` never reads this private file or contacts these providers.
+
+Each enabled section starts its own disposable PostgreSQL, Redis, object-storage
+bucket, Control and Worker lab. Initialization creates the Provider and associated
+resources through Control HTTP, persisting credentials encrypted in that lab's
+database. No external credentials are copied into retained lab configuration.
+The Environment journey executes a real Shell write and file read in E2B, using
+the scripted model to control tool selection. The Connector journey performs real
+authentication and catalog discovery. An API key alone does not authorize a user's
+OAuth accounts: this journey creates no account connection and executes no business
+tools. The Model journey executes a real Run using the configured upstream model,
+with a short prompt and a 128-token output limit. External usage can consume credits.
+
+On success, failure, partial provisioning or normal cancellation, cleanup interrupts
+owned Runs and deletes owned remote Environments while the Worker is still running.
+Cleanup failures fail the test and identify the Environment ID. E2B sandboxes also
+have a five-minute timeout as a bound if the test process is forcibly killed.
+The lab then removes its containers and database, deleting all Provider rows,
+encrypted keys, templates, models and Agents created there. It never deletes or
+rotates existing account credentials or touches an existing installation's data.
+The local TOML remains available for later runs; ignored private process logs and
+non-secret test evidence remain under `.state/management/<random-id>/`.
+
 ## Disposable local setup
 
 With Docker running, execute the first round without preparing `.env` or starting
