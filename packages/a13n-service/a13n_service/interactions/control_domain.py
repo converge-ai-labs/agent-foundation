@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
@@ -655,3 +656,10 @@ __all__ = [
     "normalize_feedback",
     "normalize_waiting_continue",
 ]
+
+
+class InterruptReceipt(StrictModel):
+    schema_version: Literal["1"] = "1"
+    run_id: str
+    status: Literal["cancelled"] = "cancelled"
+    interrupted_at: datetime

@@ -46,7 +46,6 @@ from .persistence import (
     lock_agent,
     new_agent_audit,
     new_revision,
-    payload_identity,
     request_identity,
     require_custom_mutable,
     require_etag,
@@ -287,7 +286,7 @@ class AgentCommands:
         if_match: str,
     ) -> Agent:
         operation = f"agent.{action}"
-        identity = payload_identity(idempotency_key, {"action": action})
+        identity = request_identity(idempotency_key, {"action": action})
         replay = await self._agent_command_replay(
             actor=actor,
             agent_id=agent_id,

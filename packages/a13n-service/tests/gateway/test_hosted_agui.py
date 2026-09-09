@@ -200,13 +200,13 @@ async def test_protocol_state_context_and_client_tools_are_validated_and_frozen(
     async with AsyncExitStack() as stack:
         service, _stream, _objects = await _service(lifecycle_interaction_sessions, tmp_path, stack)
         captured = []
-        original = service._commands.start
+        original = service._commands.runs.start
 
         async def capture_start(**kwargs):
             captured.append(kwargs["request"])
             return await original(**kwargs)
 
-        service._commands.start = capture_start  # type: ignore[method-assign]
+        service._commands.runs.start = capture_start  # type: ignore[method-assign]
         attachment = await service.accept(actor=_actor(), agent_id=AGENT_ID, request=request, last_event_id=None)
 
     assert attachment.binding.agent_revision_id == "agtr_1234567890abcdef"

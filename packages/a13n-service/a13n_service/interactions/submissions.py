@@ -12,25 +12,20 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
-from a13n_service.digests import digest_request
 from a13n_service.durable_operations.idempotency import (
     EvidenceScope,
     IdempotencyConflict,
     IdempotencyIdentity,
-    InvalidIdempotencyKey,
-    digest_visible_ascii_key,
     is_evidence_unique_race,
     load_evidence,
     new_evidence,
 )
+from a13n_service.durable_operations.requests import request_scope
 from a13n_service.environments.selection import Omitted
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
-from a13n_service.interactions.commands import (
-    ContinueRunCommand,
-    InteractionCommandError,
-    InteractionCommands,
-    WaitingContinueRunCommand,
-)
+from a13n_service.interactions.command_evidence import command_identity
+from a13n_service.interactions.command_values import ContinueRunCommand, WaitingContinueRunCommand
+from a13n_service.interactions.commands import InteractionCommands
 from a13n_service.interactions.control_domain import (
     ConsumeQueuedSubmissionRequest,
     QueuedSubmission,
@@ -47,6 +42,7 @@ from a13n_service.interactions.control_domain import (
 )
 from a13n_service.interactions.control_models import QueuedSubmissionRecord
 from a13n_service.interactions.domain import Run, StrictModel, Thread
+from a13n_service.interactions.errors import InteractionCommandError
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.interactions.queue import (
     QueuedSubmissionConflict,
@@ -110,7 +106,7 @@ class QueuedSubmissionService:
             thread_id=thread_id,
             request=request,
         )
-        identity = _identity(idempotency_key, request)
+        identity = command_identity(idempotency_key, request)
         evidence_scope = _evidence_scope(actor, operation=operation, scope_id=thread_id)
 
         async def commit_run(database: AsyncSession, receipt) -> None:
@@ -161,7 +157,7 @@ class QueuedSubmissionService:
         try:
             if admission is ThreadSubmissionAdmission.continuation:
                 assert head is not None
-                receipt = await self._commands.continue_from(
+                receipt = await self._commands.runs.continue_from(
                     actor=actor,
                     source_run_id=head.id,
                     idempotency_key=idempotency_key,
@@ -175,7 +171,7 @@ class QueuedSubmissionService:
                     queue_version=thread.queue_version,
                 )
             if admission is ThreadSubmissionAdmission.root:
-                receipt = await self._commands.continue_empty_thread(
+                receipt = await self._commands.runs.continue_empty_thread(
                     actor=actor,
                     thread_id=thread_id,
                     idempotency_key=idempotency_key,
@@ -195,7 +191,7 @@ class QueuedSubmissionService:
                         "The current waiting Run has no complete sealed state.",
                         category=ErrorCategory.conflict,
                     )
-                receipt = await self._commands.continue_waiting(
+                receipt = await self._commands.continuations.continue_waiting(
                     actor=actor,
                     run_id=current.id,
                     idempotency_key=idempotency_key,
@@ -270,7 +266,7 @@ class QueuedSubmissionService:
         request: ConsumeQueuedSubmissionRequest,
         idempotency_key: str,
     ) -> QueuedSubmissionConsumptionReceipt:
-        return await self._commands.consume_queued(
+        return await self._commands.queued.consume_queued(
             actor=actor,
             thread_id=thread_id,
             request=request,
@@ -670,7 +666,7 @@ class QueuedSubmissionService:
             Awaitable[ReceiptT],
         ],
     ) -> ReceiptT:
-        identity = _identity(idempotency_key, request)
+        identity = command_identity(idempotency_key, request)
         evidence_scope = EvidenceScope(
             workspace_id=scope.workspace_id,
             actor_type=actor.principal.principal_type.value,
@@ -760,7 +756,7 @@ class QueuedSubmissionService:
         request: StrictModel,
         response_type: type[ReceiptT],
     ) -> ReceiptT | None:
-        identity = _identity(idempotency_key, request)
+        identity = command_identity(idempotency_key, request)
         evidence_scope = EvidenceScope(
             workspace_id=actor.workspace_id,
             actor_type=actor.principal.principal_type.value,
@@ -942,27 +938,8 @@ async def _load_receipt[ReceiptT: BaseModel](
     return response_type.model_validate(evidence.receipt_json)
 
 
-def _identity(key: str, request: StrictModel) -> IdempotencyIdentity:
-    try:
-        key_digest = digest_visible_ascii_key(key)
-    except InvalidIdempotencyKey as error:
-        raise InteractionCommandError(
-            "invalid_request",
-            "Idempotency-Key must contain 1 through 512 visible ASCII bytes.",
-            category=ErrorCategory.invalid_request,
-        ) from error
-    return IdempotencyIdentity(key_digest=key_digest, request_digest=digest_request(request))
-
-
 def _evidence_scope(actor: AuthenticatedActor, *, operation: str, scope_id: str) -> EvidenceScope:
-    return EvidenceScope(
-        workspace_id=actor.workspace_id,
-        actor_type=actor.principal.principal_type.value,
-        actor_id=actor.principal.principal_id,
-        operation=operation,
-        scope_id=scope_id,
-        organization_id=actor.boundary_organization_id,
-    )
+    return request_scope(actor, workspace_id=actor.workspace_id, operation=operation, scope_id=scope_id)
 
 
 def _not_found() -> InteractionCommandError:

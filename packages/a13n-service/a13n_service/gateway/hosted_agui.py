@@ -34,13 +34,13 @@ from a13n_service.digests import digest_request
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.ids import new_object_id
 from a13n_service.interactions.acceptance import RunAcceptanceReceipt
-from a13n_service.interactions.commands import (
+from a13n_service.interactions.command_values import (
     ContinueRunCommand,
     ForkRunCommand,
-    InteractionCommands,
     StartRunCommand,
     WaitingContinueRunCommand,
 )
+from a13n_service.interactions.commands import InteractionCommands
 from a13n_service.interactions.control_domain import (
     CompletePendingResolution,
     InterruptRequest,
@@ -353,7 +353,7 @@ class HostedAguiService:
                     "An initial AG-UI Run cannot select parentRunId.",
                     category=ErrorCategory.conflict,
                 )
-            await self._commands.start(
+            await self._commands.runs.start(
                 actor=actor,
                 workspace_id=actor.workspace_id,
                 idempotency_key=idempotency_key,
@@ -382,7 +382,7 @@ class HostedAguiService:
                         "The selected historical AG-UI parent Run is not completed.",
                         category=ErrorCategory.conflict,
                     )
-                await self._commands.fork(
+                await self._commands.runs.fork(
                     actor=actor,
                     run_id=source.id,
                     idempotency_key=idempotency_key,
@@ -403,7 +403,7 @@ class HostedAguiService:
                         category=ErrorCategory.conflict,
                     )
                 if mapped.resolutions is not None:
-                    await self._commands.feedback(
+                    await self._commands.continuations.feedback(
                         actor=actor,
                         run_id=source.id,
                         idempotency_key=idempotency_key,
@@ -416,7 +416,7 @@ class HostedAguiService:
                         protocol_context=mapped.protocol_context,
                     )
                 else:
-                    await self._commands.continue_waiting(
+                    await self._commands.continuations.continue_waiting(
                         actor=actor,
                         run_id=source.id,
                         idempotency_key=idempotency_key,
@@ -435,7 +435,7 @@ class HostedAguiService:
                         "AG-UI feedback requires the active Run to be waiting.",
                         category=ErrorCategory.conflict,
                     )
-                await self._commands.continue_from(
+                await self._commands.runs.continue_from(
                     actor=actor,
                     source_run_id=source.id,
                     idempotency_key=idempotency_key,
@@ -502,7 +502,7 @@ class HostedAguiService:
                 category=ErrorCategory.conflict,
             )
         key_material = f"{request.thread_id}\0{request.run_id}".encode()
-        await self._commands.interrupt(
+        await self._commands.active.interrupt(
             actor=actor,
             run_id=binding.run_id,
             idempotency_key=f"agui-cancel-{hashlib.sha256(key_material).hexdigest()}",

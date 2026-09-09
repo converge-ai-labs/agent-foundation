@@ -37,6 +37,10 @@ class IdempotencyIdentity:
     key_digest: str
     request_digest: str
 
+    @classmethod
+    def from_request(cls, key: str, request: object) -> IdempotencyIdentity:
+        return cls(digest_visible_ascii_key(key), digests.digest_request(request))
+
 
 @dataclass(frozen=True, slots=True)
 class EvidenceScope:

@@ -18,12 +18,10 @@ from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.ids import new_object_id
 from a13n_service.interactions.acceptance import RunAcceptanceReceipt
-from a13n_service.interactions.commands import (
-    InteractionCommands,
-    InterruptReceipt,
-)
+from a13n_service.interactions.commands import InteractionCommands
 from a13n_service.interactions.control_domain import (
     ConsumeQueuedSubmissionRequest,
+    InterruptReceipt,
     InterruptRequest,
     QueuedSubmission,
     QueuedSubmissionCollection,
@@ -213,7 +211,7 @@ async def start_run(
     body: StartRunRequest,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
 ) -> RunAcceptanceReceipt:
-    return await _commands(request).start(
+    return await _commands(request).runs.start(
         actor=actor,
         workspace_id=workspace_id,
         idempotency_key=idempotency_key,
@@ -233,7 +231,7 @@ async def continue_from_run(
     body: ContinueRunRequest,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
 ) -> RunAcceptanceReceipt:
-    return await _commands(request).continue_from(
+    return await _commands(request).runs.continue_from(
         actor=actor,
         source_run_id=source_run_id,
         idempotency_key=idempotency_key,
@@ -253,7 +251,7 @@ async def fork_run(
     body: ForkRunRequest,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
 ) -> RunAcceptanceReceipt:
-    return await _commands(request).fork(
+    return await _commands(request).runs.fork(
         actor=actor,
         run_id=run_id,
         idempotency_key=idempotency_key,
@@ -273,7 +271,7 @@ async def retry_run(
     body: RetryRunRequest,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
 ) -> RunAcceptanceReceipt:
-    return await _commands(request).retry(
+    return await _commands(request).continuations.retry(
         actor=actor,
         run_id=run_id,
         idempotency_key=idempotency_key,
@@ -293,7 +291,7 @@ async def feedback_run(
     body: WaitingRunFeedbackRequest,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
 ) -> RunAcceptanceReceipt:
-    return await _commands(request).feedback(
+    return await _commands(request).continuations.feedback(
         actor=actor,
         run_id=run_id,
         idempotency_key=idempotency_key,
@@ -444,7 +442,7 @@ async def interrupt_run(
     body: InterruptRequest,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
 ) -> InterruptReceipt:
-    return await _commands(request).interrupt(
+    return await _commands(request).active.interrupt(
         actor=actor,
         run_id=run_id,
         idempotency_key=idempotency_key,
@@ -464,7 +462,7 @@ async def steer_run(
     body: AgentInput,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
 ) -> SteerReceipt:
-    return await _commands(request).steer(
+    return await _commands(request).active.steer(
         actor=actor,
         run_id=run_id,
         idempotency_key=idempotency_key,
@@ -479,7 +477,7 @@ async def get_run_steer(
     run_id: str,
     steer_id: str,
 ) -> SteerStatus:
-    return await _commands(request).get_steer(actor=actor, run_id=run_id, steer_id=steer_id)
+    return await _commands(request).active.get_steer(actor=actor, run_id=run_id, steer_id=steer_id)
 
 
 @router.get("/api/v1/workspaces/{workspace_id}/sessions", response_model=SessionCollection)

@@ -200,12 +200,14 @@ async def test_run_acceptance_freezes_only_declared_secret_references(
             "input": AgentInput(schema_version="2", content=_request().input.content, secret_bindings=(_binding(),))
         }
     )
-    receipt = await commands.start(
+    receipt = await commands.runs.start(
         actor=hook_actor(), workspace_id=WORKSPACE_ID, idempotency_key="secret-bound", request=request
     )
     async with short_session(interaction_sessions) as database:
         run = (await database.get(RunRecord, receipt.run_id)).to_resource()
-    state = await commands._states.read_run(run)
+    from a13n_service.interactions.objects import RunStateStore
+
+    state = await RunStateStore(interaction_object_store).read_run(run)
     assert state.envelope.secret_bindings == (_binding(),)
     assert run.input["secret_bindings"] == [_binding().model_dump(mode="json")]
     assert TEST_VALUE not in json.dumps(run.model_dump(mode="json"))
@@ -234,7 +236,7 @@ async def test_missing_or_undeclared_bindings_fail_before_run_acceptance(
     )
     request = _request().model_copy(update={"input": _request().input.model_copy(update={"secret_bindings": bindings})})
     with pytest.raises(AgentSecretError) as error:
-        await commands.start(
+        await commands.runs.start(
             actor=hook_actor(), workspace_id=WORKSPACE_ID, idempotency_key="invalid-secrets", request=request
         )
     assert error.value.code == code

@@ -14,7 +14,6 @@ from typing import Any, Literal
 import anyio
 from a2a.types import a2a_pb2 as a2a
 from google.protobuf.json_format import MessageToDict
-from google.protobuf.struct_pb2 import Value
 from sqlalchemy import and_, delete, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
@@ -34,12 +33,8 @@ from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.ids import new_object_id
 from a13n_service.interactions.acceptance import RunAcceptanceReceipt
-from a13n_service.interactions.commands import (
-    ContinueRunCommand,
-    InteractionCommands,
-    StartRunCommand,
-    WaitingContinueRunCommand,
-)
+from a13n_service.interactions.command_values import ContinueRunCommand, StartRunCommand, WaitingContinueRunCommand
+from a13n_service.interactions.commands import InteractionCommands
 from a13n_service.interactions.control_domain import InterruptRequest
 from a13n_service.interactions.domain import RunStatus
 from a13n_service.interactions.models import RunRecord, ThreadRecord
@@ -48,6 +43,7 @@ from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, require_aware_utc, utc_now
 
 from .a2a_import import A2APartImporter, A2APartImportError, PreparedA2AMessage
+from .a2a_projection import TASK_STATE_BY_RUN_STATUS, project_artifacts, project_status
 from .models import (
     A2AContextBindingRecord,
     A2AMessageBindingRecord,
@@ -497,7 +493,7 @@ class A2AService:
         task, run, thread = await self._load_task_with_thread(actor=actor, agent_id=agent_id, task_id=task_id)
         if run.status in _TERMINAL:
             return await self._project_task(task, run)
-        await self._commands.interrupt(
+        await self._commands.active.interrupt(
             actor=actor,
             run_id=run.id,
             idempotency_key=f"a2a-cancel:{task.id}:{run.id}",
@@ -996,7 +992,7 @@ class A2AService:
         )
         bind = partial(self._persist_task_binding, binding=binding)
 
-        await self._commands.start(
+        await self._commands.runs.start(
             actor=actor,
             workspace_id=actor.workspace_id,
             idempotency_key=f"a2a:{agent_id}:{request.message.message_id}",
@@ -1043,7 +1039,7 @@ class A2AService:
 
         continuation = ContinueRunCommand(expected_thread_version=thread.version, input=prepared.input)
         if thread.head_run_id is None:
-            receipt = await self._commands.continue_empty_thread(
+            receipt = await self._commands.runs.continue_empty_thread(
                 actor=actor,
                 thread_id=thread.id,
                 idempotency_key=f"a2a:{context.agent_id}:{request.message.message_id}",
@@ -1052,7 +1048,7 @@ class A2AService:
                 prepared_assets=prepared.prepared_assets,
             )
         else:
-            receipt = await self._commands.continue_from(
+            receipt = await self._commands.runs.continue_from(
                 actor=actor,
                 source_run_id=thread.head_run_id,
                 idempotency_key=f"a2a:{context.agent_id}:{request.message.message_id}",
@@ -1106,7 +1102,7 @@ class A2AService:
         )
         bind = partial(self._persist_task_binding, binding=binding)
 
-        await self._commands.continue_waiting(
+        await self._commands.continuations.continue_waiting(
             actor=actor,
             run_id=run.id,
             idempotency_key=f"a2a:{context.agent_id}:{request.message.message_id}",
@@ -1497,65 +1493,21 @@ def _apply_history_length(task: a2a.Task, history_length: int | None) -> a2a.Tas
 
 
 def _task_status(run: RunRecord) -> a2a.TaskStatus:
-    state = {
-        RunStatus.accepted.value: a2a.TASK_STATE_SUBMITTED,
-        RunStatus.running.value: a2a.TASK_STATE_WORKING,
-        RunStatus.waiting.value: a2a.TASK_STATE_AUTH_REQUIRED
-        if run.wait_reason == "authentication"
-        else a2a.TASK_STATE_INPUT_REQUIRED,
-        RunStatus.completed.value: a2a.TASK_STATE_COMPLETED,
-        RunStatus.failed.value: a2a.TASK_STATE_FAILED,
-        RunStatus.cancelled.value: a2a.TASK_STATE_CANCELED,
-    }[run.status]
-    status = a2a.TaskStatus(state=state)
-    timestamp = run.updated_at
-    status.timestamp.FromDatetime(assume_utc(timestamp))
-    if run.status == RunStatus.waiting.value and run.pending_json is not None:
-        value = Value()
-        from google.protobuf.json_format import ParseDict
-
-        ParseDict(run.pending_json, value)
-        status.message.CopyFrom(
-            a2a.Message(
-                message_id=f"status-{run.id}",
-                task_id="",
-                role=a2a.ROLE_AGENT,
-                parts=[a2a.Part(data=value)],
-            )
-        )
-    elif run.status == RunStatus.failed.value:
-        message = "The Agent task failed."
-        if isinstance(run.failure_json, dict) and isinstance(run.failure_json.get("message"), str):
-            message = run.failure_json["message"]
-        status.message.CopyFrom(
-            a2a.Message(message_id=f"status-{run.id}", role=a2a.ROLE_AGENT, parts=[a2a.Part(text=message)])
-        )
+    status = project_status(
+        run_status=run.status,
+        wait_reason=run.wait_reason,
+        pending=run.pending_json,
+        failure=run.failure_json,
+        message_id=f"status-{run.id}",
+    )
+    status.timestamp.FromDatetime(assume_utc(run.updated_at))
     return status
 
 
 def _task_artifacts(task: A2ATaskBindingRecord, run: RunRecord) -> list[a2a.Artifact]:
     if run.status != RunStatus.completed.value:
         return []
-    output = run.output_json
-    if run.output_text is not None:
-        parts = [a2a.Part(text=run.output_text)]
-    elif isinstance(output, str):
-        parts = [a2a.Part(text=output)]
-    elif output is not None:
-        value = Value()
-        from google.protobuf.json_format import ParseDict
-
-        ParseDict(output, value)
-        parts = [a2a.Part(data=value)]
-    else:
-        return []
-    return [
-        a2a.Artifact(
-            artifact_id=f"artifact-{task.id}-result",
-            name="result",
-            parts=parts,
-        )
-    ]
+    return project_artifacts(task_id=task.id, output_text=run.output_text, output=run.output_json)
 
 
 def _validate_push_configuration(requested: a2a.TaskPushNotificationConfig, *, task_id: str) -> None:
@@ -1636,11 +1588,7 @@ def _task_state_filter(status: a2a.TaskState | None) -> Any | None:
     if status is None:
         return None
     filters = {
-        a2a.TASK_STATE_SUBMITTED: RunRecord.status == RunStatus.accepted.value,
-        a2a.TASK_STATE_WORKING: RunRecord.status == RunStatus.running.value,
-        a2a.TASK_STATE_COMPLETED: RunRecord.status == RunStatus.completed.value,
-        a2a.TASK_STATE_FAILED: RunRecord.status == RunStatus.failed.value,
-        a2a.TASK_STATE_CANCELED: RunRecord.status == RunStatus.cancelled.value,
+        **{task_state: RunRecord.status == run_status for run_status, task_state in TASK_STATE_BY_RUN_STATUS.items()},
         a2a.TASK_STATE_INPUT_REQUIRED: and_(
             RunRecord.status == RunStatus.waiting.value,
             or_(RunRecord.wait_reason.is_(None), RunRecord.wait_reason != "authentication"),

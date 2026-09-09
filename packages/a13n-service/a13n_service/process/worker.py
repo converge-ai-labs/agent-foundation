@@ -149,7 +149,7 @@ async def build_worker_runtime(
         shared.storage.sessions,
         build_input_commands(
             settings, shared, invocations, AssetCatalog(shared.storage.sessions, assets), inline_hooks
-        ),
+        ).queued,
         CompletionQueueHandoffService(
             shared.storage.sessions,
             RunStateStore(shared.storage.objects),

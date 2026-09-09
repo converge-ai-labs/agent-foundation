@@ -8,11 +8,11 @@ from a13n_service.storage import short_session
 from a13n_service.temporal import Clock, utc_now
 
 from .attempts import AttemptContext, read_attempt_authority
-from .commands import InteractionCommands
 from .control_models import QueuedSubmissionRecord
 from .domain import RunAttemptStatus
 from .models import SessionRecord
 from .objects import StoredRunState
+from .queue_commands import QueuedRunCommands
 from .queue_handoff import CompletionQueueHandoffService, QueueHandoffCommit
 from .queue_validity import permanent_queue_failure
 
@@ -21,7 +21,7 @@ class QueueCompletion:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        commands: InteractionCommands,
+        commands: QueuedRunCommands,
         handoffs: CompletionQueueHandoffService,
         *,
         clock: Clock = utc_now,

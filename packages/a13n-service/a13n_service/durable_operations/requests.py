@@ -9,13 +9,11 @@ from pydantic import BaseModel, JsonValue
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.application_errors import ApplicationError, ErrorCategory
-from a13n_service.digests import digest_request
 from a13n_service.durable_operations.idempotency import (
     EvidenceScope,
     IdempotencyConflict,
     IdempotencyIdentity,
     InvalidIdempotencyKey,
-    digest_visible_ascii_key,
     load_evidence,
     new_evidence,
 )
@@ -35,13 +33,44 @@ class ReplayReceipt:
 
 def request_identity(idempotency_key: str, request: object) -> IdempotencyIdentity:
     try:
-        key_digest = digest_visible_ascii_key(idempotency_key)
+        return IdempotencyIdentity.from_request(idempotency_key, request)
     except InvalidIdempotencyKey as error:
         raise ApplicationError(
             "idempotency_key_invalid", "Invalid Idempotency-Key.", category=ErrorCategory.invalid_request
         ) from error
-    digest = digest_request(request)
-    return IdempotencyIdentity(key_digest, digest)
+
+
+def request_scope(
+    actor: AuthenticatedActor,
+    *,
+    workspace_id: str | None,
+    operation: str,
+    scope_id: str,
+) -> EvidenceScope:
+    return EvidenceScope(
+        workspace_id=workspace_id,
+        actor_type=actor.principal.principal_type.value,
+        actor_id=actor.principal.principal_id,
+        operation=operation,
+        scope_id=scope_id,
+        organization_id=actor.boundary_organization_id,
+    )
+
+
+async def load_receipt(
+    session: AsyncSession,
+    *,
+    scope: EvidenceScope,
+    identity: IdempotencyIdentity,
+    now: datetime,
+) -> ReplayReceipt | None:
+    """Read the accepted response; callers own authorization and error mapping."""
+    evidence = await load_evidence(session, scope=scope, identity=identity, now=now)
+    if evidence is None:
+        return None
+    if evidence.receipt_json is None:
+        raise RuntimeError("resource command evidence has no original receipt")
+    return ReplayReceipt(evidence.result_kind, evidence.result_ref, evidence.receipt_json)
 
 
 async def load_replay(
@@ -54,15 +83,13 @@ async def load_replay(
     now: datetime,
 ) -> ReplayReceipt | None:
     try:
-        evidence = await load_evidence(
+        return await load_receipt(
             session,
-            scope=EvidenceScope(
+            scope=request_scope(
+                actor,
                 workspace_id=actor.boundary_workspace_id,
-                actor_type=actor.principal.principal_type.value,
-                actor_id=actor.principal.principal_id,
                 operation=operation,
                 scope_id=scope_id,
-                organization_id=actor.boundary_organization_id,
             ),
             identity=identity,
             now=now,
@@ -73,11 +100,6 @@ async def load_replay(
             "The Idempotency-Key was already used with different request content.",
             category=ErrorCategory.conflict,
         ) from error
-    if evidence is None:
-        return None
-    if evidence.receipt_json is None:
-        raise RuntimeError("resource command evidence has no original receipt")
-    return ReplayReceipt(evidence.result_kind, evidence.result_ref, evidence.receipt_json)
 
 
 def evidence_record(
@@ -95,13 +117,11 @@ def evidence_record(
 ) -> IdempotencyEvidenceRecord:
     return new_evidence(
         organization_id=organization_id,
-        scope=EvidenceScope(
+        scope=request_scope(
+            actor,
             workspace_id=workspace_id,
-            actor_type=actor.principal.principal_type.value,
-            actor_id=actor.principal.principal_id,
             operation=operation,
             scope_id=scope_id,
-            organization_id=actor.boundary_organization_id,
         ),
         identity=identity,
         result_kind=result_kind,

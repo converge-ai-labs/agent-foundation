@@ -21,6 +21,7 @@ from a13n_service.assets.cursors import AssetCursorError, decode_asset_cursor, e
 from a13n_service.connectivity.cursors import CursorError as ConnectivityCursorError
 from a13n_service.connectivity.cursors import decode_cursor as decode_connectivity_cursor
 from a13n_service.connectivity.cursors import encode_cursor as encode_connectivity_cursor
+from a13n_service.hooks.cursors import HookCursorError, decode_hook_cursor, encode_hook_cursor
 from a13n_service.models.cursors import CursorError as ModelCursorError
 from a13n_service.models.cursors import decode_model_cursor, encode_model_cursor
 from a13n_service.skills.cursors import (
@@ -172,3 +173,46 @@ def test_connectivity_cursor_preserves_legacy_wire() -> None:
     )
     with pytest.raises(ConnectivityCursorError, match=_INVALID_CURSOR):
         decode_connectivity_cursor(cursor, scope=_SCOPE, id_prefix="conn")
+
+
+@pytest.mark.parametrize(
+    ("encoder", "decoder", "error_type", "time_field"),
+    [
+        (
+            lambda: encode_agent_cursor(updated_at=_STAMP, agent_id="ap_example", scope=_SCOPE),
+            lambda cursor: decode_agent_cursor(cursor, scope=_SCOPE),
+            AgentCursorError,
+            "time",
+        ),
+        (
+            lambda: encode_asset_cursor(created_at=_STAMP, asset_id="ast_example", scope=_SCOPE),
+            lambda cursor: decode_asset_cursor(cursor, scope=_SCOPE),
+            AssetCursorError,
+            "created_at",
+        ),
+        (
+            lambda: encode_model_cursor(updated_at=_STAMP, item_id="mdl_example", scope=_SCOPE),
+            lambda cursor: decode_model_cursor(cursor, scope=_SCOPE),
+            ModelCursorError,
+            "updated_at",
+        ),
+        (
+            lambda: encode_connectivity_cursor(updated_at=_STAMP, object_id="acc_example", scope=_SCOPE),
+            lambda cursor: decode_connectivity_cursor(cursor, scope=_SCOPE, id_prefix="acc"),
+            ConnectivityCursorError,
+            "updated_at",
+        ),
+        (
+            lambda: encode_hook_cursor(updated_at=_STAMP, subscription_id="hsub_example", scope=_SCOPE),
+            lambda cursor: decode_hook_cursor(cursor, scope=_SCOPE),
+            HookCursorError,
+            "updated_at",
+        ),
+    ],
+)
+def test_timestamp_cursors_reject_timezone_free_positions(encoder, decoder, error_type, time_field):
+    cursor = encoder()
+    assert decoder(cursor)[0] == _UTC_STAMP
+    for invalid_time in ("2024-01-01T21:34:05.123456", None, 123):
+        with pytest.raises(error_type, match=_INVALID_CURSOR):
+            decoder(_replace_payload_field(cursor, time_field, invalid_time))

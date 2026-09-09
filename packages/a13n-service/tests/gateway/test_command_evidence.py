@@ -25,17 +25,24 @@ async def test_http_start_replay_expires_without_expiring_execution_identity(
     tmp_path,
 ) -> None:
     objects = await LocalObjectStore.create(tmp_path / "expiry-objects")
-    commands = _commands(lifecycle_interaction_sessions, objects, _Preparation(), _Freezing([_frozen()]))
+    now = NOW
+    commands = _commands(
+        lifecycle_interaction_sessions, objects, _Preparation(), _Freezing([_frozen()]), clock=lambda: now
+    )
     await seed_hook_actor_access(lifecycle_interaction_sessions)
     request = _request("finite replay")
-    first = await commands.start(actor=_actor(), workspace_id=WORKSPACE_ID, idempotency_key="expiry", request=request)
-    commands._clock = lambda: NOW + timedelta(hours=24, microseconds=-1)
+    first = await commands.runs.start(
+        actor=_actor(), workspace_id=WORKSPACE_ID, idempotency_key="expiry", request=request
+    )
+    now = NOW + timedelta(hours=24, microseconds=-1)
     assert (
-        await commands.start(actor=_actor(), workspace_id=WORKSPACE_ID, idempotency_key="expiry", request=request)
+        await commands.runs.start(actor=_actor(), workspace_id=WORKSPACE_ID, idempotency_key="expiry", request=request)
         == first
     )
-    commands._clock = lambda: NOW + timedelta(hours=24)
-    second = await commands.start(actor=_actor(), workspace_id=WORKSPACE_ID, idempotency_key="expiry", request=request)
+    now = NOW + timedelta(hours=24)
+    second = await commands.runs.start(
+        actor=_actor(), workspace_id=WORKSPACE_ID, idempotency_key="expiry", request=request
+    )
     assert second.run_id != first.run_id
     async with short_session(lifecycle_interaction_sessions) as database:
         assert await database.get(RunRecord, first.run_id) is not None
@@ -56,7 +63,7 @@ async def test_binding_failure_rolls_back_run_lifecycle_and_http_receipt(
         raise RuntimeError("binding rejected")
 
     with pytest.raises(RuntimeError, match="binding rejected"):
-        await commands.start(
+        await commands.runs.start(
             actor=_actor(),
             workspace_id=WORKSPACE_ID,
             idempotency_key="rollback",

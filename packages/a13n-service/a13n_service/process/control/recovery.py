@@ -15,7 +15,7 @@ def build_recovery_tasks(
 ) -> tuple[BackgroundTask, ...]:
     queue = QueueRecovery(
         shared.storage.sessions,
-        commands,
+        commands.queued,
         batch_limit=settings.control_recovery_batch_limit,
         item_timeout_seconds=settings.control_recovery_item_timeout_seconds,
     )
