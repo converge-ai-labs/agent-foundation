@@ -6,6 +6,10 @@ tmp/
 # Local runtime storage and caches
 /var/
 
+# Live-test credentials and generated artifacts stay local, outside Git merges
+/dev/live_tests/.state/
+/dev/live_tests/providers.local.toml
+
 # Python bytecode and native extensions
 __pycache__/
 *.py[cod]
@@ -21,8 +25,6 @@ wheels/
 
 # Python environments
 .env
-/dev/live_tests/.state/
-/dev/live_tests/providers.local.toml
 .env.*
 !.env.example
 !.env.harness.example

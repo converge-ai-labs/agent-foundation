@@ -22,6 +22,18 @@ answers. This tests Foundation orchestration and real tool execution, not extern
 model quality or provider compatibility. The approval tool is uploaded as a real
 plugin wheel through the API.
 
+## Local state
+
+`.state/` and `providers.local.toml` are local-only paths excluded by the root
+`.gitignore`. They contain generated test state and optional credentials, and must
+remain untracked. Existing local files stay on disk for test reuse and diagnosis.
+Never force-add these paths. Store custom Provider
+configuration selected with `LIVE_TEST_PROVIDERS_CONFIG` under `.state/` or outside
+the repository.
+
+Before submitting changes, `git ls-files -- dev/live_tests/.state dev/live_tests/providers.local.toml` must return no paths. Only the blank example
+configuration belongs in Git; each developer creates their own local copy.
+
 ## Optional real Provider configuration
 
 Create `dev/live_tests/providers.local.toml` from the committed blank example:
