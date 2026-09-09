@@ -102,6 +102,8 @@ Prepared Direct Local descriptors expose bounded `backing_identity` evidence for
 
 Direct Local makes no sandbox, account isolation, network isolation, or race-free filesystem-broker claim. Its confinement is a provider operation policy over one Host-selected root. A hostile same-account process can race native filesystem changes.
 
+File writes stage complete candidates before publication. `move(replace=False)` uses one native no-replace rename on Linux, macOS, and Windows: a concurrent destination publication is a conflict and preserves the losing source. Platforms without that primitive return `environment_unsupported`; moves across filesystems are not supported. This protects publication intent, not the entry against later changes by another writer.
+
 ## Local Envd
 
 ### Configuration and runtime

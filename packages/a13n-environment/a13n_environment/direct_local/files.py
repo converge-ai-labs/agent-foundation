@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import codecs
+import ctypes
+import errno
 import itertools
 import os
 import shutil
@@ -711,8 +713,11 @@ class LocalFileOperator:
             raise EnvironmentError("Move destination exists.", code="environment_conflict")
         if destination_native.is_symlink():
             raise EnvironmentError("Move destination symlink is denied.", code="environment_denied")
-        if not replace or not destination_native.exists():
-            (os.replace if replace else os.rename)(source_native, destination_native)
+        if not replace:
+            _rename_no_replace(source_native, destination_native)
+            return
+        if not destination_native.exists():
+            os.replace(source_native, destination_native)
             return
 
         backup = destination_native.with_name(f".{destination_native.name}.a13n-replaced-{uuid4().hex}")
@@ -894,6 +899,33 @@ def _read_text_page(
 
         has_more = bool(file.read(1))
     return "".join(selected), len(selected), has_more, tuple(truncated_lines)
+
+
+def _rename_no_replace(source: Path, destination: Path) -> None:
+    """Publish one native entry without overwriting a concurrent destination."""
+    if sys.platform == "win32":
+        os.rename(source, destination)
+        return
+    if sys.platform not in {"linux", "darwin"}:
+        raise EnvironmentError("Atomic no-replace move is unavailable.", code="environment_unsupported")
+
+    library = ctypes.CDLL(None, use_errno=True)
+    name = "renamex_np" if sys.platform == "darwin" else "renameat2"
+    rename = getattr(library, name, None)
+    if rename is None:
+        raise EnvironmentError("Atomic no-replace move is unavailable.", code="environment_unsupported")
+    rename.restype = ctypes.c_int
+    if sys.platform == "darwin":
+        rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+        result = rename(os.fsencode(source), os.fsencode(destination), 4)  # RENAME_EXCL
+    else:
+        rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+        result = rename(-100, os.fsencode(source), -100, os.fsencode(destination), 1)  # AT_FDCWD, RENAME_NOREPLACE
+    if result != 0:
+        number = ctypes.get_errno()
+        if number in {errno.ENOSYS, errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV}:
+            raise EnvironmentError("Atomic no-replace move is unavailable.", code="environment_unsupported")
+        raise OSError(number, os.strerror(number))
 
 
 def _remove_native_path(path: Path) -> None:

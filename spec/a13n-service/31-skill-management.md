@@ -348,15 +348,19 @@ Before Harness entry, the current `RunAttemptExecutor` verifies the exact locks 
 3. scans only the verified package roots with the explicit `SkillManager`; and
 4. applies the already supplied exact-key selection before publishing model instructions or Skill paths.
 
-The completion manifest is Host-owned materialization metadata, not a package file. It remains outside every directory scanned as a Skill package and is excluded from normalized payloads, Revision manifests, content digests, and model-visible Skill resources.
+The completion manifest and private staging area are Host-owned materialization metadata, not package files. They remain inside the materializer root but outside every directory scanned as a Skill package, and are excluded from normalized payloads, Revision manifests, content digests, and model-visible Skill resources.
 
-An existing root is reused only after complete verification. An interrupted root has no valid completion manifest; a later Attempt verifies a complete root or materializes the exact bytes again. Harness never scans partial content or falls back to a Project, home, package, or Worker-cache directory.
+Concurrent materializers selecting the same exact catalog converge on immutable content without a shared preparation lock. Existing verified files are reused; missing files are written privately and published complete with atomic no-replace semantics. A publication conflict succeeds only when the existing regular file has the expected bytes. Directory creation conflicts are reconciled by verifying the existing directory. The Run's frozen Revision locks remain authoritative; newer Revisions never supersede them.
+
+Each materializer verifies every expected file's size and digest and the complete package entry set before publishing completion metadata. Verification tolerates concurrent identical publication and Host staging metadata, but rejects unexpected package entries, wrong entry kinds, conflicting bytes, or conflicting completion metadata with `skill_materialization_invalid`. A completion manifest alone never proves that content is valid. Concurrent identical completion publication succeeds.
+
+An interrupted preparation can leave verified files and missing files; a later materializer verifies and completes the same root. Normal initialization never deletes, replaces, or repairs conflicting shared content. Each materializer cleans up only its own private staging files, with bounded best-effort cleanup on failure or cancellation. Abandoned staging data and corrupted roots require separate Host-controlled cleanup or repair, coordinated with active users of the Environment. Harness never scans partial content or falls back to a Project, home, package, or Worker-cache directory.
 
 Materialization outcomes are:
 
 | Outcome                             | Semantics                                                                                                                           |
 | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `skill_materialization_invalid`     | A locked Revision, object, digest, or package contract is invalid; fail closed                                                      |
+| `skill_materialization_invalid`     | A locked Revision, object, digest, package contract, or materialized shared content is invalid; fail closed                         |
 | `skill_materialization_unavailable` | Object storage or Environment access is temporarily unavailable; retry only through a new fenced RunAttempt under ordinary ceilings |
 | `skill_materialization_stale`       | The Environment mount incarnation, Provider generation, or RunAttempt fence changed; abandon the Attempt and reacquire authority    |
 | `skill_materialization_cancelled`   | Cancellation or shutdown won; preserve the ordinary cancelled or interrupted lifecycle                                              |
