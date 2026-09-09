@@ -39,7 +39,7 @@ async def test_subagent_operator_owns_bounded_lifecycle_and_parent_scoped_querie
             )
         assert missing.value.code == "subagent_execution_unavailable"
 
-        for timeout in (-1.0, 61.0):
+        for timeout in (-1.0, float("inf"), float("nan")):
             with pytest.raises(RunCoordinationError) as invalid_wait:
                 await operator.wait_child_executions(
                     parent_thread_id="thread-parent",
@@ -49,6 +49,33 @@ async def test_subagent_operator_owns_bounded_lifecycle_and_parent_scoped_querie
 
         await operator.stop_admission()
         await operator.close(timeout_seconds=1)
+
+
+@pytest.mark.parametrize(
+    ("requested", "expected"),
+    [(None, 30.0), (0.0, 0.0), (60.0, 60.0), (90.0, 90.0), (180.0, 180.0), (181.0, 180.0), (1000.0, 180.0)],
+)
+def test_child_wait_caps_only_requests_above_180_seconds(requested: float | None, expected: float) -> None:
+    assert subagent_module._wait_timeout(requested) == expected
+
+
+async def test_model_subagent_boundary_preserves_programming_integrity_and_cancellation_errors() -> None:
+    from anyio import get_cancelled_exc_class
+
+    errors = [
+        RuntimeError("programming defect"),
+        RunCoordinationError("corrupt checkpoint", code="subagent_checkpoint_incompatible"),
+        get_cancelled_exc_class()(),
+    ]
+
+    @subagent_module._subagent_tool
+    async def operation(error: BaseException) -> None:
+        raise error
+
+    for error in errors:
+        with pytest.raises(type(error)) as raised:
+            await operation(error)
+        assert raised.value is error
 
 
 async def test_terminal_child_projection_does_not_expose_stale_local_control(

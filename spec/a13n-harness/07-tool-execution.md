@@ -6,6 +6,8 @@ Pydantic AI owns function-tool schema validation, Toolset composition, the Tool 
 
 Client-side tools use Pydantic AI `ToolDefinition`, `ExternalToolset`, `DeferredToolRequests.calls`, and `DeferredToolResults.calls` directly. They are model-visible schemas whose implementation and authority remain outside the Agent process. They do not pass through the function-tool invocation pipeline, execute through `a13n-envd`, or reuse approval semantics.
 
+The built-in `UserInteractionCapability` validates and normalizes `ask_user_question` arguments before native external deferral. The request must satisfy the complete structured-question model, including non-blank text and uniqueness of question texts and option labels after whitespace normalization. Invalid requests return a bounded native tool failure to the model for correction; they never become pending Host questions. Valid requests retain native external suspension and result correlation.
+
 The function-tool wrapper is an Agent invocation boundary, not Python isolation. An unannotated native function tool is treated like other trusted in-process plugin code: it keeps Pydantic AI semantics but is outside Harness-managed authorization and side-effect guarantees. Installing or supplying that code grants process authority, whether or not it is model-visible.
 
 ## Boundary

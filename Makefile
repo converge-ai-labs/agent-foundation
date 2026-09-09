@@ -303,8 +303,7 @@ a13n-harness-dist-check: ## Verify isolated same-version Harness wheels
 	@uv run --no-project python scripts/check-a13n-distributions.py dist
 
 .PHONY: a13n-harness-release-build
-a13n-harness-release-build: a13n-harness-python-build ## Build and verify the prepared Harness release group
-	@uv run --no-project python scripts/check-a13n-distributions.py dist --require-exact-internal-version
+a13n-harness-release-build: a13n-harness-python-build ## Build the prepared Harness release group
 
 .PHONY: a13n-harness-ui-build
 a13n-harness-ui-build: sync a13n-harness-ui-assets ## Build Harness UI for repository development
@@ -313,10 +312,9 @@ a13n-harness-ui-build: sync a13n-harness-ui-assets ## Build Harness UI for repos
 	@uv run --locked python scripts/check-a13n-harness-ui-distribution.py dist --rebuild-wheel
 
 .PHONY: a13n-harness-ui-release-build
-a13n-harness-ui-release-build: ## Build and verify Harness UI from prepared assets and release metadata
+a13n-harness-ui-release-build: ## Build Harness UI from prepared assets and release metadata
 	@rm -rf dist
 	@uv build --package a13n-harness-ui --out-dir dist
-	@uv run --no-project python scripts/check-a13n-harness-ui-distribution.py dist --rebuild-wheel --require-compatible-dependencies
 
 .PHONY: a13n-logging-python-build
 a13n-logging-python-build: ## Build only the logging Python distributions

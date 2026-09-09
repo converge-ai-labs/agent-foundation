@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import re
-from collections.abc import AsyncGenerator, Mapping, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from functools import partial
+from functools import partial, wraps
+from types import CoroutineType
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -69,6 +71,7 @@ from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc
 from anyio.abc import TaskGroup
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai import ToolDenied, ToolReturn
+from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.tools import DeferredToolApprovalResult, DeferredToolRequests, DeferredToolResults
 from pydantic_ai.usage import UsageLimits
 
@@ -112,7 +115,7 @@ from a13n_harness_ui.surfaces import (
 )
 
 _JSON_ADAPTER = TypeAdapter(JsonValue)
-_MAX_WAIT_SECONDS = 60.0
+_MAX_WAIT_SECONDS = 180.0
 _DEFAULT_WAIT_SECONDS = 30.0
 _MAX_ACTIVITY_TEXT = 32 * 1024
 _MAX_FINAL_ANSWER = 64 * 1024
@@ -200,6 +203,21 @@ class _PreparedSegment:
     stream: HarnessRunStream[Any]
     agent_instance_id: str
     display: CompactChildDisplay
+
+
+class _SubagentRequestError(RunCoordinationError):
+    """A caller can correct the requested child operation without ending its Run."""
+
+
+def _subagent_tool[**P, T](function: Callable[P, Awaitable[T]]) -> Callable[P, CoroutineType[Any, Any, T]]:
+    @wraps(function)
+    async def wrapped(*args: P.args, **kwargs: P.kwargs) -> T:
+        try:
+            return await function(*args, **kwargs)
+        except _SubagentRequestError as exc:
+            raise ToolFailed(f"{exc.code}: {exc}") from exc
+
+    return wrapped
 
 
 class HarnessUiSubagentOperator(SubagentOperator):
@@ -351,6 +369,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 async with self._lock:
                     self._parents.pop(key, None)
 
+    @_subagent_tool
     async def delegate(
         self,
         plan: SubagentDelegationPlan,
@@ -469,6 +488,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             child_definition_id=reconstructed.executable.definition.definition_id,
         )
 
+    @_subagent_tool
     async def info(
         self,
         context: SubagentOperatorContext,
@@ -609,6 +629,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             )
         return page
 
+    @_subagent_tool
     async def wait(
         self,
         context: SubagentOperatorContext,
@@ -669,6 +690,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         )
         return SubagentWaitResult(**info.model_dump(mode="python"))
 
+    @_subagent_tool
     async def steer(
         self,
         context: SubagentOperatorContext,
@@ -707,6 +729,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             enqueue_id=enqueue_id,
         )
 
+    @_subagent_tool
     async def cancel(
         self,
         context: SubagentOperatorContext,
@@ -744,6 +767,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             status="running",
         )
 
+    @_subagent_tool
     async def resume(
         self,
         plan: SubagentDelegationPlan,
@@ -757,13 +781,13 @@ class HarnessUiSubagentOperator(SubagentOperator):
         subagent_name, _previous_definition_id = await self._execution_identity(previous)
         _require_edge(scope.composition.root, subagent_name)
         if subagent_name != plan.child.declaration.name or not previous.resumable:
-            raise RunCoordinationError(
+            raise _SubagentRequestError(
                 "The retained child execution is not resumable from this roster edge.",
                 code="subagent_resume_incompatible",
             )
         checkpoint = await self._read_checkpoint(previous)
         if not checkpoint.terminal or checkpoint.deferred_requests is not None:
-            raise RunCoordinationError(
+            raise _SubagentRequestError(
                 "The selected child checkpoint is not terminal.",
                 code="subagent_resume_incompatible",
             )
@@ -1376,7 +1400,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
     ) -> ChildExecutionHead:
         head = await self._store.child_executions.get(execution_id)
         if head is None or head.parent_thread_id != parent_thread_id:
-            raise RunCoordinationError(
+            raise _SubagentRequestError(
                 "The child execution is unavailable in this parent scope.",
                 code="subagent_execution_unavailable",
             )
@@ -1394,7 +1418,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
     async def _read_checkpoint(self, head: ChildExecutionHead) -> StoredChildCheckpoint:
         reference = head.selected_checkpoint
         if reference is None:
-            raise RunCoordinationError(
+            raise _SubagentRequestError(
                 "The child execution has no selected checkpoint.",
                 code="subagent_checkpoint_missing",
             )
@@ -1988,12 +2012,12 @@ def _bounded_failure_details(value: object) -> dict[str, JsonValue] | None:
 def _wait_timeout(value: float | None) -> float:
     if value is None:
         return _DEFAULT_WAIT_SECONDS
-    if not 0 <= value <= _MAX_WAIT_SECONDS:
-        raise RunCoordinationError(
-            "Child wait timeout is outside supported bounds.",
+    if not math.isfinite(value) or value < 0:
+        raise _SubagentRequestError(
+            "Child wait timeout must be a finite non-negative number.",
             code="child_wait_invalid",
         )
-    return value
+    return min(value, _MAX_WAIT_SECONDS)
 
 
 def _safe_failure(exc: BaseException, *, fallback_code: str) -> SafeFailure:
