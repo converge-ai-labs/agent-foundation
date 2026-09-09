@@ -13,6 +13,8 @@ import "a13n-ui/styles.css";
 
 Pass `loading` consistently as a boolean to reserve the spinner slot, and provide a translated `loadingLabel` when the label changes. Both labels participate in layout, preserving dimensions. Icon-only buttons need an accessible name. Spinner is decorative; its owner supplies loading text or a status announcement. Components accept display strings; applications own translations and business state.
 
+`Logo` renders the shared brand asset. Supply `alt="a13n"` when it identifies the brand, or `alt=""` when adjacent text already names it. It defaults to 32 × 32 pixels and accepts native image sizing and styling props. Applications own surrounding wordmarks, product names, and navigation.
+
 ## Composition
 
 Use `Select` for a standalone control, with its required `label` serving as the accessible name. Use `SelectField` for a visible form label, hint, and error. Existing labeled Select callers must migrate to SelectField. Both share the same interaction implementation; `size="sm"` and `variant="ghost"` support settings and inline properties.

@@ -7,13 +7,12 @@ import {
   useParams,
 } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Button, Input } from "a13n-ui";
+import { Button, Input, Logo } from "a13n-ui";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useAuth, useClient } from "./context";
 import { data } from "../shared/api";
 import { ErrorNotice, Loading } from "../shared/feedback";
-import logo from "../brand/a13n-logo.svg";
 import styles from "./pages.module.css";
 
 export function AuthPage() {
@@ -115,7 +114,7 @@ export function AuthPage() {
   return (
     <main className={styles.screen}>
       <div className={styles.brand}>
-        <img src={logo} alt="a13n" />
+        <Logo alt="a13n" />
         <span>Console</span>
       </div>
       <section className={styles.card}>

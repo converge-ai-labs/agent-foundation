@@ -31,3 +31,5 @@ export { SettingsRow, SettingsSection } from "./components/settings";
 export { Tabs } from "./components/tabs";
 export type { TabsProps, TabItem } from "./components/tabs";
 export { EmptyState } from "./components/empty-state";
+export { Logo } from "./components/logo";
+export type { LogoProps } from "./components/logo";

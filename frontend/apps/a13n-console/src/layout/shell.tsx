@@ -22,12 +22,11 @@ import {
   Menu as MenuIcon,
   X,
 } from "lucide-react";
-import { Button, Menu, Picker } from "a13n-ui";
+import { Button, Logo, Menu, Picker } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth/context";
 import { useWorkspace } from "./workspace";
 import { ErrorNotice, Loading } from "../shared/feedback";
-import logo from "../brand/a13n-logo.svg";
 import styles from "./shell.module.css";
 
 export function Shell() {
@@ -97,7 +96,7 @@ export function Shell() {
           aria-label={t("Main navigation")}
         >
           <div className={styles.brand}>
-            <img src={logo} alt="" />
+            <Logo alt="" />
             <strong>a13n</strong>
             <span>Console</span>
             <Button
