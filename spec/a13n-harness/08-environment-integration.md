@@ -26,20 +26,22 @@ class EnvironmentAccess(StrEnum):
 @dataclass(frozen=True, slots=True)
 class EnvironmentMount:
     environment: Environment
-    access: EnvironmentAccess = EnvironmentAccess.FULL
+    access: EnvironmentAccess | EnvironmentPermissionSet = EnvironmentAccess.FULL
     working_directory: str | None = "/"
     mount_path: str | None = None
 ```
 
 `EnvironmentMount` is a Run input/configuration value. It contains one already constructed adapter plus Run-local policy. It has no independent identity, lifecycle, durable serialization, or Provider discovery behavior.
 
-`EnvironmentAccess` is the complete user-facing access model:
+`EnvironmentMount.access` accepts an `EnvironmentAccess` preset or an exact `EnvironmentPermissionSet` action ceiling. Explicit permission sets are detached at construction. The presets are:
 
 - `READ_ONLY` permits provider-neutral file observation and file-copy source access;
 - `READ_WRITE` adds file mutation;
 - `FULL` permits every Agent-facing operation family offered by the Provider, including command/process behavior;
 - provider descriptors always narrow these ceilings;
 - state dump and local close remain trusted lifecycle operations and are not model-authored permissions.
+
+An exact permission set can expose a narrower combination, such as text read, text write, and remove without other file operations. Both forms are intersected with the Provider descriptor; neither can grant an operation the Provider does not offer.
 
 `working_directory` is `None` or a canonical absolute provider-local path. It contains no NUL, repeated separator, trailing separator other than `/`, or `.`/`..` segment.
 
@@ -75,6 +77,14 @@ The rules are:
 A mount without `mount_path` retains the compatibility routes: every such mount is addressable at `/environment/{name}`, and the current default is also addressable at `/workspace`. Without a default, `/workspace` is unavailable. A mount with `mount_path` is addressable only at that explicit root; the Harness does not also expose `/workspace` or `/environment/{name}` for it. Relative paths still select the explicit alias or current default and begin at that mount's provider-local `working_directory`.
 
 A hosted worker constructs Environment instances from Host-authoritative configuration and state, and either prepares them before Harness execution or supplies Host-coordinated lazy preparation. An embedded caller can construct them directly through a trusted Provider.
+
+### Explicit Host runtime construction
+
+`create_environment_runtime(mounts=..., default_mount=..., extensions=...)` accepts the same `Environment` and `EnvironmentMount` values. A raw Environment selects full access, provider-local working directory `/`, and the ordinary implicit aggregate routes. The explicit runtime retains its existing default-selection rule: `default_mount` is selected only when supplied. Run-local `mount()` and `replace()` accept these same values. Hosts with already constructed Environment objects do not implement another binding adapter to enter or close them.
+
+The advanced `EnvironmentRuntimeMount(binding=..., permission_ceiling=..., working_directory=..., mount_path=...)` input remains supported by explicit runtime construction and mutation. Its `EnvironmentProviderBinding` owns a trusted async `bind()` scope and `discard()` cleanup for a candidate that was accepted but did not enter. It supports Host-specific acquisition, authentication, or resource scopes whose lifetime begins at binding, without requiring a preconstructed `Environment`. Such binding scopes expose the same provider-neutral operations and obey the same permissions, readiness, identity, and cleanup guarantees. This is an explicit Host integration boundary, not another Provider catalog or model-facing lifecycle.
+
+Validation of a complete initial mount set precedes ownership transfer. The same Environment object cannot occupy two initial mounts, including through distinct `EnvironmentMount` values. Ownership transfer precedes entry and is single-use: rebuilding a mount wrapper or constructing another runtime cannot transfer an already accepted Environment again. An already entered object is rejected without closing its existing scope. If an initial set includes an already transferred candidate, cleanup owns only the newly accepted candidates; it never discards the reused candidate. Dynamic mutation validates the prospective routes before transfer, so a rejected route does not consume the fresh candidate. After transfer, entry failure closes every accepted candidate according to the aggregate cleanup contract, including objects that never entered.
 
 ## Ownership Boundary
 

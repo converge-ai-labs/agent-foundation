@@ -93,6 +93,19 @@ def parse_mount_path(value: str) -> ParsedMountPath:
     raise ValueError("mount_path must be an absolute POSIX, drive, or UNC path")
 
 
+def validate_working_directory(value: str | None) -> None:
+    """Require a canonical provider-local working directory when one is supplied."""
+    if value is not None and (
+        not isinstance(value, str)
+        or not value.startswith("/")
+        or "\x00" in value
+        or "//" in value
+        or (value != "/" and value.endswith("/"))
+        or any(segment in {".", ".."} for segment in value.split("/"))
+    ):
+        raise ValueError("working_directory must be a canonical absolute path")
+
+
 def normalize_operation_path(value: str) -> str:
     """Normalize harmless input spelling without resolving parent traversal or links."""
     if not isinstance(value, str) or not value or "\x00" in value:

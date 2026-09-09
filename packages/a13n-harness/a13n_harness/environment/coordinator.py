@@ -61,6 +61,7 @@ from .providers import (
     EnvironmentRuntimeMount,
     FileScopeSelection,
 )
+from .sources import EnvironmentEntry, _normalize_runtime_mount
 from .virtual_files import VirtualFileOperator, _PreparedFile
 
 if TYPE_CHECKING:
@@ -516,7 +517,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
         if not isinstance(mount, EnvironmentRuntimeMount):
             raise EnvironmentError("Environment mount input is invalid.", code="environment_request_invalid")
         candidate = mount.binding
-        if not EnvironmentProviderBinding._claim_transfer(candidate):
+        if not candidate._claim_transfer():
             raise EnvironmentError(
                 "Environment provider binding was already transferred.",
                 code="environment_provider_binding_reused",
@@ -1343,14 +1344,16 @@ class ManagedEnvironmentRuntime(EnvironmentRuntime):
     async def mount(
         self,
         name: str,
-        mount: EnvironmentRuntimeMount,
+        mount: EnvironmentEntry | EnvironmentRuntimeMount,
         *,
         make_default: bool = False,
     ) -> EnvironmentChange:
-        return await self._require_active_bound()._mount(name, mount, make_default=make_default)
+        return await self._require_active_bound()._mount(
+            name, _normalize_runtime_mount(mount), make_default=make_default
+        )
 
-    async def replace(self, name: str, mount: EnvironmentRuntimeMount) -> EnvironmentChange:
-        return await self._require_active_bound()._replace(name, mount)
+    async def replace(self, name: str, mount: EnvironmentEntry | EnvironmentRuntimeMount) -> EnvironmentChange:
+        return await self._require_active_bound()._replace(name, _normalize_runtime_mount(mount))
 
     async def unmount(self, name: str) -> EnvironmentChange:
         return await self._require_active_bound()._unmount(name)
@@ -1530,7 +1533,7 @@ def _validate_initial_mounts(
     default_mount: str | None,
 ) -> None:
     names = [item.name for item in mounts]
-    candidate_ids = [id(item.candidate) for item in mounts]
+    candidate_ids = [id(item.candidate._transfer_owner) for item in mounts]
     if len(names) != len(set(names)):
         raise EnvironmentError("Environment mount names must be unique.", code="environment_request_invalid")
     if len(candidate_ids) != len(set(candidate_ids)):
@@ -1838,7 +1841,7 @@ def _claim_candidate_transfers(
     claimed: list[EnvironmentProviderBinding] = []
     reused: list[EnvironmentProviderBinding] = []
     for candidate in candidates.values():
-        transferred = EnvironmentProviderBinding._claim_transfer(candidate)
+        transferred = candidate._claim_transfer()
         (claimed if transferred else reused).append(candidate)
     return tuple(claimed), tuple(reused)
 
@@ -1934,12 +1937,13 @@ def _virtualize_path(root: str, provider_path: str) -> str:
 
 def create_environment_runtime(
     *,
-    mounts: Mapping[str, EnvironmentRuntimeMount],
+    mounts: Mapping[str, EnvironmentEntry | EnvironmentRuntimeMount],
     default_mount: str | None = None,
     extensions: Sequence[EnvironmentRunExtension] = (),
 ) -> EnvironmentRuntime:
     """Capture one atomic initial mount set in a fresh single-use runtime."""
     try:
+        normalized = {name: _normalize_runtime_mount(entry) for name, entry in dict(mounts).items()}
         captured = tuple(
             _MountRequest(
                 name=name,
@@ -1948,7 +1952,7 @@ def create_environment_runtime(
                 mount_path=mount.mount_path,
                 candidate=mount.binding,
             )
-            for name, mount in dict(mounts).items()
+            for name, mount in normalized.items()
         )
     except (AttributeError, TypeError, ValueError) as exc:
         raise EnvironmentError("Environment mounts are invalid.", code="environment_request_invalid") from exc

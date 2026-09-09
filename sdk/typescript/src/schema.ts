@@ -6410,6 +6410,17 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
+    /** SessionPreview */
+    SessionPreview: {
+      /** Input Text */
+      input_text: string | null;
+      /** Output Text */
+      output_text: string | null;
+      /** Run Id */
+      run_id: string;
+      /** Thread Id */
+      thread_id: string;
+    };
     /** SessionResource */
     SessionResource: {
       /**
@@ -6419,6 +6430,7 @@ export interface components {
       created_at: string;
       /** Id */
       id: string;
+      preview: components["schemas"]["SessionPreview"] | null;
       /**
        * Updated At
        * Format: date-time

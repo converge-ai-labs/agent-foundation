@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { data, workspaceHeaders } from "../../shared/api";
+import { conversationQueries } from "./api";
 import { ErrorNotice, StateBadge } from "../../shared/feedback";
 import styles from "./conversations.module.css";
 
@@ -17,15 +17,7 @@ export function SteeringStatus({
     client = useClient(),
     { workspace } = useWorkspace();
   const query = useQuery({
-    queryKey: ["steer", workspace.id, runId, steerId],
-    queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/runs/{run_id}/steers/{steer_id}", {
-          params: { path: { run_id: runId, steer_id: steerId } },
-          headers: workspaceHeaders(workspace.id),
-          signal,
-        })
-        .then(data),
+    ...conversationQueries(client, workspace.id).steer(runId, steerId),
     refetchInterval: (query) =>
       query.state.data?.status === "pending" ? 2000 : false,
   });

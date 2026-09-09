@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
-import { conversationApi, runPath } from "./api";
+import { conversationQueries, runPath } from "./api";
 import { InputContent, PresentedItems } from "./items";
 import { mergeRetainedItems } from "./projection";
 import { MessageMarkdown } from "./markdown";
@@ -17,11 +17,9 @@ export function HistoryTranscript({ runId }: { runId: string }) {
     { workspace } = useWorkspace(),
     { t } = useTranslation(),
     [limit, setLimit] = useState(10);
-  const lineage = useQuery({
-    queryKey: ["run-lineage", workspace.id, runId],
-    queryFn: ({ signal }) =>
-      conversationApi(client, workspace.id).lineage(runId, signal),
-  });
+  const lineage = useQuery(
+    conversationQueries(client, workspace.id).lineage(runId),
+  );
   const ancestors = [...(lineage.data?.items ?? [])]
     .filter((entry) => entry.run_id !== runId)
     .sort((a, b) => a.depth_from_head - b.depth_from_head);
@@ -46,28 +44,25 @@ function HistoricalRun({ runId }: { runId: string }) {
   const client = useClient(),
     { workspace } = useWorkspace(),
     { t } = useTranslation(),
-    api = conversationApi(client, workspace.id);
-  const query = useQuery({
-    queryKey: ["retained-run", workspace.id, runId],
-    staleTime: 60_000,
-    queryFn: async ({ signal }) => {
-      const [run, retained] = await Promise.all([
-        api.run(runId, signal),
-        api.retainedItems(runId, signal),
-      ]);
-      return {
-        run,
-        retained,
-        items: [...mergeRetainedItems(new Map(), retained.items).values()],
-      };
-    },
-  });
-  if (query.isPending) return <Loading />;
-  if (!query.data)
+    queries = conversationQueries(client, workspace.id);
+  const runQuery = useQuery({ ...queries.run(runId), staleTime: 60_000 });
+  const retained = useQuery({ ...queries.items(runId), staleTime: 60_000 });
+  const items = useMemo(
+    () => [
+      ...mergeRetainedItems(new Map(), retained.data?.items ?? []).values(),
+    ],
+    [retained.data],
+  );
+  const reload = () => {
+    void runQuery.refetch();
+    void retained.refetch();
+  };
+  if (runQuery.isPending || retained.isPending) return <Loading />;
+  if (!runQuery.data || !retained.data)
     return (
-      <ErrorNotice error={query.error} retry={() => void query.refetch()} />
+      <ErrorNotice error={runQuery.error ?? retained.error} retry={reload} />
     );
-  const { run, items } = query.data;
+  const run = runQuery.data;
   return (
     <section className={styles.historyRun}>
       <Link
@@ -88,10 +83,10 @@ function HistoricalRun({ runId }: { runId: string }) {
           item.text,
       ) &&
         run.output_text && <MessageMarkdown text={run.output_text} />}
-      {!query.data.retained.available && (
+      {!retained.data.available && (
         <p className={styles.notice}>
           {t("Detailed items are currently unavailable for this run.")}
-          <Button size="sm" onClick={() => void query.refetch()}>
+          <Button size="sm" onClick={reload}>
             {t("Reload")}
           </Button>
         </p>

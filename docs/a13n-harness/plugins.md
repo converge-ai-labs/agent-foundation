@@ -188,9 +188,30 @@ Run middleware must preserve single-consumer streaming and yield exactly one str
 
 Plugins can contribute native Capabilities at Agent binding. They should not implement a second tool dispatcher, message history, usage accumulator, or Environment lifecycle.
 
-## Environment Provider Bindings
+## Environment Inputs and Advanced Bindings
 
-Trusted code can implement `EnvironmentProviderBinding` directly when it already owns one process-local resource revision and can expose provider-neutral file, shell, process, output, port, readiness, and portable-state operations.
+When a Provider has already constructed an `Environment`, pass it directly to `run(environment=...)` or wrap it in `EnvironmentMount` to select access and paths. Explicit runtimes and their dynamic `mount()` and `replace()` methods accept the same inputs. Harness owns entry and local cleanup; Host code does not need to implement a forwarding binding class:
+
+```python
+from a13n_harness.environment import EnvironmentAccess, EnvironmentMount
+from a13n_harness.environment.advanced import create_environment_runtime
+
+environment_runtime = create_environment_runtime(
+    mounts={
+        "workspace": EnvironmentMount(
+            environment=environment,
+            access=EnvironmentAccess.READ_WRITE,
+        ),
+    },
+    default_mount="workspace",
+)
+```
+
+`access` also accepts an `EnvironmentPermissionSet` with an exact action ceiling. This is useful for a setup extension that needs only selected file operations. Provider permissions always narrow the ceiling. Each underlying Environment transfers only once, even if it is wrapped in another `EnvironmentMount`; invalid initial routes do not transfer it, and a failed attempt to reuse it cannot close its existing scope.
+
+### Advanced Provider Binding Scopes
+
+Use `EnvironmentProviderBinding` with `EnvironmentRuntimeMount` when a Host needs to acquire an authenticated session or another resource inside a custom async `bind()` scope and expose provider-neutral file, shell, process, output, port, readiness, and portable-state operations. This advanced input remains accepted by explicit runtime construction and dynamic mount replacement. An existing Environment should use the direct inputs above.
 
 That is a low-level runtime binding contract. Provider specification catalogs, `EnvironmentProvider` lifecycle operations, credential handling, and durable provider state are not Harness middleware and are not documented as a Harness plugin system.
 
@@ -272,20 +293,20 @@ class WorkspaceMarkerExtension:
             await context.environment.files.remove(path)
 ```
 
-Register direct extension objects through the advanced runtime route:
+Register direct extension objects on an explicit runtime with ordinary Environment inputs:
 
 ```python
 from a13n_harness.environment.advanced import create_environment_runtime
 
 
 environment_runtime = create_environment_runtime(
-    mounts=mounts,
+    mounts={"workspace": environment},
     default_mount="workspace",
     extensions=(WorkspaceMarkerExtension("workspace-marker"),),
 )
 ```
 
-Give the advanced runtime to the Harness through fresh run bindings. The Harness, not Host code, binds, activates, and closes it:
+Give the runtime to the Harness through fresh run bindings. Harness binds, activates, and closes it:
 
 ```python
 from a13n_harness import RunBindings

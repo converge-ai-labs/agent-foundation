@@ -9885,6 +9885,46 @@
         "title": "SessionCollection",
         "type": "object"
       },
+      "SessionPreview": {
+        "additionalProperties": false,
+        "properties": {
+          "input_text": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Text"
+          },
+          "output_text": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Text"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          }
+        },
+        "required": ["thread_id", "run_id", "input_text", "output_text"],
+        "title": "SessionPreview",
+        "type": "object"
+      },
       "SessionResource": {
         "additionalProperties": false,
         "properties": {
@@ -9897,6 +9937,16 @@
             "title": "Id",
             "type": "string"
           },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionPreview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -9907,7 +9957,13 @@
             "type": "string"
           }
         },
-        "required": ["id", "workspace_id", "created_at", "updated_at"],
+        "required": [
+          "id",
+          "workspace_id",
+          "created_at",
+          "updated_at",
+          "preview"
+        ],
         "title": "SessionResource",
         "type": "object"
       },

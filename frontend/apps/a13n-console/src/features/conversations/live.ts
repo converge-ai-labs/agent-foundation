@@ -3,7 +3,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ReplayGapError } from "@converge.ai/a13n";
 import { revalidateSession, useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { conversationApi, isActiveRun } from "./api";
+import {
+  conversationKeys,
+  conversationQueries,
+  invalidateConversation,
+  isActiveRun,
+} from "./api";
 import {
   applyRunEvent,
   compareCursors,
@@ -27,7 +32,7 @@ export function useLiveRun(runId: string) {
   useEffect(() => {
     const controller = new AbortController(),
       { signal } = controller,
-      api = conversationApi(client, workspace.id);
+      queries = conversationQueries(client, workspace.id);
     let frame: number | undefined;
     function publish() {
       if (frame !== undefined) return;
@@ -42,21 +47,21 @@ export function useLiveRun(runId: string) {
       });
     }
     async function reconcile() {
-      const [run, retained, pending] = await Promise.all([
-        api.run(runId, signal),
-        api.retainedItems(runId, signal),
-        api.pending(runId, signal),
+      signal.throwIfAborted();
+      // Recovery must read current resources even when the display cache is fresh.
+      const [run, retained] = await Promise.all([
+        cache.fetchQuery({ ...queries.run(runId), staleTime: 0 }),
+        cache.fetchQuery({ ...queries.items(runId), staleTime: 0 }),
+        cache.fetchQuery({ ...queries.pending(runId), staleTime: 0 }),
       ]);
       if (signal.aborted) return { run, available: retained.available };
-      cache.setQueryData(["run", workspace.id, runId], run);
-      cache.setQueryData(["pending-actions", workspace.id, runId], pending);
       projection.current = mergeRetainedItems(
         projection.current,
         retained.items,
       );
       publish();
       void cache.invalidateQueries({
-        queryKey: ["thread", workspace.id, run.thread_id],
+        queryKey: conversationKeys(workspace.id).thread(run.thread_id),
       });
       return { run, available: retained.available };
     }
@@ -90,17 +95,10 @@ export function useLiveRun(runId: string) {
               entry.event.event_type.startsWith("run.") ||
               entry.event.event_type.startsWith("run_attempt.")
             ) {
-              void cache.invalidateQueries({
-                queryKey: ["run", workspace.id, runId],
-              });
-              void cache.invalidateQueries({
-                queryKey: ["thread", workspace.id],
-              });
-              void cache.invalidateQueries({
-                queryKey: ["thread-runs", workspace.id],
-              });
-              void cache.invalidateQueries({
-                queryKey: ["run-attempts", workspace.id, runId],
+              void invalidateConversation(cache, workspace.id, {
+                sessionId: initial.run.session_id,
+                threadId: entry.event.thread_id,
+                runId,
               });
             }
             if (

@@ -150,6 +150,24 @@ The status rows have these qualifications:
 
 Every input-bearing Run command and terminal Retry can select one exact Run-scoped HookSubscription. Feedback, waiting Continue, and Retry support omitted, null, and explicit selections under [Hook successor selection](26-hook-notifications.md#successor-inline-subscriptions). Acceptance creates the same resource exposed by the Hook-subscription routes and returns its new ID in the Run acceptance receipt. When an ordinary existing-Thread submission queues, its explicit Hook input remains editable unaccepted intent and creates no subscription until consumption accepts a Run; it never inherits a Hook from the consumption-time source. [Hook Notifications](26-hook-notifications.md#durable-hook-subscriptions) owns selection, authorization, expiry, retention, transaction, and delivery semantics.
 
+## Session Reads
+
+`GET /api/v1/workspaces/{workspace_id}/sessions?limit=...&cursor=...` returns an authorized Session page in `updated_at desc, id desc` order. Every Session includes a nullable `preview` so clients can render a conversation list without fetching each Session's Threads and Run separately. Session visibility and cursor boundaries remain governed by `session.read` and the caller's current Agent scope.
+
+The preview has this wire shape:
+
+```python
+class SessionPreview:
+    thread_id: str
+    run_id: str
+    input_text: str | None  # At most 256 Unicode characters.
+    output_text: str | None  # At most 512 Unicode characters.
+```
+
+Service first selects the latest `thread.read`-visible Thread in each returned Session, ordered by `updated_at desc, id desc`, using the same Agent-scope filtering as the Thread collection. It selects that Thread's `current_run_id`, or `head_run_id` when the current reference is null, then separately requires `run.read` for that exact Run. A readable Session whose selected Thread has no Run, whose selected Run is unreadable, or whose caller lacks Thread or Run read authority has `preview=null`. An empty Session also has no preview. None of these cases selects an older Thread or historical Run as a fallback, and a null preview exposes no Thread or Run identifiers.
+
+Non-null previews copy only the selected Run's bounded `input_text` and `output_text` prefixes, preserving Unicode characters and null values without adding markup or an ellipsis. They do not read exact input/output bodies, payload objects, replay, or Run state. The page and its previews use a bounded number of relational queries independent of page length; authorization and latest-Thread selection apply before text projection. Preview text and identifiers are presentation data, not new stored authority, lifecycle state, or permission grants.
+
 ## Thread Reads
 
 Service exposes the stored Thread resource directly:

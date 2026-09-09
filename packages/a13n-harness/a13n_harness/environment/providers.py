@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Literal, Protocol
 from a13n_environment import EnvironmentState
 from a13n_environment.operations import EnvironmentOperations
 
-from ._mount_path import parse_mount_path
+from ._mount_path import parse_mount_path, validate_working_directory
 from .commands import (
     BoundProcessHandle,
     CommandRequest,
@@ -51,6 +51,8 @@ from .retention import (
 if TYPE_CHECKING:
     from a13n_harness.identity import AgentInstanceContext
     from a13n_harness.model_context import ModelContextProjection, ModelContextProjectionRequest
+
+    from .sources import EnvironmentEntry
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,13 +215,19 @@ class BoundEnvironmentProvider(Protocol):
 class EnvironmentProviderBinding(ABC):
     """Single-use provider candidate materialized by a trusted Host."""
 
+    @property
+    def _transfer_owner(self) -> object:
+        """Keep transfer ownership on the resource shared by any forwarding wrappers."""
+        return self
+
     def _claim_transfer(self) -> bool:
         """Atomically mark this candidate as transferred without a central identity table."""
+        owner = self._transfer_owner
         marker_name = "_EnvironmentProviderBinding__transferred"
         try:
-            object.__getattribute__(self, marker_name)
+            object.__getattribute__(owner, marker_name)
         except AttributeError:
-            object.__setattr__(self, marker_name, True)
+            object.__setattr__(owner, marker_name, True)
             return True
         return False
 
@@ -264,16 +272,7 @@ class EnvironmentRuntimeMount:
             raise TypeError("binding must be an EnvironmentProviderBinding")
         if not isinstance(self.permission_ceiling, EnvironmentPermissionSet):
             raise TypeError("permission_ceiling must be an EnvironmentPermissionSet")
-        directory = self.working_directory
-        if directory is not None and (
-            not isinstance(directory, str)
-            or not directory.startswith("/")
-            or "\x00" in directory
-            or "//" in directory
-            or (directory != "/" and directory.endswith("/"))
-            or any(segment in {".", ".."} for segment in directory.split("/"))
-        ):
-            raise ValueError("working_directory must be a canonical absolute path")
+        validate_working_directory(self.working_directory)
         if self.mount_path is not None:
             parse_mount_path(self.mount_path)
 
@@ -386,14 +385,14 @@ class EnvironmentRuntime(ABC):
     async def mount(
         self,
         name: str,
-        mount: EnvironmentRuntimeMount,
+        mount: EnvironmentEntry | EnvironmentRuntimeMount,
         *,
         make_default: bool = False,
     ) -> EnvironmentChange:
         """Prepare and atomically publish one new mount."""
 
     @abstractmethod
-    async def replace(self, name: str, mount: EnvironmentRuntimeMount) -> EnvironmentChange:
+    async def replace(self, name: str, mount: EnvironmentEntry | EnvironmentRuntimeMount) -> EnvironmentChange:
         """Prepare and atomically replace one existing mount."""
 
     @abstractmethod

@@ -11,8 +11,7 @@ from a13n_environment import Environment
 
 from a13n_harness.identity import AgentInstanceContext
 
-from ._mount_path import parse_mount_path
-from .coordinator import create_empty_environment_runtime, create_environment_runtime
+from ._mount_path import parse_mount_path, validate_working_directory
 from .models import EnvironmentAction, EnvironmentError, EnvironmentPermissionSet
 from .providers import (
     BoundEnvironmentProvider,
@@ -58,31 +57,24 @@ class EnvironmentMount:
     """One already constructed Environment plus Run-local access and path policy."""
 
     environment: Environment
-    access: EnvironmentAccess = EnvironmentAccess.FULL
+    access: EnvironmentAccess | EnvironmentPermissionSet = EnvironmentAccess.FULL
     working_directory: str | None = "/"
     mount_path: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.environment, Environment):
             raise TypeError("EnvironmentMount environment must be an Environment")
-        if not isinstance(self.access, EnvironmentAccess):
-            raise TypeError("EnvironmentMount access must be an EnvironmentAccess")
-        directory = self.working_directory
-        if directory is not None and (
-            not isinstance(directory, str)
-            or not directory.startswith("/")
-            or "\x00" in directory
-            or "//" in directory
-            or (directory != "/" and directory.endswith("/"))
-            or any(segment in {".", ".."} for segment in directory.split("/"))
-        ):
-            raise ValueError("EnvironmentMount working_directory must be a canonical absolute path")
+        if not isinstance(self.access, EnvironmentAccess | EnvironmentPermissionSet):
+            raise TypeError("EnvironmentMount access must be an EnvironmentAccess or EnvironmentPermissionSet")
+        if isinstance(self.access, EnvironmentPermissionSet):
+            object.__setattr__(self, "access", self.access.model_copy(deep=True))
+        validate_working_directory(self.working_directory)
         if self.mount_path is not None:
             parse_mount_path(self.mount_path)
 
     @property
     def permissions(self) -> EnvironmentPermissionSet:
-        return self.access.permission_set()
+        return self.access.permission_set() if isinstance(self.access, EnvironmentAccess) else self.access
 
 
 type EnvironmentEntry = Environment | EnvironmentMount
@@ -93,6 +85,15 @@ class _EnvironmentAdapterBinding(EnvironmentProviderBinding):
         self._environment = environment
         self._used = False
         self._discarded = False
+
+    @property
+    def _transfer_owner(self) -> object:
+        return self._environment
+
+    def _claim_transfer(self) -> bool:
+        if self._used or self._discarded or self._environment.is_entered:
+            return False
+        return super()._claim_transfer()
 
     @property
     def provider_type(self) -> str:
@@ -139,6 +140,8 @@ def normalize_environment_inputs(
     default_environment: str | None,
     advanced_binding: EnvironmentRuntime | None,
 ) -> EnvironmentRuntime:
+    from .coordinator import create_empty_environment_runtime, create_environment_runtime
+
     if environment is not None and environments is not None:
         raise EnvironmentError(
             "environment and environments are mutually exclusive.", code="environment_request_invalid"
@@ -171,26 +174,19 @@ def normalize_environment_inputs(
             default_environment if default_environment is not None else entries[0][0] if len(entries) == 1 else None
         )
 
-    identities = [id(mount.environment) for _name, mount in entries]
-    if len(identities) != len(set(identities)):
-        raise EnvironmentError(
-            "One Environment instance cannot be mounted more than once.", code="environment_request_invalid"
-        )
-    try:
-        mounts = {
-            name: EnvironmentRuntimeMount(
-                binding=_EnvironmentAdapterBinding(mount.environment),
-                permission_ceiling=mount.permissions,
-                working_directory=mount.working_directory,
-                mount_path=mount.mount_path,
-            )
-            for name, mount in entries
-        }
-    except (TypeError, ValueError) as error:
-        raise EnvironmentError(
-            "Environment names or mount policies are invalid.", code="environment_request_invalid"
-        ) from error
-    return create_environment_runtime(mounts=mounts, default_mount=default_alias)
+    return create_environment_runtime(mounts=dict(entries), default_mount=default_alias)
+
+
+def _normalize_runtime_mount(entry: EnvironmentEntry | EnvironmentRuntimeMount) -> EnvironmentRuntimeMount:
+    if isinstance(entry, EnvironmentRuntimeMount):
+        return entry
+    mount = _normalize_entry(entry)
+    return EnvironmentRuntimeMount(
+        binding=_EnvironmentAdapterBinding(mount.environment),
+        permission_ceiling=mount.permissions,
+        working_directory=mount.working_directory,
+        mount_path=mount.mount_path,
+    )
 
 
 def _normalize_entry(entry: EnvironmentEntry) -> EnvironmentMount:

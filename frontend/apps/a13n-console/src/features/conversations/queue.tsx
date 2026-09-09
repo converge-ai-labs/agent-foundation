@@ -7,12 +7,7 @@ import { useTranslation } from "react-i18next";
 import { useAuth, useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { useIdempotency } from "../../shared/idempotency";
-import {
-  commandHeaders,
-  data,
-  workspaceHeaders,
-  type Schema,
-} from "../../shared/api";
+import { commandHeaders, data, type Schema } from "../../shared/api";
 import {
   ErrorNotice,
   Loading,
@@ -22,7 +17,7 @@ import {
 import { Confirm, JsonView } from "../../shared/form";
 import { OptionsComposer } from "./options";
 import { InputContent } from "./items";
-import { runPath } from "./api";
+import { conversationQueries, invalidateConversation, runPath } from "./api";
 import styles from "./conversations.module.css";
 
 export function ThreadQueue({
@@ -41,26 +36,13 @@ export function ThreadQueue({
   const [state, setState] = useState<Schema["QueuedSubmissionState"]>("queued");
   const consumeKey = useIdempotency();
   const query = useQuery({
-    queryKey: ["thread-queue", workspace.id, thread.id, state],
+    ...conversationQueries(client, workspace.id).queue(thread.id, state),
     enabled: can("queued_submission.read"),
-    queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/threads/{thread_id}/queued-submissions", {
-          params: {
-            path: { thread_id: thread.id },
-            query: { state, limit: 256 },
-          },
-          headers: workspaceHeaders(workspace.id),
-          signal,
-        })
-        .then(data),
   });
   const refresh = () => {
-    void cache.invalidateQueries({
-      queryKey: ["thread-queue", workspace.id, thread.id],
-    });
-    void cache.invalidateQueries({
-      queryKey: ["thread", workspace.id, thread.id],
+    void invalidateConversation(cache, workspace.id, {
+      sessionId: thread.session_id,
+      threadId: thread.id,
     });
   };
   const reorder = useMutation({
@@ -100,7 +82,20 @@ export function ThreadQueue({
         })
         .then(data),
     onSuccess: (receipt) => {
-      refresh();
+      void invalidateConversation(
+        cache,
+        workspace.id,
+        {
+          sessionId: thread.session_id,
+          threadId: thread.id,
+          runId: thread.current_run_id,
+        },
+        {
+          sessionId: receipt.run?.session_id,
+          threadId: receipt.run?.thread_id,
+          runId: receipt.run?.run_id,
+        },
+      );
       consumeKey.reset();
       if (receipt.run) navigate(runPath(workspace.id, receipt.run));
     },
@@ -224,6 +219,7 @@ export function ThreadQueue({
                   )}
                 {state === "queued" && can("queued_submission.delete") && (
                   <Confirm
+                    onSuccess={refresh}
                     title={t("Delete queued message")}
                     description={t(
                       "Remove this message from the queue permanently.",

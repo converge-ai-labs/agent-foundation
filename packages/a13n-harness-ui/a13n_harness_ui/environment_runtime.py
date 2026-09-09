@@ -6,8 +6,7 @@ import hashlib
 import inspect
 import os
 import stat
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
-from contextlib import asynccontextmanager
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import partial
@@ -27,18 +26,13 @@ from a13n_environment import (
 )
 from a13n_harness.environment import (
     EnvironmentAction,
+    EnvironmentMount,
     EnvironmentPermissionSet,
     EnvironmentRunExtension,
     EnvironmentRunExtensionFactoryContext,
 )
 from a13n_harness.environment.advanced import create_environment_runtime
-from a13n_harness.environment.providers import (
-    BoundEnvironmentProvider,
-    EnvironmentProviderBinding,
-    EnvironmentRuntime,
-    EnvironmentRuntimeMount,
-)
-from a13n_harness.identity import AgentInstanceContext
+from a13n_harness.environment.providers import EnvironmentRuntime
 from anyio import CancelScope, move_on_after, to_thread
 
 from a13n_harness_ui.composition import ResolvedEnvironmentProfile, ResolvedRunComposition
@@ -93,55 +87,6 @@ class _PreparedMount:
     environment: Environment
     permission_ceiling: EnvironmentPermissionSet
     mount_path: str | None
-
-
-class _EnvironmentBinding(EnvironmentProviderBinding):
-    """Transfer one fresh Provider Environment into a Harness runtime."""
-
-    def __init__(self, environment: Environment) -> None:
-        self._environment = environment
-        self._used = False
-        self._discarded = False
-
-    @property
-    def provider_type(self) -> str:
-        return self._environment.provider_key
-
-    @property
-    def environment_id(self) -> str:
-        return self._environment.environment_id
-
-    @asynccontextmanager
-    async def bind(
-        self,
-        *,
-        thread_id: str,
-        run_id: str,
-        instance: AgentInstanceContext,
-        mount_id: str,
-        host_refs: Mapping[str, str],
-    ) -> AsyncIterator[BoundEnvironmentProvider]:
-        if self._used or self._discarded:
-            raise EnvironmentLifecycleError(
-                "An Environment binding can be used exactly once.",
-                code="environment_binding_reused",
-            )
-        self._used = True
-        try:
-            await self._environment.enter(
-                thread_id=thread_id,
-                run_id=run_id,
-                agent_instance_id=instance.agent_instance_id,
-                mount_id=mount_id,
-                host_refs=host_refs,
-            )
-            yield self._environment
-        finally:
-            await self._environment.close()
-
-    async def discard(self) -> None:
-        self._discarded = True
-        await self._environment.close()
 
 
 class EnvironmentSnapshotReconstructor:
@@ -478,9 +423,9 @@ class EnvironmentRunService:
             extensions = await self._reconstructor.create_extensions(composition)
             runtime = create_environment_runtime(
                 mounts={
-                    item.alias: EnvironmentRuntimeMount(
-                        binding=_EnvironmentBinding(item.environment),
-                        permission_ceiling=item.permission_ceiling,
+                    item.alias: EnvironmentMount(
+                        environment=item.environment,
+                        access=item.permission_ceiling,
                         working_directory="/tmp" if item.alias == "thread-files" else "/",
                         mount_path=item.mount_path,
                     )
