@@ -57,6 +57,44 @@ def test_command_registry_has_one_grammar_and_rejects_collisions() -> None:
         CommandRegistry((Command("one", "one", aliases=("two",)), Command("two", "two")))
 
 
+@pytest.mark.parametrize("running", [False, True])
+@pytest.mark.parametrize(
+    "elapsed, expected",
+    [
+        (0, "0s"),
+        (0.6, "1s"),
+        (42, "42s"),
+        (59.4, "59s"),
+        (59.6, "1m 00s"),
+        (60, "1m 00s"),
+        (192, "3m 12s"),
+        (3599.4, "59m 59s"),
+        (3599.6, "1h 00m 00s"),
+        (3600, "1h 00m 00s"),
+        (3909, "1h 05m 09s"),
+        (90_061, "25h 01m 01s"),
+    ],
+)
+def test_status_elapsed_uses_hours_minutes_seconds(
+    monkeypatch: pytest.MonkeyPatch, running: bool, elapsed: float, expected: str
+) -> None:
+    monkeypatch.setattr("a13n_harness_ui.interactive.rendering.time.monotonic", lambda: 1000 + elapsed)
+    status = Status(started=1000 if running else None, elapsed=0 if running else elapsed)
+    assert status.line().endswith(f" · {expected} ")
+
+
+@pytest.mark.parametrize("width", [40, 80, 120])
+def test_status_elapsed_respects_terminal_width(width: int) -> None:
+    from prompt_toolkit.utils import get_cwidth
+
+    status = Status(elapsed=3909)
+    full = status.line()
+    assert full.endswith(" · 1h 05m 09s ")
+    assert status.line(get_cwidth(full)) == full
+    assert "1h" not in status.line(get_cwidth(full) - 1)
+    assert get_cwidth(status.line(width)) <= width
+
+
 def test_renderer_modes_switch_without_replay_and_preserve_control_safety() -> None:
     status = Status()
     renderer = StreamRenderer(status)
