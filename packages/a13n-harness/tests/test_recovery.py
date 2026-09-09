@@ -15,11 +15,15 @@ from a13n_harness import (
     RunBindings,
 )
 from a13n_harness.events import HarnessExtensionEvent
-from a13n_harness.recovery import INTERRUPTED_TOOL_RESULT, normalize_interrupted_history
+from a13n_harness.recovery import (
+    INTERRUPTED_TOOL_RESULT,
+    is_recoverable_model_failure,
+    normalize_interrupted_history,
+)
 from pydantic import BaseModel
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
-from pydantic_ai.exceptions import CallDeferred
+from pydantic_ai.exceptions import CallDeferred, ModelRetry, UnexpectedModelBehavior
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
@@ -79,7 +83,7 @@ async def test_recovery_prompt_factory_receives_detached_messages() -> None:
     assert prompt.content == "original"
 
 
-@pytest.mark.parametrize("error_type", [RuntimeError, httpx2.ReadError])
+@pytest.mark.parametrize("error_type", [RuntimeError, httpx2.ReadError, UnexpectedModelBehavior])
 async def test_stream_failure_resumes_with_partial_history_and_shared_usage(error_type: type[Exception]) -> None:
     calls: list[list[ModelMessage]] = []
 
@@ -943,7 +947,71 @@ async def test_provider_suspended_continuation_remains_inside_one_pydantic_attem
     assert responses[0].state == "complete"
 
 
-async def test_output_retry_exhaustion_does_not_start_a_new_attempt() -> None:
+@pytest.mark.parametrize(
+    ("message", "recoverable"),
+    [
+        ("Tool 'some_tool' exceeded max retries count of 1.", False),
+        ("Exceeded maximum retries (1) for output validation", False),
+        ("Stream ended unexpectedly", True),
+    ],
+)
+def test_unexpected_model_behavior_retry_classification(message: str, recoverable: bool) -> None:
+    assert is_recoverable_model_failure(UnexpectedModelBehavior(message), ()) is recoverable
+
+
+@pytest.mark.parametrize("retries", [0, 1, 2])
+@pytest.mark.parametrize("invalid_args", [False, True], ids=["model-retry", "argument-validation"])
+async def test_tool_retry_exhaustion_does_not_start_a_new_attempt(retries: int, invalid_args: bool) -> None:
+    model_calls = 0
+    tool_calls = 0
+
+    def failing_tool(value: int) -> str:
+        nonlocal tool_calls
+        tool_calls += 1
+        raise ModelRetry("Try a different value")
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[dict[int, DeltaToolCall]]:
+        nonlocal model_calls
+        del messages, info
+        model_calls += 1
+        yield {
+            0: DeltaToolCall(
+                name="failing_tool",
+                json_args='{"value": "invalid"}' if invalid_args else '{"value": 1}',
+                tool_call_id=f"tool-{model_calls}",
+            )
+        }
+
+    executable = HarnessBuilder().build(
+        AgentSpec(retries={"tools": retries}),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(Capability(tools=[failing_tool], id="test-tools"),),
+        model_recovery=_recovery_policy(max_attempts=5),
+    )
+
+    async with executable.stream("start", bindings=RunBindings.embedded()) as run_stream:
+        events = [event async for event in run_stream]
+        result = run_stream.result
+
+    assert model_calls == retries + 1
+    assert tool_calls == (0 if invalid_args else retries + 1)
+    assert result is not None and result.status == "failed"
+    assert result.usage.requests == retries + 1
+    assert result.failure is not None
+    assert result.failure.code == "agent_run_failed"
+    assert not any(
+        isinstance(event, HarnessEvent)
+        and isinstance(event.event, HarnessExtensionEvent)
+        and event.event.kind == "recovery"
+        for event in events
+    )
+    attempt_ids = {message.run_id for message in result.all_messages() if isinstance(message, ModelResponse)}
+    assert len(attempt_ids) == 1
+
+
+@pytest.mark.parametrize("retries", [0, 1, 2])
+async def test_output_retry_exhaustion_does_not_start_a_new_attempt(retries: int) -> None:
     class RequiredOutput(BaseModel):
         value: str
 
@@ -963,7 +1031,7 @@ async def test_output_retry_exhaustion_does_not_start_a_new_attempt() -> None:
         }
 
     executable = HarnessBuilder().build(
-        AgentSpec(retries={"output": 1}),
+        AgentSpec(retries={"output": retries}),
         output_type=ToolOutput(RequiredOutput, name="finish"),
         model=FunctionModel(stream_function=stream),
         model_recovery=_recovery_policy(max_attempts=5),
@@ -971,7 +1039,7 @@ async def test_output_retry_exhaustion_does_not_start_a_new_attempt() -> None:
 
     result = await executable.run("start", bindings=RunBindings.embedded())
 
-    assert calls == 2
+    assert calls == retries + 1
     assert result.status == "failed"
     assert result.failure is not None
     assert result.failure.code == "agent_run_failed"

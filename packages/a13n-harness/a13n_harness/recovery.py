@@ -239,8 +239,10 @@ def is_recoverable_model_failure(error: BaseException, messages: Sequence[ModelM
     if isinstance(error, ModelAPIError):
         return True
     if isinstance(error, UnexpectedModelBehavior):
+        # Pydantic AI has no dedicated retry-exhaustion exception: tools use
+        # "exceeded max retries", while output validation uses "exceeded maximum retries".
         text = str(error).lower()
-        return "exceeded maximum" not in text or "retries" not in text
+        return "exceeded max" not in text or "retries" not in text
     if not messages:
         return False
     tail = messages[-1]
