@@ -28,7 +28,43 @@ class Sweep:
     oldest_age_seconds: float | None = None
 
 
-class PeriodicTask:
+class PeriodicLoop:
+    """Own polling and drain for one serial iteration or domain batch."""
+
+    def __init__(self, iteration: Callable[[], Awaitable[None]], *, interval_seconds: float) -> None:
+        if not isfinite(interval_seconds) or interval_seconds <= 0:
+            raise ValueError("periodic loops require a finite positive interval")
+        self._iteration = iteration
+        self._interval = interval_seconds
+        self._draining = anyio.Event()
+        self._stopped = anyio.Event()
+
+    def drain(self) -> None:
+        self._draining.set()
+
+    def is_draining(self) -> bool:
+        return self._draining.is_set()
+
+    async def wait_stopped(self) -> None:
+        await self._stopped.wait()
+
+    async def shutdown(self, *, timeout_seconds: float) -> None:
+        """Stop new iterations; process supervision cancels any overdue work."""
+        self.drain()
+        with anyio.move_on_after(timeout_seconds):
+            await self.wait_stopped()
+
+    async def run(self) -> None:
+        try:
+            while not self.is_draining():
+                await self._iteration()
+                with anyio.move_on_after(self._interval):
+                    await self._draining.wait()
+        finally:
+            self._stopped.set()
+
+
+class PeriodicTask(PeriodicLoop):
     """Run one domain scan at a time; the process owns supervision and cancellation."""
 
     def __init__(
@@ -41,18 +77,13 @@ class PeriodicTask:
     ) -> None:
         if not name or any(not isfinite(value) or value <= 0 for value in (interval_seconds, timeout_seconds)):
             raise ValueError("periodic tasks require a name and finite positive timing bounds")
+        super().__init__(self.run_once, interval_seconds=interval_seconds)
         self.name = name
         self._scan = scan
-        self._interval = interval_seconds
         self._timeout = timeout_seconds
         self.last_result: Sweep | None = None
         self.last_duration_seconds: float | None = None
         self.last_outcome: str | None = None
-
-    async def run(self) -> None:
-        while True:
-            await self.run_once()
-            await anyio.sleep(self._interval)
 
     async def run_once(self) -> None:
         started = monotonic()

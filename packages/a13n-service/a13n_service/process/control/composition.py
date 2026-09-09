@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import AsyncExitStack
+from functools import partial
 
 import httpx2
 from a13n_environment import EnvironmentProviderCatalog
@@ -212,7 +213,12 @@ async def build_control_runtime(
         assets.cleanup_task,
         hooks.delivery_task,
         hooks.retention_task,
-        BackgroundTask("Subagent reconciliation", subagents.run, subagents.is_draining),
+        BackgroundTask(
+            "Subagent reconciliation",
+            subagents.run,
+            subagents.is_draining,
+            shutdown=partial(subagents.shutdown, timeout_seconds=settings.subagent_reconcile_drain_seconds),
+        ),
     ]
     background_tasks.extend(build_recovery_tasks(settings, shared, gateway_commands))
     background_tasks.extend(build_collection_tasks(settings, shared))

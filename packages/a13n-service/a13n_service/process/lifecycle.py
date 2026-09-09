@@ -9,7 +9,7 @@ from dataclasses import replace
 from functools import partial
 
 from a13n_harness.plugin_factories import build_harness_plugin_factory_catalog
-from anyio import create_task_group, move_on_after, to_thread
+from anyio import create_task_group, to_thread
 from pydantic_ai import prices
 
 from a13n_service.connectivity.ingress.submission import IngressInputAcceptor
@@ -22,7 +22,7 @@ from a13n_service.models.providers import ProviderRegistry
 from a13n_service.object_retention.publication import PublicationObjectStore
 from a13n_service.observability import build_observability_runtime
 from a13n_service.process.agents import build_agent_resources
-from a13n_service.process.background import BackgroundTask, run_critical_component
+from a13n_service.process.background import BackgroundTask, run_critical_component, shutdown_background_components
 from a13n_service.process.components import Components
 from a13n_service.process.connectivity import build_connectivity_runtime
 from a13n_service.process.control import build_control_runtime
@@ -199,17 +199,7 @@ async def open_process_runtime(
                     yield runtime
                 finally:
                     status.draining = True
-                    if worker is not None:
-                        if worker.execution_loop is not None:
-                            await worker.execution_loop.drain()
-                            await worker.execution_loop.wait_stopped()
-                        worker.environment_maintenance.drain()
-                        with move_on_after(settings.environment_operation_timeout_seconds):
-                            await worker.environment_maintenance.wait_stopped()
-                    if control is not None:
-                        control.subagent_maintenance.drain()
-                        with move_on_after(settings.subagent_reconcile_drain_seconds):
-                            await control.subagent_maintenance.wait_stopped()
+                    await shutdown_background_components(background_components)
                     background_tasks.cancel_scope.cancel()
                     logger.info(
                         "service_stopped",

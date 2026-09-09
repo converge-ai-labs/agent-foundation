@@ -8,6 +8,7 @@ from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.composition import AdapterDefinition, AdapterRegistry
 from a13n_service.environments.maintenance import EnvironmentMaintenanceLoop
 from a13n_service.hooks.management import HookSubscriptionService
+from a13n_service.interactions.worker import WorkerExecutionLoop
 from a13n_service.lifecycle.service import LifecycleEventService
 from a13n_service.process.background import run_critical_component
 from a13n_service.process.components import snapshot_components
@@ -15,6 +16,7 @@ from a13n_service.run_stream import RedisRunStream, RunReplayStore
 from a13n_service.secrets import SecretProtectionError
 from a13n_service.settings import ProcessRole, Settings
 from a13n_service.skills import SkillRuntimePreparer
+from a13n_service.subagents.maintenance import SubagentMaintenance
 from a13n_service.trace_query import TraceQueryCapabilities, TraceQueryProviderRegistry
 
 from ..connectivity.connector_helpers import FakeConnectorBackend, fake_registry
@@ -321,3 +323,56 @@ async def test_price_updater_lifetime_belongs_only_to_enabled_execution_roles(
     async with app.router.lifespan_context(app):
         assert events == (["start"] if expected else [])
     assert events == (["start", "stop"] if expected else [])
+
+
+@pytest.mark.anyio
+async def test_shutdown_preserves_execution_environment_and_subagent_order(
+    local_settings,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace: list[str] = []
+    execution_wait = WorkerExecutionLoop.wait_stopped
+    environment_drain = EnvironmentMaintenanceLoop.drain
+    environment_wait = EnvironmentMaintenanceLoop.wait_stopped
+    subagent_drain = SubagentMaintenance.drain
+    subagent_wait = SubagentMaintenance.wait_stopped
+
+    async def wait_execution(loop: WorkerExecutionLoop) -> None:
+        assert app.state.runtime.status.draining
+        await execution_wait(loop)
+        trace.append("execution stopped")
+
+    def drain_environment(loop: EnvironmentMaintenanceLoop) -> None:
+        assert trace == ["execution stopped"]
+        trace.append("environment draining")
+        environment_drain(loop)
+
+    async def wait_environment(loop: EnvironmentMaintenanceLoop) -> None:
+        await environment_wait(loop)
+        trace.append("environment stopped")
+
+    def drain_subagents(loop: SubagentMaintenance) -> None:
+        assert trace[-1] == "environment stopped"
+        trace.append("subagents draining")
+        subagent_drain(loop)
+
+    async def wait_subagents(loop: SubagentMaintenance) -> None:
+        await subagent_wait(loop)
+        trace.append("subagents stopped")
+
+    monkeypatch.setattr(WorkerExecutionLoop, "wait_stopped", wait_execution)
+    monkeypatch.setattr(EnvironmentMaintenanceLoop, "drain", drain_environment)
+    monkeypatch.setattr(EnvironmentMaintenanceLoop, "wait_stopped", wait_environment)
+    monkeypatch.setattr(SubagentMaintenance, "drain", drain_subagents)
+    monkeypatch.setattr(SubagentMaintenance, "wait_stopped", wait_subagents)
+    app = create_app(local_settings(tmp_path))
+    async with app.router.lifespan_context(app):
+        pass
+    assert trace == [
+        "execution stopped",
+        "environment draining",
+        "environment stopped",
+        "subagents draining",
+        "subagents stopped",
+    ]

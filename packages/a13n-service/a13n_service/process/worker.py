@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import AsyncExitStack
 from datetime import timedelta
+from functools import partial
 
 import httpx2
 from a13n_environment import EnvironmentProviderCatalog
@@ -164,13 +165,23 @@ async def build_worker_runtime(
         run_replay=run_replay,
         execution_loop=execution_loop,
     )
-    execution_task = BackgroundTask("RunAttempt execution", execution_loop.run, execution_loop.is_draining)
+
+    async def shutdown_execution() -> None:
+        await execution_loop.drain()
+        await execution_loop.wait_stopped()
+
+    execution_task = BackgroundTask(
+        "RunAttempt execution", execution_loop.run, execution_loop.is_draining, shutdown_execution
+    )
     return runtime, (
         execution_task,
         BackgroundTask(
             name="environment_maintenance",
             run=environment_maintenance.run,
             return_is_expected=environment_maintenance.is_draining,
+            shutdown=partial(
+                environment_maintenance.shutdown, timeout_seconds=settings.environment_operation_timeout_seconds
+            ),
         ),
         BackgroundTask("lifecycle Run Stream projector", lifecycle_projector.run),
     )
