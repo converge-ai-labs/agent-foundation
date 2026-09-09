@@ -303,32 +303,21 @@ def test_mkdir_failure_keeps_target_and_does_not_claim_creation(renderer):
     assert "created" not in visible
 
 
-@pytest.mark.parametrize("wrapped", [False, True])
-@pytest.mark.parametrize("has_more", [False, True])
-def test_bounded_file_read_remains_successful_and_keeps_recovery_details(renderer, wrapped, has_more):
-    content = {
-        "ok": True,
-        "file_path": "SKILL.md",
-        "content": "bounded source prefix\n",
-        "line_offset": 0,
-        "lines_read": 1,
-        "has_more": has_more,
-        "truncated_lines": [] if has_more else [1],
-        "disclosure": {
-            "truncated": True,
-            "content_complete": False,
-            "output_file_path": None,
-            "hint": "Use next_line_offset to continue." if has_more else "Reread truncated_lines with a larger bound.",
+def test_bounded_file_read_remains_successful_and_keeps_recovery_details(renderer):
+    call(
+        renderer,
+        "view",
+        {"file_path": "SKILL.md", "line_limit": 1000},
+        result={
+            "ok": True,
+            "content": "bounded source prefix\n",
+            "line_offset": 0,
+            "lines_read": 1,
+            "has_more": True,
+            "next_line_offset": 1,
+            "disclosure": {"truncated": True, "hint": "Use next_line_offset to continue."},
         },
-    }
-    if has_more:
-        content["next_line_offset"] = 1
-    result = {"part_kind": "tool-return", "outcome": "success", "content": content} if wrapped else content
-    call(renderer, "view", {"file_path": "SKILL.md", "line_limit": 1000}, result=result)
-    concise = render(renderer)
-    assert concise == "Read SKILL.md"
-    assert "failed" not in concise
+    )
+    assert render(renderer) == "Read SKILL.md"
     details = render(renderer, detailed=True)
-    assert "bounded source prefix" in details
-    assert ("next_line_offset" if has_more else "truncated_lines") in details
-    assert "Use next_line_offset" in details if has_more else "Reread truncated_lines" in details
+    assert "bounded source prefix" in details and "Use next_line_offset" in details

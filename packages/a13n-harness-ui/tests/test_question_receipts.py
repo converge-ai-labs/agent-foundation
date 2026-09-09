@@ -97,7 +97,7 @@ def test_typed_question_survives_fresh_response_run(renderer, native):
     renderer.ingest("RUN_FINISHED", {}, run_id="question-run")
     result(renderer, {"answers": {request().questions[0].question: "Python"}}, native=native)
     concise = render(renderer)
-    assert "Questions" in concise and "╭" in concise
+    assert "Questions" in concise and concise.startswith(("╭", "┌"))
     assert "Answered · Language" in concise and "Which language should we use?" in concise
     assert "[x] Python" in concise and "[ ] Rust" in concise
     assert "→ Python" not in concise
