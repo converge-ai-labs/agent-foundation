@@ -47,13 +47,13 @@ def snapshot_components(settings: Settings, components: Components) -> Component
     """Freeze mutable distribution registries at application construction."""
 
     ingress_adapters = None
-    if owns_control(settings.role) or owns_connectivity_data(settings.role):
+    if owns_control(settings.service.role) or owns_connectivity_data(settings.service.role):
         ingress_adapters = (
             components.ingress_adapter_registry
-            or built_in_ingress_adapter_registry(allowed_provider_origins=settings.connectivity_provider_origins)
+            or built_in_ingress_adapter_registry(allowed_provider_origins=settings.connectivity.provider_origins)
         ).copy()
     connector_providers = components.connector_provider_registry
-    if not (owns_control(settings.role) or owns_worker(settings.role)) or connector_providers is None:
+    if not (owns_control(settings.service.role) or owns_worker(settings.service.role)) or connector_providers is None:
         connector_providers = None
     else:
         connector_providers = connector_providers.copy()

@@ -6,6 +6,7 @@ from pathlib import Path
 from shutil import copyfile
 
 import httpx2
+from a13n_service.configuration.sources import configuration_fields
 from a13n_service.database import DatabaseMigrator
 from a13n_service.settings import Settings
 from fastapi import FastAPI
@@ -22,7 +23,6 @@ def request(app: FastAPI, path: str, *, method: str = "GET") -> httpx2.Response:
 
 def local_settings(tmp_path: Path, *, database_template: Path | None = None, **updates: object) -> Settings:
     values: dict[str, object] = {
-        "_env_file": None,
         "database_backend": "sqlite",
         "database_sqlite_path": tmp_path / "database.sqlite3",
         "redis_backend": "memory",
@@ -37,14 +37,24 @@ def local_settings(tmp_path: Path, *, database_template: Path | None = None, **u
         "iam_public_origin": "https://testserver",
     }
     values.update(updates)
-    settings = Settings(**values)
+    nested = {}
+    for env_name, path, _ in configuration_fields(Settings):
+        key = env_name.removeprefix("A13N_SERVICE_").lower()
+        if key not in values:
+            continue
+        group = nested
+        for part in path[:-1]:
+            group = group.setdefault(part, {})
+        group[path[-1]] = values.pop(key)
+    assert not values, f"Unknown test configuration overrides: {list(values)}"
+    settings = Settings.model_validate(nested)
     if (
         database_template is not None
-        and settings.database_backend == "sqlite"
-        and not settings.database_sqlite_path.exists()
+        and settings.database.backend == "sqlite"
+        and not settings.database.sqlite_path.exists()
     ):
-        settings.database_sqlite_path.parent.mkdir(parents=True, exist_ok=True)
-        copyfile(database_template, settings.database_sqlite_path)
+        settings.database.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
+        copyfile(database_template, settings.database.sqlite_path)
     else:
         DatabaseMigrator(settings.database_config()).upgrade()
     return settings

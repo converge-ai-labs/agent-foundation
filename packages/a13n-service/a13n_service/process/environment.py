@@ -17,8 +17,8 @@ def build_environment_catalog(
     if components.environment_provider_catalog is not None:
         return components.environment_provider_catalog
     selected = build_environment_provider_catalog(
-        builtin_keys=settings.environment_provider_builtins,
-        extension_keys=settings.environment_provider_extensions,
+        builtin_keys=settings.environments.provider_builtins,
+        extension_keys=settings.environments.provider_extensions,
     )
     return selected
 

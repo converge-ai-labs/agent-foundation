@@ -7,8 +7,9 @@ import ssl
 import httpx2
 import pytest
 from fastapi import FastAPI
+from jsonschema import Draft202012Validator
 
-from .fixture_connectivity import TOOLKIT_VERSION, connectivity_router
+from .fixture_connectivity import TOOL_OUTPUT_SCHEMA, TOOLKIT_VERSION, connectivity_router
 from .management_packages import skill_zip
 from .management_support import client_tool, has_tool
 from .round_two_lab import private_json
@@ -150,6 +151,7 @@ async def test_composio_fixture_is_usable_by_production_adapter(tmp_path):
         )
         catalog = await connected.discover_tools(cursor=None)
         assert {tool.key for tool in catalog.items} == {"live_echo", "live_forbidden"}
+        assert all(tool.output_schema == TOOL_OUTPUT_SCHEMA for tool in catalog.items)
         fenced = []
 
         async def before_dispatch():
@@ -162,7 +164,9 @@ async def test_composio_fixture_is_usable_by_production_adapter(tmp_path):
             request_id="request",
             before_dispatch=before_dispatch,
         )
-        assert result.result == {"proof": "REMOTE:proof"} and fenced == [True]
+        assert result.result == {"successful": True, "data": {"proof": "REMOTE:proof"}}
+        assert fenced == [True]
+        Draft202012Validator(TOOL_OUTPUT_SCHEMA).validate(result.result)
         await connected.revoke(operation_id="revoke")
         assert (await connected.inspect()).status == "action_required"
 

@@ -16,8 +16,8 @@ def build_recovery_tasks(
     queue = QueueRecovery(
         shared.storage.sessions,
         commands.queued,
-        batch_limit=settings.control_recovery_batch_limit,
-        item_timeout_seconds=settings.control_recovery_item_timeout_seconds,
+        batch_limit=settings.control.recovery_batch_limit,
+        item_timeout_seconds=settings.control.recovery_item_timeout_seconds,
     )
     scans = (("queued_submission_recovery", queue.scan),)
     return tuple(
@@ -26,9 +26,9 @@ def build_recovery_tasks(
             PeriodicTask(
                 name,
                 scan,
-                interval_seconds=settings.control_recovery_poll_interval_seconds,
-                timeout_seconds=(settings.control_recovery_item_timeout_seconds + 1)
-                * settings.control_recovery_batch_limit,
+                interval_seconds=settings.control.recovery_poll_interval_seconds,
+                timeout_seconds=(settings.control.recovery_item_timeout_seconds + 1)
+                * settings.control.recovery_batch_limit,
             ).run,
         )
         for name, scan in scans

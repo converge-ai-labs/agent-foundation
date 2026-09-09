@@ -36,7 +36,7 @@ from a13n_service.agents.reconstruction import (
 from a13n_service.digests import digest_request
 from a13n_service.iam import PrincipalRef
 from a13n_service.models.domain import ModelExecutionSnapshot
-from pydantic import JsonValue, RootModel, TypeAdapter
+from pydantic import JsonValue, RootModel, TypeAdapter, ValidationError
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.usage import UsageLimits
 
@@ -339,6 +339,11 @@ def test_reconstructs_root_model_client_tools_output_and_fresh_capabilities() ->
     schema = TypeAdapter(definition.output_type).json_schema()
     assert schema["properties"]["order"]["properties"]["id"]["type"] == "string"
     assert "$ref" not in str(schema)
+    adapter = TypeAdapter(definition.output_type)
+    assert adapter.validate_python({"order": {"id": "order-1"}}) == {"order": {"id": "order-1"}}
+    for invalid in ({}, {"order": {}}, {"order": {"id": 123}}):
+        with pytest.raises(ValidationError):
+            adapter.validate_python(invalid)
     HarnessBuilder(configured_plugins_enabled=False).build(definition)
 
 
@@ -414,6 +419,11 @@ def test_reconstructs_variants_as_distinct_structured_outputs() -> None:
         "accepted",
         "rejected",
     ]
+    for output_type, field in zip(definition.output_type, ("id", "reason"), strict=True):
+        adapter = TypeAdapter(output_type)
+        assert adapter.validate_python({field: "value"}) == {field: "value"}
+        with pytest.raises(ValidationError):
+            adapter.validate_python({field: 123})
     HarnessBuilder(configured_plugins_enabled=False).build(definition)
 
 

@@ -178,7 +178,7 @@ async def open_lab(*, suite="round-two", websocket_envd=False):
         storage_options = {}
         if suite != "core":
             settings = Settings()
-            storage_options = {"endpoint_url": settings.object_endpoint_url, "region": settings.object_region}
+            storage_options = {"endpoint_url": settings.objects.endpoint_url, "region": settings.objects.region}
         object_environment = await stack.enter_async_context(open_object_storage(**storage_options))
         endpoint = object_environment["A13N_SERVICE_OBJECT_ENDPOINT_URL"]
 

@@ -277,7 +277,7 @@ async def test_worker_composition_consumes_queue_when_source_finishes(
 
     model_factory = Mock(spec=NativeModelFactory)
     model_factory.build.return_value = FunctionModel(stream_function=respond)
-    settings = Settings(_env_file=None, worker_concurrency=1, worker_poll_interval_seconds=0.01)
+    settings = Settings(worker={"concurrency": 1, "poll_interval_seconds": 0.01})
     invocations = SimpleNamespace(preparation=_Preparation(), freezing=_Freezing([_frozen()]))
     async with worker_runtime(
         sessions,

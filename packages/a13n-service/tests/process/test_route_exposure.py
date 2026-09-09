@@ -7,7 +7,7 @@ from .support import request
 
 
 def test_app_exposes_settings_before_lifespan() -> None:
-    settings = Settings(_env_file=None, role=ProcessRole.worker)
+    settings = Settings(service={"role": ProcessRole.worker})
 
     app = create_app(settings)
 
@@ -15,14 +15,14 @@ def test_app_exposes_settings_before_lifespan() -> None:
 
 
 def test_health_reports_process_role() -> None:
-    response = request(create_app(Settings(_env_file=None, role=ProcessRole.worker)), "/healthz")
+    response = request(create_app(Settings(service={"role": ProcessRole.worker})), "/healthz")
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok", "role": "worker"}
 
 
 def test_control_plane_openapi_uses_api_namespace() -> None:
-    app = create_app(Settings(_env_file=None, role=ProcessRole.control, build_version="1.2.3"))
+    app = create_app(Settings(service={"role": ProcessRole.control, "build_version": "1.2.3"}))
 
     response = request(app, "/api/openapi.json")
 
@@ -135,7 +135,7 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
 
 @pytest.mark.parametrize("role", [ProcessRole.control, ProcessRole.all])
 def test_control_roles_do_not_serve_browser_routes(role: ProcessRole) -> None:
-    app = create_app(Settings(_env_file=None, role=role))
+    app = create_app(Settings(service={"role": role}))
 
     for path in ("/", "/executions/example", "/assets/app.js"):
         response = request(app, path)
@@ -144,7 +144,7 @@ def test_control_roles_do_not_serve_browser_routes(role: ProcessRole) -> None:
 
 
 def test_unknown_api_paths_return_json_errors() -> None:
-    app = create_app(Settings(_env_file=None, role=ProcessRole.all))
+    app = create_app(Settings(service={"role": ProcessRole.all}))
 
     for path in ("/api", "/api/unknown"):
         response = request(app, path)
@@ -154,7 +154,7 @@ def test_unknown_api_paths_return_json_errors() -> None:
 
 
 def test_worker_role_serves_only_operational_endpoints() -> None:
-    app = create_app(Settings(_env_file=None, role=ProcessRole.worker))
+    app = create_app(Settings(service={"role": ProcessRole.worker}))
 
     assert request(app, "/healthz").status_code == 200
     assert request(app, "/api/openapi.json").status_code == 404
@@ -162,7 +162,7 @@ def test_worker_role_serves_only_operational_endpoints() -> None:
 
 
 def test_a2a_switch_removes_discovery_and_runtime_routes() -> None:
-    app = create_app(Settings(_env_file=None, role=ProcessRole.control, a2a_enabled=False))
+    app = create_app(Settings(service={"role": ProcessRole.control}, gateway={"a2a_enabled": False}))
 
     document = request(app, "/api/openapi.json").json()
     assert all(not path.startswith("/a2a/") for path in document["paths"])
@@ -170,7 +170,7 @@ def test_a2a_switch_removes_discovery_and_runtime_routes() -> None:
 
 
 def test_connectivity_role_exposes_no_control_plane_routes() -> None:
-    app = create_app(Settings(_env_file=None, role=ProcessRole.connectivity))
+    app = create_app(Settings(service={"role": ProcessRole.connectivity}))
 
     assert request(app, "/healthz").json() == {"status": "ok", "role": "connectivity"}
     assert request(app, "/api/openapi.json").status_code == 404
@@ -180,5 +180,5 @@ def test_connectivity_role_exposes_no_control_plane_routes() -> None:
 
 def test_non_connectivity_roles_do_not_expose_provider_data_plane() -> None:
     for role in (ProcessRole.control, ProcessRole.worker):
-        app = create_app(Settings(_env_file=None, role=role))
+        app = create_app(Settings(service={"role": role}))
         assert request(app, "/connectivity/v1/accounts/acct_test/events", method="POST").status_code == 404

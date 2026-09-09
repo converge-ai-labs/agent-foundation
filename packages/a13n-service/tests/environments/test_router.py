@@ -33,19 +33,17 @@ async def authenticate(request: Request) -> AuthenticatedActor:
 
 def settings(tmp_path: Path, database_path: Path) -> Settings:
     return Settings(
-        _env_file=None,
-        database_backend="sqlite",
-        database_sqlite_path=database_path,
-        redis_backend="memory",
-        object_backend="local",
-        object_local_root=tmp_path / "objects",
-        filesystem_root=tmp_path / "files",
-        environment_provider_builtins=(PROVIDER_KEY,),
-        model_resolve_dns_on_save=False,
-        secret_master_key_base64=b64encode(b"0123456789abcdef0123456789abcdef").decode(),
-        secret_encryption_key_id="environment-router-test-key",
-        connectivity_public_origin="http://testserver",
-        connectivity_http_origins=("http://testserver",),
+        database={"backend": "sqlite", "sqlite_path": database_path},
+        redis={"backend": "memory"},
+        objects={"backend": "local", "local_root": tmp_path / "objects"},
+        filesystem={"root": tmp_path / "files"},
+        environments={"provider_builtins": (PROVIDER_KEY,)},
+        models={"resolve_dns_on_save": False},
+        secrets={
+            "master_key_base64": b64encode(b"0123456789abcdef0123456789abcdef").decode(),
+            "encryption_key_id": "environment-router-test-key",
+        },
+        connectivity={"public_origin": "http://testserver", "http_origins": ("http://testserver",)},
     )
 
 

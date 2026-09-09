@@ -53,13 +53,13 @@ async def open_process_runtime(
     """Open one supervised runtime for the configured process role."""
 
     observability = build_observability_runtime(
-        enabled=settings.observability_tracing,
-        trace_content=settings.observability_trace_content,
-        service_name=settings.service_name,
-        service_version=settings.build_version,
-        deployment_environment=settings.deployment_environment_name,
-        service_role=settings.role.value,
-        service_instance_id=settings.service_instance_id,
+        enabled=settings.observability.tracing,
+        trace_content=settings.observability.trace_content,
+        service_name=settings.service.name,
+        service_version=settings.service.build_version,
+        deployment_environment=settings.service.deployment_environment_name,
+        service_role=settings.service.role.value,
+        service_instance_id=settings.service.instance_id,
     )
     try:
         async with open_storage(settings.storage_settings()) as storage, AsyncExitStack() as stack:
@@ -68,16 +68,16 @@ async def open_process_runtime(
                 objects=PublicationObjectStore(
                     storage.objects,
                     storage.sessions,
-                    timeout_seconds=settings.object_publication_timeout_seconds,
+                    timeout_seconds=settings.objects.publication_timeout_seconds,
                 ),
             )
-            if owns_worker(settings.role) and settings.pricing_auto_update:
+            if owns_worker(settings.service.role) and settings.pricing.auto_update:
                 stack.enter_context(prices.update_in_background())
             shared = SharedRuntime(
                 storage=storage,
                 lifecycle=LifecycleWriter(
                     (write_hook_lifecycle, append_matching_a2a_push_outbox)
-                    if settings.a2a_enabled
+                    if settings.gateway.a2a_enabled
                     else (write_hook_lifecycle,)
                 ),
                 secret_protector=settings.secret_protector(),
@@ -90,21 +90,21 @@ async def open_process_runtime(
                     model_endpoint_policy,
                     stack,
                 )
-                if owns_control(settings.role) or owns_worker(settings.role)
+                if owns_control(settings.service.role) or owns_worker(settings.service.role)
                 else None
             )
             environment_catalog = (
                 build_environment_catalog(settings, components)
-                if owns_control(settings.role) or owns_worker(settings.role)
+                if owns_control(settings.service.role) or owns_worker(settings.service.role)
                 else None
             )
             worker = None
             worker_background: tuple[BackgroundTask, ...] = ()
-            if owns_worker(settings.role):
+            if owns_worker(settings.service.role):
                 plugin_catalog = components.plugin_factory_catalog
                 if plugin_catalog is None:
                     plugin_catalog = await to_thread.run_sync(
-                        partial(build_harness_plugin_factory_catalog, plugin_keys=settings.plugin_keys)
+                        partial(build_harness_plugin_factory_catalog, plugin_keys=settings.plugins.keys)
                     )
                 if execution is None or environment_catalog is None:
                     raise RuntimeError("Worker execution resources were not constructed")
@@ -121,7 +121,7 @@ async def open_process_runtime(
                 )
             control = None
             control_background: tuple[BackgroundTask, ...] = ()
-            if owns_control(settings.role):
+            if owns_control(settings.service.role):
                 if execution is None or environment_catalog is None:
                     raise RuntimeError("Control execution resources were not constructed")
                 control, control_background = await build_control_runtime(
@@ -135,7 +135,7 @@ async def open_process_runtime(
                     stack,
                 )
             input_acceptor = components.input_acceptor
-            if owns_connectivity_data(settings.role) and input_acceptor is None:
+            if owns_connectivity_data(settings.service.role) and input_acceptor is None:
                 if control is not None:
                     commands = control.gateway.commands
                 else:
@@ -156,8 +156,8 @@ async def open_process_runtime(
                 ingress_adapters=components.ingress_adapter_registry,
                 connector_providers=components.connector_provider_registry,
                 input_acceptor=input_acceptor,
-                control_plane=owns_control(settings.role),
-                data_plane=owns_connectivity_data(settings.role),
+                control_plane=owns_control(settings.service.role),
+                data_plane=owns_connectivity_data(settings.service.role),
             )
             runtime = ProcessRuntime(
                 settings=settings,
@@ -183,9 +183,9 @@ async def open_process_runtime(
                     "service_started",
                     extra={
                         "event": "service_started",
-                        "service": settings.service_name,
-                        "role": settings.role.value,
-                        "build_version": settings.build_version,
+                        "service": settings.service.name,
+                        "role": settings.service.role.value,
+                        "build_version": settings.service.build_version,
                     },
                 )
                 status.startup_complete = True
@@ -198,18 +198,18 @@ async def open_process_runtime(
                         if worker.execution_loop is not None:
                             await worker.execution_loop.drain()
                             await worker.execution_loop.wait_stopped()
-                        with move_on_after(settings.environment_operation_timeout_seconds):
+                        with move_on_after(settings.environments.operation_timeout_seconds):
                             await worker.environment_maintenance.wait_stopped()
                     if control is not None:
-                        with move_on_after(settings.subagent_reconcile_drain_seconds):
+                        with move_on_after(settings.subagents.reconcile_drain_seconds):
                             await control.subagent_maintenance.wait_stopped()
                     background_tasks.cancel_scope.cancel()
                     logger.info(
                         "service_stopped",
                         extra={
                             "event": "service_stopped",
-                            "service": settings.service_name,
-                            "role": settings.role.value,
+                            "service": settings.service.name,
+                            "role": settings.service.role.value,
                         },
                     )
     finally:

@@ -56,17 +56,9 @@ class _SlowEndpoint:
 
 def test_settings_require_lease_and_retry_bounds_to_cover_delivery() -> None:
     with pytest.raises(ValueError, match="claim lease must exceed"):
-        Settings(
-            _env_file=None,
-            webhook_claim_lease_seconds=10,
-            webhook_request_timeout_seconds=10,
-        )
+        Settings(webhooks={"claim_lease_seconds": 10, "request_timeout_seconds": 10})
     with pytest.raises(ValueError, match="maximum retry delay"):
-        Settings(
-            _env_file=None,
-            webhook_retry_base_seconds=10,
-            webhook_retry_max_seconds=9,
-        )
+        Settings(webhooks={"retry_base_seconds": 10, "retry_max_seconds": 9})
 
 
 async def _prepare_delivery(

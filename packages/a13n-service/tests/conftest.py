@@ -137,7 +137,7 @@ class ProcessRuntimeFactory:
             else None
         )
         return ProcessRuntime(
-            settings=settings or Settings(_env_file=None),
+            settings=settings or Settings(),
             status=ProcessStatus(startup_complete=True),
             request_authenticator=request_authenticator,
             observability=Mock(spec=ObservabilityRuntime),

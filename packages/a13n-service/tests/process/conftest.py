@@ -13,7 +13,7 @@ from .support import local_settings as build_local_settings
 @pytest.fixture(scope="session")
 def migrated_process_database(tmp_path_factory: pytest.TempPathFactory) -> Path:
     settings = build_local_settings(tmp_path_factory.mktemp("process-database-template"))
-    return settings.database_sqlite_path
+    return settings.database.sqlite_path
 
 
 @pytest.fixture

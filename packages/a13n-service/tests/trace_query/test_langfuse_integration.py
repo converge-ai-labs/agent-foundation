@@ -165,21 +165,24 @@ async def test_otlp_trace_round_trips_through_langfuse_v4(
             }
 
     settings = Settings(
-        _env_file=None,
-        role=ProcessRole.control,
-        database_backend="sqlite",
-        database_sqlite_path=tmp_path / "database.sqlite3",
-        redis_backend="memory",
-        object_backend="local",
-        object_local_root=tmp_path / "objects",
-        filesystem_root=tmp_path / "files",
-        secret_master_key_base64=base64.b64encode(b"0123456789abcdef0123456789abcdef").decode(),
-        secret_encryption_key_id="trace-integration-test",
-        observability_tracing=False,
-        observability_query_provider="langfuse",
-        observability_query_langfuse_base_url=_BASE_URL,
-        observability_query_langfuse_public_key=_PUBLIC_KEY,
-        observability_query_langfuse_secret_key=_SECRET_KEY,
+        service={"role": ProcessRole.control},
+        database={"backend": "sqlite", "sqlite_path": tmp_path / "database.sqlite3"},
+        redis={"backend": "memory"},
+        objects={"backend": "local", "local_root": tmp_path / "objects"},
+        filesystem={"root": tmp_path / "files"},
+        secrets={
+            "master_key_base64": base64.b64encode(b"0123456789abcdef0123456789abcdef").decode(),
+            "encryption_key_id": "trace-integration-test",
+        },
+        observability={
+            "tracing": False,
+            "query": {
+                "provider": "langfuse",
+                "langfuse_base_url": _BASE_URL,
+                "langfuse_public_key": _PUBLIC_KEY,
+                "langfuse_secret_key": _SECRET_KEY,
+            },
+        },
     )
     app = create_app(
         settings,

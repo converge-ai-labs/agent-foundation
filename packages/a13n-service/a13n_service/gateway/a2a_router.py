@@ -65,13 +65,13 @@ def _service(request: Request) -> A2AService:
 
 
 def _base_url(request: Request) -> str:
-    configured = request.app.state.settings.a2a_public_origin
+    configured = request.app.state.settings.gateway.a2a_public_origin
     return configured or str(request.base_url).rstrip("/")
 
 
 @router.get("/.well-known/agent-card.json")
 async def default_agent_card(request: Request) -> Response:
-    agent_id = request.app.state.settings.a2a_default_agent_id
+    agent_id = request.app.state.settings.gateway.a2a_default_agent_id
     if agent_id is None:
         return _error(
             A2AError("agent_not_found", "No default A2A Agent is configured.", category=ErrorCategory.not_found)

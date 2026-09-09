@@ -21,20 +21,9 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-uv_run=(uv run --locked)
-if [[ -f ".env" ]]; then
-  uv_run+=(--env-file ".env")
-fi
-
+config_path="${1:-dev/service/local.toml}"
 echo "Starting a13n Service and Console (http://127.0.0.1:5173). Press Ctrl+C to stop both."
-"${uv_run[@]}" bash -c '
-  backend_command=(a13n-service serve)
-  if [[ -z "${LOGFIRE_TOKEN:-}" ]] &&
-    [[ "${A13N_HARNESS_TRACE_LEVEL:-off}" != "off" || "${A13N_HARNESS_METRICS:-off}" != "off" ]]; then
-    backend_command=(opentelemetry-instrument a13n-service serve)
-  fi
-  exec "${backend_command[@]}"
-' &
+uv run --locked python -m dev.service --config "$config_path" serve &
 service_pids+=("$!")
 service_names+=("a13n Service")
 

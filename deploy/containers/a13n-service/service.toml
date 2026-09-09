@@ -1,0 +1,16 @@
+# Non-secret image defaults. Mount deployment configuration at /app/service.toml
+# to keep the default command and health probe on the same explicit config file.
+[service]
+host = "0.0.0.0"
+
+[objects]
+local_root = "/app/var/objects"
+
+[filesystem]
+root = "/app/var/files"
+
+[migration]
+auto_migrate = true
+
+[logging]
+format = "json"

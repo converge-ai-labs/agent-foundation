@@ -146,7 +146,7 @@ def _content_length(request: Request) -> int | None:
             "asset_management_unavailable", "Asset Management is unavailable.", category=ErrorCategory.unavailable
         )
     settings = runtime.settings
-    if parsed > settings.asset_max_size_bytes:
+    if parsed > settings.assets.max_size_bytes:
         raise asset_limit()
     return parsed
 

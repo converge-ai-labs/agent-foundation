@@ -118,7 +118,7 @@ class ProcessRuntime:
         if first_request:
             logger.info(
                 "service_drain_started",
-                extra={"event": "service_drain_started", "role": self.settings.role.value},
+                extra={"event": "service_drain_started", "role": self.settings.service.role.value},
             )
 
 
