@@ -42,6 +42,7 @@ from a13n_harness_ui.thread_files import AttachmentUpload, ComposerInput
 
 from .attachments import add_images, clipboard_images, read_attachment
 from .commands import CommandRegistry, Invocation
+from .composer import ComposerWindow, wrapped_height
 from .diagnostics import exception_report, pending_task_warning
 from .history import HistoryBrowser
 from .local_shell import run_local_shell, validate_local_shell_support
@@ -116,17 +117,20 @@ class CliShell:
         self._last_interrupt = float("-inf")
         self.view = TranscriptControl(self.renderer.transcript)
         self.composer = TextArea(
-            style="class:input-area",
+            multiline=True,
+            completer=SlashCompleter(self.registry),
+            complete_while_typing=True,
+        )
+        self.composer.window = ComposerWindow(
+            self.composer.control,
+            style="class:text-area class:input-area",
             get_line_prefix=lambda line, wrap: FormattedText(
                 [("class:input-area.prompt", " > ")]
                 if line == 0 and wrap == 0
                 else [("class:input-area.continuation", "   " if wrap else " · ")]
             ),
-            multiline=True,
             wrap_lines=True,
             height=self._composer_height,
-            completer=SlashCompleter(self.registry),
-            complete_while_typing=True,
         )
         self.composer.buffer.on_text_changed += self._draft_changed
         self.composer.buffer.on_cursor_position_changed += self._paste_cursor_changed
@@ -309,8 +313,8 @@ class CliShell:
 
     def _composer_height(self) -> Dimension:
         size = self.app.output.get_size()
-        width = max(1, size.columns - 3)
-        rows = sum(max(1, (get_cwidth(line) + width - 1) // width) for line in self.composer.text.split("\n"))
+        # Match BufferControl's trailing cursor cell and the window's wrapping.
+        rows = sum(wrapped_height(line + " ", size.columns) for line in self.composer.text.split("\n"))
         minimum = 3 if size.rows >= 16 else 1
         height = min(max(1, size.rows // 3), max(minimum, min(7, rows)))
         return Dimension(min=1, preferred=height, max=height)
