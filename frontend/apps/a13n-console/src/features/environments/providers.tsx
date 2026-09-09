@@ -44,7 +44,13 @@ export function EnvironmentProviders({ scope }: { scope: EnvironmentScope }) {
     page = useCursor(),
     api = environmentApi(client, scope);
   const query = useQuery({
-    queryKey: ["environment-providers", scope.kind, scope.id, page.cursor],
+    queryKey: [
+      "environment-providers",
+      scope.kind,
+      scope.id,
+      "list",
+      page.cursor,
+    ],
     queryFn: ({ signal }) => api.providers(signal, page.cursor),
   });
   const manage =
@@ -140,7 +146,13 @@ function ProviderEditor({
     [generation, setGeneration] = useState(0),
     definitions = useEnvironmentTypes();
   const query = useQuery({
-    queryKey: ["environment-providers", scope.kind, scope.id, providerId],
+    queryKey: [
+      "environment-providers",
+      scope.kind,
+      scope.id,
+      "detail",
+      providerId,
+    ],
     enabled: open && !!providerId,
     queryFn: ({ signal }) =>
       client.http
@@ -176,7 +188,7 @@ function ProviderEditor({
           <ProviderForm
             key={generation}
             scope={scope}
-            initial={query.data}
+            initial={providerId ? query.data : undefined}
             definitions={definitions.data?.items ?? []}
             close={() => setOpen(false)}
             reload={async () => {
