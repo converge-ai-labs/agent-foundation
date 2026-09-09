@@ -185,6 +185,9 @@ async def test_pages_scope_inspection_and_successful_switch(monkeypatch, project
             shell.open_resume()
             await _until(lambda: shell.resume_browser is not None and shell.resume_browser.selected is not None)
             browser = shell.resume_browser
+            assert not backend.resume_sessions.call_args.kwargs["all_directories"]
+            assert "Current directory" in browser.title()
+            assert "Ctrl+A all directories" in shell._hints()
             backend.resume_sessions.return_value = ThreadPage(threads=(_thread(3),), total=3)
             pipe.send_text("\x1b[6~")
             await _until(lambda: not browser.loading and browser.page_index == 1)
@@ -196,6 +199,8 @@ async def test_pages_scope_inspection_and_successful_switch(monkeypatch, project
             pipe.send_text("\x01")
             await _until(lambda: not browser.loading and browser.all_directories)
             assert backend.resume_sessions.call_args.kwargs["all_directories"]
+            assert "All directories" in browser.title()
+            assert "Ctrl+A current directory" in shell._hints()
             assert "Enter resumes in /work" in browser.guidance(browser.selected)
             backend.resume.assert_not_called()
             pipe.send_text("\x14")
@@ -258,6 +263,41 @@ async def test_stale_search_and_closed_browser_discard_late_responses() -> None:
         await asyncio.sleep(0.2)
         assert browser.closed and browser.page.threads[0].thread_id == "thread-3"
         shell.renderer.transcript.close()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("width", [120, 70, 69, 40, 24])
+async def test_browser_rows_keep_activity_in_a_fixed_left_column(monkeypatch, width: int) -> None:
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        shell = CliShell(CliRequest())
+        shell.backend = backend = _backend()
+        labels = ("Hi", "A long session title " * 10, "中文标题" * 30, "No messages yet")
+        threads = (
+            _thread(1).model_copy(update={"excerpt": ConversationExcerpt(first_input=labels[0])}),
+            _thread(2).model_copy(update={"title": labels[1]}),
+            _thread(3).model_copy(update={"title": labels[2]}),
+            _thread(4).model_copy(update={"excerpt": ConversationExcerpt(), "activity_at": None}),
+        )
+        backend.resume_sessions.return_value = ThreadPage(threads=threads, total=len(threads))
+        monkeypatch.setattr(shell.app.output, "get_size", lambda: Size(rows=24, columns=width))
+        shell.open_resume()
+        try:
+            await _until(lambda: shell.resume_browser.selected is not None)
+            browser = shell.resume_browser
+            browser.index = 1
+            rows = browser.rows()
+            assert len(rows) == len(threads)
+            for index, ((style, text), label) in enumerate(zip(rows, labels, strict=True)):
+                marker = "> " if index == browser.index else "  "
+                timestamp = "2026-09-01 00:00  " if width >= 70 else ""
+                assert text.startswith(marker + timestamp + label[:2])
+                assert style == ("class:session-selector.selection" if index == browser.index else "")
+                assert get_cwidth(text.rstrip("\n")) <= width
+                if index in (1, 2):
+                    assert text.endswith("…\n")
+        finally:
+            shell.close_resume()
+            shell.renderer.transcript.close()
 
 
 @pytest.mark.anyio

@@ -6,7 +6,9 @@ import json
 
 import pytest
 from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
+from a13n_harness_ui.interactive.theme import resolve_theme
 from a13n_harness_ui.surfaces import QuestionOptionView, QuestionView, StructuredQuestionRequestView
+from prompt_toolkit.utils import get_cwidth
 
 
 @pytest.fixture
@@ -95,7 +97,10 @@ def test_typed_question_survives_fresh_response_run(renderer, native):
     renderer.ingest("RUN_FINISHED", {}, run_id="question-run")
     result(renderer, {"answers": {request().questions[0].question: "Python"}}, native=native)
     concise = render(renderer)
-    assert concise == "Answered · Language\nWhich language should we use?\n→ Python"
+    assert "Questions" in concise and "╭" in concise
+    assert "Answered · Language" in concise and "Which language should we use?" in concise
+    assert "[x] Python" in concise and "[ ] Rust" in concise
+    assert "→ Python" not in concise
     assert not any(word in concise for word in ("Call tool", "question-1", "ask_user_question", "returned"))
     details = render(renderer, detailed=True)
     assert "Arguments | question-1" in details
@@ -124,7 +129,7 @@ def test_history_tool_arguments_register_without_a_live_decision(renderer):
     streamed_request(renderer, pending)
     assert render(renderer) == ""
     result(renderer, {"answers": {pending.questions[0].question: ["Python", "Rust"]}})
-    assert "→ Python, Rust" in render(renderer)
+    assert "[x] Python" in render(renderer) and "[x] Rust" in render(renderer)
     assert not renderer._tools
 
 
@@ -137,6 +142,8 @@ def test_native_failure_is_not_an_answer_even_with_valid_answer_content(renderer
     result(renderer, answer)
     assert "Not answered · Language" in render(renderer)
     assert "Answered" not in render(renderer)
+    assert "[x]" not in render(renderer)
+    assert "[ ] Python" in render(renderer) and "[ ] Rust" in render(renderer)
     assert "Call " not in render(renderer)
     assert f'"outcome": "{outcome}"' in render(renderer, detailed=True)
 
@@ -183,7 +190,7 @@ def test_replayed_detailed_call_reuses_block_and_remains_concise(renderer):
     assert "Call ask_user_question" not in render(renderer)
     result(renderer, {"answers": {request().questions[0].question: "Python"}})
     assert len(renderer.transcript.blocks) == 1
-    assert render(renderer).startswith("Answered · Language")
+    assert "Answered · Language" in render(renderer)
 
 
 def test_general_response_and_multiple_questions_are_readable(renderer):
@@ -196,6 +203,32 @@ def test_general_response_and_multiple_questions_are_readable(renderer):
     assert "Answered · Language" in concise and "Answered · Scope" in concise
     assert concise.count("→ Use the existing") == 2
     assert "implementation." in concise
+
+
+@pytest.mark.parametrize("theme", ["dark", "light", "auto"])
+@pytest.mark.parametrize("width", [24, 40, 100])
+def test_question_panel_wraps_options_and_preserves_selection(renderer, theme, width):
+    renderer.transcript.theme = resolve_theme(theme)
+    original = request()
+    question = original.questions[0].model_copy(
+        update={
+            "header": "版本确认",
+            "question": "Which version should we use?",
+            "options": (
+                QuestionOptionView(label="新版" * 20, description="New version"),
+                QuestionOptionView(label="Stable", description="Keep the current version"),
+            ),
+        }
+    )
+    renderer.register_questions(original.model_copy(update={"questions": (question,)}))
+    result(renderer, {"answers": {question.question: question.options[0].label}})
+    concise = render(renderer, width=width)
+    assert "Questions" in concise and "[x]" in concise and "[ ] Stable" in concise
+    assert concise.count("新") == 20 and concise.count("版") == 21
+    assert all(get_cwidth(line) <= width for line in concise.splitlines())
+    assert len(renderer.transcript.blocks) == 1
+    selected_styles = [style for row in renderer.transcript.rows for style, text in row if "[x]" in text]
+    assert selected_styles and all("bold" in style for style in selected_styles)
 
 
 def test_question_correlation_is_root_only(renderer):
@@ -226,6 +259,7 @@ def test_receipt_payload_is_literal_and_control_sequences_are_removed(renderer):
     result(renderer, {"answers": {request().questions[0].question: "[bold]literal[/bold]\x1b[31m"}})
     concise = render(renderer)
     assert "[bold]literal[/bold]" in concise
+    assert "[x]" not in concise
     assert "\x1b" not in concise
 
 
@@ -288,5 +322,5 @@ def test_explicit_response_retry_has_its_own_receipt_after_publication_failure(r
     result(renderer, changed, native=True, run_id="attempt-two")
     assert len(renderer.transcript.blocks) == 2
     newest = next(reversed(renderer.transcript.blocks.values()))
-    assert newest.preview == "Answered · Language\nWhich language should we use?\n→ Rust"
-    assert render(renderer).count("→ Rust") == 1
+    assert newest.preview == "Answered · Language\nWhich language should we use?\n  [ ] Python\n  [x] Rust"
+    assert render(renderer).count("[x] Rust") == 1

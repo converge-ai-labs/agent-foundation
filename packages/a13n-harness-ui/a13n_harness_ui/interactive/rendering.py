@@ -328,6 +328,9 @@ class StreamRenderer:
                 state = "unavailable"
         lines = []
         for question in receipt.request.questions:
+            if lines:
+                lines.append("")
+            answer: object = None
             answer_text = "Result unavailable; Ctrl+O details"
             if answers is not None:
                 values = answers["answers"]
@@ -336,7 +339,14 @@ class StreamRenderer:
             elif state != "unavailable":
                 answer_text = content if isinstance(content, str) else failure_reason(text, state)
             title = "Answered" if answers is not None else "Not answered"
-            lines.extend((f"{title} · {question.header}", question.question, f"→ {answer_text}"))
+            lines.extend((f"{title} · {question.header}", question.question))
+            selected = answer if isinstance(answer, list) else [answer]
+            for option in question.options:
+                marker = "[x]" if option.label in selected else "[ ]"
+                lines.append(f"  {marker} {option.label}")
+            # A free-text answer is not necessarily one of the offered labels.
+            if answers is None or any(value not in {option.label for option in question.options} for value in selected):
+                lines.append(f"→ {answer_text}")
         brief = terminal_text("\n".join(lines))
         detail = terminal_text(f"{'Native result' if native else 'Tool result'}\n{text}\n")
         block_id = attempt.block_id
