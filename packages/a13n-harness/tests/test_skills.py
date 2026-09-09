@@ -217,6 +217,7 @@ async def _run_single_view(
     *,
     capability: AbstractCapability[AgentContext],
     file_path: str,
+    view_arguments: dict[str, object] | None = None,
 ) -> dict[str, object]:
     observed: dict[str, object] = {}
 
@@ -233,7 +234,7 @@ async def _run_single_view(
             yield {
                 0: DeltaToolCall(
                     name="view",
-                    json_args=json.dumps({"file_path": file_path}),
+                    json_args=json.dumps({"file_path": file_path, **(view_arguments or {})}),
                     tool_call_id="external-view",
                 )
             }
@@ -1033,7 +1034,7 @@ async def test_ordinary_environment_skill_read_emits_usage_observation(tmp_path:
 async def test_external_capability_can_publish_skill_paths_for_relaxed_markdown_view(tmp_path: Path) -> None:
     skill = tmp_path / "external-skill"
     skill.mkdir()
-    content = "".join(f"line {index}: {'x' * 60}\n" for index in range(220))
+    content = "".join(f"line {index}: {'x' * 90}\n" for index in range(160))
     (skill / "guide.md").write_bytes(content.encode("utf-8"))
 
     viewed = await _run_single_view(
@@ -1073,7 +1074,7 @@ async def test_selected_skill_markdown_uses_relaxed_full_read_budget(tmp_path: P
     skill = tmp_path / ".agents" / "skills" / "review"
     skill.mkdir(parents=True)
     content = "---\nname: review\ndescription: Review code.\n---\n\n" + "".join(
-        f"line {index}: {'x' * 60}\n" for index in range(220)
+        f"line {index}: {'x' * 90}\n" for index in range(160)
     )
     (skill / "SKILL.md").write_bytes(content.encode("utf-8"))
     (tmp_path / "notes.md").write_bytes(content.encode("utf-8"))
@@ -1163,7 +1164,7 @@ async def test_large_selected_skill_markdown_continues_without_skipping_lines(tm
             next_offset = latest["next_line_offset"]
         else:
             next_offset = None
-        arguments = {"file_path": "/workspace/.agents/skills/review/SKILL.md", "line_limit": 800}
+        arguments = {"file_path": "/workspace/.agents/skills/review/SKILL.md", "line_limit": 1000}
         if next_offset is not None:
             arguments["line_offset"] = next_offset
         yield {
@@ -1346,3 +1347,37 @@ async def test_file_source_can_skip_invalid_plugin_entries_without_hiding_valid_
     assert "skill_catalog_entry_skipped" in caplog.text
     with pytest.raises(DefinitionError):
         await FileSkillSource("strict", ("/skills",)).catalog(files=files)
+
+
+@pytest.mark.parametrize("skill_path", [True, False])
+@pytest.mark.parametrize("max_line_length", [2000, 262_144])
+async def test_large_view_bounds_return_successful_pages(
+    tmp_path: Path, skill_path: bool, max_line_length: int
+) -> None:
+    skill = tmp_path / ".agents" / "skills" / "review"
+    skill.mkdir(parents=True)
+    content = "---\nname: review\ndescription: Review code.\n---\n\n" + "line\n" * 46
+    (skill / "SKILL.md").write_text(content)
+    (tmp_path / "notes.md").write_text(content)
+    relative = ".agents/skills/review/SKILL.md" if skill_path else "notes.md"
+    viewed = await _run_single_view(
+        tmp_path,
+        capability=SkillsCapability(_manager()),
+        file_path=f"/workspace/{relative}",
+        view_arguments={"line_limit": 1000, "max_line_length": max_line_length},
+    )
+    assert viewed["ok"] is True
+    assert "error" not in viewed
+    assert isinstance(viewed["content"], str)
+    assert content.startswith(viewed["content"])
+    assert viewed["truncated_lines"] == []
+    if max_line_length == 2000:
+        assert viewed["content"] == content
+        assert viewed["has_more"] is False
+        assert "next_line_offset" not in viewed
+    else:
+        assert viewed["has_more"] is True
+        assert viewed["next_line_offset"] == viewed["lines_read"]
+        assert viewed["next_line_offset"] > 0
+        assert viewed["disclosure"]["content_complete"] is False
+        assert "next_line_offset" in viewed["disclosure"]["hint"]

@@ -74,6 +74,12 @@ class DirectLocalProviderConfiguration(BaseModel):
 
 The root, shell executables, and allowed executables are absolute after user expansion. Host-supplied runtime identities are bounded and nonblank; profile IDs are unique; ports and limits are valid and positive. A read-only root cannot enable shell profiles or allowed executables because an allowed native process could mutate files through the embedding OS account.
 
+### Bounded text reads
+
+Direct Local text reads apply `max_value_bytes` to the actual UTF-8 page, not the product of the requested line count and line length. A valid oversized request returns a shorter successful page. Pages end before the next whole line when it would exceed the byte budget; `lines_read` counts returned source lines and `has_more` reports later lines. Callers continue at `line_offset + lines_read`.
+
+If one line cannot fit an otherwise empty page, Direct Local returns its bounded UTF-8 prefix, preserves its LF when present, and records the one-based source line number in `truncated_lines`. This advances past that source line; `has_more=false` does not imply that a shortened line was complete. Invalid UTF-8 and NUL remain errors even in a discarded suffix. Reads retain bounded prefixes rather than loading the complete file, and do not promise a snapshot across calls.
+
 ### Native command execution
 
 Direct Local runs on POSIX hosts and native Windows without WSL or a daemon. Each command owns a POSIX process group or Windows Job Object. On Windows, assignment to the Job precedes execution so descendants cannot escape ownership during startup. Root exit and complete tree cleanup are separate observations; inherited output pipes finish only after owned descendants are cleaned up. Timeout, cancellation, startup failure, and adapter close clean up owned processes and output resources.

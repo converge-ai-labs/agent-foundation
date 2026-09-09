@@ -2270,6 +2270,10 @@ async def test_large_environment_result_is_bounded_without_retry_shaped_failure(
     assert observed["ok"] is True
     assert observed["has_more"] is False
     assert observed["truncated_lines"] == [1]
+    assert observed["disclosure"]["content_complete"] is False
+    assert "one-based" in observed["disclosure"]["hint"]
+    assert "max_line_length" in observed["disclosure"]["hint"]
+    assert "next_line_offset" not in observed
     assert isinstance(observed["content"], str)
     assert len(observed["content"]) == 2_000
 

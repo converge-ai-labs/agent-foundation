@@ -520,16 +520,16 @@ class FileToolset:
         if line_offset in {None, 0}:
             effective_line_limit = max(effective_line_limit, profile.initial_line_limit)
         effective_max_line_length = max(max_line_length, profile.max_line_length)
-        if effective_line_limit * (effective_max_line_length + 1) > profile.page_bytes:
-            return _environment_error_result(
-                EnvironmentError(
-                    "Requested text page exceeds the model view limit.",
-                    code="environment_too_large",
-                )
-            )
+        # Request bounds are ceilings, not a promise to fill a page. Narrow the
+        # line count instead of rejecting valid combinations (including skill
+        # overrides), allowing four UTF-8 bytes per character and an LF.
+        effective_line_limit = min(
+            effective_line_limit,
+            max(1, profile.page_bytes // (4 * effective_max_line_length + 1)),
+        )
 
         async def disclose(value: Mapping[str, JsonValue]) -> Mapping[str, JsonValue]:
-            if profile.preserve_complete_lines or bool(value.get("has_more")):
+            if profile.preserve_complete_lines or bool(value.get("has_more")) or bool(value.get("truncated_lines")):
                 return await _disclose_line_preserving_file_page(
                     ctx.deps,
                     value,
@@ -1283,6 +1283,16 @@ async def _disclose_line_preserving_file_page(
     safe_value = redact_json(cast(JsonValue, dict(value)))
     assert isinstance(safe_value, dict)
     result = safe_value
+    continuation_hint = "Call view again with next_line_offset as line_offset to continue reading this file."
+    shortened = bool(result.get("truncated_lines"))
+    if shortened:
+        hint = (
+            "Source lines listed in truncated_lines (one-based) were shortened; has_more only describes later lines. "
+            "To inspect an omitted suffix, reread that line with line_offset set to its number minus one, "
+            "line_limit=1, and a larger max_line_length within the tool limits. Provider byte limits still apply."
+        )
+        result["disclosure"] = cast(JsonValue, continuation_disclosure(result, hint=hint))
+        continuation_hint += " " + hint
     result_fits = tool_output_size(result) <= limit
     if result_fits and not bool(result.get("has_more")):
         return acknowledge_tool_output(result)
@@ -1294,7 +1304,7 @@ async def _disclose_line_preserving_file_page(
             context,
             result,
             text_fields=("content",),
-            content_complete=not bool(result.get("has_more")),
+            content_complete=not bool(result.get("has_more")) and not shortened,
             noun="file page",
             limit=limit,
         )
@@ -1305,7 +1315,7 @@ async def _disclose_line_preserving_file_page(
             JsonValue,
             continuation_disclosure(
                 result,
-                hint="Call view again with next_line_offset as line_offset to continue reading this file.",
+                hint=continuation_hint,
             ),
         )
         if tool_output_size(result) <= limit:
@@ -1317,14 +1327,14 @@ async def _disclose_line_preserving_file_page(
             context,
             result,
             text_fields=("content",),
-            content_complete=not bool(result.get("has_more")),
+            content_complete=not bool(result.get("has_more")) and not shortened,
             noun="file page",
             limit=limit,
         )
 
     disclosure = continuation_disclosure(
         result,
-        hint="Call view again with next_line_offset as line_offset to continue reading this file.",
+        hint=continuation_hint,
     )
     preview: dict[str, JsonValue] = {
         **result,
@@ -1355,7 +1365,7 @@ async def _disclose_line_preserving_file_page(
             context,
             result,
             text_fields=("content",),
-            content_complete=not bool(result.get("has_more")),
+            content_complete=not bool(result.get("has_more")) and not shortened,
             noun="file page",
             limit=limit,
         )
