@@ -13,7 +13,7 @@ Backend selection happens once during process startup. A failed network backend 
 
 ## Shared Configuration
 
-Model Providers, Models, Connector Providers, Environment Providers, and Environment Templates support Organization and Workspace ownership. A null `workspace_id` denotes Organization ownership. Organization collections use `/api/v1/organizations/{organization_id}/...`; Workspace configuration lists include local and parent resources. Organization Admin manages shared configuration, while Workspace roles retain their local management and shared-use permissions. Connections, actual Environments, and Runs remain Workspace-owned.
+Model Providers, Models, Connector Providers, Environment Providers, and Environment Templates support Organization and Workspace ownership. A null `workspace_id` denotes Organization ownership. Organization collections use `/api/v1/organizations/{organization}/...`; Workspace configuration lists include local and parent resources. Organization Admin manages shared configuration, while Workspace roles retain their local management and shared-use permissions. Connections, actual Environments, and Runs remain Workspace-owned.
 
 The Host authenticator supplies exactly one credential boundary: `boundary_workspace_id` for Workspace requests, or `boundary_organization_id` for an Organization-scoped human session. Workspace API keys cannot manage Organization resources. Initial migrations define these scopes directly; recreate local databases initialized from older baseline files.
 
@@ -139,7 +139,7 @@ A13N_SERVICE_OBSERVABILITY_QUERY_LANGFUSE_SECRET_KEY='sk-lf-...'
 
 Product distributions can register additional trusted adapters through `TraceQueryProviderRegistry`; runtime configuration selects only one key already fixed into that artifact. Duplicate keys and selections absent from the artifact fail startup.
 
-`GET /api/v1/workspaces/{workspace_id}/traces` and `GET /api/v1/workspaces/{workspace_id}/traces/{trace_id}` remain present when querying is disabled and return the shared safe unavailable error. Backend correlation is never authorization evidence: a distribution must inject `Components.trace_access_authorizer` backed by its authoritative RunAttempt domain before results can be returned. The current repository does not yet contain that RunAttempt persistence domain, so configured querying fails closed until the owning implementation is composed.
+`GET /api/v1/workspaces/{workspace}/traces` and `GET /api/v1/workspaces/{workspace}/traces/{trace_id}` remain present when querying is disabled and return the shared safe unavailable error. Backend correlation is never authorization evidence: a distribution must inject `Components.trace_access_authorizer` backed by its authoritative RunAttempt domain before results can be returned. The current repository does not yet contain that RunAttempt persistence domain, so configured querying fails closed until the owning implementation is composed.
 
 Run `make langfuse-test` to start the repository's local Langfuse v4 stack and verify a real standard-OTLP write followed by input search and Observations v2 list/detail reads. The ordinary Python test suite keeps this integration test skipped so it does not require Docker.
 

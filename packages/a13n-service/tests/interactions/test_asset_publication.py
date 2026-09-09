@@ -331,22 +331,19 @@ async def test_unreadable_source_is_concealed_without_hiding_asset(publication, 
         )
 
 
-async def test_casefold_expansion_fits_postgresql_agent_uniqueness_key(postgres_interaction_sessions):
+async def test_unicode_agent_name_preserves_key_on_postgresql(postgres_interaction_sessions):
     from a13n_service.agents.domain import normalize_agent_name
     from a13n_service.agents.models import AgentRecord
-    from a13n_service.agents.persistence import agent_name_key
 
     name = normalize_agent_name("ΐ" * 128)
-    key = agent_name_key(name)
-    assert len(key) == 384
     async with transaction(postgres_interaction_sessions) as session:
         agent = await session.get(AgentRecord, AGENT_ID)
+        key = agent.key
         agent.name = name
-        agent.normalized_name = key
     async with short_session(postgres_interaction_sessions) as session:
         agent = await session.get(AgentRecord, AGENT_ID)
         assert agent.name == name
-        assert agent.normalized_name == key
+        assert agent.key == key
 
 
 async def test_skill_materialization_guard_uses_the_live_attempt(publication):

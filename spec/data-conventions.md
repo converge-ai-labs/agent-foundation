@@ -108,7 +108,7 @@ Package releases, protocol major/minor identities, Git or artifact revisions, an
 
 Public APIs and SDKs use concise domain language such as `id`, `model`, `agent`, and `provider`. They do not expose internal suffixes merely to restate meaning already established by the resource, operation, or type.
 
-The primary user-visible name of a managed resource is `name`, and a distinct stable technical selector is `key`. `display_name` is reserved for fields whose owning external or compatibility contract establishes that exact term. Qualified names such as `distribution_name`, `model_name`, and `provider_key` retain their owning semantics.
+The primary user-visible name of a managed resource is `name`, and a distinct technical selector is `key`. `display_name` is reserved for fields whose owning external or compatibility contract establishes that exact term. Qualified names such as `distribution_name`, `model_name`, and `provider_key` retain their owning semantics.
 
 Internal domain, persistence, event, and adapter models use more explicit names when several identities or selection domains would otherwise be ambiguous, for example an Agent ID and AgentRevision ID beside a provider model identity. Typed values such as an AgentRevision reference or model selector carry semantics that a bare string and naming convention cannot.
 
@@ -124,7 +124,17 @@ Suffixes have stable domain meanings. `Revision` is an immutable member of a res
 
 The public boundary validates and normalizes input once. Internal code consumes the resulting typed meaning instead of repeatedly inferring whether a string is an object ID, symbolic selection, external identity, scoped reference, or secret. No universal field-suffix rule overrides clarity at either boundary.
 
-Service display names bounded to 128 Unicode scalar values may expand during casefolding. Their case-insensitive uniqueness columns accommodate up to 384 scalar values; the derived key is never truncated and the display-name limit does not change. A uniqueness key is distinct from the feature-owned display-name normalization.
+Where a feature requires case-insensitive display-name uniqueness, Service display names bounded to 128 Unicode scalar values may expand during casefolding. Their case-insensitive uniqueness columns accommodate up to 384 scalar values; the derived key is never truncated and the display-name limit does not change. A uniqueness key is distinct from the feature-owned display-name normalization.
+
+### Readable Resource Keys
+
+Organization, Workspace, and Agent expose a mutable `key` separately from their immutable `id` and display `name`. Organization keys are globally unique; Workspace keys are unique within their Organization; Agent keys are unique within their Workspace. Display names may repeat. Deleted resources retain their keys until physical removal.
+
+A key contains 1–64 lowercase ASCII letters or digits separated by single hyphens. Underscores, leading or trailing hyphens, repeated hyphens, and application navigation keywords are invalid. Reserved keywords are `api`, `assets`, `confirm-email`, `connector-setup`, `forgot-password`, `invitations`, `login`, `new`, `reset-password`, and `settings`.
+
+Creation accepts an explicit key or derives one from the lowercase ASCII portions of the name, replacing intervening characters with hyphens and truncating to the key limit. A generated collision appends a hyphen and four random lowercase hexadecimal characters, shortening the readable prefix as needed. A name without usable ASCII characters uses the resource kind (`org`, `workspace`, or `agent`) as the prefix and always receives that suffix. A reserved derived key also receives a suffix. Allocation retries are finite, and database uniqueness protects concurrent creation. An explicit conflicting key returns `409 resource_key_conflict` rather than being changed automatically. Exhausted generated-key retries return `409 resource_key_exhausted` without creating a resource.
+
+Changing a name preserves the key. Explicit key changes retain the resource ID, references, revisions, and authorization; they invalidate the previous key immediately. There are no historical aliases or redirects. These rules do not replace Model or Skill key contracts.
 
 ## Ownership and Authority
 

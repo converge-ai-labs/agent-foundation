@@ -22,7 +22,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
 from a13n_service.iam.domain import ActorRef, PrincipalRef, PrincipalType, SystemActorRef
-from a13n_service.names import CASEFOLDED_NAME_MAX_LENGTH
+from a13n_service.resource_keys import RESOURCE_KEY_MAX_LENGTH
 from a13n_service.temporal import assume_utc, optional_assume_utc
 
 from .domain import (
@@ -59,7 +59,7 @@ class AgentRecord(Base):
         CheckConstraint("created_by_type IN ('user', 'service_account', 'system')", name="created_by_type_valid"),
         CheckConstraint("updated_by_type IN ('user', 'service_account', 'system')", name="updated_by_type_valid"),
         Index("uq_agents_id_organization", "id", "organization_id", "workspace_id", unique=True),
-        Index("uq_agents_workspace_name", "workspace_id", "normalized_name", unique=True),
+        Index("uq_agents_workspace_key", "workspace_id", "key", unique=True),
         Index("ix_agents_workspace_updated", "workspace_id", "updated_at", "id"),
         Index("ix_agents_workspace_availability", "workspace_id", "enabled", "archived_at", "updated_at", "id"),
     )
@@ -70,7 +70,7 @@ class AgentRecord(Base):
     workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
     source: Mapped[str] = mapped_column(String(16), nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
-    normalized_name: Mapped[str] = mapped_column(String(CASEFOLDED_NAME_MAX_LENGTH), nullable=False)
+    key: Mapped[str] = mapped_column(String(RESOURCE_KEY_MAX_LENGTH), nullable=False)
     description: Mapped[str | None] = mapped_column(String(4096))
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     current_revision_id: Mapped[str] = mapped_column(String(72), nullable=False)
@@ -93,6 +93,7 @@ class AgentRecord(Base):
             workspace_id=self.workspace_id,
             source=AgentSource(self.source),
             name=self.name,
+            key=self.key,
             description=self.description,
             version=self.version,
             current_revision_id=self.current_revision_id,

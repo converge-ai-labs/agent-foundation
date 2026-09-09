@@ -30,14 +30,14 @@ export function Audit({ scope }: { scope: ProfileTarget }) {
           .then(data);
       if (scope.kind === "workspace")
         return client.http
-          .GET("/api/v1/workspaces/{workspace_id}/security-audit-events", {
-            params: { ...params, path: { workspace_id: scope.id } },
+          .GET("/api/v1/workspaces/{workspace}/security-audit-events", {
+            params: { ...params, path: { workspace: scope.id } },
             signal,
           })
           .then(data);
       return client.http
-        .GET("/api/v1/organizations/{organization_id}/security-audit-events", {
-          params: { ...params, path: { organization_id: scope.id } },
+        .GET("/api/v1/organizations/{organization}/security-audit-events", {
+          params: { ...params, path: { organization: scope.id } },
           signal,
         })
         .then(data);

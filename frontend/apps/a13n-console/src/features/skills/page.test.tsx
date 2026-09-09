@@ -11,7 +11,11 @@ const { download } = vi.hoisted(() => ({ download: vi.fn() }));
 vi.mock("../../shared/download", () => ({ downloadBlob: download }));
 vi.mock("../../auth/context", () => ({ useClient: () => client }));
 vi.mock("../../layout/workspace", () => ({
-  useWorkspace: () => ({ workspace: { id: workspaceId }, can: () => true }),
+  useWorkspace: () => ({
+    basePath: "/acme/design",
+    workspace: { id: workspaceId },
+    can: () => true,
+  }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -74,6 +78,7 @@ function setup(workspace: string) {
             {
               agent_id: "agt_example",
               agent_name: "Example agent",
+              agent_key: "example-agent",
               agent_revision_id: "agr_example",
             },
           ],
@@ -102,16 +107,14 @@ function setup(workspace: string) {
   });
   render(
     <QueryClientProvider client={cache}>
-      <MemoryRouter
-        initialEntries={[`/workspaces/${workspace}/skills/sk_example`]}
-      >
+      <MemoryRouter initialEntries={["/acme/design/skills/sk_example"]}>
         <Routes>
           <Route
-            path="/workspaces/:workspaceId/skills/:skillId"
+            path="/:organizationKey/:workspaceKey/skills/:skillId"
             element={<SkillDetail />}
           />
           <Route
-            path="/workspaces/:workspaceId/skills"
+            path="/:organizationKey/:workspaceKey/skills"
             element={<p>Skill collection</p>}
           />
         </Routes>

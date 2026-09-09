@@ -13,11 +13,12 @@ import { ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
 import { JsonView } from "../../shared/form";
 import { conversationQueries, runPath } from "./api";
 import styles from "./conversations.module.css";
+import { AgentLink } from "../agents/link";
 import { RunEvents } from "./events";
 
 export function RunInspector({ run }: { run: Schema["RunResource"] }) {
   const { t } = useTranslation(),
-    { workspace, can } = useWorkspace(),
+    { workspace, can, basePath } = useWorkspace(),
     client = useClient(),
     [open, setOpen] = useState(false);
   const queries = conversationQueries(client, workspace.id);
@@ -42,7 +43,7 @@ export function RunInspector({ run }: { run: Schema["RunResource"] }) {
       {can("trace.read") && (
         <p>
           <Link
-            to={`/workspaces/${workspace.id}/traces?run_id=${run.id}&from=${encodeURIComponent(run.created_at)}&to=${encodeURIComponent(new Date(new Date(run.completed_at ?? Date.now()).getTime() + 1_000).toISOString())}`}
+            to={`${basePath}/traces?run_id=${run.id}&from=${encodeURIComponent(run.created_at)}&to=${encodeURIComponent(new Date(new Date(run.completed_at ?? Date.now()).getTime() + 1_000).toISOString())}`}
           >
             {t("Open run traces")}
           </Link>
@@ -51,9 +52,7 @@ export function RunInspector({ run }: { run: Schema["RunResource"] }) {
       <dl className={styles.metadata}>
         <dt>{t("Agent revision")}</dt>
         <dd>
-          <Link to={`/workspaces/${workspace.id}/agents/${run.agent_id}`}>
-            {run.agent_revision_id}
-          </Link>
+          <AgentLink agentId={run.agent_id}>{run.agent_revision_id}</AgentLink>
         </dd>
         <dt>{t("Effective configuration digest")}</dt>
         <dd>{run.effective_agent_config_digest}</dd>
@@ -83,10 +82,7 @@ export function RunInspector({ run }: { run: Schema["RunResource"] }) {
       <h3>{t("Lineage")}</h3>
       {lineage.data?.items.map((entry) => (
         <p key={entry.run_id}>
-          <Link
-            to={runPath(workspace.id, entry)}
-            onClick={() => setOpen(false)}
-          >
+          <Link to={runPath(basePath, entry)} onClick={() => setOpen(false)}>
             {entry.run_id}
           </Link>{" "}
           <StateBadge state={entry.status} />

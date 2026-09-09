@@ -38,7 +38,7 @@ async def sibling_workspace(sessions: async_sessionmaker[AsyncSession], admin: A
                 id=workspace_id,
                 organization_id=admin.boundary_organization_id,
                 name=workspace_id,
-                normalized_name=workspace_id,
+                key=workspace_id.replace("_", "-"),
                 created_at=now,
                 updated_at=now,
             )

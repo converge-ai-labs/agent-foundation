@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import { useClient } from "../../auth/context";
 import { useAccess } from "../../layout/workspace";
+import { workspacePath } from "../../shared/paths";
 import { representation } from "../../shared/api";
 import { ResourceTable } from "../../shared/collection";
 import { CopyableId } from "../../shared/copy";
@@ -26,7 +27,9 @@ export function Workspaces() {
             label: t("Name"),
             render: (item) => (
               <>
-                <Link to={`/workspaces/${item.id}/settings`}>{item.name}</Link>
+                <Link to={`${workspacePath(organization, item)}/settings`}>
+                  {item.name}
+                </Link>
                 <small>
                   <CopyableId value={item.id} />
                 </small>
@@ -50,8 +53,8 @@ export function Workspaces() {
                 danger
                 action={async () => {
                   const latest = representation(
-                    await client.http.GET("/api/v1/workspaces/{workspace_id}", {
-                      params: { path: { workspace_id: item.id } },
+                    await client.http.GET("/api/v1/workspaces/{workspace}", {
+                      params: { path: { workspace: item.id } },
                     }),
                   );
                   if (
@@ -61,15 +64,12 @@ export function Workspaces() {
                     throw new Error(
                       t("This workspace changed. Reload before deleting it."),
                     );
-                  await client.http.DELETE(
-                    "/api/v1/workspaces/{workspace_id}",
-                    {
-                      params: {
-                        path: { workspace_id: item.id },
-                        header: { "If-Match": latest.etag },
-                      },
+                  await client.http.DELETE("/api/v1/workspaces/{workspace}", {
+                    params: {
+                      path: { workspace: item.id },
+                      header: { "If-Match": latest.etag },
                     },
-                  );
+                  });
                 }}
               />
             ),

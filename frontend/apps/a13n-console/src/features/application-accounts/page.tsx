@@ -30,7 +30,7 @@ import { AccountForm } from "./form";
 
 export function ApplicationAccountsPage() {
   const client = useClient(),
-    { workspace, can } = useWorkspace(),
+    { workspace, can, basePath } = useWorkspace(),
     { t } = useTranslation(),
     page = useCursor(),
     [open, setOpen] = useState(false),
@@ -39,9 +39,9 @@ export function ApplicationAccountsPage() {
     queryKey: ["application-accounts", workspace.id, page.cursor],
     queryFn: ({ signal }) =>
       client.http
-        .GET("/api/v1/workspaces/{workspace_id}/application-accounts", {
+        .GET("/api/v1/workspaces/{workspace}/application-accounts", {
           params: {
-            path: { workspace_id: workspace.id },
+            path: { workspace: workspace.id },
             query: { cursor: page.cursor },
           },
           signal,
@@ -141,7 +141,7 @@ export function ApplicationAccountsPage() {
 export function ApplicationAccountDetail() {
   const { accountId = "" } = useParams(),
     client = useClient(),
-    { workspace, can } = useWorkspace(),
+    { workspace, can, basePath } = useWorkspace(),
     { t } = useTranslation(),
     [generation, setGeneration] = useState(0),
     key = useIdempotency(),
@@ -169,7 +169,7 @@ export function ApplicationAccountDetail() {
     <Page
       title={account.name}
       description={account.provider_key}
-      back={`/workspaces/${workspace.id}/application-accounts`}
+      back={`${basePath}/application-accounts`}
       actions={
         manage && (
           <>
@@ -220,7 +220,7 @@ export function ApplicationAccountDetail() {
                     },
                   },
                 );
-                navigate(`/workspaces/${workspace.id}/application-accounts`);
+                navigate(`${basePath}/application-accounts`);
               }}
             />
           </>

@@ -17,7 +17,7 @@ from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
 from a13n_service.iam.resource_scope import visible_workspace
 from a13n_service.secrets.crypto import SecretProtectionError, SecretProtector
-from a13n_service.storage import transaction
+from a13n_service.storage import is_unique_conflict, transaction
 from a13n_service.temporal import Clock, utc_now
 
 from .connection_test import test_connection
@@ -42,7 +42,7 @@ from .providers import (
     ProviderRegistry,
     ValidatedProviderConfiguration,
 )
-from .service_common import ModelError, audit_record, authorize_models, escape_like, is_unique_conflict, require_etag
+from .service_common import ModelError, audit_record, authorize_models, escape_like, require_etag
 
 
 class ProviderOperations(Protocol):

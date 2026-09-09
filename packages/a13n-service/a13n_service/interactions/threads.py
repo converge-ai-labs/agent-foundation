@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Request
 from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.http_types import IdempotencyKey
 from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.iam.http.resource_dependencies import WorkspaceId
 from a13n_service.request_runtime import get_process_runtime
 
 from .domain import Thread
@@ -16,10 +17,10 @@ from .thread_domain import CreateThreadRequest
 router = APIRouter(prefix="/api/v1", tags=["threads"])
 
 
-@router.post("/workspaces/{workspace_id}/threads", status_code=201)
+@router.post("/workspaces/{workspace}/threads", status_code=201)
 async def create_thread(
     request: Request,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     body: CreateThreadRequest,
     actor: Annotated[AuthenticatedActor, Depends(authenticate_request)],
     idempotency_key: IdempotencyKey,

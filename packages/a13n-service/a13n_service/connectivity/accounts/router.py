@@ -11,6 +11,7 @@ from a13n_service.connectivity.errors import NativeError
 from a13n_service.etags import resource_etag
 from a13n_service.http_types import IdempotencyKey
 from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.iam.http.resource_dependencies import WorkspaceId
 from a13n_service.request_runtime import get_connectivity_control_runtime
 
 from .domain import (
@@ -43,17 +44,17 @@ def _set_etag(response: Response, resource: Account) -> None:
 
 
 @router.get(
-    "/workspaces/{workspace_id}/application-account-provider-types",
+    "/workspaces/{workspace}/application-account-provider-types",
     response_model=AccountProviderDefinitionCollection,
 )
 async def account_provider_types(
-    request: Request, actor: Actor, workspace_id: str
+    request: Request, actor: Actor, workspace_id: WorkspaceId
 ) -> AccountProviderDefinitionCollection:
     return await _service(request).provider_types(actor=actor, workspace_id=workspace_id)
 
 
 @router.post(
-    "/workspaces/{workspace_id}/application-accounts",
+    "/workspaces/{workspace}/application-accounts",
     response_model=Account,
     status_code=status.HTTP_201_CREATED,
 )
@@ -61,7 +62,7 @@ async def create_account(
     request: Request,
     response: Response,
     actor: Actor,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     body: CreateAccountRequest,
     idempotency_key: IdempotencyKey,
 ) -> Account:
@@ -75,11 +76,11 @@ async def create_account(
     return resource
 
 
-@router.get("/workspaces/{workspace_id}/application-accounts", response_model=AccountCollection)
+@router.get("/workspaces/{workspace}/application-accounts", response_model=AccountCollection)
 async def list_accounts(
     request: Request,
     actor: Actor,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
 ) -> AccountCollection:

@@ -34,9 +34,9 @@ export function AssetsPage() {
     queryKey: ["assets", workspace.id, source, page.cursor],
     queryFn: ({ signal }) =>
       client.http
-        .GET("/api/v1/workspaces/{workspace_id}/assets", {
+        .GET("/api/v1/workspaces/{workspace}/assets", {
           params: {
-            path: { workspace_id: workspace.id },
+            path: { workspace: workspace.id },
             query: { cursor: page.cursor, source_kind: source || undefined },
           },
           signal,
@@ -47,9 +47,9 @@ export function AssetsPage() {
     mutationFn: async () => {
       if (!upload) throw new Error(t("Choose a file first."));
       return client.http
-        .POST("/api/v1/workspaces/{workspace_id}/assets", {
+        .POST("/api/v1/workspaces/{workspace}/assets", {
           params: {
-            path: { workspace_id: workspace.id },
+            path: { workspace: workspace.id },
             query: {
               filename: upload.file.name,
               media_type: upload.file.type || "application/octet-stream",

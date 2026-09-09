@@ -200,10 +200,10 @@ The Provider-type catalog is deployment-scoped and read-only. Configured Provide
 
 ```http
 GET   /api/v1/connector-provider-types
-GET   /api/v1/organizations/{organization_id}/connector-providers
-POST  /api/v1/organizations/{organization_id}/connector-providers
-GET   /api/v1/workspaces/{workspace_id}/connector-providers
-POST  /api/v1/workspaces/{workspace_id}/connector-providers
+GET   /api/v1/organizations/{organization}/connector-providers
+POST  /api/v1/organizations/{organization}/connector-providers
+GET   /api/v1/workspaces/{workspace}/connector-providers
+POST  /api/v1/workspaces/{workspace}/connector-providers
 GET   /api/v1/connector-providers/{connector_provider_id}
 PATCH /api/v1/connector-providers/{connector_provider_id}
 POST  /api/v1/connector-providers/{connector_provider_id}/test
@@ -215,7 +215,7 @@ Provider creation accepts `type`, `configuration`, and separate write-only servi
 
 Type-definition and Connector discovery reads require the safe-read authority defined by [IAM](../33-identity-and-access-management.md#stable-action-registry); Provider management and testing require `connector_provider.manage`. Discovery additionally checks the exact Provider's Workspace visibility, current active status, and service credential eligibility. A response contains safe metadata only and never a credential value, external account reference, or import target.
 
-Connector Connection collections remain `/workspaces/{workspace_id}/connector-connections` and details remain `/connector-connections/{connector_connection_id}`. Setup selects `connector_provider_id`, `connector_key`, Workspace, and validated non-secret setup options; none is inferred from a display name or Provider type. Connector catalog entries have no independent create, update, or delete API.
+Connector Connection collections remain `/workspaces/{workspace}/connector-connections` and details remain `/connector-connections/{connector_connection_id}`. Setup selects `connector_provider_id`, `connector_key`, Workspace, and validated non-secret setup options; none is inferred from a display name or Provider type. Connector catalog entries have no independent create, update, or delete API.
 
 ## Failure and Compatibility
 

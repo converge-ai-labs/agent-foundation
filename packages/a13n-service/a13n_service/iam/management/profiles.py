@@ -3,6 +3,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.resource_keys import flush_key_change
 from a13n_service.storage import short_session
 from a13n_service.temporal import utc_now
 
@@ -44,7 +45,13 @@ class ProfileService:
             return User.model_validate(user)
 
     async def update_organization(
-        self, actor: AuthenticatedActor, organization_id: str, name: str, if_match: str
+        self,
+        actor: AuthenticatedActor,
+        organization_id: str,
+        name: str | None,
+        if_match: str,
+        *,
+        key: str | None = None,
     ) -> Organization:
         async with identity_transaction(self._sessions, organization_id) as session:
             if await authorize_organization_admin(session, actor=actor) != organization_id:
@@ -52,7 +59,12 @@ class ProfileService:
             row = await session.get(OrganizationRecord, organization_id)
             assert row is not None
             require_etag(row, if_match)
-            row.name, row.updated_at = name, utc_now()
+            if name is not None:
+                row.name = name
+            if key is not None:
+                row.key = key
+            row.updated_at = utc_now()
+            await flush_key_change(session)
             audit(
                 session,
                 actor=actor,

@@ -34,7 +34,7 @@ class ManagementJourney:
 
     async def revision(self, agent, **config):
         return await self.post(
-            f"/api/v1/agents/{agent['id']}/revisions",
+            f"{self.base}/agents/{agent['id']}/revisions",
             {"expected_version": agent["version"], "config": agent_config(**config)},
         )
 

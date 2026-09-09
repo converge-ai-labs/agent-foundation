@@ -5,7 +5,6 @@ from __future__ import annotations
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.application_errors import ErrorCategory
 from a13n_service.durable_operations.idempotency import (
     IdempotencyIdentity,
     is_evidence_unique_race,
@@ -17,6 +16,7 @@ from a13n_service.iam import (
     authorize_workspace,
 )
 from a13n_service.iam.authorization import WorkspaceAction
+from a13n_service.resource_keys import insert_with_key
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, utc_now
 
@@ -28,7 +28,6 @@ from .domain import (
     new_agent_revision_id,
 )
 from .errors import (
-    AgentError,
     agent_archived,
     agent_version_conflict,
     map_authorization_error,
@@ -36,7 +35,6 @@ from .errors import (
 from .invocation_resolution import AgentInvocationResolver, RootAgentStatePolicy
 from .models import AgentRecord
 from .persistence import (
-    agent_name_key,
     authorize_agent_scope,
     copy_revision,
     load_replay,
@@ -139,7 +137,6 @@ class AgentDuplication:
                     workspace_id=source.workspace_id,
                     source=AgentSource.custom.value,
                     name=request.name,
-                    normalized_name=agent_name_key(request.name),
                     description=request.description,
                     version=1,
                     current_revision_id=new_revision_id,
@@ -154,6 +151,7 @@ class AgentDuplication:
                     created_at=now,
                     updated_at=now,
                 )
+                await insert_with_key(session, duplicate, prefix="agent", requested=request.key)
                 revision = copy_revision(
                     source_revision,
                     revision_id=new_revision_id,
@@ -197,11 +195,7 @@ class AgentDuplication:
                 replay = await self._duplicate_replay(actor=actor, agent_id=agent_id, identity=identity)
                 if replay is not None:
                     return replay
-            raise AgentError(
-                "agent_name_conflict",
-                "An Agent with this name already exists in the Workspace.",
-                category=ErrorCategory.conflict,
-            ) from error
+            raise
 
     async def _duplicate_replay(
         self,

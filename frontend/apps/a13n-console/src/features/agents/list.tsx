@@ -38,9 +38,9 @@ export function Agents() {
     queryKey: ["agents", workspace.id, filter, page.cursor],
     queryFn: ({ signal }) =>
       client.http
-        .GET("/api/v1/workspaces/{workspace_id}/agents", {
+        .GET("/api/v1/workspaces/{workspace}/agents", {
           params: {
-            path: { workspace_id: workspace.id },
+            path: { workspace: workspace.id },
             query: {
               limit: 30,
               cursor: page.cursor,
@@ -121,7 +121,7 @@ export function Agents() {
               label: t("Agent"),
               render: (agent) => (
                 <ResourceIdentity
-                  to={agent.id}
+                  to={agent.key}
                   name={agent.name}
                   description={agent.description || undefined}
                   icon={<Bot size={18} strokeWidth={1.5} />}

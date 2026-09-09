@@ -19,6 +19,7 @@ import {
   StateBadge,
   Timestamp,
 } from "../../shared/feedback";
+import { isResourceKey } from "../../shared/paths";
 import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
 import agentStyles from "./agents.module.css";
@@ -30,16 +31,16 @@ import { AgentVersions } from "./versions";
 export function CreateAgent() {
   const { t } = useTranslation(),
     client = useClient(),
-    { workspace } = useWorkspace(),
+    { workspace, basePath } = useWorkspace(),
     cache = useQueryClient(),
     navigate = useNavigate(),
     idempotency = useIdempotency();
   const create = useMutation({
     mutationFn: (body: Schema["CreateAgentRequest"]) =>
       client.http
-        .POST("/api/v1/workspaces/{workspace_id}/agents", {
+        .POST("/api/v1/workspaces/{workspace}/agents", {
           params: {
-            path: { workspace_id: workspace.id },
+            path: { workspace: workspace.id },
             header: commandHeaders(workspace.id, idempotency.forBody(body)),
           },
           body,
@@ -48,14 +49,14 @@ export function CreateAgent() {
     onSuccess: (result) => {
       idempotency.reset();
       void cache.invalidateQueries({ queryKey: ["agents", workspace.id] });
-      navigate(`/workspaces/${workspace.id}/agents/${result.agent.id}`, {
+      navigate(`${basePath}/agents/${result.agent.key}`, {
         replace: true,
       });
     },
   });
   return (
     <AgentForm
-      back={`/workspaces/${workspace.id}/agents`}
+      back={`${basePath}/agents`}
       initial={initialConfig("")}
       creating
       pending={create.isPending}
@@ -68,20 +69,21 @@ export function CreateAgent() {
 }
 
 export function AgentDetail() {
-  const { agentId = "" } = useParams(),
+  const { agentKey = "" } = useParams(),
     client = useClient(),
     { t } = useTranslation(),
-    { workspace, can } = useWorkspace(),
+    { workspace, can, basePath } = useWorkspace(),
     navigate = useNavigate(),
     cache = useQueryClient(),
     idempotency = useIdempotency();
   const [generation, setGeneration] = useState(0);
   const query = useQuery({
-    queryKey: ["agent", workspace.id, agentId],
+    queryKey: ["agent", workspace.id, agentKey],
+    enabled: isResourceKey(agentKey),
     queryFn: async ({ signal }) => {
       const resource = representation(
-        await client.http.GET("/api/v1/agents/{agent_id}", {
-          params: { path: { agent_id: agentId } },
+        await client.http.GET("/api/v1/workspaces/{workspace}/agents/{agent}", {
+          params: { path: { workspace: workspace.id, agent: agentKey } },
           headers: workspaceHeaders(workspace.id),
           signal,
         }),
@@ -104,9 +106,9 @@ export function AgentDetail() {
       expected_version: number;
     }) => {
       return client.http
-        .POST("/api/v1/agents/{agent_id}/revisions", {
+        .POST("/api/v1/workspaces/{workspace}/agents/{agent}/revisions", {
           params: {
-            path: { agent_id: agentId },
+            path: { workspace: workspace.id, agent: agentKey },
             header: commandHeaders(workspace.id, idempotency.forBody(body)),
           },
           body,
@@ -116,14 +118,16 @@ export function AgentDetail() {
     onSuccess: async () => {
       idempotency.reset();
       await cache.invalidateQueries({
-        queryKey: ["agent", workspace.id, agentId],
+        queryKey: ["agent", workspace.id, agentKey],
       });
       void cache.invalidateQueries({
-        queryKey: ["agent-revisions", workspace.id, agentId],
+        queryKey: ["agent-revisions", workspace.id, agentKey],
       });
       setGeneration((value) => value + 1);
     },
   });
+  if (!isResourceKey(agentKey))
+    return <ErrorNotice error={new Error(t("Agent not found"))} />;
   if (query.isPending) return <Loading />;
   if (!query.data)
     return (
@@ -137,8 +141,8 @@ export function AgentDetail() {
   };
   return (
     <AgentForm
-      key={`${agent.id}:${generation}`}
-      back={`/workspaces/${workspace.id}/agents`}
+      key={`${agent.id}:${agent.key}:${generation}`}
+      back={`${basePath}/agents`}
       name={agent.name}
       description={agent.description ?? ""}
       primaryAction={
@@ -147,9 +151,7 @@ export function AgentDetail() {
             variant="default"
             disabled={!agent.enabled || !!agent.archived_at}
             onClick={() =>
-              navigate(
-                `/workspaces/${workspace.id}/sessions/new?agent=${agent.id}`,
-              )
+              navigate(`${basePath}/sessions/new?agent=${agent.id}`)
             }
             type="button"
           >
@@ -207,7 +209,7 @@ export function AgentDetail() {
             closeLabel={t("Close")}
           >
             <AgentSettings
-              key={`${agent.id}:${generation}`}
+              key={`${agent.id}:${agent.key}:${generation}`}
               resource={query.data}
               reload={() => void reload()}
             />

@@ -10,8 +10,8 @@ export function useAccountProviders() {
     queryFn: ({ signal }) =>
       client.http
         .GET(
-          "/api/v1/workspaces/{workspace_id}/application-account-provider-types",
-          { params: { path: { workspace_id: workspace.id } }, signal },
+          "/api/v1/workspaces/{workspace}/application-account-provider-types",
+          { params: { path: { workspace: workspace.id } }, signal },
         )
         .then(data),
   });
@@ -24,9 +24,9 @@ export function useReceptionOptions(includeServiceAccounts: boolean) {
     queryFn: ({ signal }) =>
       allPages((cursor) =>
         client.http
-          .GET("/api/v1/workspaces/{workspace_id}/agents", {
+          .GET("/api/v1/workspaces/{workspace}/agents", {
             params: {
-              path: { workspace_id: workspace.id },
+              path: { workspace: workspace.id },
               query: { cursor, limit: 100 },
             },
             signal,
@@ -40,9 +40,9 @@ export function useReceptionOptions(includeServiceAccounts: boolean) {
     queryFn: ({ signal }) =>
       allPages((cursor) =>
         client.http
-          .GET("/api/v1/workspaces/{workspace_id}/service-accounts", {
+          .GET("/api/v1/workspaces/{workspace}/service-accounts", {
             params: {
-              path: { workspace_id: workspace.id },
+              path: { workspace: workspace.id },
               query: { cursor, limit: 100 },
             },
             signal,

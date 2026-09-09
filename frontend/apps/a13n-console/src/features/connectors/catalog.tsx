@@ -228,9 +228,9 @@ function ConnectConnector({ connector }: { connector: Schema["Connector"] }) {
         name,
       };
       return client.http
-        .POST("/api/v1/workspaces/{workspace_id}/connector-connections", {
+        .POST("/api/v1/workspaces/{workspace}/connector-connections", {
           params: {
-            path: { workspace_id: workspace.id },
+            path: { workspace: workspace.id },
             header: commandHeaders(workspace.id, key.forBody(body)),
           },
           body,

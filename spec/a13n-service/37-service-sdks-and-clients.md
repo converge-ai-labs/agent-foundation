@@ -40,6 +40,10 @@ SDK method names follow each language's conventions while preserving the same re
 
 Request types and serializers preserve omitted fields separately from explicit `null` whenever the owning operation distinguishes them. For [successor inline Hooks](26-hook-notifications.md#successor-inline-subscriptions), Feedback, waiting Continue, and terminal Retry expose omission for inheritance, `null` for no subscription, and a complete object for replacement. SDK defaults emit omission, and explicit opt-out emits JSON `null`; neither default filling nor null filtering may collapse those states. The server resolves inheritance, so clients do not read and copy a mutable subscription before submitting the command. HookSubscription resource types expose `inline_run_id` and `expired_at` separately from enablement and deletion.
 
+## Workspace Binding
+
+API Key callers do not supply a Workspace to each SDK operation. The SDK reads `/api/v1/auth/context` and binds the Workspace operation surface to the authenticated Workspace ID. A key change does not affect that ID. In TypeScript, `await client.workspaceHttp()` returns the generated Workspace API with its parent path and Workspace parameter removed; `GET("/agents/{agent}", …)` accepts either an Agent ID or key. This binding shares the parent client's transport and shutdown. Switching credentials to another Workspace requires a new binding. Organization-bound browser clients retain explicit resource paths on `http`.
+
 ## Transport Lifetime
 
 Each client instance owns its connection pools and long-lived transports and has an explicit close operation. Closing an iterator, stream, WebSocket, SDK client, page traversal, or process stops only local delivery and network resources. It never submits a Run interrupt command implicitly.

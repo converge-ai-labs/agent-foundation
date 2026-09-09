@@ -560,6 +560,13 @@
             "title": "Id",
             "type": "string"
           },
+          "key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "title": "Key",
+            "type": "string"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -599,6 +606,7 @@
           "workspace_id",
           "source",
           "name",
+          "key",
           "description",
           "version",
           "current_revision_id",
@@ -3233,6 +3241,20 @@
             ],
             "title": "Description"
           },
+          "key": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -3863,6 +3885,20 @@
       "CreateWorkspaceRequest": {
         "additionalProperties": false,
         "properties": {
+          "key": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
           "name": {
             "maxLength": 128,
             "minLength": 1,
@@ -3887,6 +3923,36 @@
         },
         "required": ["key", "bearer"],
         "title": "CreatedKey",
+        "type": "object"
+      },
+      "CredentialContext": {
+        "description": "The authenticated credential boundary, independent of resource grants.",
+        "properties": {
+          "organization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
+          },
+          "workspace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace Id"
+          }
+        },
+        "required": ["workspace_id", "organization_id"],
+        "title": "CredentialContext",
         "type": "object"
       },
       "DelegationContextPolicy": {
@@ -4059,6 +4125,20 @@
             "minimum": 1.0,
             "title": "Expected Version",
             "type": "integer"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
           },
           "name": {
             "title": "Name",
@@ -7130,6 +7210,13 @@
             "readOnly": true,
             "title": "Image Url"
           },
+          "key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "title": "Key",
+            "type": "string"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -7140,7 +7227,14 @@
             "type": "string"
           }
         },
-        "required": ["id", "name", "created_at", "updated_at", "image_url"],
+        "required": [
+          "id",
+          "name",
+          "key",
+          "created_at",
+          "updated_at",
+          "image_url"
+        ],
         "title": "Organization",
         "type": "object"
       },
@@ -10138,6 +10232,10 @@
             "title": "Agent Id",
             "type": "string"
           },
+          "agent_key": {
+            "title": "Agent Key",
+            "type": "string"
+          },
           "agent_name": {
             "maxLength": 128,
             "minLength": 1,
@@ -10151,7 +10249,12 @@
             "type": "string"
           }
         },
-        "required": ["agent_id", "agent_revision_id", "agent_name"],
+        "required": [
+          "agent_id",
+          "agent_revision_id",
+          "agent_name",
+          "agent_key"
+        ],
         "title": "SkillAgentReference",
         "type": "object"
       },
@@ -12303,6 +12406,20 @@
             ],
             "title": "Description"
           },
+          "key": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
           "name": {
             "anyOf": [
               {
@@ -12661,6 +12778,40 @@
         },
         "required": ["expected_version", "submission"],
         "title": "UpdateQueuedSubmissionRequest",
+        "type": "object"
+      },
+      "UpdateResourceProfileRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "UpdateResourceProfileRequest",
         "type": "object"
       },
       "UpdateServiceAccountRequest": {
@@ -13336,6 +13487,13 @@
             "readOnly": true,
             "title": "Image Url"
           },
+          "key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "title": "Key",
+            "type": "string"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -13354,6 +13512,7 @@
           "id",
           "organization_id",
           "name",
+          "key",
           "created_at",
           "updated_at",
           "image_url"
@@ -13502,436 +13661,6 @@
           }
         },
         "summary": "Get Agent Revision",
-        "tags": ["agent-management"]
-      }
-    },
-    "/api/v1/agents/{agent_id}": {
-      "get": {
-        "operationId": "get_agent_api_v1_agents__agent_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "agent_id",
-            "required": true,
-            "schema": {
-              "title": "Agent Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Agent"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Agent",
-        "tags": ["agent-management"]
-      },
-      "patch": {
-        "operationId": "update_agent_api_v1_agents__agent_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "agent_id",
-            "required": true,
-            "schema": {
-              "title": "Agent Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "maxLength": 256,
-              "minLength": 1,
-              "title": "If-Match",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateAgentRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Agent"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Update Agent",
-        "tags": ["agent-management"]
-      }
-    },
-    "/api/v1/agents/{agent_id}/duplicate": {
-      "post": {
-        "operationId": "duplicate_agent_api_v1_agents__agent_id__duplicate_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "agent_id",
-            "required": true,
-            "schema": {
-              "title": "Agent Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "maxLength": 512,
-              "minLength": 1,
-              "title": "Idempotency-Key",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DuplicateAgentRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Agent"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Duplicate Agent",
-        "tags": ["agent-management"]
-      }
-    },
-    "/api/v1/agents/{agent_id}/revisions": {
-      "get": {
-        "operationId": "list_agent_revisions_api_v1_agents__agent_id__revisions_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "agent_id",
-            "required": true,
-            "schema": {
-              "title": "Agent Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "maximum": 100,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maxLength": 2048,
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Cursor"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentRevisionCollection"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Agent Revisions",
-        "tags": ["agent-management"]
-      },
-      "post": {
-        "operationId": "create_agent_revision_api_v1_agents__agent_id__revisions_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "agent_id",
-            "required": true,
-            "schema": {
-              "title": "Agent Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "maxLength": 512,
-              "minLength": 1,
-              "title": "Idempotency-Key",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateAgentRevisionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentRevisionCreateResult"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Create Agent Revision",
-        "tags": ["agent-management"]
-      }
-    },
-    "/api/v1/agents/{agent_id}/revisions/{revision_id}/restore": {
-      "post": {
-        "operationId": "restore_agent_revision_api_v1_agents__agent_id__revisions__revision_id__restore_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "agent_id",
-            "required": true,
-            "schema": {
-              "title": "Agent Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "revision_id",
-            "required": true,
-            "schema": {
-              "title": "Revision Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "maxLength": 512,
-              "minLength": 1,
-              "title": "Idempotency-Key",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RestoreAgentRevisionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentRevisionCreateResult"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Restore Agent Revision",
-        "tags": ["agent-management"]
-      }
-    },
-    "/api/v1/agents/{agent_id}/{action}": {
-      "post": {
-        "operationId": "change_agent_lifecycle_api_v1_agents__agent_id___action__post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "agent_id",
-            "required": true,
-            "schema": {
-              "title": "Agent Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "action",
-            "required": true,
-            "schema": {
-              "enum": ["enable", "disable", "archive", "unarchive"],
-              "title": "Action",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": true,
-            "schema": {
-              "maxLength": 512,
-              "minLength": 1,
-              "title": "Idempotency-Key",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "maxLength": 256,
-              "minLength": 1,
-              "title": "If-Match",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Agent"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Change Agent Lifecycle",
         "tags": ["agent-management"]
       }
     },
@@ -14686,6 +14415,25 @@
         },
         "summary": "Auth Configuration",
         "tags": ["identity-recovery"]
+      }
+    },
+    "/api/v1/auth/context": {
+      "get": {
+        "operationId": "credential_context_api_v1_auth_context_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialContext"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Credential Context",
+        "tags": ["identity"]
       }
     },
     "/api/v1/auth/csrf": {
@@ -17283,16 +17031,16 @@
         "tags": ["identity-management"]
       }
     },
-    "/api/v1/organizations/{organization_id}": {
+    "/api/v1/organizations/{organization}": {
       "get": {
-        "operationId": "organization_api_v1_organizations__organization_id__get",
+        "operationId": "organization_api_v1_organizations__organization__get",
         "parameters": [
           {
             "in": "path",
-            "name": "organization_id",
+            "name": "organization",
             "required": true,
             "schema": {
-              "title": "Organization Id",
+              "title": "Organization",
               "type": "string"
             }
           }
@@ -17323,14 +17071,14 @@
         "tags": ["identity-settings"]
       },
       "patch": {
-        "operationId": "update_organization_api_v1_organizations__organization_id__patch",
+        "operationId": "update_organization_api_v1_organizations__organization__patch",
         "parameters": [
           {
             "in": "path",
-            "name": "organization_id",
+            "name": "organization",
             "required": true,
             "schema": {
-              "title": "Organization Id",
+              "title": "Organization",
               "type": "string"
             }
           },
@@ -17350,7 +17098,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpdateProfileRequest"
+                "$ref": "#/components/schemas/UpdateResourceProfileRequest"
               }
             }
           },
@@ -17382,16 +17130,16 @@
         "tags": ["identity-settings"]
       }
     },
-    "/api/v1/organizations/{organization_id}/connector-providers": {
+    "/api/v1/organizations/{organization}/connector-providers": {
       "get": {
-        "operationId": "organization_list_connector_providers_api_v1_organizations__organization_id__connector_providers_get",
+        "operationId": "organization_list_connector_providers_api_v1_organizations__organization__connector_providers_get",
         "parameters": [
           {
             "in": "path",
-            "name": "organization_id",
+            "name": "organization",
             "required": true,
             "schema": {
-              "title": "Organization Id",
+              "title": "Organization",
               "type": "string"
             }
           },
@@ -17451,14 +17199,14 @@
         "tags": ["connectivity-management"]
       },
       "post": {
-        "operationId": "organization_create_connector_provider_api_v1_organizations__organization_id__connector_providers_post",
+        "operationId": "organization_create_connector_provider_api_v1_organizations__organization__connector_providers_post",
         "parameters": [
           {
             "in": "path",
-            "name": "organization_id",
+            "name": "organization",
             "required": true,
             "schema": {
-              "title": "Organization Id",
+              "title": "Organization",
               "type": "string"
             }
           },
@@ -17510,16 +17258,16 @@
         "tags": ["connectivity-management"]
       }
     },
-    "/api/v1/organizations/{organization_id}/environment-providers": {
+    "/api/v1/organizations/{organization}/environment-providers": {
       "get": {
-        "operationId": "organization_list_providers_api_v1_organizations__organization_id__environment_providers_get",
+        "operationId": "organization_list_providers_api_v1_organizations__organization__environment_providers_get",
         "parameters": [
           {
             "in": "path",
-            "name": "organization_id",
+            "name": "organization",
             "required": true,
             "schema": {
-              "title": "Organization Id",
+              "title": "Organization",
               "type": "string"
             }
           },
@@ -17578,14 +17326,14 @@
         "tags": ["environments"]
       },
       "post": {
-        "operationId": "organization_create_provider_api_v1_organizations__organization_id__environment_providers_post",
+        "operationId": "organization_create_provider_api_v1_organizations__organization__environment_providers_post",
         "parameters": [
           {
             "in": "path",
-            "name": "organization_id",
+            "name": "organization",
             "required": true,
             "schema": {
-              "title": "Organization Id",
+              "title": "Organization",
               "type": "string"
             }
           }
@@ -17626,16 +17374,16 @@
         "tags": ["environments"]
       }
     },
-    "/api/v1/organizations/{organization_id}/environment-templates": {
+    "/api/v1/organizations/{organization}/environment-templates": {
       "get": {
-        "operationId": "organization_list_templates_api_v1_organizations__organization_id__environment_templates_get",
+        "operationId": "organization_list_templates_api_v1_organizations__organization__environment_templates_get",
         "parameters": [
           {
             "in": "path",
-            "name": "organization_id",
+            "name": "organization",
             "required": true,
             "schema": {
-              "title": "Organization Id",
+              "title": "Organization",
               "type": "string"
             }
           },
@@ -17694,14 +17442,14 @@
         "tags": ["environments"]
       },
       "post": {
-        "operationId": "organization_create_template_api_v1_organizations__organization_id__environment_templates_post",
+        "operationId": "organization_create_template_api_v1_organizations__organization__environment_templates_post",
         "parameters": [
           {
             "in": "path",
-            "name": "organization_id",
+            "name": "organization",
             "required": true,
             "schema": {
-              "title": "Organization Id",
+              "title": "Organization",
               "type": "string"
             }
           },
@@ -17753,16 +17501,16 @@
         "tags": ["environments"]
       }
     },
-    "/api/v1/organizations/{organization_id}/icon": {
+    "/api/v1/organizations/{organization}/icon": {
       "delete": {
-        "operationId": "delete_organization_icon_api_v1_organizations__organization_id__icon_delete",
+        "operationId": "delete_organization_icon_api_v1_organizations__organization__icon_delete",
         "parameters": [
           {
             "in": "path",
-            "name": "organization_id",
+            "name": "organization",
             "required": true,
             "schema": {
-              "title": "Organization Id",
+              "title": "Organization",
               "type": "string"
             }
           },
@@ -17804,14 +17552,14 @@
         "tags": ["identity-images"]
       },
       "put": {
-        "operationId": "put_organization_icon_api_v1_organizations__organization_id__icon_put",
+        "operationId": "put_organization_icon_api_v1_organizations__organization__icon_put",
         "parameters": [
           {
             "in": "path",
-            "name": "organization_id",
+            "name": "organization",
             "required": true,
             "schema": {
-              "title": "Organization Id",
+              "title": "Organization",
               "type": "string"
             }
           },
@@ -17864,25 +17612,25 @@
         "tags": ["identity-images"]
       }
     },
-    "/api/v1/organizations/{organization_id}/icon/{image_id}": {
+    "/api/v1/organizations/{organization}/icon/{image_id}": {
       "get": {
-        "operationId": "get_organization_icon_api_v1_organizations__organization_id__icon__image_id__get",
+        "operationId": "get_organization_icon_api_v1_organizations__organization__icon__image_id__get",
         "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "title": "Organization Id",
-              "type": "string"
-            }
-          },
           {
             "in": "path",
             "name": "image_id",
             "required": true,
             "schema": {
               "title": "Image Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization",
+            "required": true,
+            "schema": {
+              "title": "Organization",
               "type": "string"
             }
           }
@@ -17911,16 +17659,16 @@
         "tags": ["identity-images"]
       }
     },
-    "/api/v1/organizations/{organization_id}/invitations": {
+    "/api/v1/organizations/{organization}/invitations": {
       "get": {
-        "operationId": "invitations_api_v1_organizations__organization_id__invitations_get",
+        "operationId": "invitations_api_v1_organizations__organization__invitations_get",
         "parameters": [
           {
             "in": "path",
-            "name": "organization_id",
+            "name": "organization",
             "required": true,
             "schema": {
-              "title": "Organization Id",
+              "title": "Organization",
               "type": "string"
             }
           },
@@ -17980,14 +17728,14 @@
         "tags": ["identity-management"]
       },
       "post": {
-        "operationId": "invite_api_v1_organizations__organization_id__invitations_post",
+        "operationId": "invite_api_v1_organizations__organization__invitations_post",
         "parameters": [
           {
             "in": "path",
-            "name": "organization_id",
+            "name": "organization",
             "required": true,
             "schema": {
-              "title": "Organization Id",
+              "title": "Organization",
               "type": "string"
             }
           }
@@ -18028,16 +17776,16 @@
         "tags": ["identity-management"]
       }
     },
-    "/api/v1/organizations/{organization_id}/model-providers": {
+    "/api/v1/organizations/{organization}/model-providers": {
       "get": {
-        "operationId": "organization_list_model_providers_api_v1_organizations__organization_id__model_providers_get",
+        "operationId": "organization_list_model_providers_api_v1_organizations__organization__model_providers_get",
         "parameters": [
           {
             "in": "path",
-            "name": "organization_id",
+            "name": "organization",
             "required": true,
             "schema": {
-              "title": "Organization Id",
+              "title": "Organization",
               "type": "string"
             }
           },
@@ -18147,14 +17895,14 @@
         "tags": ["model-management"]
       },
       "post": {
-        "operationId": "organization_create_model_provider_api_v1_organizations__organization_id__model_providers_post",
+        "operationId": "organization_create_model_provider_api_v1_organizations__organization__model_providers_post",
         "parameters": [
           {
             "in": "path",
-            "name": "organization_id",
+            "name": "organization",
             "required": true,
             "schema": {
-              "title": "Organization Id",
+              "title": "Organization",
               "type": "string"
             }
           }
@@ -18195,25 +17943,25 @@
         "tags": ["model-management"]
       }
     },
-    "/api/v1/organizations/{organization_id}/model-providers/{provider_id}": {
+    "/api/v1/organizations/{organization}/model-providers/{provider_id}": {
       "get": {
-        "operationId": "organization_get_model_provider_api_v1_organizations__organization_id__model_providers__provider_id__get",
+        "operationId": "organization_get_model_provider_api_v1_organizations__organization__model_providers__provider_id__get",
         "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "title": "Organization Id",
-              "type": "string"
-            }
-          },
           {
             "in": "path",
             "name": "provider_id",
             "required": true,
             "schema": {
               "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization",
+            "required": true,
+            "schema": {
+              "title": "Organization",
               "type": "string"
             }
           }
@@ -18244,23 +17992,23 @@
         "tags": ["model-management"]
       },
       "patch": {
-        "operationId": "organization_update_model_provider_api_v1_organizations__organization_id__model_providers__provider_id__patch",
+        "operationId": "organization_update_model_provider_api_v1_organizations__organization__model_providers__provider_id__patch",
         "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "title": "Organization Id",
-              "type": "string"
-            }
-          },
           {
             "in": "path",
             "name": "provider_id",
             "required": true,
             "schema": {
               "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization",
+            "required": true,
+            "schema": {
+              "title": "Organization",
               "type": "string"
             }
           },
@@ -18312,25 +18060,25 @@
         "tags": ["model-management"]
       }
     },
-    "/api/v1/organizations/{organization_id}/model-providers/{provider_id}/describe-model": {
+    "/api/v1/organizations/{organization}/model-providers/{provider_id}/describe-model": {
       "post": {
-        "operationId": "organization_describe_provider_model_api_v1_organizations__organization_id__model_providers__provider_id__describe_model_post",
+        "operationId": "organization_describe_provider_model_api_v1_organizations__organization__model_providers__provider_id__describe_model_post",
         "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "title": "Organization Id",
-              "type": "string"
-            }
-          },
           {
             "in": "path",
             "name": "provider_id",
             "required": true,
             "schema": {
               "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization",
+            "required": true,
+            "schema": {
+              "title": "Organization",
               "type": "string"
             }
           }
@@ -18371,25 +18119,25 @@
         "tags": ["model-management"]
       }
     },
-    "/api/v1/organizations/{organization_id}/model-providers/{provider_id}/discover-models": {
+    "/api/v1/organizations/{organization}/model-providers/{provider_id}/discover-models": {
       "post": {
-        "operationId": "organization_discover_provider_models_api_v1_organizations__organization_id__model_providers__provider_id__discover_models_post",
+        "operationId": "organization_discover_provider_models_api_v1_organizations__organization__model_providers__provider_id__discover_models_post",
         "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "title": "Organization Id",
-              "type": "string"
-            }
-          },
           {
             "in": "path",
             "name": "provider_id",
             "required": true,
             "schema": {
               "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization",
+            "required": true,
+            "schema": {
+              "title": "Organization",
               "type": "string"
             }
           }
@@ -18420,25 +18168,25 @@
         "tags": ["model-management"]
       }
     },
-    "/api/v1/organizations/{organization_id}/model-providers/{provider_id}/test": {
+    "/api/v1/organizations/{organization}/model-providers/{provider_id}/test": {
       "post": {
-        "operationId": "organization_test_model_provider_api_v1_organizations__organization_id__model_providers__provider_id__test_post",
+        "operationId": "organization_test_model_provider_api_v1_organizations__organization__model_providers__provider_id__test_post",
         "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "title": "Organization Id",
-              "type": "string"
-            }
-          },
           {
             "in": "path",
             "name": "provider_id",
             "required": true,
             "schema": {
               "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization",
+            "required": true,
+            "schema": {
+              "title": "Organization",
               "type": "string"
             }
           }
@@ -18469,16 +18217,16 @@
         "tags": ["model-management"]
       }
     },
-    "/api/v1/organizations/{organization_id}/models": {
+    "/api/v1/organizations/{organization}/models": {
       "get": {
-        "operationId": "organization_list_models_api_v1_organizations__organization_id__models_get",
+        "operationId": "organization_list_models_api_v1_organizations__organization__models_get",
         "parameters": [
           {
             "in": "path",
-            "name": "organization_id",
+            "name": "organization",
             "required": true,
             "schema": {
-              "title": "Organization Id",
+              "title": "Organization",
               "type": "string"
             }
           },
@@ -18588,14 +18336,14 @@
         "tags": ["model-management"]
       },
       "post": {
-        "operationId": "organization_create_model_api_v1_organizations__organization_id__models_post",
+        "operationId": "organization_create_model_api_v1_organizations__organization__models_post",
         "parameters": [
           {
             "in": "path",
-            "name": "organization_id",
+            "name": "organization",
             "required": true,
             "schema": {
-              "title": "Organization Id",
+              "title": "Organization",
               "type": "string"
             }
           }
@@ -18636,25 +18384,25 @@
         "tags": ["model-management"]
       }
     },
-    "/api/v1/organizations/{organization_id}/models/{model_id}": {
+    "/api/v1/organizations/{organization}/models/{model_id}": {
       "get": {
-        "operationId": "organization_get_model_api_v1_organizations__organization_id__models__model_id__get",
+        "operationId": "organization_get_model_api_v1_organizations__organization__models__model_id__get",
         "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "title": "Organization Id",
-              "type": "string"
-            }
-          },
           {
             "in": "path",
             "name": "model_id",
             "required": true,
             "schema": {
               "title": "Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization",
+            "required": true,
+            "schema": {
+              "title": "Organization",
               "type": "string"
             }
           }
@@ -18685,23 +18433,23 @@
         "tags": ["model-management"]
       },
       "patch": {
-        "operationId": "organization_update_model_api_v1_organizations__organization_id__models__model_id__patch",
+        "operationId": "organization_update_model_api_v1_organizations__organization__models__model_id__patch",
         "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "title": "Organization Id",
-              "type": "string"
-            }
-          },
           {
             "in": "path",
             "name": "model_id",
             "required": true,
             "schema": {
               "title": "Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization",
+            "required": true,
+            "schema": {
+              "title": "Organization",
               "type": "string"
             }
           },
@@ -18753,25 +18501,25 @@
         "tags": ["model-management"]
       }
     },
-    "/api/v1/organizations/{organization_id}/models/{model_id}/test": {
+    "/api/v1/organizations/{organization}/models/{model_id}/test": {
       "post": {
-        "operationId": "organization_test_model_api_v1_organizations__organization_id__models__model_id__test_post",
+        "operationId": "organization_test_model_api_v1_organizations__organization__models__model_id__test_post",
         "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "title": "Organization Id",
-              "type": "string"
-            }
-          },
           {
             "in": "path",
             "name": "model_id",
             "required": true,
             "schema": {
               "title": "Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization",
+            "required": true,
+            "schema": {
+              "title": "Organization",
               "type": "string"
             }
           }
@@ -18819,16 +18567,16 @@
         "tags": ["model-management"]
       }
     },
-    "/api/v1/organizations/{organization_id}/permissions": {
+    "/api/v1/organizations/{organization}/permissions": {
       "get": {
-        "operationId": "organization_permissions_api_v1_organizations__organization_id__permissions_get",
+        "operationId": "organization_permissions_api_v1_organizations__organization__permissions_get",
         "parameters": [
           {
             "in": "path",
-            "name": "organization_id",
+            "name": "organization",
             "required": true,
             "schema": {
-              "title": "Organization Id",
+              "title": "Organization",
               "type": "string"
             }
           }
@@ -18859,16 +18607,16 @@
         "tags": ["identity-settings"]
       }
     },
-    "/api/v1/organizations/{organization_id}/role-bindings": {
+    "/api/v1/organizations/{organization}/role-bindings": {
       "get": {
-        "operationId": "organization_roles_api_v1_organizations__organization_id__role_bindings_get",
+        "operationId": "organization_roles_api_v1_organizations__organization__role_bindings_get",
         "parameters": [
           {
             "in": "path",
-            "name": "organization_id",
+            "name": "organization",
             "required": true,
             "schema": {
-              "title": "Organization Id",
+              "title": "Organization",
               "type": "string"
             }
           },
@@ -18928,14 +18676,14 @@
         "tags": ["identity-management"]
       },
       "post": {
-        "operationId": "create_organization_binding_api_v1_organizations__organization_id__role_bindings_post",
+        "operationId": "create_organization_binding_api_v1_organizations__organization__role_bindings_post",
         "parameters": [
           {
             "in": "path",
-            "name": "organization_id",
+            "name": "organization",
             "required": true,
             "schema": {
-              "title": "Organization Id",
+              "title": "Organization",
               "type": "string"
             }
           }
@@ -18976,16 +18724,16 @@
         "tags": ["identity-settings"]
       }
     },
-    "/api/v1/organizations/{organization_id}/security-audit-events": {
+    "/api/v1/organizations/{organization}/security-audit-events": {
       "get": {
-        "operationId": "organization_security_events_api_v1_organizations__organization_id__security_audit_events_get",
+        "operationId": "organization_security_events_api_v1_organizations__organization__security_audit_events_get",
         "parameters": [
           {
             "in": "path",
-            "name": "organization_id",
+            "name": "organization",
             "required": true,
             "schema": {
-              "title": "Organization Id",
+              "title": "Organization",
               "type": "string"
             }
           },
@@ -19045,16 +18793,16 @@
         "tags": ["identity-settings"]
       }
     },
-    "/api/v1/organizations/{organization_id}/users": {
+    "/api/v1/organizations/{organization}/users": {
       "get": {
-        "operationId": "users_api_v1_organizations__organization_id__users_get",
+        "operationId": "users_api_v1_organizations__organization__users_get",
         "parameters": [
           {
             "in": "path",
-            "name": "organization_id",
+            "name": "organization",
             "required": true,
             "schema": {
-              "title": "Organization Id",
+              "title": "Organization",
               "type": "string"
             }
           },
@@ -19114,16 +18862,16 @@
         "tags": ["identity-management"]
       }
     },
-    "/api/v1/organizations/{organization_id}/workspaces": {
+    "/api/v1/organizations/{organization}/workspaces": {
       "get": {
-        "operationId": "workspaces_api_v1_organizations__organization_id__workspaces_get",
+        "operationId": "workspaces_api_v1_organizations__organization__workspaces_get",
         "parameters": [
           {
             "in": "path",
-            "name": "organization_id",
+            "name": "organization",
             "required": true,
             "schema": {
-              "title": "Organization Id",
+              "title": "Organization",
               "type": "string"
             }
           },
@@ -19183,14 +18931,14 @@
         "tags": ["identity-management"]
       },
       "post": {
-        "operationId": "create_workspace_api_v1_organizations__organization_id__workspaces_post",
+        "operationId": "create_workspace_api_v1_organizations__organization__workspaces_post",
         "parameters": [
           {
             "in": "path",
-            "name": "organization_id",
+            "name": "organization",
             "required": true,
             "schema": {
-              "title": "Organization Id",
+              "title": "Organization",
               "type": "string"
             }
           }
@@ -22040,16 +21788,16 @@
         "tags": ["identity-images"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}": {
+    "/api/v1/workspaces/{workspace}": {
       "delete": {
-        "operationId": "delete_workspace_api_v1_workspaces__workspace_id__delete",
+        "operationId": "delete_workspace_api_v1_workspaces__workspace__delete",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -22084,14 +21832,14 @@
         "tags": ["identity-management"]
       },
       "get": {
-        "operationId": "workspace_api_v1_workspaces__workspace_id__get",
+        "operationId": "workspace_api_v1_workspaces__workspace__get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           }
@@ -22122,14 +21870,14 @@
         "tags": ["identity-management"]
       },
       "patch": {
-        "operationId": "rename_workspace_api_v1_workspaces__workspace_id__patch",
+        "operationId": "update_workspace_api_v1_workspaces__workspace__patch",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -22149,7 +21897,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateWorkspaceRequest"
+                "$ref": "#/components/schemas/UpdateResourceProfileRequest"
               }
             }
           },
@@ -22177,20 +21925,20 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Rename Workspace",
+        "summary": "Update Workspace",
         "tags": ["identity-management"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/agents": {
+    "/api/v1/workspaces/{workspace}/agents": {
       "get": {
-        "operationId": "list_agents_api_v1_workspaces__workspace_id__agents_get",
+        "operationId": "list_agents_api_v1_workspaces__workspace__agents_get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -22292,14 +22040,14 @@
         "tags": ["agent-management"]
       },
       "post": {
-        "operationId": "create_agent_api_v1_workspaces__workspace_id__agents_post",
+        "operationId": "create_agent_api_v1_workspaces__workspace__agents_post",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -22351,16 +22099,509 @@
         "tags": ["agent-management"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/api-keys": {
+    "/api/v1/workspaces/{workspace}/agents/{agent}": {
       "get": {
-        "operationId": "workspace_member_keys_api_v1_workspaces__workspace_id__api_keys_get",
+        "operationId": "get_agent_api_v1_workspaces__workspace__agents__agent__get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agent",
+            "required": true,
+            "schema": {
+              "title": "Agent",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Agent"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Agent",
+        "tags": ["agent-management"]
+      },
+      "patch": {
+        "operationId": "update_agent_api_v1_workspaces__workspace__agents__agent__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agent",
+            "required": true,
+            "schema": {
+              "title": "Agent",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "If-Match",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAgentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Agent"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Agent",
+        "tags": ["agent-management"]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/agents/{agent}/duplicate": {
+      "post": {
+        "operationId": "duplicate_agent_api_v1_workspaces__workspace__agents__agent__duplicate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agent",
+            "required": true,
+            "schema": {
+              "title": "Agent",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DuplicateAgentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Agent"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Duplicate Agent",
+        "tags": ["agent-management"]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/agents/{agent}/revisions": {
+      "get": {
+        "operationId": "list_agent_revisions_api_v1_workspaces__workspace__agents__agent__revisions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agent",
+            "required": true,
+            "schema": {
+              "title": "Agent",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRevisionCollection"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Agent Revisions",
+        "tags": ["agent-management"]
+      },
+      "post": {
+        "operationId": "create_agent_revision_api_v1_workspaces__workspace__agents__agent__revisions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agent",
+            "required": true,
+            "schema": {
+              "title": "Agent",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentRevisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRevisionCreateResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Agent Revision",
+        "tags": ["agent-management"]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/agents/{agent}/revisions/{revision_id}/restore": {
+      "post": {
+        "operationId": "restore_agent_revision_api_v1_workspaces__workspace__agents__agent__revisions__revision_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "revision_id",
+            "required": true,
+            "schema": {
+              "title": "Revision Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agent",
+            "required": true,
+            "schema": {
+              "title": "Agent",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreAgentRevisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRevisionCreateResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restore Agent Revision",
+        "tags": ["agent-management"]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/agents/{agent}/{action}": {
+      "post": {
+        "operationId": "change_agent_lifecycle_api_v1_workspaces__workspace__agents__agent___action__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "action",
+            "required": true,
+            "schema": {
+              "enum": ["enable", "disable", "archive", "unarchive"],
+              "title": "Action",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agent",
+            "required": true,
+            "schema": {
+              "title": "Agent",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "If-Match",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Agent"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Agent Lifecycle",
+        "tags": ["agent-management"]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/api-keys": {
+      "get": {
+        "operationId": "workspace_member_keys_api_v1_workspaces__workspace__api_keys_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -22420,16 +22661,16 @@
         "tags": ["identity-settings"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/application-account-provider-types": {
+    "/api/v1/workspaces/{workspace}/application-account-provider-types": {
       "get": {
-        "operationId": "account_provider_types_api_v1_workspaces__workspace_id__application_account_provider_types_get",
+        "operationId": "account_provider_types_api_v1_workspaces__workspace__application_account_provider_types_get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           }
@@ -22460,16 +22701,16 @@
         "tags": ["connectivity-management"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/application-accounts": {
+    "/api/v1/workspaces/{workspace}/application-accounts": {
       "get": {
-        "operationId": "list_accounts_api_v1_workspaces__workspace_id__application_accounts_get",
+        "operationId": "list_accounts_api_v1_workspaces__workspace__application_accounts_get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -22529,14 +22770,14 @@
         "tags": ["connectivity-management"]
       },
       "post": {
-        "operationId": "create_account_api_v1_workspaces__workspace_id__application_accounts_post",
+        "operationId": "create_account_api_v1_workspaces__workspace__application_accounts_post",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -22588,16 +22829,16 @@
         "tags": ["connectivity-management"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/assets": {
+    "/api/v1/workspaces/{workspace}/assets": {
       "get": {
-        "operationId": "list_assets_api_v1_workspaces__workspace_id__assets_get",
+        "operationId": "list_assets_api_v1_workspaces__workspace__assets_get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -22690,14 +22931,14 @@
         "tags": ["asset-management"]
       },
       "post": {
-        "operationId": "upload_asset_api_v1_workspaces__workspace_id__assets_post",
+        "operationId": "upload_asset_api_v1_workspaces__workspace__assets_post",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -22778,16 +23019,16 @@
         "tags": ["asset-management"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/connector-connections": {
+    "/api/v1/workspaces/{workspace}/connector-connections": {
       "get": {
-        "operationId": "list_connector_connections_api_v1_workspaces__workspace_id__connector_connections_get",
+        "operationId": "list_connector_connections_api_v1_workspaces__workspace__connector_connections_get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -22847,14 +23088,14 @@
         "tags": ["connectivity-management"]
       },
       "post": {
-        "operationId": "create_connector_connection_api_v1_workspaces__workspace_id__connector_connections_post",
+        "operationId": "create_connector_connection_api_v1_workspaces__workspace__connector_connections_post",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -22906,16 +23147,16 @@
         "tags": ["connectivity-management"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/connector-providers": {
+    "/api/v1/workspaces/{workspace}/connector-providers": {
       "get": {
-        "operationId": "list_connector_providers_api_v1_workspaces__workspace_id__connector_providers_get",
+        "operationId": "list_connector_providers_api_v1_workspaces__workspace__connector_providers_get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -22975,14 +23216,14 @@
         "tags": ["connectivity-management"]
       },
       "post": {
-        "operationId": "create_connector_provider_api_v1_workspaces__workspace_id__connector_providers_post",
+        "operationId": "create_connector_provider_api_v1_workspaces__workspace__connector_providers_post",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -23034,16 +23275,16 @@
         "tags": ["connectivity-management"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/environment-providers": {
+    "/api/v1/workspaces/{workspace}/environment-providers": {
       "get": {
-        "operationId": "list_providers_api_v1_workspaces__workspace_id__environment_providers_get",
+        "operationId": "list_providers_api_v1_workspaces__workspace__environment_providers_get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -23102,14 +23343,14 @@
         "tags": ["environments"]
       },
       "post": {
-        "operationId": "create_provider_api_v1_workspaces__workspace_id__environment_providers_post",
+        "operationId": "create_provider_api_v1_workspaces__workspace__environment_providers_post",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           }
@@ -23150,16 +23391,16 @@
         "tags": ["environments"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/environment-templates": {
+    "/api/v1/workspaces/{workspace}/environment-templates": {
       "get": {
-        "operationId": "list_templates_api_v1_workspaces__workspace_id__environment_templates_get",
+        "operationId": "list_templates_api_v1_workspaces__workspace__environment_templates_get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -23218,14 +23459,14 @@
         "tags": ["environments"]
       },
       "post": {
-        "operationId": "create_template_api_v1_workspaces__workspace_id__environment_templates_post",
+        "operationId": "create_template_api_v1_workspaces__workspace__environment_templates_post",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -23277,16 +23518,16 @@
         "tags": ["environments"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/environments": {
+    "/api/v1/workspaces/{workspace}/environments": {
       "get": {
-        "operationId": "list_environments_api_v1_workspaces__workspace_id__environments_get",
+        "operationId": "list_environments_api_v1_workspaces__workspace__environments_get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -23345,14 +23586,14 @@
         "tags": ["environments"]
       },
       "post": {
-        "operationId": "create_environment_api_v1_workspaces__workspace_id__environments_post",
+        "operationId": "create_environment_api_v1_workspaces__workspace__environments_post",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -23412,16 +23653,16 @@
         "tags": ["environments"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/events": {
+    "/api/v1/workspaces/{workspace}/events": {
       "get": {
-        "operationId": "list_workspace_events_api_v1_workspaces__workspace_id__events_get",
+        "operationId": "list_workspace_events_api_v1_workspaces__workspace__events_get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -23481,16 +23722,16 @@
         "tags": ["lifecycle-events"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/hook-subscriptions": {
+    "/api/v1/workspaces/{workspace}/hook-subscriptions": {
       "get": {
-        "operationId": "list_hook_subscriptions_api_v1_workspaces__workspace_id__hook_subscriptions_get",
+        "operationId": "list_hook_subscriptions_api_v1_workspaces__workspace__hook_subscriptions_get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -23550,14 +23791,14 @@
         "tags": ["hook-subscriptions"]
       },
       "post": {
-        "operationId": "create_hook_subscription_api_v1_workspaces__workspace_id__hook_subscriptions_post",
+        "operationId": "create_hook_subscription_api_v1_workspaces__workspace__hook_subscriptions_post",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           }
@@ -23598,16 +23839,16 @@
         "tags": ["hook-subscriptions"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/icon": {
+    "/api/v1/workspaces/{workspace}/icon": {
       "delete": {
-        "operationId": "delete_workspace_icon_api_v1_workspaces__workspace_id__icon_delete",
+        "operationId": "delete_workspace_icon_api_v1_workspaces__workspace__icon_delete",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -23649,14 +23890,14 @@
         "tags": ["identity-images"]
       },
       "put": {
-        "operationId": "put_workspace_icon_api_v1_workspaces__workspace_id__icon_put",
+        "operationId": "put_workspace_icon_api_v1_workspaces__workspace__icon_put",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -23709,25 +23950,25 @@
         "tags": ["identity-images"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/icon/{image_id}": {
+    "/api/v1/workspaces/{workspace}/icon/{image_id}": {
       "get": {
-        "operationId": "get_workspace_icon_api_v1_workspaces__workspace_id__icon__image_id__get",
+        "operationId": "get_workspace_icon_api_v1_workspaces__workspace__icon__image_id__get",
         "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          },
           {
             "in": "path",
             "name": "image_id",
             "required": true,
             "schema": {
               "title": "Image Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
               "type": "string"
             }
           }
@@ -23756,16 +23997,16 @@
         "tags": ["identity-images"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/invitations": {
+    "/api/v1/workspaces/{workspace}/invitations": {
       "get": {
-        "operationId": "workspace_invitations_api_v1_workspaces__workspace_id__invitations_get",
+        "operationId": "workspace_invitations_api_v1_workspaces__workspace__invitations_get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -23825,14 +24066,14 @@
         "tags": ["identity-management"]
       },
       "post": {
-        "operationId": "invite_to_workspace_api_v1_workspaces__workspace_id__invitations_post",
+        "operationId": "invite_to_workspace_api_v1_workspaces__workspace__invitations_post",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           }
@@ -23873,16 +24114,16 @@
         "tags": ["identity-management"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/mcp-connections": {
+    "/api/v1/workspaces/{workspace}/mcp-connections": {
       "get": {
-        "operationId": "list_mcp_connections_api_v1_workspaces__workspace_id__mcp_connections_get",
+        "operationId": "list_mcp_connections_api_v1_workspaces__workspace__mcp_connections_get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -23942,14 +24183,14 @@
         "tags": ["connectivity-management"]
       },
       "post": {
-        "operationId": "create_mcp_connection_api_v1_workspaces__workspace_id__mcp_connections_post",
+        "operationId": "create_mcp_connection_api_v1_workspaces__workspace__mcp_connections_post",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -24001,16 +24242,16 @@
         "tags": ["connectivity-management"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/members": {
+    "/api/v1/workspaces/{workspace}/members": {
       "get": {
-        "operationId": "workspace_members_api_v1_workspaces__workspace_id__members_get",
+        "operationId": "workspace_members_api_v1_workspaces__workspace__members_get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -24070,16 +24311,16 @@
         "tags": ["identity-settings"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/model-providers": {
+    "/api/v1/workspaces/{workspace}/model-providers": {
       "get": {
-        "operationId": "list_model_providers_api_v1_workspaces__workspace_id__model_providers_get",
+        "operationId": "list_model_providers_api_v1_workspaces__workspace__model_providers_get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -24189,14 +24430,14 @@
         "tags": ["model-management"]
       },
       "post": {
-        "operationId": "create_model_provider_api_v1_workspaces__workspace_id__model_providers_post",
+        "operationId": "create_model_provider_api_v1_workspaces__workspace__model_providers_post",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           }
@@ -24237,25 +24478,25 @@
         "tags": ["model-management"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/model-providers/{provider_id}": {
+    "/api/v1/workspaces/{workspace}/model-providers/{provider_id}": {
       "get": {
-        "operationId": "get_model_provider_api_v1_workspaces__workspace_id__model_providers__provider_id__get",
+        "operationId": "get_model_provider_api_v1_workspaces__workspace__model_providers__provider_id__get",
         "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          },
           {
             "in": "path",
             "name": "provider_id",
             "required": true,
             "schema": {
               "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
               "type": "string"
             }
           }
@@ -24286,23 +24527,23 @@
         "tags": ["model-management"]
       },
       "patch": {
-        "operationId": "update_model_provider_api_v1_workspaces__workspace_id__model_providers__provider_id__patch",
+        "operationId": "update_model_provider_api_v1_workspaces__workspace__model_providers__provider_id__patch",
         "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          },
           {
             "in": "path",
             "name": "provider_id",
             "required": true,
             "schema": {
               "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -24354,25 +24595,25 @@
         "tags": ["model-management"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/model-providers/{provider_id}/describe-model": {
+    "/api/v1/workspaces/{workspace}/model-providers/{provider_id}/describe-model": {
       "post": {
-        "operationId": "describe_provider_model_api_v1_workspaces__workspace_id__model_providers__provider_id__describe_model_post",
+        "operationId": "describe_provider_model_api_v1_workspaces__workspace__model_providers__provider_id__describe_model_post",
         "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          },
           {
             "in": "path",
             "name": "provider_id",
             "required": true,
             "schema": {
               "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
               "type": "string"
             }
           }
@@ -24413,25 +24654,25 @@
         "tags": ["model-management"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/model-providers/{provider_id}/discover-models": {
+    "/api/v1/workspaces/{workspace}/model-providers/{provider_id}/discover-models": {
       "post": {
-        "operationId": "discover_provider_models_api_v1_workspaces__workspace_id__model_providers__provider_id__discover_models_post",
+        "operationId": "discover_provider_models_api_v1_workspaces__workspace__model_providers__provider_id__discover_models_post",
         "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          },
           {
             "in": "path",
             "name": "provider_id",
             "required": true,
             "schema": {
               "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
               "type": "string"
             }
           }
@@ -24462,25 +24703,25 @@
         "tags": ["model-management"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/model-providers/{provider_id}/test": {
+    "/api/v1/workspaces/{workspace}/model-providers/{provider_id}/test": {
       "post": {
-        "operationId": "test_model_provider_api_v1_workspaces__workspace_id__model_providers__provider_id__test_post",
+        "operationId": "test_model_provider_api_v1_workspaces__workspace__model_providers__provider_id__test_post",
         "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          },
           {
             "in": "path",
             "name": "provider_id",
             "required": true,
             "schema": {
               "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
               "type": "string"
             }
           }
@@ -24511,16 +24752,16 @@
         "tags": ["model-management"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/models": {
+    "/api/v1/workspaces/{workspace}/models": {
       "get": {
-        "operationId": "list_models_api_v1_workspaces__workspace_id__models_get",
+        "operationId": "list_models_api_v1_workspaces__workspace__models_get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -24630,14 +24871,14 @@
         "tags": ["model-management"]
       },
       "post": {
-        "operationId": "create_model_api_v1_workspaces__workspace_id__models_post",
+        "operationId": "create_model_api_v1_workspaces__workspace__models_post",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           }
@@ -24678,25 +24919,25 @@
         "tags": ["model-management"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/models/{model_id}": {
+    "/api/v1/workspaces/{workspace}/models/{model_id}": {
       "get": {
-        "operationId": "get_model_api_v1_workspaces__workspace_id__models__model_id__get",
+        "operationId": "get_model_api_v1_workspaces__workspace__models__model_id__get",
         "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          },
           {
             "in": "path",
             "name": "model_id",
             "required": true,
             "schema": {
               "title": "Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
               "type": "string"
             }
           }
@@ -24727,23 +24968,23 @@
         "tags": ["model-management"]
       },
       "patch": {
-        "operationId": "update_model_api_v1_workspaces__workspace_id__models__model_id__patch",
+        "operationId": "update_model_api_v1_workspaces__workspace__models__model_id__patch",
         "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          },
           {
             "in": "path",
             "name": "model_id",
             "required": true,
             "schema": {
               "title": "Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -24795,25 +25036,25 @@
         "tags": ["model-management"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/models/{model_id}/test": {
+    "/api/v1/workspaces/{workspace}/models/{model_id}/test": {
       "post": {
-        "operationId": "test_model_api_v1_workspaces__workspace_id__models__model_id__test_post",
+        "operationId": "test_model_api_v1_workspaces__workspace__models__model_id__test_post",
         "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          },
           {
             "in": "path",
             "name": "model_id",
             "required": true,
             "schema": {
               "title": "Model Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
               "type": "string"
             }
           }
@@ -24861,16 +25102,16 @@
         "tags": ["model-management"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/permissions": {
+    "/api/v1/workspaces/{workspace}/permissions": {
       "get": {
-        "operationId": "workspace_permissions_api_v1_workspaces__workspace_id__permissions_get",
+        "operationId": "workspace_permissions_api_v1_workspaces__workspace__permissions_get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           }
@@ -24901,16 +25142,16 @@
         "tags": ["identity-settings"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/personal-api-keys": {
+    "/api/v1/workspaces/{workspace}/personal-api-keys": {
       "get": {
-        "operationId": "personal_keys_api_v1_workspaces__workspace_id__personal_api_keys_get",
+        "operationId": "personal_keys_api_v1_workspaces__workspace__personal_api_keys_get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -24970,14 +25211,14 @@
         "tags": ["identity-management"]
       },
       "post": {
-        "operationId": "create_personal_key_api_v1_workspaces__workspace_id__personal_api_keys_post",
+        "operationId": "create_personal_key_api_v1_workspaces__workspace__personal_api_keys_post",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           }
@@ -25018,16 +25259,16 @@
         "tags": ["identity-management"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/role-bindings": {
+    "/api/v1/workspaces/{workspace}/role-bindings": {
       "get": {
-        "operationId": "workspace_roles_api_v1_workspaces__workspace_id__role_bindings_get",
+        "operationId": "workspace_roles_api_v1_workspaces__workspace__role_bindings_get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -25087,14 +25328,14 @@
         "tags": ["identity-management"]
       },
       "post": {
-        "operationId": "add_workspace_member_api_v1_workspaces__workspace_id__role_bindings_post",
+        "operationId": "add_workspace_member_api_v1_workspaces__workspace__role_bindings_post",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           }
@@ -25135,16 +25376,16 @@
         "tags": ["identity-management"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/runs": {
+    "/api/v1/workspaces/{workspace}/runs": {
       "get": {
-        "operationId": "list_workspace_runs_api_v1_workspaces__workspace_id__runs_get",
+        "operationId": "list_workspace_runs_api_v1_workspaces__workspace__runs_get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -25204,14 +25445,14 @@
         "tags": ["protocol-gateway"]
       },
       "post": {
-        "operationId": "start_run_api_v1_workspaces__workspace_id__runs_post",
+        "operationId": "start_run_api_v1_workspaces__workspace__runs_post",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -25262,16 +25503,16 @@
         "tags": ["protocol-gateway"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/security-audit-events": {
+    "/api/v1/workspaces/{workspace}/security-audit-events": {
       "get": {
-        "operationId": "workspace_security_events_api_v1_workspaces__workspace_id__security_audit_events_get",
+        "operationId": "workspace_security_events_api_v1_workspaces__workspace__security_audit_events_get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -25331,16 +25572,16 @@
         "tags": ["identity-settings"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/service-accounts": {
+    "/api/v1/workspaces/{workspace}/service-accounts": {
       "get": {
-        "operationId": "accounts_api_v1_workspaces__workspace_id__service_accounts_get",
+        "operationId": "accounts_api_v1_workspaces__workspace__service_accounts_get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -25400,14 +25641,14 @@
         "tags": ["identity-management"]
       },
       "post": {
-        "operationId": "create_account_api_v1_workspaces__workspace_id__service_accounts_post",
+        "operationId": "create_account_api_v1_workspaces__workspace__service_accounts_post",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           }
@@ -25448,16 +25689,16 @@
         "tags": ["identity-management"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/sessions": {
+    "/api/v1/workspaces/{workspace}/sessions": {
       "get": {
-        "operationId": "list_sessions_api_v1_workspaces__workspace_id__sessions_get",
+        "operationId": "list_sessions_api_v1_workspaces__workspace__sessions_get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -25517,16 +25758,16 @@
         "tags": ["protocol-gateway"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/skill-uploads": {
+    "/api/v1/workspaces/{workspace}/skill-uploads": {
       "post": {
-        "operationId": "stage_skill_upload_api_v1_workspaces__workspace_id__skill_uploads_post",
+        "operationId": "stage_skill_upload_api_v1_workspaces__workspace__skill_uploads_post",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -25579,16 +25820,16 @@
         "tags": ["skill-management"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/skills": {
+    "/api/v1/workspaces/{workspace}/skills": {
       "get": {
-        "operationId": "list_skills_api_v1_workspaces__workspace_id__skills_get",
+        "operationId": "list_skills_api_v1_workspaces__workspace__skills_get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -25648,14 +25889,14 @@
         "tags": ["skill-management"]
       },
       "post": {
-        "operationId": "create_skill_api_v1_workspaces__workspace_id__skills_post",
+        "operationId": "create_skill_api_v1_workspaces__workspace__skills_post",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -25707,16 +25948,16 @@
         "tags": ["skill-management"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/threads": {
+    "/api/v1/workspaces/{workspace}/threads": {
       "post": {
-        "operationId": "create_thread_api_v1_workspaces__workspace_id__threads_post",
+        "operationId": "create_thread_api_v1_workspaces__workspace__threads_post",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -25768,16 +26009,16 @@
         "tags": ["threads"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/traces": {
+    "/api/v1/workspaces/{workspace}/traces": {
       "get": {
-        "operationId": "list_traces_api_v1_workspaces__workspace_id__traces_get",
+        "operationId": "list_traces_api_v1_workspaces__workspace__traces_get",
         "parameters": [
           {
             "in": "path",
-            "name": "workspace_id",
+            "name": "workspace",
             "required": true,
             "schema": {
-              "title": "Workspace Id",
+              "title": "Workspace",
               "type": "string"
             }
           },
@@ -25955,19 +26196,10 @@
         "tags": ["trace-query"]
       }
     },
-    "/api/v1/workspaces/{workspace_id}/traces/{trace_id}": {
+    "/api/v1/workspaces/{workspace}/traces/{trace_id}": {
       "get": {
-        "operationId": "get_trace_api_v1_workspaces__workspace_id__traces__trace_id__get",
+        "operationId": "get_trace_api_v1_workspaces__workspace__traces__trace_id__get",
         "parameters": [
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          },
           {
             "in": "path",
             "name": "trace_id",
@@ -25976,6 +26208,15 @@
               "maxLength": 512,
               "minLength": 1,
               "title": "Trace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
               "type": "string"
             }
           },

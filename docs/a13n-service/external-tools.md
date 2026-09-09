@@ -28,7 +28,7 @@ A Run override inherits an omitted `connector_tools` or `mcp_tools` list. A supp
 
 ## Connector Providers: Composio and OpenConnector
 
-Create a Provider under `/api/v1/workspaces/{workspace_id}/connector-providers` or the parent Organization, supply its service credentials, discover its Connectors, and create a Workspace ConnectorConnection. Complete external authorization before selecting that connection in `connector_tools`. Both Providers support the same tool selection and deferred-loading fields shown above.
+Create a Provider under `/api/v1/workspaces/{workspace}/connector-providers` or the parent Organization, supply its service credentials, discover its Connectors, and create a Workspace ConnectorConnection. Complete external authorization before selecting that connection in `connector_tools`. Both Providers support the same tool selection and deferred-loading fields shown above.
 
 For Composio, choose `type: "composio"`, configure `enabled_toolkits` (for example `["slack"]`), and supply the write-only project `api_key`. Create an enabled OAuth2 auth config for each toolkit in the [Composio dashboard](https://dashboard.composio.dev). Console fills fixed toolkit-version values from discovery; an unavailable auth configuration prevents setup.
 
@@ -48,7 +48,7 @@ OOMOL's published Project API has no remote revoke operation. Service revoke/del
 
 ## Application Accounts and event reception
 
-An Application Account represents one provider account, Bot, or concrete application installation. Configure its credentials through `/api/v1/workspaces/{workspace_id}/application-accounts`. Credentials are write-only and encrypted on the Account.
+An Application Account represents one provider account, Bot, or concrete application installation. Configure its credentials through `/api/v1/workspaces/{workspace}/application-accounts`. Credentials are write-only and encrypted on the Account.
 
 Reception is disabled by default. To receive events, set `receive_enabled: true`, `default_agent_id`, and a same-Workspace `execution_service_account_id` on the Account. Configure the provider webhook at `/connectivity/v1/accounts/{account_id}/events`. A tool-only Account needs neither an Agent nor an execution Service Account.
 

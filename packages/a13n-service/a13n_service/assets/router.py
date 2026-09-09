@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.http_types import IdempotencyKey
 from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.iam.http.resource_dependencies import WorkspaceId
 from a13n_service.request_runtime import get_control_runtime, get_process_runtime
 
 from .catalog import AssetCatalog, PreparedAssetContent
@@ -44,7 +45,7 @@ def _uploads(request: Request) -> AssetUploadService:
 
 
 @router.post(
-    "/workspaces/{workspace_id}/assets",
+    "/workspaces/{workspace}/assets",
     response_model=Asset,
     status_code=status.HTTP_201_CREATED,
     openapi_extra={
@@ -57,7 +58,7 @@ def _uploads(request: Request) -> AssetUploadService:
 async def upload_asset(
     request: Request,
     actor: Actor,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     idempotency_key: IdempotencyKey,
     filename: Annotated[str, Query(min_length=1, max_length=1024)],
     media_type: Annotated[str | None, Query(max_length=255)] = None,
@@ -74,11 +75,11 @@ async def upload_asset(
     )
 
 
-@router.get("/workspaces/{workspace_id}/assets", response_model=AssetCollection)
+@router.get("/workspaces/{workspace}/assets", response_model=AssetCollection)
 async def list_assets(
     request: Request,
     actor: Actor,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
     source_kind: AssetSourceKind | None = None,

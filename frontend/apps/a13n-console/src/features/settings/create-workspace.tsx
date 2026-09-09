@@ -7,7 +7,9 @@ import { useNavigate } from "react-router";
 import { Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
-import { data } from "../../shared/api";
+import { useAccess } from "../../layout/workspace";
+import { workspacePath } from "../../shared/paths";
+import { data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { FormActions } from "../../shared/form";
 import styles from "../../shared/shared.module.css";
@@ -18,6 +20,7 @@ export function CreateWorkspace({
   organizationId: string;
 }) {
   const client = useClient(),
+    { organization } = useAccess(),
     { t } = useTranslation(),
     cache = useQueryClient(),
     navigate = useNavigate();
@@ -26,18 +29,22 @@ export function CreateWorkspace({
   const create = useMutation({
     mutationFn: () =>
       client.http
-        .POST("/api/v1/organizations/{organization_id}/workspaces", {
-          params: { path: { organization_id: organizationId } },
+        .POST("/api/v1/organizations/{organization}/workspaces", {
+          params: { path: { organization: organizationId } },
           body: { name },
         })
         .then(data),
     onSuccess: (result) => {
+      cache.setQueryData<{ items: Schema["Workspace"][] }>(
+        ["workspaces", organizationId],
+        (previous) => ({ items: [...(previous?.items ?? []), result] }),
+      );
       void cache.invalidateQueries({
         queryKey: ["workspaces", organizationId],
       });
       setOpen(false);
       setName("");
-      navigate(`/workspaces/${result.id}/settings`);
+      navigate(`${workspacePath(organization, result)}/settings`);
     },
   });
   return (

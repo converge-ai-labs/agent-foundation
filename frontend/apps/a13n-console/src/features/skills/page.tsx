@@ -52,9 +52,9 @@ export function SkillsPage() {
     queryKey: ["skills", workspace.id, page.cursor],
     queryFn: ({ signal }) =>
       client.http
-        .GET("/api/v1/workspaces/{workspace_id}/skills", {
+        .GET("/api/v1/workspaces/{workspace}/skills", {
           params: {
-            path: { workspace_id: workspace.id },
+            path: { workspace: workspace.id },
             query: { cursor: page.cursor },
           },
           signal,
@@ -283,7 +283,8 @@ function Revisions({ skill }: { skill: Schema["Skill"] }) {
   );
 }
 function References({ skill }: { skill: Schema["Skill"] }) {
-  const client = useClient(),
+  const { basePath } = useWorkspace(),
+    client = useClient(),
     { t } = useTranslation(),
     page = useCursor();
   const query = useQuery({
@@ -327,9 +328,7 @@ function References({ skill }: { skill: Schema["Skill"] }) {
               {
                 label: t("Agent"),
                 render: (item) => (
-                  <Link
-                    to={`/workspaces/${skill.workspace_id}/agents/${item.agent_id}`}
-                  >
+                  <Link to={`${basePath}/agents/${item.agent_key}`}>
                     {item.agent_name}
                   </Link>
                 ),
@@ -364,7 +363,7 @@ function SkillSettings({
     [name, setName] = useState(initial.value.name),
     client = useClient(),
     cache = useQueryClient(),
-    { can } = useWorkspace(),
+    { can, basePath } = useWorkspace(),
     { t } = useTranslation(),
     navigate = useNavigate();
   const params = {
@@ -414,7 +413,7 @@ function SkillSettings({
           danger
           action={async () => {
             await client.http.DELETE("/api/v1/skills/{skill_id}", { params });
-            navigate(`/workspaces/${basis.value.workspace_id}/skills`);
+            navigate(`${basePath}/skills`);
           }}
         />
       )}

@@ -24,7 +24,7 @@ export function ConnectionSetup({
   connector?: Schema["Connector"];
 }) {
   const client = useClient(),
-    { workspace } = useWorkspace(),
+    { workspace, basePath } = useWorkspace(),
     cache = useQueryClient(),
     { t } = useTranslation(),
     key = useIdempotency(),
@@ -71,7 +71,7 @@ export function ConnectionSetup({
           expected_version: selected.version,
           browser_nonce: browserNonce,
           setup: jsonObject(JSON.stringify(configured)),
-          return_path: `/workspaces/${workspace.id}/connectors`,
+          return_path: `${basePath}/connectors`,
         },
         params = {
           path: { connection_id: selected.id },
@@ -80,6 +80,7 @@ export function ConnectionSetup({
       saveAuthorization({
         browser_nonce: browserNonce,
         workspace_id: workspace.id,
+        return_path: `${basePath}/connectors`,
         connection_id: selected.id,
       });
       return !options?.restart && basis.status === "pending"
@@ -101,6 +102,7 @@ export function ConnectionSetup({
         saveAuthorization({
           browser_nonce: options?.nonce ?? nonce,
           workspace_id: workspace.id,
+          return_path: `${basePath}/connectors`,
           connection_id: basis.id,
           attempt_id: result.attempt_id,
           expires_at: result.expires_at,

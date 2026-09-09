@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.ids import new_object_id
+from a13n_service.resource_keys import insert_with_key
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import utc_now
 
@@ -99,18 +100,18 @@ class InvitationService:
                 organization = OrganizationRecord(
                     id=new_object_id("org"), name="Organization", created_at=now, updated_at=now
                 )
-                session.add(organization)
-                await session.flush()
-                session.add(
+                await insert_with_key(session, organization, prefix="org")
+                await insert_with_key(
+                    session,
                     WorkspaceRecord(
                         id=new_object_id("ws"),
                         organization_id=organization.id,
                         name="default",
-                        normalized_name="default",
                         created_at=now,
                         updated_at=now,
                         deleted_at=None,
-                    )
+                    ),
+                    prefix="workspace",
                 )
                 await session.flush()
             else:

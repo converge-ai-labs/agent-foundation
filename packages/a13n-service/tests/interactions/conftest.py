@@ -163,13 +163,13 @@ def relational_interaction_sessions(request):
 
 async def _seed_interaction_database(sessions: async_sessionmaker[AsyncSession]) -> None:
     async with transaction(sessions) as database:
-        database.add(OrganizationRecord(id=ORGANIZATION_ID, name="Test", created_at=NOW, updated_at=NOW))
+        database.add(OrganizationRecord(id=ORGANIZATION_ID, key="test", name="Test", created_at=NOW, updated_at=NOW))
         database.add(
             WorkspaceRecord(
                 id=WORKSPACE_ID,
                 organization_id=ORGANIZATION_ID,
                 name="Test",
-                normalized_name="test",
+                key="test",
                 created_at=NOW,
                 updated_at=NOW,
                 deleted_at=None,
@@ -183,7 +183,7 @@ async def _seed_interaction_database(sessions: async_sessionmaker[AsyncSession])
                 workspace_id=WORKSPACE_ID,
                 source="custom",
                 name="Test Agent",
-                normalized_name="test agent",
+                key="test-agent",
                 description=None,
                 version=1,
                 current_revision_id=AGENT_REVISION_ID,

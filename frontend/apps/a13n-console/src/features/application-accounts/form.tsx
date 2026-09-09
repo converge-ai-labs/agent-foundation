@@ -99,9 +99,9 @@ export function AccountForm({
         credentials: stringValues(credentials),
       };
       return client.http
-        .POST("/api/v1/workspaces/{workspace_id}/application-accounts", {
+        .POST("/api/v1/workspaces/{workspace}/application-accounts", {
           params: {
-            path: { workspace_id: workspace.id },
+            path: { workspace: workspace.id },
             header: commandHeaders(workspace.id, key.forBody(body)),
           },
           body,

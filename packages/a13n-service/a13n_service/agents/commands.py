@@ -20,6 +20,7 @@ from a13n_service.iam import (
     authorize_workspace,
 )
 from a13n_service.iam.authorization import WorkspaceAction
+from a13n_service.resource_keys import flush_key_change, insert_with_key
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, utc_now
 
@@ -39,7 +40,6 @@ from .errors import (
 from .invocation_resolution import AgentInvocationResolver, PreparedAgentInvocation, RootAgentStatePolicy
 from .models import AgentRecord
 from .persistence import (
-    agent_name_key,
     apply_lifecycle_transition,
     authorize_agent_scope,
     load_replay,
@@ -147,7 +147,6 @@ class AgentCommands:
                     source=AgentSource.custom.value,
                     default_environment_template_id=request.default_environment_template_id,
                     name=request.name,
-                    normalized_name=agent_name_key(request.name),
                     description=request.description,
                     version=1,
                     current_revision_id=revision_id,
@@ -162,6 +161,7 @@ class AgentCommands:
                     created_at=now,
                     updated_at=now,
                 )
+                await insert_with_key(session, record, prefix="agent", requested=request.key)
                 revision = new_revision(
                     record,
                     revision_id=revision_id,
@@ -214,11 +214,7 @@ class AgentCommands:
                     )
                     if replay_ref is not None:
                         return replay_ref.restore(AgentRevisionCreateResult)
-            raise AgentError(
-                "agent_name_conflict",
-                "An Agent with this name already exists in the Workspace.",
-                category=ErrorCategory.conflict,
-            ) from error
+            raise
 
     async def patch_metadata(
         self,
@@ -243,7 +239,9 @@ class AgentCommands:
                 if "name" in request.model_fields_set:
                     assert request.name is not None
                     record.name = request.name
-                    record.normalized_name = agent_name_key(request.name)
+                if "key" in request.model_fields_set:
+                    assert request.key is not None
+                    record.key = request.key
                 if "description" in request.model_fields_set:
                     record.description = request.description
                 if "default_environment_template_id" in request.model_fields_set:
@@ -265,16 +263,10 @@ class AgentCommands:
                         now=now,
                     )
                 )
-                await session.flush()
+                await flush_key_change(session)
                 return record.to_resource()
         except AuthorizationError as error:
             raise map_authorization_error(error, exact=True) from error
-        except IntegrityError as error:
-            raise AgentError(
-                "agent_name_conflict",
-                "An Agent with this name already exists in the Workspace.",
-                category=ErrorCategory.conflict,
-            ) from error
 
     async def change_lifecycle(
         self,

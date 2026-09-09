@@ -44,9 +44,9 @@ export function EnvironmentInstances() {
     queryKey: ["environments", workspace.id, page.cursor],
     queryFn: ({ signal }) =>
       client.http
-        .GET("/api/v1/workspaces/{workspace_id}/environments", {
+        .GET("/api/v1/workspaces/{workspace}/environments", {
           params: {
-            path: { workspace_id: workspace.id },
+            path: { workspace: workspace.id },
             query: { cursor: page.cursor },
           },
           signal,
@@ -307,9 +307,9 @@ function EnvironmentForm({ close }: { close: () => void }) {
                 }),
             };
       return client.http
-        .POST("/api/v1/workspaces/{workspace_id}/environments", {
+        .POST("/api/v1/workspaces/{workspace}/environments", {
           params: {
-            path: { workspace_id: workspace.id },
+            path: { workspace: workspace.id },
             header: commandHeaders(workspace.id, key.forBody(body)),
           },
           body,

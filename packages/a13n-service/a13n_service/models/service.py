@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
 from a13n_service.iam.resource_scope import visible_workspace
-from a13n_service.storage import transaction
+from a13n_service.storage import is_unique_conflict, transaction
 from a13n_service.temporal import Clock, utc_now
 
 from .connection_test import test_connection
@@ -31,7 +31,7 @@ from .keys import require_available_key
 from .models import ModelRecord
 from .provider_service import require_provider
 from .providers import ProviderRegistry
-from .service_common import ModelError, audit_record, authorize_models, escape_like, is_unique_conflict, require_etag
+from .service_common import ModelError, audit_record, authorize_models, escape_like, require_etag
 from .settings import JsonObject, validate_settings
 
 

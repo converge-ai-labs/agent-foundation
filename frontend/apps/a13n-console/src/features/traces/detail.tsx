@@ -26,15 +26,15 @@ export function TraceDetailPage() {
 }
 export function TraceDetail({ traceId }: { traceId: string }) {
   const client = useClient(),
-    { workspace } = useWorkspace(),
+    { workspace, basePath } = useWorkspace(),
     { t } = useTranslation();
   const query = useQuery({
     queryKey: ["traces", workspace.id, traceId, "full"],
     queryFn: ({ signal }) =>
       client.http
-        .GET("/api/v1/workspaces/{workspace_id}/traces/{trace_id}", {
+        .GET("/api/v1/workspaces/{workspace}/traces/{trace_id}", {
           params: {
-            path: { workspace_id: workspace.id, trace_id: traceId },
+            path: { workspace: workspace.id, trace_id: traceId },
             query: { view: "full" },
           },
           signal,
@@ -60,11 +60,11 @@ export function TraceDetail({ traceId }: { traceId: string }) {
     <Page
       title={trace.name}
       description={trace.id}
-      back={`/workspaces/${workspace.id}/traces`}
+      back={`${basePath}/traces`}
       actions={
         <>
           <Link
-            to={`/workspaces/${workspace.id}/sessions/${trace.session_id}/threads/${trace.thread_id}/runs/${trace.run_id}`}
+            to={`${basePath}/sessions/${trace.session_id}/threads/${trace.thread_id}/runs/${trace.run_id}`}
           >
             {t("Open run")}
           </Link>

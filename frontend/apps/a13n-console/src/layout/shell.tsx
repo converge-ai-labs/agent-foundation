@@ -39,9 +39,9 @@ function PageOutlet() {
 export function Shell() {
   const location = useLocation();
   const contextual =
-    /^\/workspaces\/[^/]+\/(sessions|settings)(\/|$)/.test(location.pathname) ||
+    /^\/[^/]+\/[^/]+\/(sessions|settings)(\/|$)/.test(location.pathname) ||
     location.pathname === "/settings/profile" ||
-    location.pathname === "/organization/settings";
+    /^\/[^/]+\/settings$/.test(location.pathname);
   if (contextual)
     return (
       <div className="min-h-svh bg-background">
@@ -56,10 +56,10 @@ export function Shell() {
 }
 function WorkspaceNavigation() {
   const { t } = useTranslation();
-  const { workspace } = useWorkspace();
+  const { workspace, basePath } = useWorkspace();
   const { pathname } = useLocation();
   const { setOpenMobile } = useSidebar();
-  const base = `/workspaces/${workspace.id}`;
+  const base = basePath;
   const close = () => setOpenMobile(false);
   const current = navigationGroups
     .flatMap((group) => group.entries)

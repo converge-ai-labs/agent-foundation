@@ -116,6 +116,7 @@ The tables below define durable meaning and constraints. Physical column types, 
 | Column       | Durable meaning and constraint                      |
 | ------------ | --------------------------------------------------- |
 | `id`         | Primary key; immutable Organization ID              |
+| `key`        | Globally unique readable resource key               |
 | `name`       | Mutable non-blank display name; not platform-unique |
 | `version`    | Positive mutable-resource version                   |
 | `created_at` | Immutable creation time                             |
@@ -125,18 +126,18 @@ The OSS capability never deletes an Organization. The schema does not encode the
 
 ### `workspaces`
 
-| Column            | Durable meaning and constraint                    |
-| ----------------- | ------------------------------------------------- |
-| `id`              | Primary key; immutable Workspace ID               |
-| `organization_id` | Immutable foreign key to `organizations.id`       |
-| `name`            | Mutable non-blank display name                    |
-| `normalized_name` | Service-derived case-insensitive uniqueness value |
-| `version`         | Positive mutable-resource version                 |
-| `created_at`      | Immutable creation time                           |
-| `updated_at`      | Latest accepted metadata mutation time            |
-| `deleted_at`      | Terminal logical-deletion time; null while active |
+| Column            | Durable meaning and constraint                        |
+| ----------------- | ----------------------------------------------------- |
+| `id`              | Primary key; immutable Workspace ID                   |
+| `organization_id` | Immutable foreign key to `organizations.id`           |
+| `name`            | Mutable non-blank display name                        |
+| `key`             | Readable resource key, unique within the Organization |
+| `version`         | Positive mutable-resource version                     |
+| `created_at`      | Immutable creation time                               |
+| `updated_at`      | Latest accepted metadata mutation time                |
+| `deleted_at`      | Terminal logical-deletion time; null while active     |
 
-Active Workspaces are unique by `(organization_id, normalized_name)`. Logical deletion immediately denies new access and work, revokes bounded credentials, removes live descendant RoleBindings, revokes Service Account and Personal API Keys in the boundary, and starts separately managed physical cleanup. IDs are never reused. Deleted names may be reused by a new Workspace with a new ID.
+Workspaces are unique by `(organization_id, key)` and may share display names. Keys follow [Readable Resource Keys](../data-conventions.md#readable-resource-keys). Logical deletion immediately denies new access and work, revokes bounded credentials, removes live descendant RoleBindings, revokes Service Account and Personal API Keys in the boundary, and starts separately managed physical cleanup. IDs are never reused. Deleted rows reserve their keys until physical removal.
 
 [Control Background Tasks](07-control-background-tasks.md#task-catalogue) owns periodic recovery of that cleanup under each descendant's deletion and retention rules. Physical cleanup progress does not restore eligibility or shorten independent security-audit retention.
 
@@ -569,19 +570,19 @@ Ingress input executes as its configured a13n Service Account. Account ownership
 
 ## Console Profile and Recovery API
 
-Profile reads return strong ETags. `PATCH /api/v1/users/me` updates the current browser User's name; `GET` and `PATCH /api/v1/organizations/{organization_id}` read the singleton Organization and update its name under Organization Admin authority. Profile mutations require exact `If-Match`. Workspace name operations retain the same contract.
+Profile reads return strong ETags. `PATCH /api/v1/users/me` updates the current browser User's name; `GET` and `PATCH /api/v1/organizations/{organization}` read the singleton Organization and update its name or key under Organization Admin authority. Profile mutations require exact `If-Match`. Workspace name and key operations retain the same contract; changing the display name preserves the key.
 
 `GET /api/v1/auth/configuration` exposes only whether email delivery is configured. Password reset requests use `POST /api/v1/auth/password-reset`; completion uses `POST /api/v1/auth/password-reset/complete`. Requests return the same accepted response for unknown, inactive, unverified and eligible addresses. Tokens are single-use, expire after thirty minutes, and bind the current password verifier so a intervening password change invalidates them. Reissue invalidates earlier tokens. Completion atomically replaces the password and revokes all browser sessions, preserving API Keys.
 
 Authenticated email changes use `POST /api/v1/users/me/email-change` with a new address and current password, followed by `POST /api/v1/users/me/email-change/complete` with the delivered token in the request body. The initiating User must be authenticated at completion. The token binds the prior normalized email, expires after thirty minutes, and proves the new address. Completion checks uniqueness under the same IAM transaction and invalidates pending password resets. Mail links carry tokens in URL fragments, not request paths or query strings. SMTP I/O and password hashing never retain database sessions.
 
-`GET /api/v1/workspaces/{workspace_id}/permissions` returns current Workspace actions and an Organization Admin indicator for presentation. `GET /api/v1/organizations/{organization_id}/permissions` provides the current browser User's Organization Admin indicator even when no Workspace exists. These hints grant no authority; every command reauthorizes. `GET /api/v1/workspaces/{workspace_id}/members` provides User profiles for direct Workspace members under membership-management authority. The corresponding `/api-keys` collection supplies administrators with bounded Personal API Key metadata; it never returns bearer values. Organization role creation uses `/api/v1/organizations/{organization_id}/role-bindings` for an existing active platform User; new Users still require invitations.
+`GET /api/v1/workspaces/{workspace}/permissions` returns current Workspace actions and an Organization Admin indicator for presentation. `GET /api/v1/organizations/{organization}/permissions` provides the current browser User's Organization Admin indicator even when no Workspace exists. These hints grant no authority; every command reauthorizes. `GET /api/v1/workspaces/{workspace}/members` provides User profiles for direct Workspace members under membership-management authority. The corresponding `/api-keys` collection supplies administrators with bounded Personal API Key metadata; it never returns bearer values. Organization role creation uses `/api/v1/organizations/{organization}/role-bindings` for an existing active platform User; new Users still require invitations.
 
-Security event collections are `/api/v1/organizations/{organization_id}/security-audit-events`, `/api/v1/workspaces/{workspace_id}/security-audit-events`, and `/api/v1/users/me/security-activity`. Organization and Workspace collections require their Admin authority; personal activity requires the exact browser User. Collections paginate after authorization and return bounded action, actor, resource, outcome, time and request correlation without private event details.
+Security event collections are `/api/v1/organizations/{organization}/security-audit-events`, `/api/v1/workspaces/{workspace}/security-audit-events`, and `/api/v1/users/me/security-activity`. Organization and Workspace collections require their Admin authority; personal activity requires the exact browser User. Collections paginate after authorization and return bounded action, actor, resource, outcome, time and request correlation without private event details.
 
 ## Profile Images
 
-Users, Organizations and Workspaces have an optional current `image_id`. Public resources expose an authenticated `image_url`, not the object key. Avatar mutation uses `PUT` or `DELETE /api/v1/users/me/avatar`; Organization and Workspace icon mutation uses `PUT` or `DELETE /api/v1/organizations/{organization_id}/icon` and `/api/v1/workspaces/{workspace_id}/icon`. Mutations require a browser session, owner-specific profile-management authority and exact `If-Match`.
+Users, Organizations and Workspaces have an optional current `image_id`. Public resources expose an authenticated `image_url`, not the object key. Avatar mutation uses `PUT` or `DELETE /api/v1/users/me/avatar`; Organization and Workspace icon mutation uses `PUT` or `DELETE /api/v1/organizations/{organization}/icon` and `/api/v1/workspaces/{workspace}/icon`. Mutations require a browser session, owner-specific profile-management authority and exact `If-Match`.
 
 Binary uploads accept PNG, JPEG or WebP, at most 5 MiB and 16 million pixels. Service strips image metadata by decoding and re-encoding to WebP with a maximum dimension of 512 pixels. Each replacement uses a new image ID. A User changes only its own avatar; current fellow Organization members can read it. Organization icons require membership to read and Admin authority to modify. Workspace icons use current Workspace read and management authority. Reads return only the currently referenced image and reauthorize before object I/O.
 
@@ -592,3 +593,7 @@ Images use the existing ObjectStore and publication fences:
 - `organizations/{organization_id}/workspaces/{workspace_id}/profile/icon/{image_id}/content.webp`.
 
 The database reference is published only after successful object storage and a fresh authority/version check. Removed, superseded and abandoned uploads use canonical object collection; collectors cover both Organization and User namespaces and retain currently referenced images. Images are IAM-owned objects, not Workspace Assets. No public bucket, caller-selected key, filename-based identity, or second S3 client is introduced.
+
+### Authenticated Credential Context
+
+`GET /api/v1/auth/context` returns the authenticated credential's `workspace_id` or `organization_id` boundary, with the other field null. API Keys bind to one Workspace; browser sessions without a Workspace header bind to the Organization. This read exposes no bearer material and grants no resource permissions. SDK clients use it to bind Workspace operations without asking callers to repeat the API Key's Workspace. Native path references follow [Platform API Conventions](../api-conventions.md#resource-references).

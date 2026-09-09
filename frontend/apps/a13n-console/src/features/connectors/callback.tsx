@@ -67,13 +67,7 @@ export function ConnectorSetupCallback() {
               "Check the connection status before starting another authorization.",
             )}
           </p>
-          <Link
-            to={
-              context
-                ? `/workspaces/${encodeURIComponent(context.workspace_id)}/connectors`
-                : "/login"
-            }
-          >
+          <Link to={context ? context.return_path : "/login"}>
             {t("Continue")}
           </Link>
         </>

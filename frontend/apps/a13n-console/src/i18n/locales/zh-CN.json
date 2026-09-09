@@ -1081,5 +1081,10 @@
   "Choose file": "选择文件",
   "No file selected": "未选择文件",
   "Remove file": "移除文件",
-  "Workspace navigation": "工作空间导航"
+  "Workspace navigation": "工作空间导航",
+  "Agent not found": "未找到智能体",
+  "Lowercase letters, numbers, and hyphens. Changing this key invalidates existing links.": "使用小写字母、数字和连字符。修改此标识后，现有链接将失效。",
+  "Not found": "未找到",
+  "Resource not found": "未找到资源",
+  "URL key": "网址标识"
 }

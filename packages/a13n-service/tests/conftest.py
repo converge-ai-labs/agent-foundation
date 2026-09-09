@@ -99,6 +99,7 @@ class ProcessRuntimeFactory:
         settings: Settings | None = None,
         request_authenticator: RequestAuthenticator | None = None,
         agents: object | None = None,
+        sessions: object | None = None,
         trace_queries: object | None = None,
         hook_subscriptions: object | None = None,
         lifecycle_events: object | None = None,
@@ -136,12 +137,14 @@ class ProcessRuntimeFactory:
             if ingress_events is not None
             else None
         )
+        shared = Mock(spec=SharedRuntime)
+        shared.storage.sessions = sessions
         return ProcessRuntime(
             settings=settings or Settings(_env_file=None),
             status=ProcessStatus(startup_complete=True),
             request_authenticator=request_authenticator,
             observability=Mock(spec=ObservabilityRuntime),
-            shared=Mock(spec=SharedRuntime),
+            shared=shared,
             control=control,
             worker=None,
             connectivity=connectivity,

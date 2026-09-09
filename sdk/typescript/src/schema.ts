@@ -16,93 +16,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/agents/{agent_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Agent */
-    get: operations["get_agent_api_v1_agents__agent_id__get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /** Update Agent */
-    patch: operations["update_agent_api_v1_agents__agent_id__patch"];
-    trace?: never;
-  };
-  "/api/v1/agents/{agent_id}/duplicate": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Duplicate Agent */
-    post: operations["duplicate_agent_api_v1_agents__agent_id__duplicate_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/agents/{agent_id}/revisions": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Agent Revisions */
-    get: operations["list_agent_revisions_api_v1_agents__agent_id__revisions_get"];
-    put?: never;
-    /** Create Agent Revision */
-    post: operations["create_agent_revision_api_v1_agents__agent_id__revisions_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/agents/{agent_id}/revisions/{revision_id}/restore": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Restore Agent Revision */
-    post: operations["restore_agent_revision_api_v1_agents__agent_id__revisions__revision_id__restore_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/agents/{agent_id}/{action}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Change Agent Lifecycle */
-    post: operations["change_agent_lifecycle_api_v1_agents__agent_id___action__post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/api/v1/api-keys/{key_id}": {
     parameters: {
       query?: never;
@@ -271,6 +184,23 @@ export interface paths {
     };
     /** Auth Configuration */
     get: operations["auth_configuration_api_v1_auth_configuration_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auth/context": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Credential Context */
+    get: operations["credential_context_api_v1_auth_context_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1070,7 +1000,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/organizations/{organization_id}": {
+  "/api/v1/organizations/{organization}": {
     parameters: {
       query?: never;
       header?: never;
@@ -1078,17 +1008,17 @@ export interface paths {
       cookie?: never;
     };
     /** Organization */
-    get: operations["organization_api_v1_organizations__organization_id__get"];
+    get: operations["organization_api_v1_organizations__organization__get"];
     put?: never;
     post?: never;
     delete?: never;
     options?: never;
     head?: never;
     /** Update Organization */
-    patch: operations["update_organization_api_v1_organizations__organization_id__patch"];
+    patch: operations["update_organization_api_v1_organizations__organization__patch"];
     trace?: never;
   };
-  "/api/v1/organizations/{organization_id}/connector-providers": {
+  "/api/v1/organizations/{organization}/connector-providers": {
     parameters: {
       query?: never;
       header?: never;
@@ -1096,17 +1026,17 @@ export interface paths {
       cookie?: never;
     };
     /** Organization List Connector Providers */
-    get: operations["organization_list_connector_providers_api_v1_organizations__organization_id__connector_providers_get"];
+    get: operations["organization_list_connector_providers_api_v1_organizations__organization__connector_providers_get"];
     put?: never;
     /** Organization Create Connector Provider */
-    post: operations["organization_create_connector_provider_api_v1_organizations__organization_id__connector_providers_post"];
+    post: operations["organization_create_connector_provider_api_v1_organizations__organization__connector_providers_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/organizations/{organization_id}/environment-providers": {
+  "/api/v1/organizations/{organization}/environment-providers": {
     parameters: {
       query?: never;
       header?: never;
@@ -1114,17 +1044,17 @@ export interface paths {
       cookie?: never;
     };
     /** Organization List Providers */
-    get: operations["organization_list_providers_api_v1_organizations__organization_id__environment_providers_get"];
+    get: operations["organization_list_providers_api_v1_organizations__organization__environment_providers_get"];
     put?: never;
     /** Organization Create Provider */
-    post: operations["organization_create_provider_api_v1_organizations__organization_id__environment_providers_post"];
+    post: operations["organization_create_provider_api_v1_organizations__organization__environment_providers_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/organizations/{organization_id}/environment-templates": {
+  "/api/v1/organizations/{organization}/environment-templates": {
     parameters: {
       query?: never;
       header?: never;
@@ -1132,17 +1062,17 @@ export interface paths {
       cookie?: never;
     };
     /** Organization List Templates */
-    get: operations["organization_list_templates_api_v1_organizations__organization_id__environment_templates_get"];
+    get: operations["organization_list_templates_api_v1_organizations__organization__environment_templates_get"];
     put?: never;
     /** Organization Create Template */
-    post: operations["organization_create_template_api_v1_organizations__organization_id__environment_templates_post"];
+    post: operations["organization_create_template_api_v1_organizations__organization__environment_templates_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/organizations/{organization_id}/icon": {
+  "/api/v1/organizations/{organization}/icon": {
     parameters: {
       query?: never;
       header?: never;
@@ -1151,16 +1081,16 @@ export interface paths {
     };
     get?: never;
     /** Put Organization Icon */
-    put: operations["put_organization_icon_api_v1_organizations__organization_id__icon_put"];
+    put: operations["put_organization_icon_api_v1_organizations__organization__icon_put"];
     post?: never;
     /** Delete Organization Icon */
-    delete: operations["delete_organization_icon_api_v1_organizations__organization_id__icon_delete"];
+    delete: operations["delete_organization_icon_api_v1_organizations__organization__icon_delete"];
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/organizations/{organization_id}/icon/{image_id}": {
+  "/api/v1/organizations/{organization}/icon/{image_id}": {
     parameters: {
       query?: never;
       header?: never;
@@ -1168,7 +1098,7 @@ export interface paths {
       cookie?: never;
     };
     /** Get Organization Icon */
-    get: operations["get_organization_icon_api_v1_organizations__organization_id__icon__image_id__get"];
+    get: operations["get_organization_icon_api_v1_organizations__organization__icon__image_id__get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1177,7 +1107,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/organizations/{organization_id}/invitations": {
+  "/api/v1/organizations/{organization}/invitations": {
     parameters: {
       query?: never;
       header?: never;
@@ -1185,17 +1115,17 @@ export interface paths {
       cookie?: never;
     };
     /** Invitations */
-    get: operations["invitations_api_v1_organizations__organization_id__invitations_get"];
+    get: operations["invitations_api_v1_organizations__organization__invitations_get"];
     put?: never;
     /** Invite */
-    post: operations["invite_api_v1_organizations__organization_id__invitations_post"];
+    post: operations["invite_api_v1_organizations__organization__invitations_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/organizations/{organization_id}/model-providers": {
+  "/api/v1/organizations/{organization}/model-providers": {
     parameters: {
       query?: never;
       header?: never;
@@ -1203,17 +1133,17 @@ export interface paths {
       cookie?: never;
     };
     /** Organization List Model Providers */
-    get: operations["organization_list_model_providers_api_v1_organizations__organization_id__model_providers_get"];
+    get: operations["organization_list_model_providers_api_v1_organizations__organization__model_providers_get"];
     put?: never;
     /** Organization Create Model Provider */
-    post: operations["organization_create_model_provider_api_v1_organizations__organization_id__model_providers_post"];
+    post: operations["organization_create_model_provider_api_v1_organizations__organization__model_providers_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/organizations/{organization_id}/model-providers/{provider_id}": {
+  "/api/v1/organizations/{organization}/model-providers/{provider_id}": {
     parameters: {
       query?: never;
       header?: never;
@@ -1221,17 +1151,17 @@ export interface paths {
       cookie?: never;
     };
     /** Organization Get Model Provider */
-    get: operations["organization_get_model_provider_api_v1_organizations__organization_id__model_providers__provider_id__get"];
+    get: operations["organization_get_model_provider_api_v1_organizations__organization__model_providers__provider_id__get"];
     put?: never;
     post?: never;
     delete?: never;
     options?: never;
     head?: never;
     /** Organization Update Model Provider */
-    patch: operations["organization_update_model_provider_api_v1_organizations__organization_id__model_providers__provider_id__patch"];
+    patch: operations["organization_update_model_provider_api_v1_organizations__organization__model_providers__provider_id__patch"];
     trace?: never;
   };
-  "/api/v1/organizations/{organization_id}/model-providers/{provider_id}/describe-model": {
+  "/api/v1/organizations/{organization}/model-providers/{provider_id}/describe-model": {
     parameters: {
       query?: never;
       header?: never;
@@ -1241,14 +1171,14 @@ export interface paths {
     get?: never;
     put?: never;
     /** Organization Describe Provider Model */
-    post: operations["organization_describe_provider_model_api_v1_organizations__organization_id__model_providers__provider_id__describe_model_post"];
+    post: operations["organization_describe_provider_model_api_v1_organizations__organization__model_providers__provider_id__describe_model_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/organizations/{organization_id}/model-providers/{provider_id}/discover-models": {
+  "/api/v1/organizations/{organization}/model-providers/{provider_id}/discover-models": {
     parameters: {
       query?: never;
       header?: never;
@@ -1258,14 +1188,14 @@ export interface paths {
     get?: never;
     put?: never;
     /** Organization Discover Provider Models */
-    post: operations["organization_discover_provider_models_api_v1_organizations__organization_id__model_providers__provider_id__discover_models_post"];
+    post: operations["organization_discover_provider_models_api_v1_organizations__organization__model_providers__provider_id__discover_models_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/organizations/{organization_id}/model-providers/{provider_id}/test": {
+  "/api/v1/organizations/{organization}/model-providers/{provider_id}/test": {
     parameters: {
       query?: never;
       header?: never;
@@ -1275,14 +1205,14 @@ export interface paths {
     get?: never;
     put?: never;
     /** Organization Test Model Provider */
-    post: operations["organization_test_model_provider_api_v1_organizations__organization_id__model_providers__provider_id__test_post"];
+    post: operations["organization_test_model_provider_api_v1_organizations__organization__model_providers__provider_id__test_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/organizations/{organization_id}/models": {
+  "/api/v1/organizations/{organization}/models": {
     parameters: {
       query?: never;
       header?: never;
@@ -1290,17 +1220,17 @@ export interface paths {
       cookie?: never;
     };
     /** Organization List Models */
-    get: operations["organization_list_models_api_v1_organizations__organization_id__models_get"];
+    get: operations["organization_list_models_api_v1_organizations__organization__models_get"];
     put?: never;
     /** Organization Create Model */
-    post: operations["organization_create_model_api_v1_organizations__organization_id__models_post"];
+    post: operations["organization_create_model_api_v1_organizations__organization__models_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/organizations/{organization_id}/models/{model_id}": {
+  "/api/v1/organizations/{organization}/models/{model_id}": {
     parameters: {
       query?: never;
       header?: never;
@@ -1308,17 +1238,17 @@ export interface paths {
       cookie?: never;
     };
     /** Organization Get Model */
-    get: operations["organization_get_model_api_v1_organizations__organization_id__models__model_id__get"];
+    get: operations["organization_get_model_api_v1_organizations__organization__models__model_id__get"];
     put?: never;
     post?: never;
     delete?: never;
     options?: never;
     head?: never;
     /** Organization Update Model */
-    patch: operations["organization_update_model_api_v1_organizations__organization_id__models__model_id__patch"];
+    patch: operations["organization_update_model_api_v1_organizations__organization__models__model_id__patch"];
     trace?: never;
   };
-  "/api/v1/organizations/{organization_id}/models/{model_id}/test": {
+  "/api/v1/organizations/{organization}/models/{model_id}/test": {
     parameters: {
       query?: never;
       header?: never;
@@ -1328,14 +1258,14 @@ export interface paths {
     get?: never;
     put?: never;
     /** Organization Test Model */
-    post: operations["organization_test_model_api_v1_organizations__organization_id__models__model_id__test_post"];
+    post: operations["organization_test_model_api_v1_organizations__organization__models__model_id__test_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/organizations/{organization_id}/permissions": {
+  "/api/v1/organizations/{organization}/permissions": {
     parameters: {
       query?: never;
       header?: never;
@@ -1343,7 +1273,7 @@ export interface paths {
       cookie?: never;
     };
     /** Organization Permissions */
-    get: operations["organization_permissions_api_v1_organizations__organization_id__permissions_get"];
+    get: operations["organization_permissions_api_v1_organizations__organization__permissions_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1352,7 +1282,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/organizations/{organization_id}/role-bindings": {
+  "/api/v1/organizations/{organization}/role-bindings": {
     parameters: {
       query?: never;
       header?: never;
@@ -1360,17 +1290,17 @@ export interface paths {
       cookie?: never;
     };
     /** Organization Roles */
-    get: operations["organization_roles_api_v1_organizations__organization_id__role_bindings_get"];
+    get: operations["organization_roles_api_v1_organizations__organization__role_bindings_get"];
     put?: never;
     /** Create Organization Binding */
-    post: operations["create_organization_binding_api_v1_organizations__organization_id__role_bindings_post"];
+    post: operations["create_organization_binding_api_v1_organizations__organization__role_bindings_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/organizations/{organization_id}/security-audit-events": {
+  "/api/v1/organizations/{organization}/security-audit-events": {
     parameters: {
       query?: never;
       header?: never;
@@ -1378,7 +1308,7 @@ export interface paths {
       cookie?: never;
     };
     /** Organization Security Events */
-    get: operations["organization_security_events_api_v1_organizations__organization_id__security_audit_events_get"];
+    get: operations["organization_security_events_api_v1_organizations__organization__security_audit_events_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1387,7 +1317,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/organizations/{organization_id}/users": {
+  "/api/v1/organizations/{organization}/users": {
     parameters: {
       query?: never;
       header?: never;
@@ -1395,7 +1325,7 @@ export interface paths {
       cookie?: never;
     };
     /** Users */
-    get: operations["users_api_v1_organizations__organization_id__users_get"];
+    get: operations["users_api_v1_organizations__organization__users_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1404,7 +1334,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/organizations/{organization_id}/workspaces": {
+  "/api/v1/organizations/{organization}/workspaces": {
     parameters: {
       query?: never;
       header?: never;
@@ -1412,10 +1342,10 @@ export interface paths {
       cookie?: never;
     };
     /** Workspaces */
-    get: operations["workspaces_api_v1_organizations__organization_id__workspaces_get"];
+    get: operations["workspaces_api_v1_organizations__organization__workspaces_get"];
     put?: never;
     /** Create Workspace */
-    post: operations["create_workspace_api_v1_organizations__organization_id__workspaces_post"];
+    post: operations["create_workspace_api_v1_organizations__organization__workspaces_post"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2133,7 +2063,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}": {
+  "/api/v1/workspaces/{workspace}": {
     parameters: {
       query?: never;
       header?: never;
@@ -2141,18 +2071,18 @@ export interface paths {
       cookie?: never;
     };
     /** Workspace */
-    get: operations["workspace_api_v1_workspaces__workspace_id__get"];
+    get: operations["workspace_api_v1_workspaces__workspace__get"];
     put?: never;
     post?: never;
     /** Delete Workspace */
-    delete: operations["delete_workspace_api_v1_workspaces__workspace_id__delete"];
+    delete: operations["delete_workspace_api_v1_workspaces__workspace__delete"];
     options?: never;
     head?: never;
-    /** Rename Workspace */
-    patch: operations["rename_workspace_api_v1_workspaces__workspace_id__patch"];
+    /** Update Workspace */
+    patch: operations["update_workspace_api_v1_workspaces__workspace__patch"];
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/agents": {
+  "/api/v1/workspaces/{workspace}/agents": {
     parameters: {
       query?: never;
       header?: never;
@@ -2160,17 +2090,104 @@ export interface paths {
       cookie?: never;
     };
     /** List Agents */
-    get: operations["list_agents_api_v1_workspaces__workspace_id__agents_get"];
+    get: operations["list_agents_api_v1_workspaces__workspace__agents_get"];
     put?: never;
     /** Create Agent */
-    post: operations["create_agent_api_v1_workspaces__workspace_id__agents_post"];
+    post: operations["create_agent_api_v1_workspaces__workspace__agents_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/api-keys": {
+  "/api/v1/workspaces/{workspace}/agents/{agent}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Agent */
+    get: operations["get_agent_api_v1_workspaces__workspace__agents__agent__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update Agent */
+    patch: operations["update_agent_api_v1_workspaces__workspace__agents__agent__patch"];
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/agents/{agent}/duplicate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Duplicate Agent */
+    post: operations["duplicate_agent_api_v1_workspaces__workspace__agents__agent__duplicate_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/agents/{agent}/revisions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Agent Revisions */
+    get: operations["list_agent_revisions_api_v1_workspaces__workspace__agents__agent__revisions_get"];
+    put?: never;
+    /** Create Agent Revision */
+    post: operations["create_agent_revision_api_v1_workspaces__workspace__agents__agent__revisions_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/agents/{agent}/revisions/{revision_id}/restore": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Restore Agent Revision */
+    post: operations["restore_agent_revision_api_v1_workspaces__workspace__agents__agent__revisions__revision_id__restore_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/agents/{agent}/{action}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Change Agent Lifecycle */
+    post: operations["change_agent_lifecycle_api_v1_workspaces__workspace__agents__agent___action__post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/api-keys": {
     parameters: {
       query?: never;
       header?: never;
@@ -2178,7 +2195,7 @@ export interface paths {
       cookie?: never;
     };
     /** Workspace Member Keys */
-    get: operations["workspace_member_keys_api_v1_workspaces__workspace_id__api_keys_get"];
+    get: operations["workspace_member_keys_api_v1_workspaces__workspace__api_keys_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2187,7 +2204,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/application-account-provider-types": {
+  "/api/v1/workspaces/{workspace}/application-account-provider-types": {
     parameters: {
       query?: never;
       header?: never;
@@ -2195,7 +2212,7 @@ export interface paths {
       cookie?: never;
     };
     /** Account Provider Types */
-    get: operations["account_provider_types_api_v1_workspaces__workspace_id__application_account_provider_types_get"];
+    get: operations["account_provider_types_api_v1_workspaces__workspace__application_account_provider_types_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2204,7 +2221,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/application-accounts": {
+  "/api/v1/workspaces/{workspace}/application-accounts": {
     parameters: {
       query?: never;
       header?: never;
@@ -2212,17 +2229,17 @@ export interface paths {
       cookie?: never;
     };
     /** List Accounts */
-    get: operations["list_accounts_api_v1_workspaces__workspace_id__application_accounts_get"];
+    get: operations["list_accounts_api_v1_workspaces__workspace__application_accounts_get"];
     put?: never;
     /** Create Account */
-    post: operations["create_account_api_v1_workspaces__workspace_id__application_accounts_post"];
+    post: operations["create_account_api_v1_workspaces__workspace__application_accounts_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/assets": {
+  "/api/v1/workspaces/{workspace}/assets": {
     parameters: {
       query?: never;
       header?: never;
@@ -2230,17 +2247,17 @@ export interface paths {
       cookie?: never;
     };
     /** List Assets */
-    get: operations["list_assets_api_v1_workspaces__workspace_id__assets_get"];
+    get: operations["list_assets_api_v1_workspaces__workspace__assets_get"];
     put?: never;
     /** Upload Asset */
-    post: operations["upload_asset_api_v1_workspaces__workspace_id__assets_post"];
+    post: operations["upload_asset_api_v1_workspaces__workspace__assets_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/connector-connections": {
+  "/api/v1/workspaces/{workspace}/connector-connections": {
     parameters: {
       query?: never;
       header?: never;
@@ -2248,17 +2265,17 @@ export interface paths {
       cookie?: never;
     };
     /** List Connector Connections */
-    get: operations["list_connector_connections_api_v1_workspaces__workspace_id__connector_connections_get"];
+    get: operations["list_connector_connections_api_v1_workspaces__workspace__connector_connections_get"];
     put?: never;
     /** Create Connector Connection */
-    post: operations["create_connector_connection_api_v1_workspaces__workspace_id__connector_connections_post"];
+    post: operations["create_connector_connection_api_v1_workspaces__workspace__connector_connections_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/connector-providers": {
+  "/api/v1/workspaces/{workspace}/connector-providers": {
     parameters: {
       query?: never;
       header?: never;
@@ -2266,17 +2283,17 @@ export interface paths {
       cookie?: never;
     };
     /** List Connector Providers */
-    get: operations["list_connector_providers_api_v1_workspaces__workspace_id__connector_providers_get"];
+    get: operations["list_connector_providers_api_v1_workspaces__workspace__connector_providers_get"];
     put?: never;
     /** Create Connector Provider */
-    post: operations["create_connector_provider_api_v1_workspaces__workspace_id__connector_providers_post"];
+    post: operations["create_connector_provider_api_v1_workspaces__workspace__connector_providers_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/environment-providers": {
+  "/api/v1/workspaces/{workspace}/environment-providers": {
     parameters: {
       query?: never;
       header?: never;
@@ -2284,17 +2301,17 @@ export interface paths {
       cookie?: never;
     };
     /** List Providers */
-    get: operations["list_providers_api_v1_workspaces__workspace_id__environment_providers_get"];
+    get: operations["list_providers_api_v1_workspaces__workspace__environment_providers_get"];
     put?: never;
     /** Create Provider */
-    post: operations["create_provider_api_v1_workspaces__workspace_id__environment_providers_post"];
+    post: operations["create_provider_api_v1_workspaces__workspace__environment_providers_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/environment-templates": {
+  "/api/v1/workspaces/{workspace}/environment-templates": {
     parameters: {
       query?: never;
       header?: never;
@@ -2302,17 +2319,17 @@ export interface paths {
       cookie?: never;
     };
     /** List Templates */
-    get: operations["list_templates_api_v1_workspaces__workspace_id__environment_templates_get"];
+    get: operations["list_templates_api_v1_workspaces__workspace__environment_templates_get"];
     put?: never;
     /** Create Template */
-    post: operations["create_template_api_v1_workspaces__workspace_id__environment_templates_post"];
+    post: operations["create_template_api_v1_workspaces__workspace__environment_templates_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/environments": {
+  "/api/v1/workspaces/{workspace}/environments": {
     parameters: {
       query?: never;
       header?: never;
@@ -2320,17 +2337,17 @@ export interface paths {
       cookie?: never;
     };
     /** List Environments */
-    get: operations["list_environments_api_v1_workspaces__workspace_id__environments_get"];
+    get: operations["list_environments_api_v1_workspaces__workspace__environments_get"];
     put?: never;
     /** Create Environment */
-    post: operations["create_environment_api_v1_workspaces__workspace_id__environments_post"];
+    post: operations["create_environment_api_v1_workspaces__workspace__environments_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/events": {
+  "/api/v1/workspaces/{workspace}/events": {
     parameters: {
       query?: never;
       header?: never;
@@ -2338,7 +2355,7 @@ export interface paths {
       cookie?: never;
     };
     /** List Workspace Events */
-    get: operations["list_workspace_events_api_v1_workspaces__workspace_id__events_get"];
+    get: operations["list_workspace_events_api_v1_workspaces__workspace__events_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2347,7 +2364,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/hook-subscriptions": {
+  "/api/v1/workspaces/{workspace}/hook-subscriptions": {
     parameters: {
       query?: never;
       header?: never;
@@ -2355,17 +2372,17 @@ export interface paths {
       cookie?: never;
     };
     /** List Hook Subscriptions */
-    get: operations["list_hook_subscriptions_api_v1_workspaces__workspace_id__hook_subscriptions_get"];
+    get: operations["list_hook_subscriptions_api_v1_workspaces__workspace__hook_subscriptions_get"];
     put?: never;
     /** Create Hook Subscription */
-    post: operations["create_hook_subscription_api_v1_workspaces__workspace_id__hook_subscriptions_post"];
+    post: operations["create_hook_subscription_api_v1_workspaces__workspace__hook_subscriptions_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/icon": {
+  "/api/v1/workspaces/{workspace}/icon": {
     parameters: {
       query?: never;
       header?: never;
@@ -2374,16 +2391,16 @@ export interface paths {
     };
     get?: never;
     /** Put Workspace Icon */
-    put: operations["put_workspace_icon_api_v1_workspaces__workspace_id__icon_put"];
+    put: operations["put_workspace_icon_api_v1_workspaces__workspace__icon_put"];
     post?: never;
     /** Delete Workspace Icon */
-    delete: operations["delete_workspace_icon_api_v1_workspaces__workspace_id__icon_delete"];
+    delete: operations["delete_workspace_icon_api_v1_workspaces__workspace__icon_delete"];
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/icon/{image_id}": {
+  "/api/v1/workspaces/{workspace}/icon/{image_id}": {
     parameters: {
       query?: never;
       header?: never;
@@ -2391,7 +2408,7 @@ export interface paths {
       cookie?: never;
     };
     /** Get Workspace Icon */
-    get: operations["get_workspace_icon_api_v1_workspaces__workspace_id__icon__image_id__get"];
+    get: operations["get_workspace_icon_api_v1_workspaces__workspace__icon__image_id__get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2400,7 +2417,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/invitations": {
+  "/api/v1/workspaces/{workspace}/invitations": {
     parameters: {
       query?: never;
       header?: never;
@@ -2408,17 +2425,17 @@ export interface paths {
       cookie?: never;
     };
     /** Workspace Invitations */
-    get: operations["workspace_invitations_api_v1_workspaces__workspace_id__invitations_get"];
+    get: operations["workspace_invitations_api_v1_workspaces__workspace__invitations_get"];
     put?: never;
     /** Invite To Workspace */
-    post: operations["invite_to_workspace_api_v1_workspaces__workspace_id__invitations_post"];
+    post: operations["invite_to_workspace_api_v1_workspaces__workspace__invitations_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/mcp-connections": {
+  "/api/v1/workspaces/{workspace}/mcp-connections": {
     parameters: {
       query?: never;
       header?: never;
@@ -2426,17 +2443,17 @@ export interface paths {
       cookie?: never;
     };
     /** List Mcp Connections */
-    get: operations["list_mcp_connections_api_v1_workspaces__workspace_id__mcp_connections_get"];
+    get: operations["list_mcp_connections_api_v1_workspaces__workspace__mcp_connections_get"];
     put?: never;
     /** Create Mcp Connection */
-    post: operations["create_mcp_connection_api_v1_workspaces__workspace_id__mcp_connections_post"];
+    post: operations["create_mcp_connection_api_v1_workspaces__workspace__mcp_connections_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/members": {
+  "/api/v1/workspaces/{workspace}/members": {
     parameters: {
       query?: never;
       header?: never;
@@ -2444,7 +2461,7 @@ export interface paths {
       cookie?: never;
     };
     /** Workspace Members */
-    get: operations["workspace_members_api_v1_workspaces__workspace_id__members_get"];
+    get: operations["workspace_members_api_v1_workspaces__workspace__members_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2453,7 +2470,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/model-providers": {
+  "/api/v1/workspaces/{workspace}/model-providers": {
     parameters: {
       query?: never;
       header?: never;
@@ -2461,17 +2478,17 @@ export interface paths {
       cookie?: never;
     };
     /** List Model Providers */
-    get: operations["list_model_providers_api_v1_workspaces__workspace_id__model_providers_get"];
+    get: operations["list_model_providers_api_v1_workspaces__workspace__model_providers_get"];
     put?: never;
     /** Create Model Provider */
-    post: operations["create_model_provider_api_v1_workspaces__workspace_id__model_providers_post"];
+    post: operations["create_model_provider_api_v1_workspaces__workspace__model_providers_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/model-providers/{provider_id}": {
+  "/api/v1/workspaces/{workspace}/model-providers/{provider_id}": {
     parameters: {
       query?: never;
       header?: never;
@@ -2479,17 +2496,17 @@ export interface paths {
       cookie?: never;
     };
     /** Get Model Provider */
-    get: operations["get_model_provider_api_v1_workspaces__workspace_id__model_providers__provider_id__get"];
+    get: operations["get_model_provider_api_v1_workspaces__workspace__model_providers__provider_id__get"];
     put?: never;
     post?: never;
     delete?: never;
     options?: never;
     head?: never;
     /** Update Model Provider */
-    patch: operations["update_model_provider_api_v1_workspaces__workspace_id__model_providers__provider_id__patch"];
+    patch: operations["update_model_provider_api_v1_workspaces__workspace__model_providers__provider_id__patch"];
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/model-providers/{provider_id}/describe-model": {
+  "/api/v1/workspaces/{workspace}/model-providers/{provider_id}/describe-model": {
     parameters: {
       query?: never;
       header?: never;
@@ -2499,14 +2516,14 @@ export interface paths {
     get?: never;
     put?: never;
     /** Describe Provider Model */
-    post: operations["describe_provider_model_api_v1_workspaces__workspace_id__model_providers__provider_id__describe_model_post"];
+    post: operations["describe_provider_model_api_v1_workspaces__workspace__model_providers__provider_id__describe_model_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/model-providers/{provider_id}/discover-models": {
+  "/api/v1/workspaces/{workspace}/model-providers/{provider_id}/discover-models": {
     parameters: {
       query?: never;
       header?: never;
@@ -2516,14 +2533,14 @@ export interface paths {
     get?: never;
     put?: never;
     /** Discover Provider Models */
-    post: operations["discover_provider_models_api_v1_workspaces__workspace_id__model_providers__provider_id__discover_models_post"];
+    post: operations["discover_provider_models_api_v1_workspaces__workspace__model_providers__provider_id__discover_models_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/model-providers/{provider_id}/test": {
+  "/api/v1/workspaces/{workspace}/model-providers/{provider_id}/test": {
     parameters: {
       query?: never;
       header?: never;
@@ -2533,14 +2550,14 @@ export interface paths {
     get?: never;
     put?: never;
     /** Test Model Provider */
-    post: operations["test_model_provider_api_v1_workspaces__workspace_id__model_providers__provider_id__test_post"];
+    post: operations["test_model_provider_api_v1_workspaces__workspace__model_providers__provider_id__test_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/models": {
+  "/api/v1/workspaces/{workspace}/models": {
     parameters: {
       query?: never;
       header?: never;
@@ -2548,17 +2565,17 @@ export interface paths {
       cookie?: never;
     };
     /** List Models */
-    get: operations["list_models_api_v1_workspaces__workspace_id__models_get"];
+    get: operations["list_models_api_v1_workspaces__workspace__models_get"];
     put?: never;
     /** Create Model */
-    post: operations["create_model_api_v1_workspaces__workspace_id__models_post"];
+    post: operations["create_model_api_v1_workspaces__workspace__models_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/models/{model_id}": {
+  "/api/v1/workspaces/{workspace}/models/{model_id}": {
     parameters: {
       query?: never;
       header?: never;
@@ -2566,17 +2583,17 @@ export interface paths {
       cookie?: never;
     };
     /** Get Model */
-    get: operations["get_model_api_v1_workspaces__workspace_id__models__model_id__get"];
+    get: operations["get_model_api_v1_workspaces__workspace__models__model_id__get"];
     put?: never;
     post?: never;
     delete?: never;
     options?: never;
     head?: never;
     /** Update Model */
-    patch: operations["update_model_api_v1_workspaces__workspace_id__models__model_id__patch"];
+    patch: operations["update_model_api_v1_workspaces__workspace__models__model_id__patch"];
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/models/{model_id}/test": {
+  "/api/v1/workspaces/{workspace}/models/{model_id}/test": {
     parameters: {
       query?: never;
       header?: never;
@@ -2586,14 +2603,14 @@ export interface paths {
     get?: never;
     put?: never;
     /** Test Model */
-    post: operations["test_model_api_v1_workspaces__workspace_id__models__model_id__test_post"];
+    post: operations["test_model_api_v1_workspaces__workspace__models__model_id__test_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/permissions": {
+  "/api/v1/workspaces/{workspace}/permissions": {
     parameters: {
       query?: never;
       header?: never;
@@ -2601,7 +2618,7 @@ export interface paths {
       cookie?: never;
     };
     /** Workspace Permissions */
-    get: operations["workspace_permissions_api_v1_workspaces__workspace_id__permissions_get"];
+    get: operations["workspace_permissions_api_v1_workspaces__workspace__permissions_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2610,7 +2627,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/personal-api-keys": {
+  "/api/v1/workspaces/{workspace}/personal-api-keys": {
     parameters: {
       query?: never;
       header?: never;
@@ -2618,17 +2635,17 @@ export interface paths {
       cookie?: never;
     };
     /** Personal Keys */
-    get: operations["personal_keys_api_v1_workspaces__workspace_id__personal_api_keys_get"];
+    get: operations["personal_keys_api_v1_workspaces__workspace__personal_api_keys_get"];
     put?: never;
     /** Create Personal Key */
-    post: operations["create_personal_key_api_v1_workspaces__workspace_id__personal_api_keys_post"];
+    post: operations["create_personal_key_api_v1_workspaces__workspace__personal_api_keys_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/role-bindings": {
+  "/api/v1/workspaces/{workspace}/role-bindings": {
     parameters: {
       query?: never;
       header?: never;
@@ -2636,17 +2653,17 @@ export interface paths {
       cookie?: never;
     };
     /** Workspace Roles */
-    get: operations["workspace_roles_api_v1_workspaces__workspace_id__role_bindings_get"];
+    get: operations["workspace_roles_api_v1_workspaces__workspace__role_bindings_get"];
     put?: never;
     /** Add Workspace Member */
-    post: operations["add_workspace_member_api_v1_workspaces__workspace_id__role_bindings_post"];
+    post: operations["add_workspace_member_api_v1_workspaces__workspace__role_bindings_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/runs": {
+  "/api/v1/workspaces/{workspace}/runs": {
     parameters: {
       query?: never;
       header?: never;
@@ -2654,17 +2671,17 @@ export interface paths {
       cookie?: never;
     };
     /** List Workspace Runs */
-    get: operations["list_workspace_runs_api_v1_workspaces__workspace_id__runs_get"];
+    get: operations["list_workspace_runs_api_v1_workspaces__workspace__runs_get"];
     put?: never;
     /** Start Run */
-    post: operations["start_run_api_v1_workspaces__workspace_id__runs_post"];
+    post: operations["start_run_api_v1_workspaces__workspace__runs_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/security-audit-events": {
+  "/api/v1/workspaces/{workspace}/security-audit-events": {
     parameters: {
       query?: never;
       header?: never;
@@ -2672,7 +2689,7 @@ export interface paths {
       cookie?: never;
     };
     /** Workspace Security Events */
-    get: operations["workspace_security_events_api_v1_workspaces__workspace_id__security_audit_events_get"];
+    get: operations["workspace_security_events_api_v1_workspaces__workspace__security_audit_events_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2681,7 +2698,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/service-accounts": {
+  "/api/v1/workspaces/{workspace}/service-accounts": {
     parameters: {
       query?: never;
       header?: never;
@@ -2689,17 +2706,17 @@ export interface paths {
       cookie?: never;
     };
     /** Accounts */
-    get: operations["accounts_api_v1_workspaces__workspace_id__service_accounts_get"];
+    get: operations["accounts_api_v1_workspaces__workspace__service_accounts_get"];
     put?: never;
     /** Create Account */
-    post: operations["create_account_api_v1_workspaces__workspace_id__service_accounts_post"];
+    post: operations["create_account_api_v1_workspaces__workspace__service_accounts_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/sessions": {
+  "/api/v1/workspaces/{workspace}/sessions": {
     parameters: {
       query?: never;
       header?: never;
@@ -2707,7 +2724,7 @@ export interface paths {
       cookie?: never;
     };
     /** List Sessions */
-    get: operations["list_sessions_api_v1_workspaces__workspace_id__sessions_get"];
+    get: operations["list_sessions_api_v1_workspaces__workspace__sessions_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2716,7 +2733,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/skill-uploads": {
+  "/api/v1/workspaces/{workspace}/skill-uploads": {
     parameters: {
       query?: never;
       header?: never;
@@ -2726,14 +2743,14 @@ export interface paths {
     get?: never;
     put?: never;
     /** Stage Skill Upload */
-    post: operations["stage_skill_upload_api_v1_workspaces__workspace_id__skill_uploads_post"];
+    post: operations["stage_skill_upload_api_v1_workspaces__workspace__skill_uploads_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/skills": {
+  "/api/v1/workspaces/{workspace}/skills": {
     parameters: {
       query?: never;
       header?: never;
@@ -2741,17 +2758,17 @@ export interface paths {
       cookie?: never;
     };
     /** List Skills */
-    get: operations["list_skills_api_v1_workspaces__workspace_id__skills_get"];
+    get: operations["list_skills_api_v1_workspaces__workspace__skills_get"];
     put?: never;
     /** Create Skill */
-    post: operations["create_skill_api_v1_workspaces__workspace_id__skills_post"];
+    post: operations["create_skill_api_v1_workspaces__workspace__skills_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/threads": {
+  "/api/v1/workspaces/{workspace}/threads": {
     parameters: {
       query?: never;
       header?: never;
@@ -2761,14 +2778,14 @@ export interface paths {
     get?: never;
     put?: never;
     /** Create Thread */
-    post: operations["create_thread_api_v1_workspaces__workspace_id__threads_post"];
+    post: operations["create_thread_api_v1_workspaces__workspace__threads_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/traces": {
+  "/api/v1/workspaces/{workspace}/traces": {
     parameters: {
       query?: never;
       header?: never;
@@ -2776,7 +2793,7 @@ export interface paths {
       cookie?: never;
     };
     /** List Traces */
-    get: operations["list_traces_api_v1_workspaces__workspace_id__traces_get"];
+    get: operations["list_traces_api_v1_workspaces__workspace__traces_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -2785,7 +2802,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/traces/{trace_id}": {
+  "/api/v1/workspaces/{workspace}/traces/{trace_id}": {
     parameters: {
       query?: never;
       header?: never;
@@ -2793,7 +2810,7 @@ export interface paths {
       cookie?: never;
     };
     /** Get Trace */
-    get: operations["get_trace_api_v1_workspaces__workspace_id__traces__trace_id__get"];
+    get: operations["get_trace_api_v1_workspaces__workspace__traces__trace_id__get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -3016,6 +3033,8 @@ export interface components {
       enabled: boolean;
       /** Id */
       id: string;
+      /** Key */
+      key: string;
       /** Name */
       name: string;
       /** Organization Id */
@@ -3992,6 +4011,8 @@ export interface components {
       default_environment_template_id?: string | null;
       /** Description */
       description?: string | null;
+      /** Key */
+      key?: string | null;
       /** Name */
       name: string;
     };
@@ -4216,6 +4237,8 @@ export interface components {
     };
     /** CreateWorkspaceRequest */
     CreateWorkspaceRequest: {
+      /** Key */
+      key?: string | null;
       /** Name */
       name: string;
     };
@@ -4224,6 +4247,16 @@ export interface components {
       /** Bearer */
       bearer: string;
       key: components["schemas"]["ApiKey"];
+    };
+    /**
+     * CredentialContext
+     * @description The authenticated credential boundary, independent of resource grants.
+     */
+    CredentialContext: {
+      /** Organization Id */
+      organization_id: string | null;
+      /** Workspace Id */
+      workspace_id: string | null;
     };
     /** DelegationContextPolicy */
     DelegationContextPolicy: {
@@ -4303,6 +4336,8 @@ export interface components {
       description?: string | null;
       /** Expected Version */
       expected_version: number;
+      /** Key */
+      key?: string | null;
       /** Name */
       name: string;
     };
@@ -5480,6 +5515,8 @@ export interface components {
       id: string;
       /** Image Url */
       readonly image_url: string | null;
+      /** Key */
+      key: string;
       /** Name */
       name: string;
       /**
@@ -6522,6 +6559,8 @@ export interface components {
     SkillAgentReference: {
       /** Agent Id */
       agent_id: string;
+      /** Agent Key */
+      agent_key: string;
       /** Agent Name */
       agent_name: string;
       /** Agent Revision Id */
@@ -7174,6 +7213,8 @@ export interface components {
       default_environment_template_id?: string | null;
       /** Description */
       description?: string | null;
+      /** Key */
+      key?: string | null;
       /** Name */
       name?: string | null;
     };
@@ -7262,6 +7303,13 @@ export interface components {
       /** Expected Version */
       expected_version: number;
       submission: components["schemas"]["ThreadRunSubmissionIntent-Input"];
+    };
+    /** UpdateResourceProfileRequest */
+    UpdateResourceProfileRequest: {
+      /** Key */
+      key?: string | null;
+      /** Name */
+      name?: string | null;
     };
     /** UpdateServiceAccountRequest */
     UpdateServiceAccountRequest: {
@@ -7522,6 +7570,8 @@ export interface components {
       id: string;
       /** Image Url */
       readonly image_url: string | null;
+      /** Key */
+      key: string;
       /** Name */
       name: string;
       /** Organization Id */
@@ -7600,255 +7650,6 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["AgentRevision"];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["HTTPValidationError"];
-        };
-      };
-    };
-  };
-  get_agent_api_v1_agents__agent_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        agent_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Agent"];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["HTTPValidationError"];
-        };
-      };
-    };
-  };
-  update_agent_api_v1_agents__agent_id__patch: {
-    parameters: {
-      query?: never;
-      header: {
-        "If-Match": string;
-      };
-      path: {
-        agent_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["UpdateAgentRequest"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Agent"];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["HTTPValidationError"];
-        };
-      };
-    };
-  };
-  duplicate_agent_api_v1_agents__agent_id__duplicate_post: {
-    parameters: {
-      query?: never;
-      header: {
-        "Idempotency-Key": string;
-      };
-      path: {
-        agent_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["DuplicateAgentRequest"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Agent"];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["HTTPValidationError"];
-        };
-      };
-    };
-  };
-  list_agent_revisions_api_v1_agents__agent_id__revisions_get: {
-    parameters: {
-      query?: {
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        agent_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentRevisionCollection"];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["HTTPValidationError"];
-        };
-      };
-    };
-  };
-  create_agent_revision_api_v1_agents__agent_id__revisions_post: {
-    parameters: {
-      query?: never;
-      header: {
-        "Idempotency-Key": string;
-      };
-      path: {
-        agent_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CreateAgentRevisionRequest"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentRevisionCreateResult"];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["HTTPValidationError"];
-        };
-      };
-    };
-  };
-  restore_agent_revision_api_v1_agents__agent_id__revisions__revision_id__restore_post: {
-    parameters: {
-      query?: never;
-      header: {
-        "Idempotency-Key": string;
-      };
-      path: {
-        agent_id: string;
-        revision_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["RestoreAgentRevisionRequest"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentRevisionCreateResult"];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["HTTPValidationError"];
-        };
-      };
-    };
-  };
-  change_agent_lifecycle_api_v1_agents__agent_id___action__post: {
-    parameters: {
-      query?: never;
-      header: {
-        "Idempotency-Key": string;
-        "If-Match": string;
-      };
-      path: {
-        agent_id: string;
-        action: "enable" | "disable" | "archive" | "unarchive";
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Agent"];
         };
       };
       /** @description Validation Error */
@@ -8374,6 +8175,26 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["AuthConfiguration"];
+        };
+      };
+    };
+  };
+  credential_context_api_v1_auth_context_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CredentialContext"];
         };
       };
     };
@@ -10162,12 +9983,12 @@ export interface operations {
       };
     };
   };
-  organization_api_v1_organizations__organization_id__get: {
+  organization_api_v1_organizations__organization__get: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        organization_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -10193,20 +10014,20 @@ export interface operations {
       };
     };
   };
-  update_organization_api_v1_organizations__organization_id__patch: {
+  update_organization_api_v1_organizations__organization__patch: {
     parameters: {
       query?: never;
       header: {
         "If-Match": string;
       };
       path: {
-        organization_id: string;
+        organization: string;
       };
       cookie?: never;
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["UpdateProfileRequest"];
+        "application/json": components["schemas"]["UpdateResourceProfileRequest"];
       };
     };
     responses: {
@@ -10230,7 +10051,7 @@ export interface operations {
       };
     };
   };
-  organization_list_connector_providers_api_v1_organizations__organization_id__connector_providers_get: {
+  organization_list_connector_providers_api_v1_organizations__organization__connector_providers_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -10238,7 +10059,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        organization_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -10264,14 +10085,14 @@ export interface operations {
       };
     };
   };
-  organization_create_connector_provider_api_v1_organizations__organization_id__connector_providers_post: {
+  organization_create_connector_provider_api_v1_organizations__organization__connector_providers_post: {
     parameters: {
       query?: never;
       header: {
         "Idempotency-Key": string;
       };
       path: {
-        organization_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -10301,7 +10122,7 @@ export interface operations {
       };
     };
   };
-  organization_list_providers_api_v1_organizations__organization_id__environment_providers_get: {
+  organization_list_providers_api_v1_organizations__organization__environment_providers_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -10309,7 +10130,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        organization_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -10335,12 +10156,12 @@ export interface operations {
       };
     };
   };
-  organization_create_provider_api_v1_organizations__organization_id__environment_providers_post: {
+  organization_create_provider_api_v1_organizations__organization__environment_providers_post: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        organization_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -10370,7 +10191,7 @@ export interface operations {
       };
     };
   };
-  organization_list_templates_api_v1_organizations__organization_id__environment_templates_get: {
+  organization_list_templates_api_v1_organizations__organization__environment_templates_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -10378,7 +10199,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        organization_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -10404,14 +10225,14 @@ export interface operations {
       };
     };
   };
-  organization_create_template_api_v1_organizations__organization_id__environment_templates_post: {
+  organization_create_template_api_v1_organizations__organization__environment_templates_post: {
     parameters: {
       query?: never;
       header: {
         "Idempotency-Key": string;
       };
       path: {
-        organization_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -10441,14 +10262,14 @@ export interface operations {
       };
     };
   };
-  put_organization_icon_api_v1_organizations__organization_id__icon_put: {
+  put_organization_icon_api_v1_organizations__organization__icon_put: {
     parameters: {
       query?: never;
       header: {
         "If-Match": string;
       };
       path: {
-        organization_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -10478,14 +10299,14 @@ export interface operations {
       };
     };
   };
-  delete_organization_icon_api_v1_organizations__organization_id__icon_delete: {
+  delete_organization_icon_api_v1_organizations__organization__icon_delete: {
     parameters: {
       query?: never;
       header: {
         "If-Match": string;
       };
       path: {
-        organization_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -10511,13 +10332,13 @@ export interface operations {
       };
     };
   };
-  get_organization_icon_api_v1_organizations__organization_id__icon__image_id__get: {
+  get_organization_icon_api_v1_organizations__organization__icon__image_id__get: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        organization_id: string;
         image_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -10543,7 +10364,7 @@ export interface operations {
       };
     };
   };
-  invitations_api_v1_organizations__organization_id__invitations_get: {
+  invitations_api_v1_organizations__organization__invitations_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -10551,7 +10372,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        organization_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -10577,12 +10398,12 @@ export interface operations {
       };
     };
   };
-  invite_api_v1_organizations__organization_id__invitations_post: {
+  invite_api_v1_organizations__organization__invitations_post: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        organization_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -10612,7 +10433,7 @@ export interface operations {
       };
     };
   };
-  organization_list_model_providers_api_v1_organizations__organization_id__model_providers_get: {
+  organization_list_model_providers_api_v1_organizations__organization__model_providers_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -10623,7 +10444,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        organization_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -10649,12 +10470,12 @@ export interface operations {
       };
     };
   };
-  organization_create_model_provider_api_v1_organizations__organization_id__model_providers_post: {
+  organization_create_model_provider_api_v1_organizations__organization__model_providers_post: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        organization_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -10684,13 +10505,13 @@ export interface operations {
       };
     };
   };
-  organization_get_model_provider_api_v1_organizations__organization_id__model_providers__provider_id__get: {
+  organization_get_model_provider_api_v1_organizations__organization__model_providers__provider_id__get: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        organization_id: string;
         provider_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -10716,15 +10537,15 @@ export interface operations {
       };
     };
   };
-  organization_update_model_provider_api_v1_organizations__organization_id__model_providers__provider_id__patch: {
+  organization_update_model_provider_api_v1_organizations__organization__model_providers__provider_id__patch: {
     parameters: {
       query?: never;
       header: {
         "If-Match": string;
       };
       path: {
-        organization_id: string;
         provider_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -10754,13 +10575,13 @@ export interface operations {
       };
     };
   };
-  organization_describe_provider_model_api_v1_organizations__organization_id__model_providers__provider_id__describe_model_post: {
+  organization_describe_provider_model_api_v1_organizations__organization__model_providers__provider_id__describe_model_post: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        organization_id: string;
         provider_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -10790,13 +10611,13 @@ export interface operations {
       };
     };
   };
-  organization_discover_provider_models_api_v1_organizations__organization_id__model_providers__provider_id__discover_models_post: {
+  organization_discover_provider_models_api_v1_organizations__organization__model_providers__provider_id__discover_models_post: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        organization_id: string;
         provider_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -10822,13 +10643,13 @@ export interface operations {
       };
     };
   };
-  organization_test_model_provider_api_v1_organizations__organization_id__model_providers__provider_id__test_post: {
+  organization_test_model_provider_api_v1_organizations__organization__model_providers__provider_id__test_post: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        organization_id: string;
         provider_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -10854,7 +10675,7 @@ export interface operations {
       };
     };
   };
-  organization_list_models_api_v1_organizations__organization_id__models_get: {
+  organization_list_models_api_v1_organizations__organization__models_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -10865,7 +10686,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        organization_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -10891,12 +10712,12 @@ export interface operations {
       };
     };
   };
-  organization_create_model_api_v1_organizations__organization_id__models_post: {
+  organization_create_model_api_v1_organizations__organization__models_post: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        organization_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -10926,13 +10747,13 @@ export interface operations {
       };
     };
   };
-  organization_get_model_api_v1_organizations__organization_id__models__model_id__get: {
+  organization_get_model_api_v1_organizations__organization__models__model_id__get: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        organization_id: string;
         model_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -10958,15 +10779,15 @@ export interface operations {
       };
     };
   };
-  organization_update_model_api_v1_organizations__organization_id__models__model_id__patch: {
+  organization_update_model_api_v1_organizations__organization__models__model_id__patch: {
     parameters: {
       query?: never;
       header: {
         "If-Match": string;
       };
       path: {
-        organization_id: string;
         model_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -10996,13 +10817,13 @@ export interface operations {
       };
     };
   };
-  organization_test_model_api_v1_organizations__organization_id__models__model_id__test_post: {
+  organization_test_model_api_v1_organizations__organization__models__model_id__test_post: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        organization_id: string;
         model_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -11032,12 +10853,12 @@ export interface operations {
       };
     };
   };
-  organization_permissions_api_v1_organizations__organization_id__permissions_get: {
+  organization_permissions_api_v1_organizations__organization__permissions_get: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        organization_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -11063,7 +10884,7 @@ export interface operations {
       };
     };
   };
-  organization_roles_api_v1_organizations__organization_id__role_bindings_get: {
+  organization_roles_api_v1_organizations__organization__role_bindings_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -11071,7 +10892,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        organization_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -11097,12 +10918,12 @@ export interface operations {
       };
     };
   };
-  create_organization_binding_api_v1_organizations__organization_id__role_bindings_post: {
+  create_organization_binding_api_v1_organizations__organization__role_bindings_post: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        organization_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -11132,7 +10953,7 @@ export interface operations {
       };
     };
   };
-  organization_security_events_api_v1_organizations__organization_id__security_audit_events_get: {
+  organization_security_events_api_v1_organizations__organization__security_audit_events_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -11140,7 +10961,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        organization_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -11166,7 +10987,7 @@ export interface operations {
       };
     };
   };
-  users_api_v1_organizations__organization_id__users_get: {
+  users_api_v1_organizations__organization__users_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -11174,7 +10995,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        organization_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -11200,7 +11021,7 @@ export interface operations {
       };
     };
   };
-  workspaces_api_v1_organizations__organization_id__workspaces_get: {
+  workspaces_api_v1_organizations__organization__workspaces_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -11208,7 +11029,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        organization_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -11234,12 +11055,12 @@ export interface operations {
       };
     };
   };
-  create_workspace_api_v1_organizations__organization_id__workspaces_post: {
+  create_workspace_api_v1_organizations__organization__workspaces_post: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        organization_id: string;
+        organization: string;
       };
       cookie?: never;
     };
@@ -13098,12 +12919,12 @@ export interface operations {
       };
     };
   };
-  workspace_api_v1_workspaces__workspace_id__get: {
+  workspace_api_v1_workspaces__workspace__get: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -13129,14 +12950,14 @@ export interface operations {
       };
     };
   };
-  delete_workspace_api_v1_workspaces__workspace_id__delete: {
+  delete_workspace_api_v1_workspaces__workspace__delete: {
     parameters: {
       query?: never;
       header: {
         "If-Match": string;
       };
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -13160,20 +12981,20 @@ export interface operations {
       };
     };
   };
-  rename_workspace_api_v1_workspaces__workspace_id__patch: {
+  update_workspace_api_v1_workspaces__workspace__patch: {
     parameters: {
       query?: never;
       header: {
         "If-Match": string;
       };
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["CreateWorkspaceRequest"];
+        "application/json": components["schemas"]["UpdateResourceProfileRequest"];
       };
     };
     responses: {
@@ -13197,7 +13018,7 @@ export interface operations {
       };
     };
   };
-  list_agents_api_v1_workspaces__workspace_id__agents_get: {
+  list_agents_api_v1_workspaces__workspace__agents_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -13208,7 +13029,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -13234,14 +13055,14 @@ export interface operations {
       };
     };
   };
-  create_agent_api_v1_workspaces__workspace_id__agents_post: {
+  create_agent_api_v1_workspaces__workspace__agents_post: {
     parameters: {
       query?: never;
       header: {
         "Idempotency-Key": string;
       };
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -13271,7 +13092,115 @@ export interface operations {
       };
     };
   };
-  workspace_member_keys_api_v1_workspaces__workspace_id__api_keys_get: {
+  get_agent_api_v1_workspaces__workspace__agents__agent__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+        agent: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Agent"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  update_agent_api_v1_workspaces__workspace__agents__agent__patch: {
+    parameters: {
+      query?: never;
+      header: {
+        "If-Match": string;
+      };
+      path: {
+        workspace: string;
+        agent: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateAgentRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Agent"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  duplicate_agent_api_v1_workspaces__workspace__agents__agent__duplicate_post: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+      };
+      path: {
+        workspace: string;
+        agent: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DuplicateAgentRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Agent"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  list_agent_revisions_api_v1_workspaces__workspace__agents__agent__revisions_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -13279,7 +13208,155 @@ export interface operations {
       };
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
+        agent: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentRevisionCollection"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  create_agent_revision_api_v1_workspaces__workspace__agents__agent__revisions_post: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+      };
+      path: {
+        workspace: string;
+        agent: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateAgentRevisionRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentRevisionCreateResult"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  restore_agent_revision_api_v1_workspaces__workspace__agents__agent__revisions__revision_id__restore_post: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+      };
+      path: {
+        revision_id: string;
+        workspace: string;
+        agent: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RestoreAgentRevisionRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentRevisionCreateResult"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  change_agent_lifecycle_api_v1_workspaces__workspace__agents__agent___action__post: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+        "If-Match": string;
+      };
+      path: {
+        action: "enable" | "disable" | "archive" | "unarchive";
+        workspace: string;
+        agent: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Agent"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  workspace_member_keys_api_v1_workspaces__workspace__api_keys_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        workspace: string;
       };
       cookie?: never;
     };
@@ -13305,12 +13382,12 @@ export interface operations {
       };
     };
   };
-  account_provider_types_api_v1_workspaces__workspace_id__application_account_provider_types_get: {
+  account_provider_types_api_v1_workspaces__workspace__application_account_provider_types_get: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -13336,7 +13413,7 @@ export interface operations {
       };
     };
   };
-  list_accounts_api_v1_workspaces__workspace_id__application_accounts_get: {
+  list_accounts_api_v1_workspaces__workspace__application_accounts_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -13344,7 +13421,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -13370,14 +13447,14 @@ export interface operations {
       };
     };
   };
-  create_account_api_v1_workspaces__workspace_id__application_accounts_post: {
+  create_account_api_v1_workspaces__workspace__application_accounts_post: {
     parameters: {
       query?: never;
       header: {
         "Idempotency-Key": string;
       };
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -13407,7 +13484,7 @@ export interface operations {
       };
     };
   };
-  list_assets_api_v1_workspaces__workspace_id__assets_get: {
+  list_assets_api_v1_workspaces__workspace__assets_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -13417,7 +13494,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -13443,7 +13520,7 @@ export interface operations {
       };
     };
   };
-  upload_asset_api_v1_workspaces__workspace_id__assets_post: {
+  upload_asset_api_v1_workspaces__workspace__assets_post: {
     parameters: {
       query: {
         filename: string;
@@ -13453,7 +13530,7 @@ export interface operations {
         "Idempotency-Key": string;
       };
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -13483,7 +13560,7 @@ export interface operations {
       };
     };
   };
-  list_connector_connections_api_v1_workspaces__workspace_id__connector_connections_get: {
+  list_connector_connections_api_v1_workspaces__workspace__connector_connections_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -13491,7 +13568,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -13517,14 +13594,14 @@ export interface operations {
       };
     };
   };
-  create_connector_connection_api_v1_workspaces__workspace_id__connector_connections_post: {
+  create_connector_connection_api_v1_workspaces__workspace__connector_connections_post: {
     parameters: {
       query?: never;
       header: {
         "Idempotency-Key": string;
       };
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -13554,7 +13631,7 @@ export interface operations {
       };
     };
   };
-  list_connector_providers_api_v1_workspaces__workspace_id__connector_providers_get: {
+  list_connector_providers_api_v1_workspaces__workspace__connector_providers_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -13562,7 +13639,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -13588,14 +13665,14 @@ export interface operations {
       };
     };
   };
-  create_connector_provider_api_v1_workspaces__workspace_id__connector_providers_post: {
+  create_connector_provider_api_v1_workspaces__workspace__connector_providers_post: {
     parameters: {
       query?: never;
       header: {
         "Idempotency-Key": string;
       };
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -13625,7 +13702,7 @@ export interface operations {
       };
     };
   };
-  list_providers_api_v1_workspaces__workspace_id__environment_providers_get: {
+  list_providers_api_v1_workspaces__workspace__environment_providers_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -13633,7 +13710,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -13659,12 +13736,12 @@ export interface operations {
       };
     };
   };
-  create_provider_api_v1_workspaces__workspace_id__environment_providers_post: {
+  create_provider_api_v1_workspaces__workspace__environment_providers_post: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -13694,7 +13771,7 @@ export interface operations {
       };
     };
   };
-  list_templates_api_v1_workspaces__workspace_id__environment_templates_get: {
+  list_templates_api_v1_workspaces__workspace__environment_templates_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -13702,7 +13779,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -13728,14 +13805,14 @@ export interface operations {
       };
     };
   };
-  create_template_api_v1_workspaces__workspace_id__environment_templates_post: {
+  create_template_api_v1_workspaces__workspace__environment_templates_post: {
     parameters: {
       query?: never;
       header: {
         "Idempotency-Key": string;
       };
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -13765,7 +13842,7 @@ export interface operations {
       };
     };
   };
-  list_environments_api_v1_workspaces__workspace_id__environments_get: {
+  list_environments_api_v1_workspaces__workspace__environments_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -13773,7 +13850,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -13799,14 +13876,14 @@ export interface operations {
       };
     };
   };
-  create_environment_api_v1_workspaces__workspace_id__environments_post: {
+  create_environment_api_v1_workspaces__workspace__environments_post: {
     parameters: {
       query?: never;
       header: {
         "Idempotency-Key": string;
       };
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -13838,7 +13915,7 @@ export interface operations {
       };
     };
   };
-  list_workspace_events_api_v1_workspaces__workspace_id__events_get: {
+  list_workspace_events_api_v1_workspaces__workspace__events_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -13846,7 +13923,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -13872,7 +13949,7 @@ export interface operations {
       };
     };
   };
-  list_hook_subscriptions_api_v1_workspaces__workspace_id__hook_subscriptions_get: {
+  list_hook_subscriptions_api_v1_workspaces__workspace__hook_subscriptions_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -13880,7 +13957,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -13906,12 +13983,12 @@ export interface operations {
       };
     };
   };
-  create_hook_subscription_api_v1_workspaces__workspace_id__hook_subscriptions_post: {
+  create_hook_subscription_api_v1_workspaces__workspace__hook_subscriptions_post: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -13941,14 +14018,14 @@ export interface operations {
       };
     };
   };
-  put_workspace_icon_api_v1_workspaces__workspace_id__icon_put: {
+  put_workspace_icon_api_v1_workspaces__workspace__icon_put: {
     parameters: {
       query?: never;
       header: {
         "If-Match": string;
       };
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -13978,14 +14055,14 @@ export interface operations {
       };
     };
   };
-  delete_workspace_icon_api_v1_workspaces__workspace_id__icon_delete: {
+  delete_workspace_icon_api_v1_workspaces__workspace__icon_delete: {
     parameters: {
       query?: never;
       header: {
         "If-Match": string;
       };
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14011,13 +14088,13 @@ export interface operations {
       };
     };
   };
-  get_workspace_icon_api_v1_workspaces__workspace_id__icon__image_id__get: {
+  get_workspace_icon_api_v1_workspaces__workspace__icon__image_id__get: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        workspace_id: string;
         image_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14043,7 +14120,7 @@ export interface operations {
       };
     };
   };
-  workspace_invitations_api_v1_workspaces__workspace_id__invitations_get: {
+  workspace_invitations_api_v1_workspaces__workspace__invitations_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -14051,7 +14128,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14077,12 +14154,12 @@ export interface operations {
       };
     };
   };
-  invite_to_workspace_api_v1_workspaces__workspace_id__invitations_post: {
+  invite_to_workspace_api_v1_workspaces__workspace__invitations_post: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14112,7 +14189,7 @@ export interface operations {
       };
     };
   };
-  list_mcp_connections_api_v1_workspaces__workspace_id__mcp_connections_get: {
+  list_mcp_connections_api_v1_workspaces__workspace__mcp_connections_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -14120,7 +14197,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14146,14 +14223,14 @@ export interface operations {
       };
     };
   };
-  create_mcp_connection_api_v1_workspaces__workspace_id__mcp_connections_post: {
+  create_mcp_connection_api_v1_workspaces__workspace__mcp_connections_post: {
     parameters: {
       query?: never;
       header: {
         "Idempotency-Key": string;
       };
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14183,7 +14260,7 @@ export interface operations {
       };
     };
   };
-  workspace_members_api_v1_workspaces__workspace_id__members_get: {
+  workspace_members_api_v1_workspaces__workspace__members_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -14191,7 +14268,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14217,7 +14294,7 @@ export interface operations {
       };
     };
   };
-  list_model_providers_api_v1_workspaces__workspace_id__model_providers_get: {
+  list_model_providers_api_v1_workspaces__workspace__model_providers_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -14228,7 +14305,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14254,12 +14331,12 @@ export interface operations {
       };
     };
   };
-  create_model_provider_api_v1_workspaces__workspace_id__model_providers_post: {
+  create_model_provider_api_v1_workspaces__workspace__model_providers_post: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14289,13 +14366,13 @@ export interface operations {
       };
     };
   };
-  get_model_provider_api_v1_workspaces__workspace_id__model_providers__provider_id__get: {
+  get_model_provider_api_v1_workspaces__workspace__model_providers__provider_id__get: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        workspace_id: string;
         provider_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14321,15 +14398,15 @@ export interface operations {
       };
     };
   };
-  update_model_provider_api_v1_workspaces__workspace_id__model_providers__provider_id__patch: {
+  update_model_provider_api_v1_workspaces__workspace__model_providers__provider_id__patch: {
     parameters: {
       query?: never;
       header: {
         "If-Match": string;
       };
       path: {
-        workspace_id: string;
         provider_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14359,13 +14436,13 @@ export interface operations {
       };
     };
   };
-  describe_provider_model_api_v1_workspaces__workspace_id__model_providers__provider_id__describe_model_post: {
+  describe_provider_model_api_v1_workspaces__workspace__model_providers__provider_id__describe_model_post: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        workspace_id: string;
         provider_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14395,13 +14472,13 @@ export interface operations {
       };
     };
   };
-  discover_provider_models_api_v1_workspaces__workspace_id__model_providers__provider_id__discover_models_post: {
+  discover_provider_models_api_v1_workspaces__workspace__model_providers__provider_id__discover_models_post: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        workspace_id: string;
         provider_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14427,13 +14504,13 @@ export interface operations {
       };
     };
   };
-  test_model_provider_api_v1_workspaces__workspace_id__model_providers__provider_id__test_post: {
+  test_model_provider_api_v1_workspaces__workspace__model_providers__provider_id__test_post: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        workspace_id: string;
         provider_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14459,7 +14536,7 @@ export interface operations {
       };
     };
   };
-  list_models_api_v1_workspaces__workspace_id__models_get: {
+  list_models_api_v1_workspaces__workspace__models_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -14470,7 +14547,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14496,12 +14573,12 @@ export interface operations {
       };
     };
   };
-  create_model_api_v1_workspaces__workspace_id__models_post: {
+  create_model_api_v1_workspaces__workspace__models_post: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14531,13 +14608,13 @@ export interface operations {
       };
     };
   };
-  get_model_api_v1_workspaces__workspace_id__models__model_id__get: {
+  get_model_api_v1_workspaces__workspace__models__model_id__get: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        workspace_id: string;
         model_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14563,15 +14640,15 @@ export interface operations {
       };
     };
   };
-  update_model_api_v1_workspaces__workspace_id__models__model_id__patch: {
+  update_model_api_v1_workspaces__workspace__models__model_id__patch: {
     parameters: {
       query?: never;
       header: {
         "If-Match": string;
       };
       path: {
-        workspace_id: string;
         model_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14601,13 +14678,13 @@ export interface operations {
       };
     };
   };
-  test_model_api_v1_workspaces__workspace_id__models__model_id__test_post: {
+  test_model_api_v1_workspaces__workspace__models__model_id__test_post: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        workspace_id: string;
         model_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14637,12 +14714,12 @@ export interface operations {
       };
     };
   };
-  workspace_permissions_api_v1_workspaces__workspace_id__permissions_get: {
+  workspace_permissions_api_v1_workspaces__workspace__permissions_get: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14668,7 +14745,7 @@ export interface operations {
       };
     };
   };
-  personal_keys_api_v1_workspaces__workspace_id__personal_api_keys_get: {
+  personal_keys_api_v1_workspaces__workspace__personal_api_keys_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -14676,7 +14753,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14702,12 +14779,12 @@ export interface operations {
       };
     };
   };
-  create_personal_key_api_v1_workspaces__workspace_id__personal_api_keys_post: {
+  create_personal_key_api_v1_workspaces__workspace__personal_api_keys_post: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14737,7 +14814,7 @@ export interface operations {
       };
     };
   };
-  workspace_roles_api_v1_workspaces__workspace_id__role_bindings_get: {
+  workspace_roles_api_v1_workspaces__workspace__role_bindings_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -14745,7 +14822,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14771,12 +14848,12 @@ export interface operations {
       };
     };
   };
-  add_workspace_member_api_v1_workspaces__workspace_id__role_bindings_post: {
+  add_workspace_member_api_v1_workspaces__workspace__role_bindings_post: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14806,7 +14883,7 @@ export interface operations {
       };
     };
   };
-  list_workspace_runs_api_v1_workspaces__workspace_id__runs_get: {
+  list_workspace_runs_api_v1_workspaces__workspace__runs_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -14814,7 +14891,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14840,14 +14917,14 @@ export interface operations {
       };
     };
   };
-  start_run_api_v1_workspaces__workspace_id__runs_post: {
+  start_run_api_v1_workspaces__workspace__runs_post: {
     parameters: {
       query?: never;
       header: {
         "Idempotency-Key": string;
       };
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14877,7 +14954,7 @@ export interface operations {
       };
     };
   };
-  workspace_security_events_api_v1_workspaces__workspace_id__security_audit_events_get: {
+  workspace_security_events_api_v1_workspaces__workspace__security_audit_events_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -14885,7 +14962,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14911,7 +14988,7 @@ export interface operations {
       };
     };
   };
-  accounts_api_v1_workspaces__workspace_id__service_accounts_get: {
+  accounts_api_v1_workspaces__workspace__service_accounts_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -14919,7 +14996,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14945,12 +15022,12 @@ export interface operations {
       };
     };
   };
-  create_account_api_v1_workspaces__workspace_id__service_accounts_post: {
+  create_account_api_v1_workspaces__workspace__service_accounts_post: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -14980,7 +15057,7 @@ export interface operations {
       };
     };
   };
-  list_sessions_api_v1_workspaces__workspace_id__sessions_get: {
+  list_sessions_api_v1_workspaces__workspace__sessions_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -14988,7 +15065,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -15014,14 +15091,14 @@ export interface operations {
       };
     };
   };
-  stage_skill_upload_api_v1_workspaces__workspace_id__skill_uploads_post: {
+  stage_skill_upload_api_v1_workspaces__workspace__skill_uploads_post: {
     parameters: {
       query?: never;
       header: {
         "Idempotency-Key": string;
       };
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -15051,7 +15128,7 @@ export interface operations {
       };
     };
   };
-  list_skills_api_v1_workspaces__workspace_id__skills_get: {
+  list_skills_api_v1_workspaces__workspace__skills_get: {
     parameters: {
       query?: {
         limit?: number;
@@ -15059,7 +15136,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -15085,14 +15162,14 @@ export interface operations {
       };
     };
   };
-  create_skill_api_v1_workspaces__workspace_id__skills_post: {
+  create_skill_api_v1_workspaces__workspace__skills_post: {
     parameters: {
       query?: never;
       header: {
         "Idempotency-Key": string;
       };
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -15122,14 +15199,14 @@ export interface operations {
       };
     };
   };
-  create_thread_api_v1_workspaces__workspace_id__threads_post: {
+  create_thread_api_v1_workspaces__workspace__threads_post: {
     parameters: {
       query?: never;
       header: {
         "Idempotency-Key": string;
       };
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -15159,7 +15236,7 @@ export interface operations {
       };
     };
   };
-  list_traces_api_v1_workspaces__workspace_id__traces_get: {
+  list_traces_api_v1_workspaces__workspace__traces_get: {
     parameters: {
       query?: {
         from?: string | null;
@@ -15174,7 +15251,7 @@ export interface operations {
       };
       header?: never;
       path: {
-        workspace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };
@@ -15200,15 +15277,15 @@ export interface operations {
       };
     };
   };
-  get_trace_api_v1_workspaces__workspace_id__traces__trace_id__get: {
+  get_trace_api_v1_workspaces__workspace__traces__trace_id__get: {
     parameters: {
       query?: {
         view?: components["schemas"]["TraceView"];
       };
       header?: never;
       path: {
-        workspace_id: string;
         trace_id: string;
+        workspace: string;
       };
       cookie?: never;
     };

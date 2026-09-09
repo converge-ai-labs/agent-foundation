@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.iam.http.resource_dependencies import WorkspaceId
 from a13n_service.request_runtime import get_control_runtime
 
 from .domain import ResourceLifecycleEventPage, WorkspaceEventPage
@@ -28,11 +29,11 @@ def _service(request: Request) -> LifecycleEventService:
     return control.lifecycle_events
 
 
-@router.get("/workspaces/{workspace_id}/events", response_model=WorkspaceEventPage)
+@router.get("/workspaces/{workspace}/events", response_model=WorkspaceEventPage)
 async def list_workspace_events(
     request: Request,
     actor: Actor,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
 ) -> WorkspaceEventPage:

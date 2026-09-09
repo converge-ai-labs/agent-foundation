@@ -137,3 +137,11 @@ Cursor encoding, storage layout, framework models, and SDK transport machinery a
 6. Each concurrent mutation axis uses either its owning counter and expected counter or a strong `ETag` and `If-Match`; it never adds a second generic revision counter or mixes both preconditions on one axis.
 7. A mutation is retried only with idempotency or other authoritative replay evidence; post-dispatch uncertainty remains explicit.
 8. `v1` changes are additive, and unknown response additions do not prevent an older client from decoding the response.
+
+## Resource References
+
+For Organization, Workspace, and Agent path segments, a reference accepts either the immutable ID or the current readable key. Path parameters are named `organization`, `workspace`, and `agent`. IDs contain an underscore and readable keys cannot, so resolution selects one namespace without fallback. Mixed ID/key paths are valid.
+
+Workspace keys resolve inside the authenticated Organization; a Workspace-bound API Key can resolve only its own Workspace. Browser sessions supply the Organization boundary, while an API Key supplies its Workspace boundary. Agent management uses `/api/v1/workspaces/{workspace}/agents/{agent}` and child operation paths. Resolving an Agent by ID still verifies membership in the path's Workspace. For example, `/api/v1/workspaces/research/agents/code-reviewer` and the equivalent all-ID path identify the same resource. AgentRevision and other unkeyed resource references retain their owning ID contracts.
+
+Resolution produces internal IDs before application use cases apply current authorization and lifecycle checks. A caller cannot widen its credential boundary by choosing another parent path. Unknown, obsolete, or out-of-scope references return a concealed not-found result. Key changes update the canonical address immediately without retaining old routes or aliases.

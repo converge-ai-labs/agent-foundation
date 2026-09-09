@@ -122,11 +122,8 @@ class DatabaseAuthenticator:
             raise AuthenticationError("invalid credential")
         organization = await singleton_organization(session)
         requested = request.headers.get(WORKSPACE_HEADER)
-        workspace_path = request.path_params.get("workspace_id")
-        if requested is not None and workspace_path is not None and requested != workspace_path:
-            raise AuthenticationError("invalid credential boundary")
         workspace = requested
-        if request.path_params.get("organization_id") is not None and workspace is not None:
+        if request.path_params.get("organization") is not None and workspace is not None:
             raise AuthenticationError("invalid credential boundary")
         return AuthenticatedActor(
             principal=PrincipalRef(principal_type=PrincipalType.user, principal_id=user.id),

@@ -41,14 +41,14 @@ async def environment_sessions(
     engine = create_sql_engine(SQLiteConfig(path=service_sqlite_database))
     sessions = create_session_factory(engine)
     async with transaction(sessions) as session:
-        session.add(OrganizationRecord(id=ORG_ID, name="Test", created_at=NOW, updated_at=NOW))
+        session.add(OrganizationRecord(id=ORG_ID, key="test", name="Test", created_at=NOW, updated_at=NOW))
         await session.flush()
         session.add(
             WorkspaceRecord(
                 id=WORKSPACE_ID,
                 organization_id=ORG_ID,
                 name="Default",
-                normalized_name="default",
+                key="default",
                 created_at=NOW,
                 updated_at=NOW,
                 deleted_at=None,

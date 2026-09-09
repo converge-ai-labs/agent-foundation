@@ -30,7 +30,7 @@ import { ThreadQueue } from "./queue";
 
 export function ConversationsPage() {
   const { t } = useTranslation(),
-    { workspace, can } = useWorkspace(),
+    { workspace, can, basePath } = useWorkspace(),
     client = useClient(),
     page = useCursor(),
     navigate = useNavigate();
@@ -44,10 +44,7 @@ export function ConversationsPage() {
   return (
     <div className={styles.sessionsLayout} data-detail={nested}>
       <aside className={styles.sessionSidebar}>
-        <Link
-          className={styles.workspaceBack}
-          to={`/workspaces/${workspace.id}/agents`}
-        >
+        <Link className={styles.workspaceBack} to={`${basePath}/agents`}>
           <ArrowLeft size={14} />
           {t("Back to workspace")}
         </Link>
@@ -134,7 +131,7 @@ function SessionLink({
 
 export function NewConversation() {
   const { t } = useTranslation(),
-    { workspace, can } = useWorkspace(),
+    { workspace, can, basePath } = useWorkspace(),
     client = useClient(),
     navigate = useNavigate(),
     cache = useQueryClient(),
@@ -147,9 +144,9 @@ export function NewConversation() {
     queryFn: ({ signal }) =>
       allPages((cursor) =>
         client.http
-          .GET("/api/v1/workspaces/{workspace_id}/agents", {
+          .GET("/api/v1/workspaces/{workspace}/agents", {
             params: {
-              path: { workspace_id: workspace.id },
+              path: { workspace: workspace.id },
               query: { cursor, limit: 100 },
             },
             signal,
@@ -191,9 +188,9 @@ export function NewConversation() {
                 : {}),
             };
             const receipt = data(
-              await client.http.POST("/api/v1/workspaces/{workspace_id}/runs", {
+              await client.http.POST("/api/v1/workspaces/{workspace}/runs", {
                 params: {
-                  path: { workspace_id: workspace.id },
+                  path: { workspace: workspace.id },
                   header: commandHeaders(
                     workspace.id,
                     idempotency.forBody(body),
@@ -207,7 +204,7 @@ export function NewConversation() {
               threadId: receipt.thread_id,
               runId: receipt.run_id,
             });
-            navigate(runPath(workspace.id, receipt));
+            navigate(runPath(basePath, receipt));
           }}
         >
           <RunOptions options={options} showAgent={false} />
@@ -220,7 +217,7 @@ export function NewConversation() {
 export function SessionLayout() {
   const { t } = useTranslation(),
     { sessionId = "", threadId } = useParams(),
-    { workspace, can } = useWorkspace(),
+    { workspace, can, basePath } = useWorkspace(),
     client = useClient(),
     queries = conversationQueries(client, workspace.id);
   const threads = useQuery(queries.threads(sessionId));
@@ -231,10 +228,7 @@ export function SessionLayout() {
       <header className={styles.sessionHeader}>
         <SessionIdentity />
         <div className={styles.sessionControls}>
-          <Link
-            className={styles.backToSessions}
-            to={`/workspaces/${workspace.id}/sessions`}
-          >
+          <Link className={styles.backToSessions} to={`${basePath}/sessions`}>
             {t("Sessions")}
           </Link>
           <ChoiceField
@@ -253,7 +247,7 @@ export function SessionLayout() {
             <Link
               className={styles.newThread}
               aria-label={t("New thread")}
-              to={`/workspaces/${workspace.id}/sessions/new?session=${sessionId}`}
+              to={`${basePath}/sessions/new?session=${sessionId}`}
             >
               <Plus size={14} />
               <span>{t("New thread")}</span>
@@ -281,7 +275,7 @@ export function SessionLayout() {
 export function ThreadLayout() {
   const { t } = useTranslation(),
     { sessionId = "", threadId = "", runId } = useParams(),
-    { workspace, can } = useWorkspace(),
+    { workspace, can, basePath } = useWorkspace(),
     client = useClient(),
     queries = conversationQueries(client, workspace.id);
   const thread = useQuery(queries.thread(threadId));
@@ -341,7 +335,7 @@ export function ThreadLayout() {
                     threadId,
                     runId: receipt.run?.run_id,
                   });
-                  if (receipt.run) navigate(runPath(workspace.id, receipt.run));
+                  if (receipt.run) navigate(runPath(basePath, receipt.run));
                 }}
               />
             )}
@@ -355,7 +349,7 @@ export function ThreadLayout() {
 
 function RunHistory() {
   const { t } = useTranslation(),
-    { workspace } = useWorkspace(),
+    { workspace, basePath } = useWorkspace(),
     client = useClient(),
     navigate = useNavigate();
   const { sessionId = "", threadId = "", runId = "" } = useParams();
@@ -379,7 +373,7 @@ function RunHistory() {
       value={runId}
       onValueChange={(id) =>
         navigate(
-          runPath(workspace.id, {
+          runPath(basePath, {
             session_id: sessionId,
             thread_id: threadId,
             run_id: id,

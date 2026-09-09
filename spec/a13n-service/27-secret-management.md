@@ -103,8 +103,8 @@ Metadata Get and List authorize `secrets.read`. Workspace-owned create, replace,
 ### Create
 
 ```http
-POST /api/v1/workspaces/{workspace_id}/secrets
-POST /api/v1/workspaces/{workspace_id}/users/me/secrets
+POST /api/v1/workspaces/{workspace}/secrets
+POST /api/v1/workspaces/{workspace}/users/me/secrets
 Content-Type: application/json
 ```
 
@@ -121,10 +121,10 @@ The first route derives `owner_type = workspace` and `owner_id = workspace_id`. 
 
 ```http
 GET /api/v1/secrets/{secret_id}
-GET /api/v1/workspaces/{workspace_id}/secrets?limit=50&cursor=opaque
-GET /api/v1/workspaces/{workspace_id}/secrets?key=openai_api_key
-GET /api/v1/workspaces/{workspace_id}/users/me/secrets?limit=50&cursor=opaque
-GET /api/v1/workspaces/{workspace_id}/users/me/secrets?key=openai_api_key
+GET /api/v1/workspaces/{workspace}/secrets?limit=50&cursor=opaque
+GET /api/v1/workspaces/{workspace}/secrets?key=openai_api_key
+GET /api/v1/workspaces/{workspace}/users/me/secrets?limit=50&cursor=opaque
+GET /api/v1/workspaces/{workspace}/users/me/secrets?key=openai_api_key
 ```
 
 Each collection fixes one owner from its route and never enumerates Secrets across owners or Workspaces. It includes only active resources, supports an optional exact `key` filter, orders unfiltered results by `(key, id)`, and uses the shared opaque cursor contract. Because active key uniqueness holds within one owner and boundary, an exact-key query returns zero or one item. The single-resource route resolves the stored organization and owner before authorization. Absence, unsupported owner type, owner absence, and concealed denial return the same `404 secret_not_found` result when revealing the distinction is not authorized.

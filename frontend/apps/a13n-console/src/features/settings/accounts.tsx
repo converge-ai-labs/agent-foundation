@@ -26,10 +26,10 @@ export function ServiceAccounts() {
     queryKey: ["service-accounts", workspace.id, page.cursor],
     queryFn: ({ signal }) =>
       client.http
-        .GET("/api/v1/workspaces/{workspace_id}/service-accounts", {
+        .GET("/api/v1/workspaces/{workspace}/service-accounts", {
           signal,
           params: {
-            path: { workspace_id: workspace.id },
+            path: { workspace: workspace.id },
             query: { cursor: page.cursor, limit: 30 },
           },
         })
@@ -172,13 +172,10 @@ function AccountEditor({ account }: { account?: Schema["ServiceAccount"] }) {
             params: { path: { account_id: basis.id } },
             body: { expected_version: basis.version, name, role, status },
           })
-        : client.http.POST(
-            "/api/v1/workspaces/{workspace_id}/service-accounts",
-            {
-              params: { path: { workspace_id: workspace.id } },
-              body: { name, role },
-            },
-          ),
+        : client.http.POST("/api/v1/workspaces/{workspace}/service-accounts", {
+            params: { path: { workspace: workspace.id } },
+            body: { name, role },
+          }),
     onSuccess: () => {
       void cache.invalidateQueries({
         queryKey: ["service-accounts", workspace.id],

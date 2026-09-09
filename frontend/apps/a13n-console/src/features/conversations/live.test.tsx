@@ -33,7 +33,11 @@ vi.mock("../../auth/context", () => ({
   revalidateSession: vi.fn(),
 }));
 vi.mock("../../layout/workspace", () => ({
-  useWorkspace: () => ({ workspace: { id: "workspace" }, can: () => false }),
+  useWorkspace: () => ({
+    basePath: "/acme/design",
+    workspace: { id: "workspace" },
+    can: () => false,
+  }),
 }));
 
 function response(request: Request) {

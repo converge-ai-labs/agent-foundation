@@ -144,7 +144,6 @@ def new_builtin_agent(
         workspace_id=workspace_id,
         source=AgentSource.builtin.value,
         name=registration.name,
-        normalized_name=agent_name_key(registration.name),
         description=registration.description,
         version=1,
         current_revision_id=revision_id,
@@ -460,7 +459,3 @@ def new_agent_audit(
         occurred_at=now,
         details=None,
     )
-
-
-def agent_name_key(value: str) -> str:
-    return value.casefold()

@@ -33,7 +33,8 @@ import { useLiveRun } from "./live";
 import { MessageMarkdown } from "./markdown";
 import { OptionsComposer } from "./options";
 import { PendingFeedback } from "./pending";
-import { useRun, useRunAgent } from "./queries";
+import { useAgent } from "../agents/queries";
+import { useRun } from "./queries";
 import { ThreadQueue } from "./queue";
 import { SteeringStatus } from "./steer";
 
@@ -59,7 +60,7 @@ function RunContent({
 }) {
   const { t } = useTranslation(),
     client = useClient(),
-    { workspace, can } = useWorkspace(),
+    { workspace, can, basePath } = useWorkspace(),
     cache = useQueryClient(),
     navigate = useNavigate(),
     queries = conversationQueries(client, workspace.id);
@@ -69,7 +70,7 @@ function RunContent({
     [steerIds, setSteerIds] = useState<string[]>([]);
   const runQuery = useRun(runId);
   const run = runQuery.data;
-  const agent = useRunAgent(run?.agent_id);
+  const agent = useAgent(run?.agent_id);
   const transcript = useRef<HTMLDivElement>(null);
   const [following, setFollowing] = useState(true);
   const threadQuery = useQuery({
@@ -156,7 +157,7 @@ function RunContent({
         runId: receipt.run_id,
       },
     );
-    navigate(runPath(workspace.id, receipt));
+    navigate(runPath(basePath, receipt));
   }
   if (runQuery.isPending || threadQuery.isPending) return <Loading />;
   if (!run || !thread)
@@ -464,7 +465,7 @@ function RunContent({
             {t("You are viewing a historical run.")}{" "}
             {thread.current_run_id && (
               <Link
-                to={runPath(workspace.id, {
+                to={runPath(basePath, {
                   session_id: thread.session_id,
                   thread_id: thread.id,
                   run_id: thread.current_run_id,

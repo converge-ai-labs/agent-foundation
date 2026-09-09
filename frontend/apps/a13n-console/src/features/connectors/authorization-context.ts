@@ -3,6 +3,7 @@ const storageKey = "a13n.connector-authorization";
 export type BrowserAuthorization = {
   browser_nonce: string;
   workspace_id: string;
+  return_path: string;
   connection_id: string;
   attempt_id?: string;
   expires_at?: string;
@@ -30,6 +31,8 @@ export function readAuthorization(): BrowserAuthorization | null {
       typeof value.browser_nonce !== "string" ||
       !/^[a-f0-9]{64}$/.test(value.browser_nonce) ||
       typeof value.workspace_id !== "string" ||
+      typeof value.return_path !== "string" ||
+      !/^\/[a-z0-9-]+\/[a-z0-9-]+\/connectors$/.test(value.return_path) ||
       typeof value.connection_id !== "string" ||
       typeof value.attempt_id !== "string" ||
       typeof value.expires_at !== "string" ||

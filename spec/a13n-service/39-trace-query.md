@@ -72,8 +72,8 @@ The query client exists only in `control` and `all` processes. Backend query ava
 The public Native API has two operations:
 
 ```http
-GET /api/v1/workspaces/{workspace_id}/traces
-GET /api/v1/workspaces/{workspace_id}/traces/{trace_id}
+GET /api/v1/workspaces/{workspace}/traces
+GET /api/v1/workspaces/{workspace}/traces/{trace_id}
 ```
 
 The exact read accepts `view=compact|full` and defaults to `full`. `compact` omits observation input, output, and metadata while preserving topology, timing, status, model, usage, and cost fields when the provider supplies them. `full` returns the admitted backend content; it does not recover values omitted by producer content policy, sampling, export loss, or backend retention.

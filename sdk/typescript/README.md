@@ -18,16 +18,19 @@ const client = createClient({
   auth: { type: "bearer", token: process.env.A13N_API_KEY! },
 });
 try {
-  const workspace = data(
-    await client.http.GET("/api/v1/workspaces/{workspace_id}", {
-      params: { path: { workspace_id: "ws_example" } },
+  const http = await client.workspaceHttp();
+  const agent = data(
+    await http.GET("/agents/{agent}", {
+      params: { path: { agent: "code-reviewer" } },
     }),
   );
-  console.log(workspace.name);
+  console.log(agent.name);
 } finally {
   client.close();
 }
 ```
+
+`workspaceHttp()` reads `/api/v1/auth/context` and binds the generated workspace operations to the API key’s Workspace. Callers supply only child resource references, using an ID or key for Agents. The bound client shares authentication, retries, and shutdown with the parent. Create a new binding after switching credentials to another Workspace. The full `http` surface remains available for explicit resource paths and organization or personal operations.
 
 Browser clients use `{ type: "session" }` on the same origin as Service. Restore the CSRF token from `/api/v1/auth/csrf` (or the login response) with `setCsrfToken` before mutations. Tokens stay in memory. Callers pass `If-Match`, `Idempotency-Key`, Workspace headers, pagination cursors, and `AbortSignal` explicitly through typed operation options. Responses expose headers for ETags and request IDs. `ApiError` carries status, code, safe details, request ID, and retry guidance.
 

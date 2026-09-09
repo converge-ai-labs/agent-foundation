@@ -31,6 +31,7 @@ from a13n_service.iam.domain import ActorRef
 from a13n_service.ids import ObjectId, new_object_id
 from a13n_service.models.domain import ModelExecutionSnapshot, ModelKey
 from a13n_service.models.settings import validate_settings_bounds
+from a13n_service.resource_keys import ResourceKey
 from a13n_service.secrets.domain import SecretKey
 from a13n_service.skills.domain import SkillKey, SkillRevisionLock
 
@@ -375,6 +376,7 @@ class Agent(StrictModel):
     workspace_id: ObjectId
     source: AgentSource
     name: AgentName
+    key: ResourceKey
     description: str | None
     version: int = Field(ge=1)
     current_revision_id: ObjectId
@@ -432,6 +434,7 @@ class CreateAgentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: AgentName
+    key: ResourceKey | None = None
     description: AgentDescription | None = None
     config: AgentConfig
 
@@ -441,15 +444,17 @@ class UpdateAgentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: AgentName | None = None
+    key: ResourceKey | None = None
     description: AgentDescription | None = None
 
     @model_validator(mode="after")
     def validate_change(self) -> UpdateAgentRequest:
-        changed = self.model_fields_set.intersection({"name", "description", "default_environment_template_id"})
+        changed = self.model_fields_set.intersection({"name", "key", "description", "default_environment_template_id"})
         if not changed:
             raise ValueError("at least one metadata field must be supplied")
-        if "name" in self.model_fields_set and self.name is None:
-            raise ValueError("name cannot be null")
+        for field in ("name", "key"):
+            if field in self.model_fields_set and getattr(self, field) is None:
+                raise ValueError(f"{field} cannot be null")
         return self
 
 
@@ -471,6 +476,7 @@ class DuplicateAgentRequest(BaseModel):
 
     expected_version: int = Field(ge=1)
     name: AgentName
+    key: ResourceKey | None = None
     description: AgentDescription | None = None
 
 

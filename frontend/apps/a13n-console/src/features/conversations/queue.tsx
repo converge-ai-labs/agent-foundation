@@ -32,7 +32,7 @@ export function ThreadQueue({
   const { t } = useTranslation(),
     client = useClient(),
     auth = useAuth(),
-    { workspace, can } = useWorkspace(),
+    { workspace, can, basePath } = useWorkspace(),
     cache = useQueryClient(),
     navigate = useNavigate();
   const [state, setState] = useState<Schema["QueuedSubmissionState"]>("queued");
@@ -99,7 +99,7 @@ export function ThreadQueue({
         },
       );
       consumeKey.reset();
-      if (receipt.run) navigate(runPath(workspace.id, receipt.run));
+      if (receipt.run) navigate(runPath(basePath, receipt.run));
     },
   });
   if (!can("queued_submission.read")) return null;
@@ -192,7 +192,7 @@ export function ThreadQueue({
               {item.failure && <JsonView value={item.failure} />}
               {item.consumed_run_id && (
                 <Link
-                  to={runPath(workspace.id, {
+                  to={runPath(basePath, {
                     session_id: thread.session_id,
                     thread_id: thread.id,
                     run_id: item.consumed_run_id,
@@ -280,7 +280,7 @@ function QueueEditor({
 }) {
   const { t } = useTranslation(),
     client = useClient(),
-    { workspace } = useWorkspace(),
+    { workspace, basePath } = useWorkspace(),
     [open, setOpen] = useState(false);
   return (
     <ModalFrame

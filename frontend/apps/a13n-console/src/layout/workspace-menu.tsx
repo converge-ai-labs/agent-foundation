@@ -15,6 +15,7 @@ import { Check, ChevronDown, Settings } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import { UserAvatar } from "./avatar";
+import { workspacePath } from "../shared/paths";
 import { useWorkspace } from "./workspace";
 
 export function WorkspaceMenu({ onNavigate }: { onNavigate: () => void }) {
@@ -46,9 +47,7 @@ export function WorkspaceMenu({ onNavigate }: { onNavigate: () => void }) {
           <MenuItem
             onClick={() => {
               onNavigate();
-              navigate(
-                `/workspaces/${context.workspace.id}/settings?section=profile`,
-              );
+              navigate(`${context.basePath}/settings?section=profile`);
             }}
           >
             <Settings aria-hidden="true" />
@@ -72,7 +71,9 @@ export function WorkspaceMenu({ onNavigate }: { onNavigate: () => void }) {
                           predicate: (query) =>
                             query.queryKey.includes(context.workspace.id),
                         });
-                        navigate(`/workspaces/${item.id}/agents`);
+                        navigate(
+                          `${workspacePath(context.organization, item)}/agents`,
+                        );
                       }
                       onNavigate();
                     }}

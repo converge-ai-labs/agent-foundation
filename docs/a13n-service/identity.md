@@ -32,7 +32,7 @@ A browser session defaults to Organization scope. `X-A13N-Workspace-ID` selects 
 
 ## Invite members
 
-An Organization Admin can POST to `/api/v1/organizations/{organization_id}/invitations` with an email and grants:
+An Organization Admin can POST to `/api/v1/organizations/{organization}/invitations` with an email and grants:
 
 ```json
 {
@@ -43,7 +43,7 @@ An Organization Admin can POST to `/api/v1/organizations/{organization_id}/invit
 }
 ```
 
-A Workspace Admin can POST `{ "email": "...", "role": "runner" }` to `/api/v1/workspaces/{workspace_id}/invitations`. Acceptance also establishes Organization membership. Existing users must supply their existing password; invitations never overwrite that password or demote existing roles.
+A Workspace Admin can POST `{ "email": "...", "role": "runner" }` to `/api/v1/workspaces/{workspace}/invitations`. Acceptance also establishes Organization membership. Existing users must supply their existing password; invitations never overwrite that password or demote existing roles.
 
 Delivery returns `sent`, `failed`, or `manual`. Manual delivery includes `invitation_url` once. SMTP failure retains the invitation; fix delivery and resend. Configure `A13N_SERVICE_IAM_SMTP_HOST`, `SMTP_PORT`, `SMTP_TLS` (`starttls` or `tls`), `SMTP_SENDER`, and optional paired `SMTP_USERNAME`/`SMTP_PASSWORD`, each with the `A13N_SERVICE_IAM_` prefix. Invitation expiry defaults to seven days and is configured by `A13N_SERVICE_IAM_INVITATION_DAYS`.
 
@@ -59,16 +59,24 @@ The MCP OAuth GET callback still requires the same CSRF proof as mutations when 
 
 ## Create application keys
 
-POST `{ "name": "my-application" }` to `/api/v1/workspaces/{workspace_id}/personal-api-keys` from an authenticated user session. The response contains safe `key` metadata and a `bearer` value shown once. Store the bearer securely and send it as `Authorization: Bearer <value>` on application requests without a browser cookie.
+POST `{ "name": "my-application" }` to `/api/v1/workspaces/{workspace}/personal-api-keys` from an authenticated user session. The response contains safe `key` metadata and a `bearer` value shown once. Store the bearer securely and send it as `Authorization: Bearer <value>` on application requests without a browser cookie.
 
 The key is restricted to its `boundary_type: "workspace"` and `boundary_id`. It inherits its owner's current permissions. The default expiry is 90 days; supply an absolute `expires_at` timestamp or explicit `null` for no expiry. Read metadata at `/api/v1/api-keys/{id}` and revoke with `POST /api/v1/api-keys/{id}/revoke`.
 
 There is no key rotation endpoint. Create a replacement, move callers, and revoke the old key. Revocation is permanent; removing access permanently revokes affected personal keys.
 
-Workspace Admins can create a Service Account at `/api/v1/workspaces/{workspace_id}/service-accounts` with `name` and a `role` of `viewer`, `runner`, or `builder`. Create its keys at `/api/v1/service-accounts/{id}/api-keys`. Use these credentials for unattended application or ingress integration. A Service Account cannot administer identity or obtain a browser session.
+Workspace Admins can create a Service Account at `/api/v1/workspaces/{workspace}/service-accounts` with `name` and a `role` of `viewer`, `runner`, or `builder`. Create its keys at `/api/v1/service-accounts/{id}/api-keys`. Use these credentials for unattended application or ingress integration. A Service Account cannot administer identity or obtain a browser session.
 
 Service Account updates require `expected_version`, `name`, `description`, `status`, and `role`. Disablement blocks existing keys; re-enablement restores otherwise valid keys. Deletion requires `expected_version` and permanently revokes all keys.
 
 Collection endpoints accept `limit` (1-100) and `cursor`, and return `items` and `next_cursor`. Cursors are bound to the requesting principal and collection scope.
 
 Embedded distributions that supply `Components.request_authenticator` own authentication and initialization; the built-in local identity runtime is selected only when that override is absent.
+
+## Resource keys and browser links
+
+Organizations, Workspaces, and Agents have an immutable `id`, a display `name`, and an editable `key` for readable addresses. For example, an Agent can appear at `/acme/research/agents/code-reviewer` in Console. Display names can repeat. A generated key uses the readable ASCII parts of the name; a collision adds four random hexadecimal characters. You can choose an explicit key when creating a resource or edit it later in its settings.
+
+Keys use lowercase letters, numbers, and single hyphens, up to 64 characters. Renaming the display label preserves the key. Changing the key preserves the resource and its history but invalidates its previous address; there are no redirects or aliases.
+
+Native API paths accept either IDs or current keys: `/api/v1/workspaces/research/agents/code-reviewer` addresses the same Agent as the equivalent path with its Workspace and Agent IDs. The credential still determines the allowed Organization or Workspace. API Key SDK callers can use `await client.workspaceHttp()` to bind that Workspace automatically, then call `/agents/{agent}` without supplying the Workspace again.

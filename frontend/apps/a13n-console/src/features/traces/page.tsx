@@ -188,15 +188,15 @@ export function TraceList({
   page: ReturnType<typeof useCursor>;
 }) {
   const client = useClient(),
-    { workspace } = useWorkspace(),
+    { workspace, basePath } = useWorkspace(),
     { t } = useTranslation();
   const query = useQuery({
     queryKey: ["trace-list", workspace.id, filters, page.cursor],
     queryFn: ({ signal }) =>
       client.http
-        .GET("/api/v1/workspaces/{workspace_id}/traces", {
+        .GET("/api/v1/workspaces/{workspace}/traces", {
           params: {
-            path: { workspace_id: workspace.id },
+            path: { workspace: workspace.id },
             query: {
               ...filters,
               query: filters.query || undefined,
@@ -242,9 +242,7 @@ export function TraceList({
           {
             label: t("Trace"),
             render: (item) => (
-              <Link
-                to={`/workspaces/${workspace.id}/traces/${encodeURIComponent(item.id)}`}
-              >
+              <Link to={`${basePath}/traces/${encodeURIComponent(item.id)}`}>
                 <strong>{item.name}</strong>
                 <small>{item.id}</small>
               </Link>

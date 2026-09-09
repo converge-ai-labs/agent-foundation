@@ -32,9 +32,9 @@ export function MCPPage() {
     queryKey: ["mcp-connections", workspace.id, page.cursor],
     queryFn: ({ signal }) =>
       client.http
-        .GET("/api/v1/workspaces/{workspace_id}/mcp-connections", {
+        .GET("/api/v1/workspaces/{workspace}/mcp-connections", {
           params: {
-            path: { workspace_id: workspace.id },
+            path: { workspace: workspace.id },
             query: { cursor: page.cursor },
           },
           signal,

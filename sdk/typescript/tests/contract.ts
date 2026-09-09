@@ -13,3 +13,19 @@ export const runSubmission: Schema["ThreadRunSubmissionRequest"] = {
   expected_thread_version: 1,
   input: ordinaryInput,
 };
+
+import type { Client } from "../src/client.js";
+
+export async function scopedHttpContract(client: Client) {
+  const http = await client.workspaceHttp();
+  await http.GET("/agents");
+  await http.GET("/agents/{agent}", {
+    params: { path: { agent: "reviewer" } },
+  });
+  await http.PATCH("/agents/{agent}", {
+    params: { path: { agent: "reviewer" }, header: { "If-Match": '"v1"' } },
+    body: { key: "assistant" },
+  });
+  // @ts-expect-error Workspace is supplied by the credential, never by this caller.
+  await http.GET("/agents", { params: { path: { workspace: "other" } } });
+}

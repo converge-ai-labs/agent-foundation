@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.iam.http.resource_dependencies import WorkspaceId
 from a13n_service.ids import new_object_id
 from a13n_service.interactions.acceptance import RunAcceptanceReceipt
 from a13n_service.interactions.commands import InteractionCommands
@@ -200,14 +201,14 @@ async def cancel_hosted_agui_run(
 
 
 @router.post(
-    "/api/v1/workspaces/{workspace_id}/runs",
+    "/api/v1/workspaces/{workspace}/runs",
     response_model=RunAcceptanceReceipt,
     status_code=202,
 )
 async def start_run(
     request: Request,
     actor: Actor,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     body: StartRunRequest,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
 ) -> RunAcceptanceReceipt:
@@ -480,11 +481,11 @@ async def get_run_steer(
     return await _commands(request).active.get_steer(actor=actor, run_id=run_id, steer_id=steer_id)
 
 
-@router.get("/api/v1/workspaces/{workspace_id}/sessions", response_model=SessionCollection)
+@router.get("/api/v1/workspaces/{workspace}/sessions", response_model=SessionCollection)
 async def list_sessions(
     request: Request,
     actor: Actor,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
 ) -> SessionCollection:
@@ -517,11 +518,11 @@ async def get_run(request: Request, actor: Actor, run_id: str) -> RunResource:
     return await _queries(request).get_run(actor=actor, run_id=run_id)
 
 
-@router.get("/api/v1/workspaces/{workspace_id}/runs", response_model=RunCollection)
+@router.get("/api/v1/workspaces/{workspace}/runs", response_model=RunCollection)
 async def list_workspace_runs(
     request: Request,
     actor: Actor,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
 ) -> RunCollection:

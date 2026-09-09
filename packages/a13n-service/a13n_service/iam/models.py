@@ -9,14 +9,17 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
 from a13n_service.names import CASEFOLDED_NAME_MAX_LENGTH
+from a13n_service.resource_keys import RESOURCE_KEY_MAX_LENGTH
 
 
 class OrganizationRecord(Base):
     __tablename__ = "organizations"
+    __table_args__ = (Index("uq_organizations_key", "key", unique=True),)
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     image_id: Mapped[str | None] = mapped_column(String(72))
     name: Mapped[str] = mapped_column(String(128))
+    key: Mapped[str] = mapped_column(String(RESOURCE_KEY_MAX_LENGTH))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
@@ -25,12 +28,10 @@ class WorkspaceRecord(Base):
     __tablename__ = "workspaces"
     __table_args__ = (
         Index(
-            "uq_workspaces_active_organization_normalized_name",
+            "uq_workspaces_organization_key",
             "organization_id",
-            "normalized_name",
+            "key",
             unique=True,
-            postgresql_where=text("deleted_at IS NULL"),
-            sqlite_where=text("deleted_at IS NULL"),
         ),
         Index("uq_workspaces_id_organization_id", "id", "organization_id", unique=True),
     )
@@ -39,7 +40,7 @@ class WorkspaceRecord(Base):
     organization_id: Mapped[str] = mapped_column(String(72), ForeignKey("organizations.id", ondelete="RESTRICT"))
     image_id: Mapped[str | None] = mapped_column(String(72))
     name: Mapped[str] = mapped_column(String(128))
-    normalized_name: Mapped[str] = mapped_column(String(CASEFOLDED_NAME_MAX_LENGTH))
+    key: Mapped[str] = mapped_column(String(RESOURCE_KEY_MAX_LENGTH))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

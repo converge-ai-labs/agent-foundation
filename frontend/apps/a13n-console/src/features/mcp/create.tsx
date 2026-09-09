@@ -39,9 +39,9 @@ export function CreateMCP({
             : [],
       };
       return client.http
-        .POST("/api/v1/workspaces/{workspace_id}/mcp-connections", {
+        .POST("/api/v1/workspaces/{workspace}/mcp-connections", {
           params: {
-            path: { workspace_id: workspace.id },
+            path: { workspace: workspace.id },
             header: commandHeaders(workspace.id, key.forBody(body)),
           },
           body,

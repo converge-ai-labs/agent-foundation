@@ -5,6 +5,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Header, Request, Response
 
 from a13n_service.etags import resource_etag
+from a13n_service.iam.http.resource_dependencies import OrganizationId, WorkspaceId
 
 from ..schemas import (
     ApiKey,
@@ -24,6 +25,7 @@ from ..schemas import (
     RoleBinding,
     ServiceAccount,
     SetRoleRequest,
+    UpdateResourceProfileRequest,
     UpdateServiceAccountRequest,
     User,
     Workspace,
@@ -39,66 +41,70 @@ async def organizations(request: Request, actor: Actor) -> Page[Organization]:
     return Page(items=[await identity(request).membership.organization(actor)], next_cursor=None)
 
 
-@router.get("/organizations/{organization_id}/workspaces", response_model=Page[Workspace])
-async def workspaces(request: Request, actor: Actor, organization_id: str, page: Pagination) -> Page[Workspace]:
+@router.get("/organizations/{organization}/workspaces", response_model=Page[Workspace])
+async def workspaces(
+    request: Request, actor: Actor, organization_id: OrganizationId, page: Pagination
+) -> Page[Workspace]:
     return await identity(request).membership.workspaces(actor, organization_id, page)
 
 
-@router.post("/organizations/{organization_id}/workspaces", status_code=201, response_model=Workspace)
+@router.post("/organizations/{organization}/workspaces", status_code=201, response_model=Workspace)
 async def create_workspace(
-    request: Request, response: Response, actor: Actor, organization_id: str, body: CreateWorkspaceRequest
+    request: Request, response: Response, actor: Actor, organization_id: OrganizationId, body: CreateWorkspaceRequest
 ) -> Workspace:
-    result = await identity(request).membership.create_workspace(actor, organization_id, body.name)
+    result = await identity(request).membership.create_workspace(actor, organization_id, body.name, key=body.key)
     response.headers["ETag"] = resource_etag(result.id, result.updated_at)
     return result
 
 
-@router.get("/workspaces/{workspace_id}", response_model=Workspace)
-async def workspace(request: Request, response: Response, actor: Actor, workspace_id: str) -> Workspace:
+@router.get("/workspaces/{workspace}", response_model=Workspace)
+async def workspace(request: Request, response: Response, actor: Actor, workspace_id: WorkspaceId) -> Workspace:
     result = await identity(request).membership.workspace(actor, workspace_id)
     response.headers["ETag"] = resource_etag(result.id, result.updated_at)
     return result
 
 
-@router.patch("/workspaces/{workspace_id}", response_model=Workspace)
-async def rename_workspace(
+@router.patch("/workspaces/{workspace}", response_model=Workspace)
+async def update_workspace(
     request: Request,
     response: Response,
     actor: Actor,
-    workspace_id: str,
-    body: CreateWorkspaceRequest,
+    workspace_id: WorkspaceId,
+    body: UpdateResourceProfileRequest,
     if_match: IfMatch,
 ) -> Workspace:
-    result = await identity(request).membership.update_workspace(actor, workspace_id, body.name, if_match)
+    result = await identity(request).membership.update_workspace(actor, workspace_id, body.name, if_match, key=body.key)
     response.headers["ETag"] = resource_etag(result.id, result.updated_at)
     return result
 
 
-@router.delete("/workspaces/{workspace_id}", status_code=204)
-async def delete_workspace(request: Request, actor: Actor, workspace_id: str, if_match: IfMatch) -> None:
+@router.delete("/workspaces/{workspace}", status_code=204)
+async def delete_workspace(request: Request, actor: Actor, workspace_id: WorkspaceId, if_match: IfMatch) -> None:
     await identity(request).membership.delete_workspace(actor, workspace_id, if_match)
 
 
-@router.get("/organizations/{organization_id}/users", response_model=Page[User])
-async def users(request: Request, actor: Actor, organization_id: str, page: Pagination) -> Page[User]:
+@router.get("/organizations/{organization}/users", response_model=Page[User])
+async def users(request: Request, actor: Actor, organization_id: OrganizationId, page: Pagination) -> Page[User]:
     return await identity(request).collections.users(actor, organization_id, page)
 
 
-@router.get("/organizations/{organization_id}/invitations", response_model=Page[Invitation])
-async def invitations(request: Request, actor: Actor, organization_id: str, page: Pagination) -> Page[Invitation]:
+@router.get("/organizations/{organization}/invitations", response_model=Page[Invitation])
+async def invitations(
+    request: Request, actor: Actor, organization_id: OrganizationId, page: Pagination
+) -> Page[Invitation]:
     return await identity(request).collections.invitations(actor, organization_id, page)
 
 
-@router.post("/organizations/{organization_id}/invitations", status_code=201, response_model=InvitationDelivery)
+@router.post("/organizations/{organization}/invitations", status_code=201, response_model=InvitationDelivery)
 async def invite(
-    request: Request, actor: Actor, organization_id: str, body: CreateInvitationRequest
+    request: Request, actor: Actor, organization_id: OrganizationId, body: CreateInvitationRequest
 ) -> InvitationDelivery:
     return await identity(request).invitations.create(actor, organization_id, body)
 
 
-@router.get("/workspaces/{workspace_id}/invitations", response_model=Page[Invitation])
+@router.get("/workspaces/{workspace}/invitations", response_model=Page[Invitation])
 async def workspace_invitations(
-    request: Request, actor: Actor, workspace_id: str, page: Pagination
+    request: Request, actor: Actor, workspace_id: WorkspaceId, page: Pagination
 ) -> Page[Invitation]:
     workspace = await identity(request).membership.workspace(actor, workspace_id)
     return await identity(request).collections.invitations(
@@ -106,9 +112,9 @@ async def workspace_invitations(
     )
 
 
-@router.post("/workspaces/{workspace_id}/invitations", status_code=201, response_model=InvitationDelivery)
+@router.post("/workspaces/{workspace}/invitations", status_code=201, response_model=InvitationDelivery)
 async def invite_to_workspace(
-    request: Request, actor: Actor, workspace_id: str, body: InviteWorkspaceRequest
+    request: Request, actor: Actor, workspace_id: WorkspaceId, body: InviteWorkspaceRequest
 ) -> InvitationDelivery:
     runtime = identity(request)
     workspace = await runtime.membership.workspace(actor, workspace_id)
@@ -134,14 +140,14 @@ async def revoke_invitation(request: Request, actor: Actor, invitation_id: str, 
     return await identity(request).invitations.revoke(actor, invitation_id, body.expected_version)
 
 
-@router.get("/workspaces/{workspace_id}/personal-api-keys", response_model=Page[ApiKey])
-async def personal_keys(request: Request, actor: Actor, workspace_id: str, page: Pagination) -> Page[ApiKey]:
+@router.get("/workspaces/{workspace}/personal-api-keys", response_model=Page[ApiKey])
+async def personal_keys(request: Request, actor: Actor, workspace_id: WorkspaceId, page: Pagination) -> Page[ApiKey]:
     return await identity(request).collections.keys(actor, workspace_id, page)
 
 
-@router.post("/workspaces/{workspace_id}/personal-api-keys", status_code=201, response_model=CreatedKey)
+@router.post("/workspaces/{workspace}/personal-api-keys", status_code=201, response_model=CreatedKey)
 async def create_personal_key(
-    request: Request, response: Response, actor: Actor, workspace_id: str, body: CreateKeyRequest
+    request: Request, response: Response, actor: Actor, workspace_id: WorkspaceId, body: CreateKeyRequest
 ) -> CreatedKey:
     response.headers["Cache-Control"] = "no-store"
     return await identity(request).keys.create(actor, workspace_id, body)
@@ -157,14 +163,14 @@ async def revoke_key(request: Request, actor: Actor, key_id: str) -> ApiKey:
     return await identity(request).keys.revoke(actor, key_id)
 
 
-@router.get("/workspaces/{workspace_id}/service-accounts", response_model=Page[ServiceAccount])
-async def accounts(request: Request, actor: Actor, workspace_id: str, page: Pagination) -> Page[ServiceAccount]:
+@router.get("/workspaces/{workspace}/service-accounts", response_model=Page[ServiceAccount])
+async def accounts(request: Request, actor: Actor, workspace_id: WorkspaceId, page: Pagination) -> Page[ServiceAccount]:
     return await identity(request).collections.accounts(actor, workspace_id, page)
 
 
-@router.post("/workspaces/{workspace_id}/service-accounts", status_code=201, response_model=ServiceAccount)
+@router.post("/workspaces/{workspace}/service-accounts", status_code=201, response_model=ServiceAccount)
 async def create_account(
-    request: Request, actor: Actor, workspace_id: str, body: CreateServiceAccountRequest
+    request: Request, actor: Actor, workspace_id: WorkspaceId, body: CreateServiceAccountRequest
 ) -> ServiceAccount:
     return await identity(request).accounts.create(actor, workspace_id, body)
 
@@ -203,24 +209,26 @@ async def create_account_key(
     return await runtime.keys.create(actor, account.workspace_id, body, service_account_id=account_id)
 
 
-@router.get("/organizations/{organization_id}/role-bindings", response_model=Page[RoleBinding])
+@router.get("/organizations/{organization}/role-bindings", response_model=Page[RoleBinding])
 async def organization_roles(
-    request: Request, actor: Actor, organization_id: str, page: Pagination
+    request: Request, actor: Actor, organization_id: OrganizationId, page: Pagination
 ) -> Page[RoleBinding]:
     return await identity(request).collections.bindings(actor, organization_id, page)
 
 
-@router.get("/workspaces/{workspace_id}/role-bindings", response_model=Page[RoleBinding])
-async def workspace_roles(request: Request, actor: Actor, workspace_id: str, page: Pagination) -> Page[RoleBinding]:
+@router.get("/workspaces/{workspace}/role-bindings", response_model=Page[RoleBinding])
+async def workspace_roles(
+    request: Request, actor: Actor, workspace_id: WorkspaceId, page: Pagination
+) -> Page[RoleBinding]:
     workspace = await identity(request).membership.workspace(actor, workspace_id)
     return await identity(request).collections.bindings(
         actor, workspace.organization_id, page, workspace_id=workspace_id
     )
 
 
-@router.post("/workspaces/{workspace_id}/role-bindings", status_code=201, response_model=RoleBinding)
+@router.post("/workspaces/{workspace}/role-bindings", status_code=201, response_model=RoleBinding)
 async def add_workspace_member(
-    request: Request, response: Response, actor: Actor, workspace_id: str, body: SetRoleRequest
+    request: Request, response: Response, actor: Actor, workspace_id: WorkspaceId, body: SetRoleRequest
 ) -> RoleBinding:
     runtime = identity(request)
     workspace = await runtime.membership.workspace(actor, workspace_id)

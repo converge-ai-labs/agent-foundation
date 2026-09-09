@@ -20,7 +20,11 @@ let attachments: {
 }[];
 vi.mock("../../auth/context", () => ({ useClient: () => client }));
 vi.mock("../../layout/workspace", () => ({
-  useWorkspace: () => ({ workspace: { id: "workspace" }, can: () => allowed }),
+  useWorkspace: () => ({
+    basePath: "/acme/design",
+    workspace: { id: "workspace" },
+    can: () => allowed,
+  }),
 }));
 function wrapper({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={cache}>{children}</QueryClientProvider>;

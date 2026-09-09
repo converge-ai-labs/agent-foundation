@@ -36,6 +36,7 @@ async def hook_api_client(
 
     app.state.runtime = process_runtime_factory(
         request_authenticator=authenticate,
+        sessions=hook_interaction_sessions,
         hook_subscriptions=hook_subscriptions,
     )
     transport = httpx2.ASGITransport(app=app)

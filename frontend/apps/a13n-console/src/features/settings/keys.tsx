@@ -50,15 +50,15 @@ export function ApiKeys({
           .then(data);
       if (memberKeys)
         return client.http
-          .GET("/api/v1/workspaces/{workspace_id}/api-keys", {
+          .GET("/api/v1/workspaces/{workspace}/api-keys", {
             signal,
-            params: { path: { workspace_id: workspace.id }, query },
+            params: { path: { workspace: workspace.id }, query },
           })
           .then(data);
       return client.http
-        .GET("/api/v1/workspaces/{workspace_id}/personal-api-keys", {
+        .GET("/api/v1/workspaces/{workspace}/personal-api-keys", {
           signal,
-          params: { path: { workspace_id: workspace.id }, query },
+          params: { path: { workspace: workspace.id }, query },
         })
         .then(data);
     },
@@ -186,8 +186,8 @@ function CreateKey({ accountId }: { accountId?: string }) {
             })
             .then(data)
         : client.http
-            .POST("/api/v1/workspaces/{workspace_id}/personal-api-keys", {
-              params: { path: { workspace_id: workspace.id } },
+            .POST("/api/v1/workspaces/{workspace}/personal-api-keys", {
+              params: { path: { workspace: workspace.id } },
               body,
             })
             .then(data);

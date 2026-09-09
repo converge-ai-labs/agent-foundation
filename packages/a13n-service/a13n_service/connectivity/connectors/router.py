@@ -11,6 +11,7 @@ from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.etags import resource_etag
 from a13n_service.http_types import IdempotencyKey
 from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.iam.http.resource_dependencies import OrganizationId, WorkspaceId
 from a13n_service.iam.resource_routes import require_organization_boundary
 from a13n_service.request_runtime import get_connectivity_control_runtime
 
@@ -98,7 +99,7 @@ async def discover_connectors(request: Request, actor: Actor, connector_provider
 
 
 @router.post(
-    "/api/v1/workspaces/{workspace_id}/connector-providers",
+    "/api/v1/workspaces/{workspace}/connector-providers",
     response_model=ConnectorProvider,
     status_code=status.HTTP_201_CREATED,
 )
@@ -106,7 +107,7 @@ async def create_connector_provider(
     request: Request,
     response: Response,
     actor: Actor,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     body: CreateConnectorProviderRequest,
     idempotency_key: IdempotencyKey,
 ) -> ConnectorProvider:
@@ -120,11 +121,11 @@ async def create_connector_provider(
     return resource
 
 
-@router.get("/api/v1/workspaces/{workspace_id}/connector-providers", response_model=ConnectorProviderCollection)
+@router.get("/api/v1/workspaces/{workspace}/connector-providers", response_model=ConnectorProviderCollection)
 async def list_connector_providers(
     request: Request,
     actor: Actor,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
 ) -> ConnectorProviderCollection:
@@ -220,14 +221,14 @@ async def change_connector_provider_lifecycle(
 
 
 @router.post(
-    "/api/v1/workspaces/{workspace_id}/connector-connections",
+    "/api/v1/workspaces/{workspace}/connector-connections",
     response_model=ConnectorConnection,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_connector_connection(
     request: Request,
     actor: Actor,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     body: CreateConnectorConnectionRequest,
     idempotency_key: IdempotencyKey,
 ) -> ConnectorConnection:
@@ -263,13 +264,13 @@ async def start_connector_connection_setup(
 
 
 @router.get(
-    "/api/v1/workspaces/{workspace_id}/connector-connections",
+    "/api/v1/workspaces/{workspace}/connector-connections",
     response_model=ConnectorConnectionCollection,
 )
 async def list_connector_connections(
     request: Request,
     actor: Actor,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
 ) -> ConnectorConnectionCollection:
@@ -411,7 +412,7 @@ async def complete_connector_setup(
 
 
 @router.post(
-    "/api/v1/organizations/{organization_id}/connector-providers",
+    "/api/v1/organizations/{organization}/connector-providers",
     response_model=ConnectorProvider,
     status_code=status.HTTP_201_CREATED,
 )
@@ -419,7 +420,7 @@ async def organization_create_connector_provider(
     request: Request,
     response: Response,
     actor: Actor,
-    organization_id: str,
+    organization_id: OrganizationId,
     body: CreateConnectorProviderRequest,
     idempotency_key: IdempotencyKey,
 ) -> ConnectorProvider:
@@ -434,11 +435,11 @@ async def organization_create_connector_provider(
     return resource
 
 
-@router.get("/api/v1/organizations/{organization_id}/connector-providers", response_model=ConnectorProviderCollection)
+@router.get("/api/v1/organizations/{organization}/connector-providers", response_model=ConnectorProviderCollection)
 async def organization_list_connector_providers(
     request: Request,
     actor: Actor,
-    organization_id: str,
+    organization_id: OrganizationId,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
 ) -> ConnectorProviderCollection:
