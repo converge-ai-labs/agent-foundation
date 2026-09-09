@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Button, Input, Select, Badge } from "a13n-ui";
+import { Button, Input, Select } from "a13n-ui";
 import { Bot, Plus, ArrowUpRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { data } from "../../shared/api";
+import { data, workspaceHeaders } from "../../shared/api";
 import {
   Empty,
   ErrorNotice,
@@ -15,7 +15,12 @@ import {
   StateBadge,
   Timestamp,
 } from "../../shared/feedback";
-import { Pagination, useCursor } from "../../shared/collection";
+import {
+  Pagination,
+  Table,
+  ResourceIdentity,
+  useCursor,
+} from "../../shared/collection";
 import styles from "./agents.module.css";
 import shared from "../../shared/shared.module.css";
 
@@ -103,13 +108,29 @@ export function Agents() {
           action={!search && create}
         />
       ) : (
-        <div className={styles.grid}>
-          {visible.map((agent) => (
-            <Link to={agent.id} key={agent.id} className={styles.card}>
-              <div className={styles.cardTop}>
-                <span className={styles.agentIcon}>
-                  <Bot size={21} strokeWidth={1.5} />
-                </span>
+        <Table
+          items={visible}
+          columns={[
+            {
+              label: t("Agent"),
+              render: (agent) => (
+                <ResourceIdentity
+                  to={agent.id}
+                  name={agent.name}
+                  description={agent.description || t("No description")}
+                  icon={<Bot size={18} strokeWidth={1.5} />}
+                />
+              ),
+            },
+            {
+              label: t("Model"),
+              render: (agent) => (
+                <AgentModel revisionId={agent.current_revision_id} />
+              ),
+            },
+            {
+              label: t("Status"),
+              render: (agent) => (
                 <StateBadge
                   state={
                     agent.archived_at
@@ -119,23 +140,58 @@ export function Agents() {
                         : "disabled"
                   }
                 />
-              </div>
-              <h2>
-                {agent.name}
-                <ArrowUpRight size={14} />
-              </h2>
-              <p>{agent.description || t("No description")}</p>
-              <footer>
-                <Badge>v{agent.version}</Badge>
-                <span>
-                  <Timestamp value={agent.updated_at} />
-                </span>
-              </footer>
-            </Link>
-          ))}
-        </div>
+              ),
+            },
+            {
+              label: t("Version"),
+              render: (agent) => (
+                <span className={styles.version}>v{agent.version}</span>
+              ),
+            },
+            {
+              label: t("Updated"),
+              render: (agent) => <Timestamp value={agent.updated_at} />,
+            },
+            {
+              label: t("Open"),
+              render: (agent) => (
+                <Link
+                  to={agent.id}
+                  aria-label={t("Open {{name}}", { name: agent.name })}
+                >
+                  <ArrowUpRight size={15} />
+                </Link>
+              ),
+            },
+          ]}
+        />
       )}
       {query.data && <Pagination page={page} next={query.data.next_cursor} />}
     </Page>
+  );
+}
+
+function AgentModel({ revisionId }: { revisionId: string }) {
+  const client = useClient(),
+    { workspace } = useWorkspace(),
+    { t } = useTranslation();
+  const revision = useQuery({
+    queryKey: ["agent-revision", workspace.id, revisionId],
+    staleTime: Infinity,
+    queryFn: ({ signal }) =>
+      client.http
+        .GET("/api/v1/agent-revisions/{agent_revision_id}", {
+          params: { path: { agent_revision_id: revisionId } },
+          headers: workspaceHeaders(workspace.id),
+          signal,
+        })
+        .then(data),
+  });
+  return (
+    <span className={styles.version}>
+      {revision.isPending
+        ? "…"
+        : (revision.data?.config.model.model_key ?? t("Unavailable"))}
+    </span>
   );
 }

@@ -1,7 +1,7 @@
 .page {
-  max-width: 1320px;
+  max-width: 1280px;
   margin: 0 auto;
-  padding: 34px 40px 64px;
+  padding: 36px 40px 64px;
 }
 .pageHeader {
   display: flex;
@@ -11,7 +11,7 @@
   margin-bottom: 28px;
 }
 .pageHeader h1 {
-  font-size: 24px;
+  font-size: 23px;
   font-weight: 600;
   letter-spacing: -0.6px;
   line-height: 1.35;
@@ -114,8 +114,8 @@
 }
 .card {
   background: var(--a13n-elevated);
-  border: 1px solid var(--a13n-border);
-  border-radius: 10px;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 8px;
   padding: 24px;
 }
 .toolbar {
@@ -159,8 +159,8 @@
   margin-top: 3px;
 }
 .tableWrap {
-  border: 1px solid var(--a13n-border);
-  border-radius: 10px;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 8px;
   background: var(--a13n-elevated);
   overflow-x: auto;
 }
@@ -214,4 +214,46 @@
   .filters {
     grid-template-columns: 1fr;
   }
+}
+
+.resourceIdentity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 180px;
+}
+.resourceIcon {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 8px;
+  border: 1px solid var(--a13n-border-soft);
+  background: var(--a13n-surface);
+  color: var(--a13n-secondary);
+}
+.resourceCopy {
+  min-width: 0;
+}
+.resourceCopy strong {
+  font-weight: 550;
+  font-size: 13px;
+}
+.resourceCopy small {
+  max-width: 420px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.table td > .actions {
+  justify-content: flex-end;
+}
+.table td:first-child > .actions {
+  justify-content: flex-start;
+}
+.toolbar > p {
+  font-size: 12px;
+  line-height: 1.7;
+  margin: 0;
 }

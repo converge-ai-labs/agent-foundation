@@ -1,20 +1,25 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Dialog, Select } from "a13n-ui";
-import { GitFork, RefreshCw, Square } from "lucide-react";
+import { GitFork, RefreshCw, Square, ArrowDown } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { useIdempotency } from "../../shared/idempotency";
-import { commandHeaders, data, type Schema } from "../../shared/api";
+import {
+  commandHeaders,
+  data,
+  workspaceHeaders,
+  type Schema,
+} from "../../shared/api";
 import {
   ErrorNotice,
   Loading,
   StateBadge,
   Timestamp,
 } from "../../shared/feedback";
-import { Confirm, JsonView } from "../../shared/form";
+import { JsonView } from "../../shared/form";
 import { conversationApi, isActiveRun, runPath } from "./api";
 import { useLiveRun } from "./live";
 import { InputContent, PresentedItems } from "./items";
@@ -64,6 +69,20 @@ function RunContent({
     queryFn: ({ signal }) => api.run(runId, signal),
   });
   const run = runQuery.data;
+  const agent = useQuery({
+    queryKey: ["run-agent", workspace.id, run?.agent_id],
+    enabled: !!run,
+    queryFn: ({ signal }) =>
+      client.http
+        .GET("/api/v1/agents/{agent_id}", {
+          params: { path: { agent_id: run!.agent_id } },
+          headers: workspaceHeaders(workspace.id),
+          signal,
+        })
+        .then(data),
+  });
+  const transcript = useRef<HTMLDivElement>(null);
+  const [following, setFollowing] = useState(true);
   const threadQuery = useQuery({
     queryKey: ["thread", workspace.id, run?.thread_id],
     enabled: !!run,
@@ -74,6 +93,28 @@ function RunContent({
     queryFn: ({ signal }) => api.pending(runId, signal),
   });
   const thread = threadQuery.data;
+  useEffect(() => {
+    const content = transcript.current;
+    const viewport = content?.closest("[data-session-stage]");
+    if (!content || !(viewport instanceof HTMLElement)) return;
+    let follow = true;
+    const onScroll = () => {
+      follow =
+        viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <
+        100;
+      setFollowing(follow);
+    };
+    const observer = new ResizeObserver(() => {
+      if (follow) viewport.scrollTop = viewport.scrollHeight;
+    });
+    observer.observe(content);
+    viewport.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      observer.disconnect();
+      viewport.removeEventListener("scroll", onScroll);
+    };
+  }, [!!run, !!thread, threadId]);
+
   const currentRun = useQuery({
     queryKey: ["run", workspace.id, thread?.current_run_id],
     enabled: !!thread?.current_run_id,
@@ -99,6 +140,31 @@ function RunContent({
         })
         .then(data),
     onSuccess: accepted,
+  });
+  const interruptKey = useIdempotency();
+  const interrupt = useMutation({
+    mutationFn: () => {
+      const body = {
+        expected_thread_version: thread!.version,
+        expected_run_version: run!.version,
+      };
+      return client.http
+        .POST("/api/v1/runs/{run_id}/interrupt", {
+          params: {
+            path: { run_id: runId },
+            header: commandHeaders(workspace.id, interruptKey.forBody(body)),
+          },
+          body,
+        })
+        .then(data);
+    },
+    onSuccess: () => {
+      interruptKey.reset();
+      void cache.invalidateQueries({ queryKey: ["run", workspace.id, runId] });
+      void cache.invalidateQueries({
+        queryKey: ["thread", workspace.id, threadId],
+      });
+    },
   });
   const retryKey = useIdempotency();
   function accepted(receipt: Schema["RunAcceptanceReceipt"]) {
@@ -138,41 +204,13 @@ function RunContent({
         </div>
         <div className={styles.inline}>
           <RunInspector run={run} />
-          {run.status === "completed" &&
+          {!current &&
+            run.status === "completed" &&
             currentRun.data &&
             !isActiveRun(currentRun.data.status) &&
             can("run.continue") && (
               <ContinueBranch run={run} thread={thread} accepted={accepted} />
             )}
-          {current && active && can("run.interrupt") && (
-            <Confirm
-              title={t("Interrupt run")}
-              description={t(
-                "Stop the current execution. Its retained output remains in this conversation.",
-              )}
-              trigger={
-                <>
-                  <Square size={13} />
-                  {t("Interrupt")}
-                </>
-              }
-              danger
-              action={() =>
-                client.http
-                  .POST("/api/v1/runs/{run_id}/interrupt", {
-                    params: {
-                      path: { run_id: runId },
-                      header: commandHeaders(workspace.id, crypto.randomUUID()),
-                    },
-                    body: {
-                      expected_thread_version: thread.version,
-                      expected_run_version: run.version,
-                    },
-                  })
-                  .then(data)
-              }
-            />
-          )}
           {current &&
             ["failed", "cancelled"].includes(run.status) &&
             can("run.retry") && (
@@ -218,7 +256,11 @@ function RunContent({
           )}
         </div>
       </header>
-      <ErrorNotice error={runQuery.error ?? threadQuery.error ?? retry.error} />
+      <ErrorNotice
+        error={
+          runQuery.error ?? threadQuery.error ?? retry.error ?? interrupt.error
+        }
+      />
       {live.gap && (
         <p role="status" className={styles.notice}>
           {t(
@@ -232,7 +274,7 @@ function RunContent({
           retry={live.reconnect}
         />
       )}
-      <div className={styles.transcript}>
+      <div className={styles.transcript} ref={transcript}>
         <HistoryTranscript runId={runId} />
         <article className={styles.inputMessage}>
           <strong>
@@ -240,7 +282,11 @@ function RunContent({
           </strong>
           <InputContent input={run.input} fallback={run.input_text} />
         </article>
-        <PresentedItems items={live.items} runState={run.status} />
+        <PresentedItems
+          items={live.items}
+          runState={run.status}
+          agentName={agent.data?.name}
+        />
         {!live.items.some(
           (item) =>
             item.kind === "text_message" &&
@@ -250,7 +296,7 @@ function RunContent({
           run.output_text && (
             <article className={styles.message}>
               <div className={styles.messageBody}>
-                <strong>{t("Assistant")}</strong>
+                <strong>{agent.data?.name ?? t("Agent")}</strong>
                 <MessageMarkdown text={run.output_text} />
               </div>
             </article>
@@ -266,11 +312,19 @@ function RunContent({
         )}
         {run.failure != null && (
           <section className={styles.failure}>
-            <h3>{t("Run failure")}</h3>
-            <JsonView value={run.failure} />
+            <h3>{t("The agent could not finish this run")}</h3>
+            <p>
+              {t(
+                "Your messages are saved. Review the details or retry this run.",
+              )}
+            </p>
+            <details>
+              <summary>{t("Error details")}</summary>
+              <JsonView value={run.failure} />
+            </details>
           </section>
         )}
-        {run.output != null && (
+        {run.output != null && run.output !== run.output_text && (
           <details>
             <summary>{t("Structured output")}</summary>
             <JsonView value={run.output} />
@@ -305,84 +359,124 @@ function RunContent({
           {notice}
         </p>
       )}
-      {current && can("run.continue") && (
-        <>
-          <Select
-            label={t("Send mode")}
-            placeholder={t("Send mode")}
-            value={steer ? mode : "message"}
-            onValueChange={setMode}
-            options={[
-              {
-                value: "message",
-                label: t(
-                  active || waiting ? "Queue next message" : "Continue thread",
-                ),
-              },
-              ...(steer
-                ? [{ value: "steer", label: t("Steer current run") }]
-                : []),
-            ]}
-          />
-          {mode === "steer" && steer ? (
-            <Composer
-              label={t("Send steering")}
-              submit={async (input, key) => {
-                const receipt = data(
-                  await client.http.POST("/api/v1/runs/{run_id}/steer", {
-                    params: {
-                      path: { run_id: runId },
-                      header: commandHeaders(workspace.id, key),
-                    },
-                    body: input,
-                  }),
-                );
-                setSteerIds((previous) => [...previous, receipt.steer_id]);
-              }}
-            />
-          ) : (
-            <OptionsComposer
-              commandBasis={thread.version}
-              label={t(active || waiting ? "Add to queue" : "Send")}
-              submit={async (intent, key) => {
-                const receipt = data(
-                  await client.http.POST("/api/v1/threads/{thread_id}/runs", {
-                    params: {
-                      path: { thread_id: thread.id },
-                      header: commandHeaders(workspace.id, key),
-                    },
-                    body: {
-                      ...intent,
-                      expected_thread_version: thread.version,
-                    },
-                  }),
-                );
-                if (receipt.run) accepted(receipt.run);
-                else {
-                  setNotice(t("Message added to the thread queue."));
-                  void cache.invalidateQueries();
-                }
-              }}
+      {!following && (
+        <Button
+          className={styles.jumpToLatest}
+          size="sm"
+          icon={<ArrowDown size={14} />}
+          onClick={() => {
+            const viewport = transcript.current?.closest(
+              "[data-session-stage]",
+            );
+            viewport?.scrollTo({
+              top: viewport.scrollHeight,
+              behavior: "smooth",
+            });
+          }}
+        >
+          {t("Jump to latest")}
+        </Button>
+      )}
+      <div className={styles.composerDock}>
+        <div className={styles.dockControls}>
+          {steer && can("run.continue") && (
+            <Select
+              size="sm"
+              variant="ghost"
+              label={t("Send mode")}
+              placeholder={t("Send mode")}
+              value={steer ? mode : "message"}
+              onValueChange={setMode}
+              options={[
+                {
+                  value: "message",
+                  label: t(
+                    active || waiting
+                      ? "Queue next message"
+                      : "Continue thread",
+                  ),
+                },
+                ...(steer
+                  ? [{ value: "steer", label: t("Steer current run") }]
+                  : []),
+              ]}
             />
           )}
-        </>
-      )}
-      {!current && (
-        <p className={styles.notice}>
-          {t("You are viewing a historical run.")}{" "}
-          {thread.current_run_id && (
-            <Link
-              to={runPath(workspace.id, {
-                session_id: thread.session_id,
-                thread_id: thread.id,
-                run_id: thread.current_run_id,
-              })}
+
+          {current && active && can("run.interrupt") && (
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={<Square size={13} />}
+              loading={interrupt.isPending}
+              onClick={() => interrupt.mutate()}
             >
-              {t("Open current run")}
-            </Link>
+              {t("Stop")}
+            </Button>
           )}
-        </p>
-      )}
+        </div>
+        {current && can("run.continue") && (
+          <>
+            {mode === "steer" && steer ? (
+              <Composer
+                label={t("Send steering")}
+                submit={async (input, key) => {
+                  const receipt = data(
+                    await client.http.POST("/api/v1/runs/{run_id}/steer", {
+                      params: {
+                        path: { run_id: runId },
+                        header: commandHeaders(workspace.id, key),
+                      },
+                      body: input,
+                    }),
+                  );
+                  setSteerIds((previous) => [...previous, receipt.steer_id]);
+                }}
+              />
+            ) : (
+              <OptionsComposer
+                commandBasis={thread.version}
+                label={t(active || waiting ? "Add to queue" : "Send")}
+                submit={async (intent, key) => {
+                  const receipt = data(
+                    await client.http.POST("/api/v1/threads/{thread_id}/runs", {
+                      params: {
+                        path: { thread_id: thread.id },
+                        header: commandHeaders(workspace.id, key),
+                      },
+                      body: {
+                        ...intent,
+                        expected_thread_version: thread.version,
+                      },
+                    }),
+                  );
+                  if (receipt.run) accepted(receipt.run);
+                  else {
+                    setNotice(t("Message added to the thread queue."));
+                    void cache.invalidateQueries();
+                  }
+                }}
+              />
+            )}
+          </>
+        )}
+        {!current && (
+          <p className={styles.notice}>
+            {t("You are viewing a historical run.")}{" "}
+            {thread.current_run_id && (
+              <Link
+                to={runPath(workspace.id, {
+                  session_id: thread.session_id,
+                  thread_id: thread.id,
+                  run_id: thread.current_run_id,
+                })}
+              >
+                {t("Open current run")}
+              </Link>
+            )}
+          </p>
+        )}
+      </div>
       <ThreadQueue
         thread={thread}
         canConsume={

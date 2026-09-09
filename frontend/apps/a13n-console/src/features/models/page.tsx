@@ -1,3 +1,4 @@
+import { Boxes } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Badge, Input, Tabs } from "a13n-ui";
@@ -11,7 +12,12 @@ import {
   Page,
   StateBadge,
 } from "../../shared/feedback";
-import { Pagination, Table, useCursor } from "../../shared/collection";
+import {
+  Pagination,
+  Table,
+  ResourceIdentity,
+  useCursor,
+} from "../../shared/collection";
 import { modelApi, type ModelScope } from "./api";
 import { Providers } from "./providers";
 import { ModelEditor, ModelTest } from "./model-editor";
@@ -92,10 +98,11 @@ function ModelList({ scope }: { scope: ModelScope }) {
               {
                 label: t("Model"),
                 render: (item) => (
-                  <>
-                    {item.name}
-                    <small>{item.key}</small>
-                  </>
+                  <ResourceIdentity
+                    name={item.name}
+                    description={item.key}
+                    icon={<Boxes size={17} />}
+                  />
                 ),
               },
               {

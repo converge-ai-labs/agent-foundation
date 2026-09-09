@@ -1,3 +1,4 @@
+import { Sparkles } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -13,7 +14,12 @@ import {
   Empty,
   Timestamp,
 } from "../../shared/feedback";
-import { Table, Pagination, useCursor } from "../../shared/collection";
+import {
+  Table,
+  Pagination,
+  ResourceIdentity,
+  useCursor,
+} from "../../shared/collection";
 import { Confirm, FormActions, JsonView } from "../../shared/form";
 import { downloadBlob } from "../../shared/download";
 import { ImportSkill } from "./import";
@@ -59,10 +65,12 @@ export function SkillsPage() {
               {
                 label: t("Name"),
                 render: (item) => (
-                  <Link to={item.id}>
-                    <strong>{item.name}</strong>
-                    <small>{item.key}</small>
-                  </Link>
+                  <ResourceIdentity
+                    to={item.id}
+                    name={item.name}
+                    description={item.key}
+                    icon={<Sparkles size={17} />}
+                  />
                 ),
               },
               { label: t("Version"), render: (item) => `v${item.version}` },

@@ -1,3 +1,4 @@
+import { Plug } from "lucide-react";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Dialog, Input, Tabs } from "a13n-ui";
@@ -7,7 +8,12 @@ import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice, Empty, Loading, StateBadge } from "../../shared/feedback";
 import { Confirm, FormActions, JsonView } from "../../shared/form";
-import { Table, Pagination, useCursor } from "../../shared/collection";
+import {
+  Table,
+  Pagination,
+  ResourceIdentity,
+  useCursor,
+} from "../../shared/collection";
 import { useIdempotency } from "../../shared/idempotency";
 import { ConnectionSetup } from "./setup";
 import styles from "../../shared/shared.module.css";
@@ -53,10 +59,11 @@ export function ConnectorConnections() {
               {
                 label: t("Connection"),
                 render: (item) => (
-                  <>
-                    <strong>{item.name}</strong>
-                    <small>{item.connector_key}</small>
-                  </>
+                  <ResourceIdentity
+                    name={item.name}
+                    description={item.connector_key}
+                    icon={<Plug size={17} />}
+                  />
                 ),
               },
               {

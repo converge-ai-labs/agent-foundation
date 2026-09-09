@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Input, SelectField, Tabs } from "a13n-ui";
-import { Play, Copy } from "lucide-react";
+import { Button, Input, SelectField, Dialog } from "a13n-ui";
+import { Play, Copy, History, Settings } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -158,46 +158,50 @@ export function AgentDetail() {
         )
       }
     >
-      <Tabs
-        label={t("Agent details")}
-        defaultValue="configuration"
-        items={[
-          {
-            value: "configuration",
-            label: t("Configuration"),
-            content: (
-              <AgentForm
-                key={`${agent.id}:${generation}`}
-                initial={query.data.revision.config}
-                version={agent.version}
-                pending={save.isPending}
-                error={save.error}
-                readonly={!can("agent.revision.create")}
-                submit={(config, _name, _description, version) => {
-                  if (version !== undefined)
-                    save.mutate({ config, expected_version: version });
-                }}
-                reload={() => void reload()}
-              />
-            ),
-          },
-          {
-            value: "versions",
-            label: t("Versions"),
-            content: <AgentVersions agent={agent} />,
-          },
-          {
-            value: "settings",
-            label: t("Settings"),
-            content: (
+      <AgentForm
+        key={`${agent.id}:${generation}`}
+        context={
+          <div className={styles.stack}>
+            <Dialog
+              title={t("Version history")}
+              description={t("Review and restore saved configurations.")}
+              closeLabel={t("Close")}
+              trigger={
+                <Button variant="ghost" icon={<History size={14} />}>
+                  {t("Version history")}
+                </Button>
+              }
+            >
+              <AgentVersions agent={agent} />
+            </Dialog>
+            <Dialog
+              title={t("Agent settings")}
+              description={t("Manage this agent’s identity and availability.")}
+              closeLabel={t("Close")}
+              trigger={
+                <Button variant="ghost" icon={<Settings size={14} />}>
+                  {t("Agent settings")}
+                </Button>
+              }
+            >
               <AgentSettings
                 key={`${agent.id}:${generation}`}
                 resource={query.data}
                 reload={() => void reload()}
               />
-            ),
-          },
-        ]}
+            </Dialog>
+          </div>
+        }
+        initial={query.data.revision.config}
+        version={agent.version}
+        pending={save.isPending}
+        error={save.error}
+        readonly={!can("agent.revision.create")}
+        submit={(config, _name, _description, version) => {
+          if (version !== undefined)
+            save.mutate({ config, expected_version: version });
+        }}
+        reload={() => void reload()}
       />
     </Page>
   );

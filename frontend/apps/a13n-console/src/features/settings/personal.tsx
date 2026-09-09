@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Input, SettingsSection, Tabs } from "a13n-ui";
+import { Button, Input, SettingsSection } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import { useAuth, useClient } from "../../auth/context";
@@ -8,45 +8,47 @@ import { data } from "../../shared/api";
 import {
   ErrorNotice,
   Loading,
-  Page,
   StateBadge,
   Timestamp,
 } from "../../shared/feedback";
 import { Confirm, FormActions } from "../../shared/form";
+import { SettingsLayout } from "./layout";
+import { Preferences } from "./preferences";
 import { Profile } from "./profile";
 import { Audit } from "./audit";
 import styles from "../../shared/shared.module.css";
 
 export function PersonalSettings() {
   const { t } = useTranslation();
+  const auth = useAuth();
   return (
-    <Page
-      title={t("Personal settings")}
-      description={t("Your profile, account security, and active sessions.")}
-    >
-      <Tabs
-        label={t("Personal settings")}
-        defaultValue="profile"
-        items={[
-          {
-            value: "profile",
-            label: t("Profile"),
-            content: <Profile target={{ kind: "personal" }} />,
-          },
-          { value: "security", label: t("Security"), content: <Security /> },
-          {
-            value: "sessions",
-            label: t("Sessions"),
-            content: <BrowserSessions />,
-          },
-          {
-            value: "activity",
-            label: t("Activity"),
-            content: <Audit scope={{ kind: "personal" }} />,
-          },
-        ]}
-      />
-    </Page>
+    <SettingsLayout
+      scope="personal"
+      name={auth.data!.user.value.name}
+      items={[
+        {
+          value: "profile",
+          label: t("Profile"),
+          content: <Profile target={{ kind: "personal" }} />,
+        },
+        {
+          value: "preferences",
+          label: t("Preferences"),
+          content: <Preferences />,
+        },
+        { value: "security", label: t("Security"), content: <Security /> },
+        {
+          value: "sessions",
+          label: t("Sessions"),
+          content: <BrowserSessions />,
+        },
+        {
+          value: "activity",
+          label: t("Activity"),
+          content: <Audit scope={{ kind: "personal" }} />,
+        },
+      ]}
+    />
   );
 }
 function Security() {
@@ -85,6 +87,7 @@ function Security() {
   return (
     <div className={styles.stack}>
       <SettingsSection
+        variant="plain"
         title={t("Email address")}
         description={t(
           "Verify a new address before it becomes your sign-in email.",
@@ -133,6 +136,7 @@ function Security() {
         </form>
       </SettingsSection>
       <SettingsSection
+        variant="plain"
         title={t("Change password")}
         description={t(
           "Changing your password signs out all browser sessions. API keys remain active.",

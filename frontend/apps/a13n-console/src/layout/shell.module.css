@@ -4,6 +4,9 @@
   min-height: 100dvh;
   background: var(--a13n-canvas);
 }
+.shell[data-contextual="true"] {
+  grid-template-columns: minmax(0, 1fr);
+}
 .sidebar {
   position: sticky;
   top: 0;

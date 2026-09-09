@@ -1,6 +1,7 @@
+import { SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Checkbox, Input, Select } from "a13n-ui";
+import { Checkbox, Input, Select, Button, Dialog } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -160,8 +161,10 @@ export function RunOptions({
   const { t } = useTranslation(),
     client = useClient(),
     { workspace } = useWorkspace();
+  const [open, setOpen] = useState(false);
   const choices = useQuery({
     queryKey: ["run-options", workspace.id],
+    enabled: open,
     queryFn: async ({ signal }) => {
       const path = { workspace_id: workspace.id };
       const [agents, models, templates, environments] = await Promise.all([
@@ -202,8 +205,23 @@ export function RunOptions({
     },
   });
   return (
-    <details>
-      <summary>{t("Run options")}</summary>
+    <Dialog
+      open={open}
+      onOpenChange={setOpen}
+      description={t("Customize the next run.")}
+      title={t("Run options")}
+      closeLabel={t("Close")}
+      trigger={
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          icon={<SlidersHorizontal size={14} />}
+        >
+          {t("Options")}
+        </Button>
+      }
+    >
       <div className={styles.composerOptions}>
         <p className={styles.notice}>
           {t(
@@ -304,6 +322,6 @@ export function RunOptions({
           </div>
         </details>
       </div>
-    </details>
+    </Dialog>
   );
 }

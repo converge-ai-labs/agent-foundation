@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
-import { Button, Select } from "a13n-ui";
+import { Button, Select, Checkbox } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -26,7 +26,7 @@ export function PendingFeedback({
     navigate = useNavigate(),
     cache = useQueryClient();
   const [answers, setAnswers] = useState<
-      Record<string, { action: string; value: string }>
+      Record<string, { action: string; value: string; structured?: boolean }>
     >({}),
     [key, setKey] = useState(crypto.randomUUID());
   const mutation = useMutation({
@@ -45,7 +45,10 @@ export function PendingFeedback({
         }
         let value: Schema["JsonValue"];
         try {
-          value = JSON.parse(answer.value);
+          value =
+            answer.action === "respond" && !answer.structured
+              ? answer.value
+              : JSON.parse(answer.value);
         } catch {
           throw new Error(t("Tool results and responses must be valid JSON."));
         }
@@ -81,7 +84,10 @@ export function PendingFeedback({
       navigate(runPath(workspace.id, receipt));
     },
   });
-  function change(id: string, answer: { action: string; value: string }) {
+  function change(
+    id: string,
+    answer: { action: string; value: string; structured?: boolean },
+  ) {
     setAnswers((previous) => ({ ...previous, [id]: answer }));
     setKey(crypto.randomUUID());
   }
@@ -110,57 +116,102 @@ export function PendingFeedback({
                 <strong>{action.tool_name ?? action.call_id}</strong>
                 <small>{t(action.kind)}</small>
                 {action.presentation != null && (
-                  <JsonView value={action.presentation} />
+                  <details>
+                    <summary>{t("Request details")}</summary>
+                    <JsonView value={action.presentation} />
+                  </details>
                 )}
-                <Select
-                  label={t("Response")}
-                  placeholder={t("Choose a response")}
-                  value={answer.action}
-                  onValueChange={(value) =>
-                    change(action.call_id, { ...answer, action: value })
-                  }
-                  options={
-                    action.kind === "approval"
-                      ? [
-                          { value: "approve", label: t("Approve") },
-                          { value: "reject", label: t("Reject") },
-                        ]
-                      : [
-                          {
-                            value:
-                              action.kind === "client_tool"
-                                ? "complete"
-                                : "respond",
-                            label: t(
-                              action.kind === "client_tool"
-                                ? "Return tool result"
-                                : "Respond",
-                            ),
-                          },
-                          {
-                            value: "omit",
-                            label: t("Continue without a response"),
-                          },
-                        ]
-                  }
-                />
-                {["complete", "respond"].includes(answer.action) && (
-                  <TextArea
-                    label={t("Response (JSON)")}
-                    code
-                    value={answer.value}
-                    onChange={(value) =>
-                      change(action.call_id, { ...answer, value })
+                {action.kind === "approval" ? (
+                  <div className={styles.approvalChoices}>
+                    {["approve", "reject"].map((choice) => (
+                      <Button
+                        key={choice}
+                        type="button"
+                        variant={
+                          answer.action === choice ? "primary" : "secondary"
+                        }
+                        aria-pressed={answer.action === choice}
+                        onClick={() =>
+                          change(action.call_id, { ...answer, action: choice })
+                        }
+                      >
+                        {t(choice === "approve" ? "Approve" : "Reject")}
+                      </Button>
+                    ))}
+                  </div>
+                ) : (
+                  <Select
+                    label={t("Response")}
+                    placeholder={t("Choose a response")}
+                    value={answer.action}
+                    onValueChange={(value) =>
+                      change(action.call_id, { ...answer, action: value })
                     }
-                    hint={t(
-                      'Use a JSON string for plain text, for example "Hello".',
-                    )}
+                    options={
+                      action.kind === "approval"
+                        ? [
+                            { value: "approve", label: t("Approve") },
+                            { value: "reject", label: t("Reject") },
+                          ]
+                        : [
+                            {
+                              value:
+                                action.kind === "client_tool"
+                                  ? "complete"
+                                  : "respond",
+                              label: t(
+                                action.kind === "client_tool"
+                                  ? "Return tool result"
+                                  : "Respond",
+                              ),
+                            },
+                            {
+                              value: "omit",
+                              label: t("Continue without a response"),
+                            },
+                          ]
+                    }
                   />
+                )}
+                {["complete", "respond"].includes(answer.action) && (
+                  <>
+                    {answer.action === "respond" && (
+                      <Checkbox
+                        label={t("Structured response")}
+                        checked={!!answer.structured}
+                        onCheckedChange={(checked) =>
+                          change(action.call_id, {
+                            ...answer,
+                            structured: checked === true,
+                          })
+                        }
+                      />
+                    )}
+                    <TextArea
+                      label={t(
+                        answer.action === "complete" || answer.structured
+                          ? "Response (JSON)"
+                          : "Your answer",
+                      )}
+                      code={answer.action === "complete" || answer.structured}
+                      value={answer.value}
+                      onChange={(value) =>
+                        change(action.call_id, { ...answer, value })
+                      }
+                    />
+                  </>
                 )}
               </div>
             );
           })}
-          <Button type="submit" variant="primary" loading={mutation.isPending}>
+          <Button
+            type="submit"
+            variant="primary"
+            loading={mutation.isPending}
+            disabled={
+              !actions.every((action) => !!answers[action.call_id]?.action)
+            }
+          >
             {t("Submit responses")}
           </Button>
         </fieldset>

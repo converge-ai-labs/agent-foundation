@@ -1,14 +1,13 @@
 import { useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Input, SettingsRow, SettingsSection } from "a13n-ui";
-import { Upload, Trash2 } from "lucide-react";
+import { Upload, Trash2, Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { representation, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
-import { FormActions } from "../../shared/form";
 import { Avatar } from "../../layout/shell";
-import styles from "../../shared/shared.module.css";
+import styles from "./settings.module.css";
 
 export type ProfileTarget =
   { kind: "personal" } | { kind: "workspace" | "organization"; id: string };
@@ -187,16 +186,27 @@ function ProfileForm({
   });
   const pending = save.isPending || image.isPending;
   return (
-    <div className={styles.stack}>
+    <div className={styles.profile}>
       <SettingsSection
-        title={t("Profile")}
-        description={t("How you appear across your organization.")}
+        variant="plain"
+        title={t(
+          target.kind === "personal"
+            ? "Profile image"
+            : target.kind === "workspace"
+              ? "Workspace identity"
+              : "Organization identity",
+        )}
+        description={t(
+          target.kind === "personal"
+            ? "Choose an image people will recognize."
+            : "Make this space easy to recognize.",
+        )}
       >
         <SettingsRow
           label={t(target.kind === "personal" ? "Avatar" : "Icon")}
           description={t("PNG, JPEG, or WebP. Up to 5 MB.")}
         >
-          <div className={styles.actions}>
+          <div className={styles.profileImage}>
             <Avatar name={current.value.name} url={current.value.image_url} />
             {editable && (
               <>
@@ -234,31 +244,54 @@ function ProfileForm({
         </SettingsRow>
       </SettingsSection>
       <form
-        className={styles.form}
+        className={styles.profileForm}
         onSubmit={(event: FormEvent) => {
           event.preventDefault();
           save.mutate();
         }}
       >
         <Input
-          label={t("Name")}
+          label={t(
+            target.kind === "personal"
+              ? "Display name"
+              : target.kind === "workspace"
+                ? "Workspace name"
+                : "Organization name",
+          )}
           value={name}
           onChange={(event) => setName(event.target.value)}
           required
           maxLength={128}
           disabled={!editable || pending}
         />
-        <Input label={t("ID")} value={current.value.id} readOnly />
         <ErrorNotice
           error={save.error ?? image.error}
           retry={() => void reload()}
         />
-        {editable && <FormActions pending={pending} />}
-        {save.isSuccess && (
-          <p role="status" className={styles.muted}>
-            {t("Changes saved")}
-          </p>
+        {editable && (
+          <div className={styles.saveRow}>
+            <Button
+              type="submit"
+              disabled={pending || !name.trim() || name === current.value.name}
+              loading={save.isPending}
+            >
+              {t("Save changes")}
+            </Button>
+            <span role="status">
+              {save.isSuccess && name === current.value.name ? (
+                <>
+                  <Check size={12} /> {t("Changes saved")}
+                </>
+              ) : name !== current.value.name ? (
+                t("Unsaved changes")
+              ) : null}
+            </span>
+          </div>
         )}
+        <div className={styles.identityNote}>
+          <span>{t("ID")}</span>
+          <code>{current.value.id}</code>
+        </div>
       </form>
     </div>
   );

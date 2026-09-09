@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Button, Input } from "a13n-ui";
+import { Button, Input, Dialog } from "a13n-ui";
 import { Paperclip, ArrowUp, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -120,13 +120,26 @@ export function Composer({
       }}
     >
       <fieldset disabled={disabled || busy} className={styles.composerFields}>
-        {children}
-        <TextArea
-          label={t("Message")}
+        <textarea
+          className={styles.messageInput}
+          aria-label={t("Message")}
+          placeholder={t("Message your agent…")}
           value={text}
-          onChange={(value) => {
-            setText(value);
+          onChange={(event) => {
+            setText(event.target.value);
             changed();
+            event.target.style.height = "auto";
+            event.target.style.height = `${Math.min(event.target.scrollHeight, 240)}px`;
+          }}
+          onKeyDown={(event) => {
+            if (
+              event.key === "Enter" &&
+              (event.metaKey || event.ctrlKey) &&
+              !event.nativeEvent.isComposing
+            ) {
+              event.preventDefault();
+              if (!busy && !disabled) event.currentTarget.form?.requestSubmit();
+            }
           }}
           rows={3}
         />
@@ -157,70 +170,95 @@ export function Composer({
             ))}
           </div>
         )}
-        <details>
-          <summary>{t("Attachments and structured input")}</summary>
-          <div className={styles.composerOptions}>
-            {can("asset.create") && (
-              <label>
-                {t("Upload a file")}
-                <input
-                  type="file"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (file) {
-                      const selection = { file, key: crypto.randomUUID() };
-                      setUploadFile(selection);
-                      upload.mutate(selection);
-                    }
-                    event.target.value = "";
-                  }}
-                />
-              </label>
-            )}
-            <div className={styles.inline}>
-              <Input
-                label={t("File URL")}
-                value={url}
-                onChange={(event) => setUrl(event.target.value)}
-                placeholder="https://"
-              />
-              <Button
-                type="button"
-                disabled={!/^https?:\/\//i.test(url)}
-                onClick={() => {
-                  setAttachments((previous) => [
-                    ...previous,
-                    { type: "binary", source: { type: "url", url } },
-                  ]);
-                  setUrl("");
-                  changed();
-                }}
-              >
-                {t("Attach URL")}
-              </Button>
-            </div>
-            <TextArea
-              label={t("Structured input (JSON)")}
-              value={structured}
-              onChange={(value) => {
-                setStructured(value);
-                changed();
-              }}
-              rows={3}
-              code
-            />
-          </div>
-        </details>
         <div className={styles.composerFooter}>
-          <span>{t("Messages run in the selected thread.")}</span>
-          <Button
-            type="submit"
-            variant="primary"
-            icon={<ArrowUp size={15} />}
-            loading={mutation.isPending}
-          >
-            {label ?? t("Send")}
-          </Button>
+          <div className={styles.composerTools}>
+            <Dialog
+              description={t(
+                "Add files, a URL, or structured input to your message.",
+              )}
+              title={t("Attach content")}
+              closeLabel={t("Close")}
+              trigger={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-label={t("Attach content")}
+                  icon={<Paperclip size={16} />}
+                />
+              }
+            >
+              <fieldset
+                disabled={disabled || busy}
+                className={`${styles.composerOptions} fieldset-reset`}
+              >
+                {can("asset.create") && (
+                  <label>
+                    {t("Upload a file")}
+                    <input
+                      type="file"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (file) {
+                          const selection = { file, key: crypto.randomUUID() };
+                          setUploadFile(selection);
+                          upload.mutate(selection);
+                        }
+                        event.target.value = "";
+                      }}
+                    />
+                  </label>
+                )}
+                <div className={styles.inline}>
+                  <Input
+                    label={t("File URL")}
+                    value={url}
+                    onChange={(event) => setUrl(event.target.value)}
+                    placeholder="https://"
+                  />
+                  <Button
+                    type="button"
+                    disabled={!/^https?:\/\//i.test(url)}
+                    onClick={() => {
+                      setAttachments((previous) => [
+                        ...previous,
+                        { type: "binary", source: { type: "url", url } },
+                      ]);
+                      setUrl("");
+                      changed();
+                    }}
+                  >
+                    {t("Attach URL")}
+                  </Button>
+                </div>
+                <TextArea
+                  label={t("Structured input (JSON)")}
+                  value={structured}
+                  onChange={(value) => {
+                    setStructured(value);
+                    changed();
+                  }}
+                  rows={3}
+                  code
+                />
+              </fieldset>
+            </Dialog>
+            {children}
+          </div>
+          <div className={styles.composerSend}>
+            <span className={styles.shortcut}>{t("⌘ / Ctrl ↵ to send")}</span>
+            <Button
+              type="submit"
+              variant="primary"
+              icon={<ArrowUp size={15} />}
+              loading={mutation.isPending}
+              disabled={
+                !text.trim() && !attachments.length && !structured.trim()
+              }
+            >
+              {label ?? t("Send")}
+            </Button>
+          </div>
         </div>
       </fieldset>
       <ErrorNotice error={mutation.error} />

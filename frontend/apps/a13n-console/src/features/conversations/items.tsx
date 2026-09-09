@@ -1,5 +1,16 @@
+import { useState } from "react";
+import { Button } from "a13n-ui";
 import { useTranslation } from "react-i18next";
-import { Bot, Wrench, Brain, File } from "lucide-react";
+import {
+  Bot,
+  Wrench,
+  Brain,
+  File,
+  Check,
+  Copy,
+  ChevronRight,
+  LoaderCircle,
+} from "lucide-react";
 import { JsonView } from "../../shared/form";
 import { StateBadge } from "../../shared/feedback";
 import { isObject, type PresentedItem } from "./projection";
@@ -8,9 +19,11 @@ import styles from "./conversations.module.css";
 export function PresentedItems({
   items,
   runState,
+  agentName,
 }: {
   items: readonly PresentedItem[];
   runState?: string;
+  agentName?: string;
 }) {
   const { t } = useTranslation();
   return (
@@ -26,15 +39,27 @@ export function PresentedItems({
             return (
               <details key={item.id} className={styles.tool}>
                 <summary>
+                  <ChevronRight
+                    size={12}
+                    className={styles.disclosureChevron}
+                  />
                   <Wrench size={14} />
                   <strong>{item.toolName || t("Tool call")}</strong>
-                  <StateBadge
-                    state={
-                      item.state === "streaming" && runState === "waiting"
-                        ? "waiting"
-                        : item.state
-                    }
-                  />
+                  <span className={styles.toolState}>
+                    {item.state === "completed" ? (
+                      <Check size={13} aria-label={t("Completed")} />
+                    ) : item.state === "streaming" && runState !== "waiting" ? (
+                      <LoaderCircle
+                        size={13}
+                        className={styles.spinning}
+                        aria-label={t("Working")}
+                      />
+                    ) : (
+                      <StateBadge
+                        state={runState === "waiting" ? "waiting" : item.state}
+                      />
+                    )}
+                  </span>
                 </summary>
                 <div className={styles.toolBody}>
                   <h4>{t("Arguments")}</h4>
@@ -84,7 +109,7 @@ export function PresentedItems({
               <div className={styles.messageAvatar}>{<Bot size={16} />}</div>
               <div className={styles.messageBody}>
                 <div className={styles.messageHeading}>
-                  <strong>{t("Assistant")}</strong>
+                  <strong>{agentName ?? t("Agent")}</strong>
                   {item.state !== "completed" && (
                     <StateBadge state={item.state} />
                   )}
@@ -97,6 +122,9 @@ export function PresentedItems({
                       : t("No text content"))
                   }
                 />
+                {item.text && item.state === "completed" && (
+                  <CopyMessage text={item.text} />
+                )}
                 {item.failure !== undefined && (
                   <JsonView value={item.failure} />
                 )}
@@ -196,4 +224,35 @@ function parseJson(value: unknown) {
   } catch {
     return value;
   }
+}
+
+function CopyMessage({ text }: { text: string }) {
+  const { t } = useTranslation();
+  const [status, setStatus] = useState("idle");
+  return (
+    <div className={styles.messageActions}>
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        aria-label={t(status === "copied" ? "Copied" : "Copy message")}
+        icon={status === "copied" ? <Check size={13} /> : <Copy size={13} />}
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(text);
+            setStatus("copied");
+          } catch {
+            setStatus("failed");
+          }
+        }}
+      />
+      <span role="status">
+        {status === "copied"
+          ? t("Copied")
+          : status === "failed"
+            ? t("Could not copy. Select the message to copy it manually.")
+            : ""}
+      </span>
+    </div>
+  );
 }

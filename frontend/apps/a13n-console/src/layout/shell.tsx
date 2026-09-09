@@ -12,8 +12,6 @@ import {
   Cable,
   Plug,
   Network,
-  ChartNoAxesCombined,
-  CalendarClock,
   Activity,
   Settings,
   ChevronsUpDown,
@@ -40,6 +38,10 @@ export function Shell() {
     cache = useQueryClient(),
     location = useLocation();
   const [open, setOpen] = useState(false);
+  const contextual =
+    /^\/workspaces\/[^/]+\/(sessions|settings)(\/|$)/.test(location.pathname) ||
+    location.pathname === "/settings/profile" ||
+    location.pathname === "/organization/settings";
   const user = auth.data!.user.value;
   const base = `/workspaces/${context.workspace.id}`;
   const groups: { label: string; entries: [string, string, LucideIcon][] }[] = [
@@ -47,7 +49,7 @@ export function Shell() {
       label: "",
       entries: [
         ["agents", "Agents", Bot],
-        ["sessions", "Conversations", MessagesSquare],
+        ["sessions", "Sessions", MessagesSquare],
       ],
     },
     {
@@ -69,11 +71,7 @@ export function Shell() {
     },
     {
       label: "Observe",
-      entries: [
-        ["traces", "Traces", Activity],
-        ["usage", "Usage", ChartNoAxesCombined],
-        ["schedules", "Schedules", CalendarClock],
-      ],
+      entries: [["traces", "Traces", Activity]],
     },
   ];
   const logout = useMutation({
@@ -84,172 +82,173 @@ export function Shell() {
     .flatMap((group) => group.entries)
     .find(([path]) => location.pathname.includes(`/${path}`));
   return (
-    <div className={styles.shell}>
-      {open && (
+    <div className={styles.shell} data-contextual={contextual}>
+      {open && !contextual && (
         <button
           className={styles.scrim}
           aria-label={t("Close navigation")}
           onClick={() => setOpen(false)}
         />
       )}
-      <aside
-        className={styles.sidebar}
-        data-open={open}
-        aria-label={t("Main navigation")}
-      >
-        <div className={styles.brand}>
-          <img src={logo} alt="" />
-          <strong>a13n</strong>
-          <span>Console</span>
-          <Button
-            variant="ghost"
-            className={styles.mobileClose}
-            aria-label={t("Close navigation")}
-            icon={<X size={16} />}
-            onClick={() => setOpen(false)}
-          />
-        </div>
-        <div className={styles.workspace}>
-          <span>{t("Workspace")}</span>
-          <Picker
-            label={t("Switch workspace")}
-            placeholder={t("Select workspace")}
-            emptyMessage={t("No workspaces found")}
-            value={context.workspace.id}
-            groups={[
-              {
-                label: t("Workspaces"),
-                options: context.workspaces.map((item) => ({
-                  value: item.id,
-                  label: item.name,
-                  icon: (
-                    <span className={styles.workspaceIcon}>
-                      {item.name.slice(0, 1).toUpperCase()}
-                    </span>
-                  ),
-                })),
-              },
-            ]}
-            onValueChange={(id) => {
-              void cache.cancelQueries();
-              cache.removeQueries({
-                predicate: (query) =>
-                  query.queryKey.includes(context.workspace.id),
-              });
-              navigate(`/workspaces/${id}/agents`);
-              setOpen(false);
-            }}
-          />
-        </div>
-        <nav>
-          {groups.map((group) => (
-            <div className={styles.navGroup} key={group.label}>
-              {group.label && (
-                <span className={styles.groupLabel}>{t(group.label)}</span>
-              )}
-              {group.entries.map(([path, label, Icon]) => (
-                <NavLink
-                  key={path}
-                  to={`${base}/${path}`}
-                  onClick={() => setOpen(false)}
-                  className={({ isActive }) =>
-                    `${styles.navItem} ${isActive ? styles.active : ""}`
-                  }
-                >
-                  <Icon size={16} strokeWidth={1.7} />
-                  <span>{t(label)}</span>
-                  {["usage", "schedules"].includes(path) && (
-                    <small>{t("Soon")}</small>
-                  )}
-                </NavLink>
-              ))}
-            </div>
-          ))}
-        </nav>
-        <div className={styles.sidebarFooter}>
-          <NavLink
-            to={`${base}/settings`}
-            onClick={() => setOpen(false)}
-            className={({ isActive }) =>
-              `${styles.navItem} ${isActive ? styles.active : ""}`
-            }
-          >
-            <Settings size={16} />
-            {t("Workspace settings")}
-          </NavLink>
-          <Menu
-            label={t("Your account")}
-            align="start"
-            trigger={
-              <button className={styles.user}>
-                <Avatar name={user.name} url={user.image_url} />
-                <span>
-                  <strong>{user.name}</strong>
-                  <small>{user.email}</small>
-                </span>
-                <ChevronsUpDown size={14} />
-              </button>
-            }
-            groups={[
-              {
-                actions: [
-                  {
-                    id: "profile",
-                    label: t("Personal settings"),
-                    icon: <User size={15} />,
-                    onSelect: () => navigate("/settings/profile"),
-                  },
-                  ...(context.organizationAdmin
-                    ? [
-                        {
-                          id: "organization",
-                          label: t("Organization settings"),
-                          icon: <Building2 size={15} />,
-                          onSelect: () => navigate("/organization/settings"),
-                        },
-                      ]
-                    : []),
-                ],
-              },
-              {
-                actions: [
-                  {
-                    id: "language",
-                    label:
-                      i18n.resolvedLanguage === "en" ? "简体中文" : "English",
-                    icon: <Languages size={15} />,
-                    onSelect: () => {
-                      void i18n.changeLanguage(
-                        i18n.resolvedLanguage === "en" ? "zh-CN" : "en",
-                      );
+      {!contextual && (
+        <aside
+          className={styles.sidebar}
+          data-open={open}
+          aria-label={t("Main navigation")}
+        >
+          <div className={styles.brand}>
+            <img src={logo} alt="" />
+            <strong>a13n</strong>
+            <span>Console</span>
+            <Button
+              variant="ghost"
+              className={styles.mobileClose}
+              aria-label={t("Close navigation")}
+              icon={<X size={16} />}
+              onClick={() => setOpen(false)}
+            />
+          </div>
+          <div className={styles.workspace}>
+            <span>{t("Workspace")}</span>
+            <Picker
+              label={t("Switch workspace")}
+              placeholder={t("Select workspace")}
+              emptyMessage={t("No workspaces found")}
+              value={context.workspace.id}
+              groups={[
+                {
+                  label: t("Workspaces"),
+                  options: context.workspaces.map((item) => ({
+                    value: item.id,
+                    label: item.name,
+                    icon: (
+                      <span className={styles.workspaceIcon}>
+                        {item.name.slice(0, 1).toUpperCase()}
+                      </span>
+                    ),
+                  })),
+                },
+              ]}
+              onValueChange={(id) => {
+                void cache.cancelQueries();
+                cache.removeQueries({
+                  predicate: (query) =>
+                    query.queryKey.includes(context.workspace.id),
+                });
+                navigate(`/workspaces/${id}/agents`);
+                setOpen(false);
+              }}
+            />
+          </div>
+          <nav>
+            {groups.map((group) => (
+              <div className={styles.navGroup} key={group.label}>
+                {group.label && (
+                  <span className={styles.groupLabel}>{t(group.label)}</span>
+                )}
+                {group.entries.map(([path, label, Icon]) => (
+                  <NavLink
+                    key={path}
+                    to={`${base}/${path}`}
+                    onClick={() => setOpen(false)}
+                    className={({ isActive }) =>
+                      `${styles.navItem} ${isActive ? styles.active : ""}`
+                    }
+                  >
+                    <Icon size={16} strokeWidth={1.7} />
+                    <span>{t(label)}</span>
+                  </NavLink>
+                ))}
+              </div>
+            ))}
+          </nav>
+          <div className={styles.sidebarFooter}>
+            <NavLink
+              to={`${base}/settings`}
+              onClick={() => setOpen(false)}
+              className={({ isActive }) =>
+                `${styles.navItem} ${isActive ? styles.active : ""}`
+              }
+            >
+              <Settings size={16} />
+              {t("Workspace settings")}
+            </NavLink>
+            <Menu
+              label={t("Your account")}
+              align="start"
+              trigger={
+                <button className={styles.user}>
+                  <Avatar name={user.name} url={user.image_url} />
+                  <span>
+                    <strong>{user.name}</strong>
+                    <small>{user.email}</small>
+                  </span>
+                  <ChevronsUpDown size={14} />
+                </button>
+              }
+              groups={[
+                {
+                  actions: [
+                    {
+                      id: "profile",
+                      label: t("Personal settings"),
+                      icon: <User size={15} />,
+                      onSelect: () => navigate("/settings/profile"),
                     },
-                  },
-                ],
-              },
-              {
-                actions: [
-                  {
-                    id: "logout",
-                    label: t("Sign out"),
-                    icon: <LogOut size={15} />,
-                    disabled: logout.isPending,
-                    onSelect: () => logout.mutate(),
-                  },
-                ],
-              },
-            ]}
-          />
-        </div>
-      </aside>
+                    ...(context.organizationAdmin
+                      ? [
+                          {
+                            id: "organization",
+                            label: t("Organization settings"),
+                            icon: <Building2 size={15} />,
+                            onSelect: () => navigate("/organization/settings"),
+                          },
+                        ]
+                      : []),
+                  ],
+                },
+                {
+                  actions: [
+                    {
+                      id: "language",
+                      label:
+                        i18n.resolvedLanguage === "en" ? "简体中文" : "English",
+                      icon: <Languages size={15} />,
+                      onSelect: () => {
+                        void i18n.changeLanguage(
+                          i18n.resolvedLanguage === "en" ? "zh-CN" : "en",
+                        );
+                      },
+                    },
+                  ],
+                },
+                {
+                  actions: [
+                    {
+                      id: "logout",
+                      label: t("Sign out"),
+                      icon: <LogOut size={15} />,
+                      disabled: logout.isPending,
+                      onSelect: () => logout.mutate(),
+                    },
+                  ],
+                },
+              ]}
+            />
+          </div>
+        </aside>
+      )}
       <div className={styles.main}>
         <header className={styles.topbar}>
-          <Button
-            className={styles.mobileMenu}
-            aria-label={t("Open navigation")}
-            variant="ghost"
-            icon={<MenuIcon size={18} />}
-            onClick={() => setOpen(true)}
-          />
+          {!contextual && (
+            <Button
+              className={styles.mobileMenu}
+              aria-label={t("Open navigation")}
+              variant="ghost"
+              icon={<MenuIcon size={18} />}
+              onClick={() => setOpen(true)}
+            />
+          )}
           <span>{context.workspace.name}</span>
           <span className={styles.slash}>/</span>
           <strong>{t(current?.[1] ?? "Settings")}</strong>

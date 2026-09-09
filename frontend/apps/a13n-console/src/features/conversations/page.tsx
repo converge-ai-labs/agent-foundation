@@ -1,6 +1,8 @@
 import { useState } from "react";
 import {
   Link,
+  Navigate,
+  useLocation,
   Outlet,
   useNavigate,
   useParams,
@@ -8,19 +10,12 @@ import {
 } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Select } from "a13n-ui";
-import { MessageSquare, Plus } from "lucide-react";
+import { MessageSquare, Plus, ArrowLeft } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { allPages, commandHeaders, data } from "../../shared/api";
-import {
-  Empty,
-  ErrorNotice,
-  Loading,
-  Page,
-  StateBadge,
-  Timestamp,
-} from "../../shared/feedback";
+import { allPages, commandHeaders, data, type Schema } from "../../shared/api";
+import { Empty, ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
 import { Pagination, useCursor } from "../../shared/collection";
 import { conversationApi, runPath } from "./api";
 import { Composer } from "./composer";
@@ -44,70 +39,116 @@ export function ConversationsPage() {
         .GET("/api/v1/workspaces/{workspace_id}/sessions", {
           params: {
             path: { workspace_id: workspace.id },
-            query: { cursor: page.cursor },
+            query: { cursor: page.cursor, limit: 20 },
           },
           signal,
         })
         .then(data),
   });
+  const { sessionId } = useParams();
+  const location = useLocation();
+  const nested = !!sessionId || /\/sessions\/new\/?$/.test(location.pathname);
   return (
-    <Page
-      title={t("Conversations")}
-      description={t(
-        "Every session keeps its threads, branches, and agent runs together.",
-      )}
-      actions={
-        can("agent.invoke") && (
-          <Button
-            variant="primary"
-            icon={<Plus size={15} />}
-            onClick={() => navigate("new")}
-          >
-            {t("New conversation")}
-          </Button>
-        )
-      }
-    >
-      <ErrorNotice
-        error={notifications.error}
-        retry={notifications.reconnect}
-      />
-      <ErrorNotice
-        error={sessions.error}
-        retry={() => void sessions.refetch()}
-      />
-      {sessions.isPending ? (
-        <Loading />
-      ) : sessions.data?.items.length ? (
-        <>
-          <div className={styles.sessions}>
-            {sessions.data.items.map((session) => (
-              <Link
-                className={styles.sessionCard}
+    <div className={styles.sessionsLayout} data-detail={nested}>
+      <aside className={styles.sessionSidebar}>
+        <Link
+          className={styles.workspaceBack}
+          to={`/workspaces/${workspace.id}/agents`}
+        >
+          <ArrowLeft size={14} />
+          {t("Back to workspace")}
+        </Link>
+        <header>
+          <h1>{t("Sessions")}</h1>
+          {can("agent.invoke") && (
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={t("New session")}
+              icon={<Plus size={16} />}
+              onClick={() => navigate("new")}
+            />
+          )}
+        </header>
+        <ErrorNotice
+          error={notifications.error}
+          retry={notifications.reconnect}
+        />
+        <ErrorNotice
+          error={sessions.error}
+          retry={() => void sessions.refetch()}
+        />
+        <nav aria-label={t("Sessions")}>
+          {sessions.isPending ? (
+            <Loading />
+          ) : (
+            sessions.data?.items.map((session) => (
+              <SessionLink
                 key={session.id}
-                to={session.id}
-              >
-                <MessageSquare size={20} />
-                <div>
-                  <strong>{session.id}</strong>
-                  <small>
-                    {t("Updated")} <Timestamp value={session.updated_at} />
-                  </small>
-                </div>
-              </Link>
-            ))}
-          </div>
+                session={session}
+                selected={session.id === sessionId}
+              />
+            ))
+          )}
+          {!sessions.isPending && !sessions.data?.items.length && (
+            <p className={styles.sessionHint}>
+              {t("Your sessions will appear here.")}
+            </p>
+          )}
+        </nav>
+        {sessions.data && (
           <Pagination page={page} next={sessions.data.next_cursor} />
-        </>
-      ) : (
-        !sessions.error && (
-          <Empty
-            title={t("Start a conversation")}
-            description={t("Choose an agent and send its first message.")}
-          />
-        )
-      )}
-    </Page>
+        )}
+      </aside>
+      <div className={styles.sessionStage} data-session-stage>
+        {nested ? <Outlet /> : <NewConversation />}
+      </div>
+    </div>
+  );
+}
+function SessionLink({
+  session,
+  selected,
+}: {
+  session: Schema["SessionResource"];
+  selected: boolean;
+}) {
+  const { t } = useTranslation(),
+    client = useClient(),
+    { workspace } = useWorkspace();
+  const api = conversationApi(client, workspace.id);
+  const preview = useQuery({
+    queryKey: ["session-preview", workspace.id, session.id, session.updated_at],
+    staleTime: 60_000,
+    queryFn: async ({ signal }) => {
+      const threads = await api.threads(session.id, signal);
+      const thread = threads.items[0];
+      const id = thread?.current_run_id ?? thread?.head_run_id;
+      return id ? api.run(id, signal) : null;
+    },
+  });
+  return (
+    <Link
+      to={session.id}
+      className={styles.sessionLink}
+      aria-current={selected ? "page" : undefined}
+      title={session.id}
+    >
+      <div>
+        <MessageSquare size={14} />
+        <strong>{preview.data?.input_text || t("Untitled session")}</strong>
+      </div>
+      <p>
+        {preview.data?.output_text
+          ? preview.data.output_text
+              .replace(/[`#*_>]/g, "")
+              .replace(/\s+/g, " ")
+          : t("Open session")}
+      </p>
+      <small>
+        <Timestamp value={session.updated_at} />
+      </small>
+    </Link>
   );
 }
 
@@ -137,20 +178,13 @@ export function NewConversation() {
       ),
   });
   return (
-    <Page
-      title={t("New conversation")}
-      description={t(
-        "Start with an agent. You can branch the conversation as your work develops.",
-      )}
-    >
+    <div className={styles.startPage}>
       <div className={styles.newConversation}>
         <div className={styles.welcome}>
           <MessageSquare size={32} strokeWidth={1.4} />
           <h2>{t("What would you like to work on?")}</h2>
           <p>
-            {t(
-              "Your agent brings its model, instructions, and tools to this conversation.",
-            )}
+            {t("Choose an agent, share an idea, and start making progress.")}
           </p>
         </div>
         <ErrorNotice error={agents.error} />
@@ -165,7 +199,7 @@ export function NewConversation() {
         />
         <Composer
           disabled={!can("agent.invoke") || !agentId}
-          label={t("Start conversation")}
+          label={t("Start session")}
           submit={async (input) => {
             const body = {
               ...options.build(),
@@ -196,7 +230,7 @@ export function NewConversation() {
           <RunOptions options={options} showAgent={false} />
         </Composer>
       </div>
-    </Page>
+    </div>
   );
 }
 
@@ -206,64 +240,60 @@ export function SessionLayout() {
     { workspace, can } = useWorkspace(),
     client = useClient(),
     api = conversationApi(client, workspace.id);
-  const notifications = useConversationNotifications(threadId);
   const threads = useQuery({
     queryKey: ["session-threads", workspace.id, sessionId],
     queryFn: ({ signal }) =>
       allPages((cursor) => api.threads(sessionId, signal, cursor)),
   });
+  const navigate = useNavigate();
+  const first = threads.data?.[0];
   return (
-    <Page
-      title={t("Conversation")}
-      description={sessionId}
-      actions={
-        can("agent.invoke") && (
+    <div className={styles.sessionDetail}>
+      <header className={styles.sessionHeader}>
+        <Link
+          className={styles.backToSessions}
+          to={`/workspaces/${workspace.id}/sessions`}
+        >
+          {t("Sessions")}
+        </Link>
+        <Select
+          size="sm"
+          variant="ghost"
+          label={t("Threads")}
+          placeholder={t("Thread")}
+          value={threadId ?? ""}
+          onValueChange={(id) => navigate(`threads/${id}`)}
+          options={(threads.data ?? []).map((thread, index) => ({
+            value: thread.id,
+            label: `${t(thread.origin_kind === "fork" ? "Branch" : "Thread")} ${index + 1}`,
+          }))}
+        />
+        {threadId && <RunHistory />}
+        {can("agent.invoke") && (
           <Link
+            className={styles.newThread}
+            aria-label={t("New thread")}
             to={`/workspaces/${workspace.id}/sessions/new?session=${sessionId}`}
           >
-            {t("New thread")}
+            <Plus size={14} />
+            <span>{t("New thread")}</span>
           </Link>
-        )
-      }
-    >
-      <ErrorNotice
-        error={notifications.error}
-        retry={notifications.reconnect}
-      />
+        )}
+      </header>
       <ErrorNotice error={threads.error} retry={() => void threads.refetch()} />
-      <div className={styles.conversationLayout}>
-        <nav className={styles.threads} aria-label={t("Threads")}>
-          <h2>{t("Threads")}</h2>
-          {threads.isPending && <Loading />}
-          {threads.data?.map((thread) => (
-            <Link
-              key={thread.id}
-              className={styles.threadLink}
-              aria-current={thread.id === threadId ? "page" : undefined}
-              to={`threads/${thread.id}`}
-            >
-              <MessageSquare size={14} />
-              <span>
-                {thread.id}
-                <small>{t(thread.origin_kind)}</small>
-              </span>
-            </Link>
-          ))}
-        </nav>
-        <div className={styles.threadContent}>
-          {threadId ? (
-            <Outlet />
-          ) : (
-            <Empty
-              title={t("Choose a thread")}
-              description={t(
-                "Each thread has its own run history and pending messages.",
-              )}
-            />
-          )}
-        </div>
-      </div>
-    </Page>
+      {threadId ? (
+        <Outlet />
+      ) : first ? (
+        <Navigate to={`threads/${first.id}`} replace />
+      ) : threads.isPending ? (
+        <Loading />
+      ) : (
+        <Empty
+          title={t("No threads yet")}
+          description={t("Start a thread to work with an agent.")}
+        />
+      )}
+    </div>
   );
 }
 
@@ -276,11 +306,6 @@ export function ThreadLayout() {
   const thread = useQuery({
     queryKey: ["thread", workspace.id, threadId],
     queryFn: ({ signal }) => api.thread(threadId, signal),
-  });
-  const runs = useQuery({
-    queryKey: ["thread-runs", workspace.id, threadId],
-    queryFn: ({ signal }) =>
-      allPages((cursor) => api.runs(threadId, signal, cursor)),
   });
   const navigate = useNavigate(),
     cache = useQueryClient();
@@ -297,49 +322,19 @@ export function ThreadLayout() {
   return (
     <>
       <ErrorNotice
-        error={thread.error ?? runs.error}
+        error={thread.error}
         retry={() => {
           void thread.refetch();
-          void runs.refetch();
         }}
       />
-      {thread.isPending || runs.isPending ? (
+      {thread.isPending ? (
         <Loading />
       ) : (
         <>
-          <div className={styles.runBar}>
-            <Select
-              label={t("Run history")}
-              placeholder={t("Choose a run")}
-              value={selected ?? ""}
-              onValueChange={(id) =>
-                navigate(
-                  `/workspaces/${workspace.id}/sessions/${thread.data!.session_id}/threads/${threadId}/runs/${id}`,
-                )
-              }
-              options={(runs.data ?? []).map((run) => ({
-                value: run.id,
-                label: `${run.id} · ${t(run.status)}`,
-              }))}
-            />
-            {thread.data && (
-              <span>
-                {t("Thread version")} {thread.data.version}
-              </span>
-            )}
-          </div>
           {runId ? (
             <Outlet />
           ) : selected ? (
-            <Link className={styles.sessionCard} to={`runs/${selected}`}>
-              {t("Open current run")}{" "}
-              <StateBadge
-                state={
-                  runs.data?.find((run) => run.id === selected)?.status ??
-                  "unknown"
-                }
-              />
-            </Link>
+            <Navigate to={`runs/${selected}`} replace />
           ) : (
             thread.data && (
               <>
@@ -381,5 +376,53 @@ export function ThreadLayout() {
         </>
       )}
     </>
+  );
+}
+
+function RunHistory() {
+  const { t } = useTranslation(),
+    { workspace } = useWorkspace(),
+    client = useClient(),
+    navigate = useNavigate();
+  const { sessionId = "", threadId = "", runId = "" } = useParams();
+  const runs = useQuery({
+    queryKey: ["thread-runs", workspace.id, threadId],
+    queryFn: ({ signal }) =>
+      allPages((cursor) =>
+        conversationApi(client, workspace.id).runs(threadId, signal, cursor),
+      ),
+  });
+  if (runs.error)
+    return (
+      <Button
+        size="sm"
+        variant="ghost"
+        title={t("Run history could not be loaded.")}
+        onClick={() => void runs.refetch()}
+      >
+        {t("Retry history")}
+      </Button>
+    );
+  return (
+    <Select
+      label={t("Run history")}
+      placeholder={t("Run history")}
+      size="sm"
+      variant="ghost"
+      value={runId}
+      onValueChange={(id) =>
+        navigate(
+          runPath(workspace.id, {
+            session_id: sessionId,
+            thread_id: threadId,
+            run_id: id,
+          }),
+        )
+      }
+      options={(runs.data ?? []).map((run, index) => ({
+        value: run.id,
+        label: `${t("Run")} ${runs.data!.length - index} · ${t(`state.${run.status}`, { defaultValue: run.status })}`,
+      }))}
+    />
   );
 }

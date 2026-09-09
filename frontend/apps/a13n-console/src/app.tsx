@@ -14,6 +14,7 @@ import { WorkspaceProvider } from "./layout/workspace";
 import { Shell } from "./layout/shell";
 import { ErrorNotice, Loading, Empty, Page } from "./shared/feedback";
 import "./app.css";
+import { AppearanceProvider } from "./layout/appearance";
 
 const ModelsPage = lazy(() =>
   import("./features/models/page").then((module) => ({
@@ -166,6 +167,13 @@ function NotFound() {
   );
 }
 export function App() {
+  return (
+    <AppearanceProvider>
+      <AppContent />
+    </AppearanceProvider>
+  );
+}
+function AppContent() {
   const { i18n } = useTranslation();
   useEffect(() => {
     document.documentElement.lang = i18n.resolvedLanguage ?? "en";
@@ -201,11 +209,15 @@ export function App() {
                   <Route path="agents" element={<Agents />} />
                   <Route path="agents/new" element={<CreateAgent />} />
                   <Route path="agents/:agentId" element={<AgentDetail />} />
-                  <Route path="sessions" element={<ConversationsPage />} />
-                  <Route path="sessions/new" element={<NewConversation />} />
-                  <Route path="sessions/:sessionId" element={<SessionLayout />}>
-                    <Route path="threads/:threadId" element={<ThreadLayout />}>
-                      <Route path="runs/:runId" element={<RunPage />} />
+                  <Route path="sessions" element={<ConversationsPage />}>
+                    <Route path="new" element={<NewConversation />} />
+                    <Route path=":sessionId" element={<SessionLayout />}>
+                      <Route
+                        path="threads/:threadId"
+                        element={<ThreadLayout />}
+                      >
+                        <Route path="runs/:runId" element={<RunPage />} />
+                      </Route>
                     </Route>
                   </Route>
                   <Route path="traces" element={<TracesPage />} />

@@ -1,3 +1,4 @@
+import { Network } from "lucide-react";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Dialog, Input, SelectField, Tabs } from "a13n-ui";
@@ -13,7 +14,12 @@ import {
   StateBadge,
 } from "../../shared/feedback";
 import { Confirm, FormActions, JsonView, TextArea } from "../../shared/form";
-import { Table, Pagination, useCursor } from "../../shared/collection";
+import {
+  Table,
+  Pagination,
+  ResourceIdentity,
+  useCursor,
+} from "../../shared/collection";
 import { useIdempotency } from "../../shared/idempotency";
 import { AuthorizationLink } from "../../shared/authorization-link";
 import { MCPTools } from "./tools";
@@ -68,10 +74,11 @@ export function MCPPage() {
               {
                 label: t("Connection"),
                 render: (item) => (
-                  <>
-                    <strong>{item.name}</strong>
-                    <small>{item.endpoint_url}</small>
-                  </>
+                  <ResourceIdentity
+                    name={item.name}
+                    description={item.endpoint_url}
+                    icon={<Network size={17} />}
+                  />
                 ),
               },
               {

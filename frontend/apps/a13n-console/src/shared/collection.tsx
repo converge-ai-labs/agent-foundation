@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { Link } from "react-router";
 import { Button } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import styles from "./shared.module.css";
@@ -58,6 +59,7 @@ export function Pagination({
   next?: string | null;
 }) {
   const { t } = useTranslation();
+  if (!page.previous && !next) return null;
   return (
     <div className={styles.pagination}>
       <Button size="sm" disabled={!page.previous} onClick={page.previous}>
@@ -71,5 +73,34 @@ export function Pagination({
         {t("Next")}
       </Button>
     </div>
+  );
+}
+
+export function ResourceIdentity({
+  name,
+  description,
+  icon,
+  to,
+}: {
+  name: string;
+  description?: ReactNode;
+  icon: ReactNode;
+  to?: string;
+}) {
+  const content = (
+    <>
+      <span className={styles.resourceIcon}>{icon}</span>
+      <span className={styles.resourceCopy}>
+        <strong>{name}</strong>
+        {description && <small>{description}</small>}
+      </span>
+    </>
+  );
+  return to ? (
+    <Link to={to} className={styles.resourceIdentity}>
+      {content}
+    </Link>
+  ) : (
+    <div className={styles.resourceIdentity}>{content}</div>
   );
 }

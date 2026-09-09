@@ -5,7 +5,7 @@ import { Button } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { ErrorNotice, Loading } from "../../shared/feedback";
+import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
 import { conversationApi, runPath } from "./api";
 import { InputContent, PresentedItems } from "./items";
 import { mergeRetainedItems } from "./projection";
@@ -74,7 +74,7 @@ function HistoricalRun({ runId }: { runId: string }) {
         className={styles.historyLink}
         to={runPath(workspace.id, { ...run, run_id: run.id })}
       >
-        {t("View run")} · {run.id}
+        {t("View run")} · <Timestamp value={run.created_at} />
       </Link>
       <article className={styles.inputMessage}>
         <strong>{t("You")}</strong>

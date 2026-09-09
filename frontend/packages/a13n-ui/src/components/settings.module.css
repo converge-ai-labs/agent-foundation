@@ -62,3 +62,18 @@
     flex: 1 1 min-content;
   }
 }
+
+.section[data-variant="plain"] .heading {
+  margin: 0 0 16px;
+}
+.section[data-variant="plain"] .group {
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--a13n-border-soft);
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+}
+.section[data-variant="plain"] .group > form {
+  padding-top: 20px;
+}

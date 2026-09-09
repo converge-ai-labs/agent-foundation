@@ -5,14 +5,20 @@ export function SettingsSection({
   title,
   description,
   children,
+  variant = "grouped",
 }: {
+  variant?: "grouped" | "plain";
   title: string;
   description?: ReactNode;
   children: ReactNode;
 }) {
   const id = useId();
   return (
-    <section className={styles.section} aria-labelledby={id}>
+    <section
+      className={styles.section}
+      data-variant={variant}
+      aria-labelledby={id}
+    >
       <div className={styles.heading}>
         <h3 id={id}>{title}</h3>
         {description && <p>{description}</p>}

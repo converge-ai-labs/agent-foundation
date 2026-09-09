@@ -16,7 +16,7 @@ The [public exports](../../frontend/packages/a13n-ui/src/index.ts) include form 
 
 Separate the application frame, content canvas, and elevated surfaces. Neutral selection distinguishes navigation and views; accent colors emphasize primary actions and active controls. Borders and shadows separate surfaces without competing with content. Shared control defaults have lower specificity than component styles so import order cannot override component appearance.
 
-Standard controls serve forms; compact controls serve toolbars, settings rows, and properties. Ghost controls expose inline editable values without enclosing every property in a field. Keep text readable at both densities and provide visible keyboard focus. Settings sections group related rows; each row pairs its name and optional explanation with a control. Narrow containers wrap controls without truncating their names or explanations. Disabled explanations remain readable.
+Standard controls serve forms; compact controls serve toolbars, settings rows, and properties. Ghost controls expose inline editable values without enclosing every property in a field. Keep text readable at both densities and provide visible keyboard focus. Settings sections provide grouped surfaces or plain sections separated by rules, selected by the caller. Both presentations group related rows; each row pairs its name and optional explanation with a control. Narrow containers wrap controls without truncating their names or explanations. Disabled explanations remain readable.
 
 ## Interaction and Accessibility
 

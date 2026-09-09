@@ -13,6 +13,7 @@ export function TextArea({
   hint,
   required,
   code = false,
+  hideLabel = false,
 }: {
   label: string;
   value: string;
@@ -21,11 +22,14 @@ export function TextArea({
   hint?: string;
   required?: boolean;
   code?: boolean;
+  hideLabel?: boolean;
 }) {
   const id = useId();
   return (
-    <label className={styles.field} htmlFor={id}>
-      <span>{label}</span>
+    <div className={styles.field}>
+      <label htmlFor={id} className={hideLabel ? "visually-hidden" : undefined}>
+        {label}
+      </label>
       <textarea
         id={id}
         className={code ? styles.code : ""}
@@ -36,7 +40,7 @@ export function TextArea({
         aria-describedby={hint ? `${id}-hint` : undefined}
       />
       {hint && <small id={`${id}-hint`}>{hint}</small>}
-    </label>
+    </div>
   );
 }
 export function Confirm({

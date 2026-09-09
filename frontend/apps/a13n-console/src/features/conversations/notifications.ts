@@ -1,3 +1,4 @@
+import type { Notification } from "@converge.ai/a13n";
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useClient } from "../../auth/context";
@@ -5,6 +6,7 @@ import { useWorkspace } from "../../layout/workspace";
 
 const runtimeQueries = new Set([
   "sessions",
+  "session-preview",
   "session-threads",
   "thread",
   "thread-runs",
@@ -23,11 +25,14 @@ export function useConversationNotifications(threadId?: string) {
   useEffect(() => {
     if (!enabled) return;
     setError(undefined);
-    const invalidate = () =>
+    const invalidate = (notification?: Notification) =>
       void cache.invalidateQueries({
         predicate: (query) =>
           query.queryKey[1] === workspace.id &&
-          runtimeQueries.has(String(query.queryKey[0])),
+          runtimeQueries.has(String(query.queryKey[0])) &&
+          (query.queryKey[0] !== "session-preview" ||
+            !notification?.session_id ||
+            query.queryKey[2] === notification.session_id),
       });
     const attachment = client.notifications({
       subscriptions: [
