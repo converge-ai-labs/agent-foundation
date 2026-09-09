@@ -77,6 +77,8 @@ Service uses the Harness and upstream MCP client to initialize sessions, negotia
 
 Setup and reconnect can perform bounded discovery to verify compatibility and expose safe management metadata. Runtime clients independently discover current tools under the accepted source selection. Invalid framing, unsupported protocol negotiation, authorization failures, or exceeded bounds fail explicitly. Remote notifications and caches never expand the accepted tool scope or cross authorization identities. Cancellation closes active responses and the logical session; it is not an ordinary retry.
 
+Every discovery completion, including management tool queries and OAuth callbacks, rechecks the initiating actor's current management authority before publishing readiness. Revoked authority leaves readiness unchanged.
+
 Anonymous creation, credential replacement, and reconnect return the connection snapshot produced by successful discovery completion. Completion rechecks current management authority, connection version, and credential generation, and publishes the ready state and final idempotency receipt atomically. A completed command replays that original snapshot even if the connection later changes. While discovery has not completed, including after a failed or interrupted discovery, repeating its key returns `409 mcp_discovery_incomplete` rather than a successful pending snapshot. The caller reads the connection and can start a new reconnect command against its current version; replay never reapplies a credential replacement. Creation that requires credentials or OAuth still returns a pending connection without discovery.
 
 ## OAuth Client Flow

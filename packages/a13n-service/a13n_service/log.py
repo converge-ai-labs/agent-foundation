@@ -20,9 +20,9 @@ _LOGGER_NAMES = (
 
 def _context(settings: Settings) -> dict[str, str]:
     return {
-        "service": settings.service_name,
-        "role": settings.role.value,
-        "build_version": settings.build_version,
+        "service": settings.service.name,
+        "role": settings.service.role.value,
+        "build_version": settings.service.build_version,
     }
 
 
@@ -30,8 +30,8 @@ def build_log_config(settings: Settings) -> dict[str, Any]:
     """Build one shared logging configuration for the app and Uvicorn."""
 
     return build_logging_config(
-        level=settings.log_level,
-        log_format=settings.log_format,
+        level=settings.logging.level,
+        log_format=settings.logging.format,
         logger_names=_LOGGER_NAMES,
         context=_context(settings),
     )
@@ -41,8 +41,8 @@ def configure_logging(settings: Settings) -> None:
     """Configure process logging exactly once at the executable boundary."""
 
     configure_process_logging(
-        level=settings.log_level,
-        log_format=settings.log_format,
+        level=settings.logging.level,
+        log_format=settings.logging.format,
         logger_names=_LOGGER_NAMES,
         context=_context(settings),
     )

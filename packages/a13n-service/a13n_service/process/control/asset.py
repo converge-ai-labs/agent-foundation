@@ -33,14 +33,14 @@ async def build_asset_bundle(
         shared.storage.sessions,
         objects,
         staging,
-        max_size_bytes=settings.asset_max_size_bytes,
+        max_size_bytes=settings.assets.max_size_bytes,
     )
     cleanup = AssetCleanupReconciler(
         shared.storage.sessions,
         objects,
-        poll_interval_seconds=settings.asset_cleanup_poll_interval_seconds,
-        lease_seconds=settings.asset_cleanup_lease_seconds,
-        max_attempts=settings.asset_cleanup_max_attempts,
+        poll_interval_seconds=settings.assets.cleanup_poll_interval_seconds,
+        lease_seconds=settings.assets.cleanup_lease_seconds,
+        max_attempts=settings.assets.cleanup_max_attempts,
     )
     return _AssetBundle(
         catalog=AssetCatalog(shared.storage.sessions, objects),

@@ -112,7 +112,7 @@ async def _build_control_runtime(
     secret_protector: SecretProtector,
     stack: AsyncExitStack,
 ) -> tuple[ConnectivityControlRuntime, tuple[BackgroundTask, ...]]:
-    public_origin = settings.validated_connectivity_public_origin() if settings.connectivity_public_origin else None
+    public_origin = settings.validated_connectivity_public_origin() if settings.connectivity.public_origin else None
     endpoint_policy = settings.connectivity_endpoint_policy()
     if connector_providers is None:
         connector_http_client = await stack.enter_async_context(
@@ -125,8 +125,8 @@ async def _build_control_runtime(
         connector_providers = built_in_connector_provider_registry(
             connector_http_client,
             endpoint_policy,
-            response_max_bytes=settings.connectivity_response_max_bytes,
-            timeout_seconds=settings.connectivity_total_timeout_seconds,
+            response_max_bytes=settings.connectivity.response_max_bytes,
+            timeout_seconds=settings.connectivity.total_timeout_seconds,
         )
     connector = _build_connector_control(
         settings,
@@ -156,14 +156,14 @@ async def _build_control_runtime(
             storage.sessions,
             ingress_adapters,
             secret_protector,
-            batch_max_events=settings.connectivity_batch_max_events,
-            batch_max_wait_seconds=settings.connectivity_batch_max_wait_seconds,
+            batch_max_events=settings.connectivity.batch_max_events,
+            batch_max_wait_seconds=settings.connectivity.batch_max_wait_seconds,
         ),
         targets=AccountTargetService(
             storage.sessions,
             ingress_adapters,
-            batch_max_events=settings.connectivity_batch_max_events,
-            batch_max_wait_seconds=settings.connectivity_batch_max_wait_seconds,
+            batch_max_events=settings.connectivity.batch_max_events,
+            batch_max_wait_seconds=settings.connectivity.batch_max_wait_seconds,
         ),
         connector_providers=connector.service,
         connector_connections=connector.connections,
@@ -185,24 +185,24 @@ def _build_connector_control(
     public_origin: str | None,
 ) -> _ConnectorControl:
     service = ConnectorProviderService(storage.sessions, connector_providers, secret_protector)
-    correlation_secret = settings.connectivity_setup_correlation_secret
+    correlation_secret = settings.connectivity.setup_correlation_secret
     connections = ConnectorConnectionService(
         storage.sessions,
         connector_providers,
         secret_protector,
         correlation_secret=(correlation_secret.get_secret_value().encode() if correlation_secret is not None else None),
         public_origin=public_origin,
-        setup_ttl_seconds=settings.connectivity_oauth_setup_ttl_seconds,
-        setup_lease_seconds=settings.connectivity_connector_reconcile_lease_seconds,
+        setup_ttl_seconds=settings.connectivity.oauth_setup_ttl_seconds,
+        setup_lease_seconds=settings.connectivity.connector_reconcile_lease_seconds,
     )
-    instance_id = settings.service_instance_id or new_object_id("svc")
+    instance_id = settings.service.instance_id or new_object_id("svc")
     reconciler = ConnectorReconciler(
         storage.sessions,
         connector_providers,
         connections.setup_coordinator,
         instance_id=instance_id,
-        poll_interval_seconds=settings.connectivity_connector_reconcile_poll_interval_seconds,
-        lease_seconds=settings.connectivity_connector_reconcile_lease_seconds,
+        poll_interval_seconds=settings.connectivity.connector_reconcile_poll_interval_seconds,
+        lease_seconds=settings.connectivity.connector_reconcile_lease_seconds,
     )
     return _ConnectorControl(service=service, connections=connections, reconciler=reconciler)
 
@@ -215,7 +215,7 @@ def _build_mcp_control(
     public_origin: str | None,
     http_client: httpx2.AsyncClient,
 ) -> _MCPControl:
-    instance_id = settings.service_instance_id or new_object_id("svc")
+    instance_id = settings.service.instance_id or new_object_id("svc")
     clients = build_mcp_clients(settings, storage.sessions, secret_protector, http_client, endpoint_policy)
     discovery = MCPDiscoveryService(storage.sessions, clients.transport, clients.credentials)
     connections = MCPConnectionService(
@@ -231,14 +231,14 @@ def _build_mcp_control(
         secret_protector,
         discovery,
         public_origin=public_origin,
-        client_name=settings.connectivity_oauth_client_name,
+        client_name=settings.connectivity.oauth_client_name,
         instance_id=instance_id,
-        setup_ttl_seconds=settings.connectivity_oauth_setup_ttl_seconds,
-        claim_lease_seconds=settings.connectivity_connector_reconcile_lease_seconds,
+        setup_ttl_seconds=settings.connectivity.oauth_setup_ttl_seconds,
+        claim_lease_seconds=settings.connectivity.connector_reconcile_lease_seconds,
     )
     reconciler = MCPReconciler(
         storage.sessions,
-        poll_interval_seconds=settings.connectivity_connector_reconcile_poll_interval_seconds,
+        poll_interval_seconds=settings.connectivity.connector_reconcile_poll_interval_seconds,
     )
     return _MCPControl(
         discovery=discovery,
@@ -260,30 +260,30 @@ def _build_data_runtime(
         storage.sessions,
         ingress_adapters,
         secret_protector,
-        request_max_bytes=settings.connectivity_provider_request_max_bytes,
-        workspace_pending_max_count=settings.connectivity_workspace_pending_max_count,
-        workspace_pending_max_bytes=settings.connectivity_workspace_pending_max_bytes,
-        account_pending_max_count=settings.connectivity_account_pending_max_count,
-        account_pending_max_bytes=settings.connectivity_account_pending_max_bytes,
-        batch_max_bytes=settings.connectivity_batch_max_bytes,
-        dedup_horizon_seconds=settings.connectivity_dedup_horizon_seconds,
+        request_max_bytes=settings.connectivity.provider_request_max_bytes,
+        workspace_pending_max_count=settings.connectivity.workspace_pending_max_count,
+        workspace_pending_max_bytes=settings.connectivity.workspace_pending_max_bytes,
+        account_pending_max_count=settings.connectivity.account_pending_max_count,
+        account_pending_max_bytes=settings.connectivity.account_pending_max_bytes,
+        batch_max_bytes=settings.connectivity.batch_max_bytes,
+        dedup_horizon_seconds=settings.connectivity.dedup_horizon_seconds,
     )
     if input_acceptor is None:
         raise RuntimeError("Canonical Connectivity input commands were not constructed")
     admission = IngressAdmissionReconciler(
         storage.sessions,
         input_acceptor,
-        instance_id=settings.service_instance_id or new_object_id("svc"),
-        poll_interval_seconds=settings.connectivity_admission_poll_interval_seconds,
-        lease_seconds=settings.connectivity_admission_lease_seconds,
-        backoff_steps=settings.connectivity_admission_backoff_steps,
-        max_backoff_seconds=settings.connectivity_admission_max_backoff_seconds,
-        input_max_bytes=settings.connectivity_batch_max_bytes,
+        instance_id=settings.service.instance_id or new_object_id("svc"),
+        poll_interval_seconds=settings.connectivity.admission_poll_interval_seconds,
+        lease_seconds=settings.connectivity.admission_lease_seconds,
+        backoff_steps=settings.connectivity.admission_backoff_steps,
+        max_backoff_seconds=settings.connectivity.admission_max_backoff_seconds,
+        input_max_bytes=settings.connectivity.batch_max_bytes,
     )
     retention = IngressRetentionReconciler(
         storage.sessions,
-        poll_interval_seconds=settings.connectivity_retention_poll_interval_seconds,
-        batch_size=settings.connectivity_retention_batch_size,
+        poll_interval_seconds=settings.connectivity.retention_poll_interval_seconds,
+        batch_size=settings.connectivity.retention_batch_size,
     )
     runtime = ConnectivityDataRuntime(ingress_events=ingress_events)
     background_components = (

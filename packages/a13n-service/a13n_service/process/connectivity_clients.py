@@ -16,9 +16,9 @@ from a13n_service.settings import Settings
 
 def connectivity_http_timeout(settings: Settings) -> httpx2.Timeout:
     return httpx2.Timeout(
-        settings.connectivity_total_timeout_seconds,
-        connect=settings.connectivity_connect_timeout_seconds,
-        read=settings.connectivity_read_timeout_seconds,
+        settings.connectivity.total_timeout_seconds,
+        connect=settings.connectivity.connect_timeout_seconds,
+        read=settings.connectivity.read_timeout_seconds,
     )
 
 
@@ -39,22 +39,22 @@ def build_mcp_clients(
     oauth = MCPOAuthClient(
         http,
         endpoints,
-        response_max_bytes=settings.connectivity_response_max_bytes,
-        max_redirects=settings.connectivity_max_redirects,
+        response_max_bytes=settings.connectivity.response_max_bytes,
+        max_redirects=settings.connectivity.max_redirects,
     )
     return MCPClients(
         oauth,
         RemoteTransport(
             endpoints,
-            timeout_seconds=settings.connectivity_total_timeout_seconds,
+            timeout_seconds=settings.connectivity.total_timeout_seconds,
             http_timeout=connectivity_http_timeout(settings),
         ),
         OAuthCredentialRefresh(
             sessions,
             oauth,
             protector,
-            instance_id=settings.service_instance_id or new_object_id("svc"),
-            lease_seconds=settings.connectivity_connector_reconcile_lease_seconds,
-            skew_seconds=settings.connectivity_provider_token_expiry_skew_seconds,
+            instance_id=settings.service.instance_id or new_object_id("svc"),
+            lease_seconds=settings.connectivity.connector_reconcile_lease_seconds,
+            skew_seconds=settings.connectivity.provider_token_expiry_skew_seconds,
         ),
     )

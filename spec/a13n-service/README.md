@@ -86,7 +86,7 @@ The current package establishes these service-wide roots:
 
 | Path                                                       | Architectural role                                                                |
 | ---------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `packages/a13n-service/a13n_service/settings.py`           | Maps process environment into typed provider and migration configuration          |
+| `packages/a13n-service/a13n_service/settings.py`           | Resolves explicit TOML and environment overrides into typed configuration         |
 | `packages/a13n-service/a13n_service/app.py`                | Owns FastAPI lifespan, constructs one storage resource set, and exposes readiness |
 | `packages/a13n-service/a13n_service/storage/`              | Generic backend configuration, construction, lifecycle, and capability semantics  |
 | `packages/a13n-service/a13n_service/database/metadata.py`  | Explicit common registry selected by the OSS distribution descriptor              |

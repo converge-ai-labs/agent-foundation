@@ -18,6 +18,18 @@ TOOL_SCHEMA = {
     "required": ["value"],
     "additionalProperties": False,
 }
+TOOL_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "successful": {"type": "boolean"},
+        "data": {
+            "type": "object",
+            "properties": {"proof": {"type": "string"}},
+            "required": ["proof"],
+        },
+    },
+    "required": ["successful", "data"],
+}
 TOOLKIT_VERSION = "20260908_01"
 
 
@@ -125,6 +137,7 @@ def connectivity_router(root, config):
                 "version": TOOLKIT_VERSION,
                 "description": "Return a real HTTP proof",
                 "input_parameters": TOOL_SCHEMA,
+                "output_parameters": TOOL_OUTPUT_SCHEMA,
             }
         if path.startswith("tools/execute/"):
             account = json.loads(await account_path.read_text())

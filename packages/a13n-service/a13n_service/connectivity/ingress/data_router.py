@@ -27,7 +27,7 @@ async def receive_ingress_event(request: Request, account_id: str) -> Response:
     runtime = get_process_runtime(request)
     if runtime is None:
         raise NativeError("ingress_unavailable", "Ingress is unavailable.", category=ErrorCategory.unavailable)
-    body = await _read_body(request, runtime.settings.connectivity_provider_request_max_bytes)
+    body = await _read_body(request, runtime.settings.connectivity.provider_request_max_bytes)
     try:
         provider_request = ProviderRequest(
             headers={key.lower(): value for key, value in request.headers.items()},

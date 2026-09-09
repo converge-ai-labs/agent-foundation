@@ -3,9 +3,11 @@
 import json
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from urllib.parse import parse_qs, urlsplit
 
 import httpx2
 import pytest
+from a13n_service.connectivity.mcp.domain import CreateMCPConnectionRequest, MCPAuthMode
 from a13n_service.connectivity.mcp.errors import MCPConnectionError
 from a13n_service.connectivity.mcp.management import require_connection
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
@@ -13,9 +15,9 @@ from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.storage import transaction
 from sqlalchemy import select, update
 
-from .conftest import NOW, actor
+from .conftest import NOW, WORKSPACE_ID, actor
 from .test_mcp_refresh import _expired_connection
-from .test_mcp_service import RemoteServer, _rpc
+from .test_mcp_service import ISSUER, MCP_ENDPOINT, RemoteServer, _rpc
 from .test_mcp_service import mcp_services as mcp_services
 
 
@@ -177,3 +179,61 @@ async def test_remote_transport_rejects_other_negotiated_protocols(protocol_vers
     with pytest.raises(ValueError, match="mcp_protocol_incompatible"):
         async with remote.connect("https://mcp.example/mcp", headers={}):
             pytest.fail("unsupported negotiation was accepted")
+
+
+@pytest.mark.parametrize("operation", ["tools", "oauth_callback"])
+async def test_discovery_without_receipt_rechecks_authority_before_ready(
+    mcp_services, connectivity_sessions, credential_protector, monkeypatch, operation
+):
+    connections, oauth, _ = mcp_services
+    if operation == "tools":
+        connection = await _expired_connection(mcp_services, connectivity_sessions, credential_protector)
+        # Model the durable state left by an interrupted reconnect.
+        async with transaction(connectivity_sessions) as session:
+            record = await require_connection(session, connection.id, lock=True)
+            record.status = "pending"
+        state = None
+    else:
+        connection = await connections.create(
+            actor=actor(),
+            workspace_id=WORKSPACE_ID,
+            idempotency_key="create-authority-test",
+            request=CreateMCPConnectionRequest(
+                name="OAuth authority test", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.oauth
+            ),
+        )
+        launch = await oauth.authorize(
+            actor=actor(),
+            connection_id=connection.id,
+            idempotency_key="authorize-test",
+            expected_version=connection.version,
+        )
+        state = parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
+
+    transport = connections._discovery._transport
+    original = transport.connect
+
+    @asynccontextmanager
+    async def revoke_after_discovery(*args, **kwargs):
+        async with original(*args, **kwargs) as client:
+            yield client
+        async with transaction(connectivity_sessions) as session:
+            await session.execute(
+                update(RoleBindingRecord)
+                .where(RoleBindingRecord.id == "rb_connectivity_admin")
+                .values(role_key="viewer")
+            )
+
+    monkeypatch.setattr(transport, "connect", revoke_after_discovery)
+    with pytest.raises(MCPConnectionError) as failure:
+        if operation == "tools":
+            await connections.discover_tools(
+                actor=actor(), connection_id=connection.id, expected_version=connection.version
+            )
+        else:
+            assert state is not None
+            await oauth.callback(actor=actor(), state=state, code="code", issuer=ISSUER)
+    assert failure.value.code == "resource_not_found"
+    async with connectivity_sessions() as session:
+        record = await require_connection(session, connection.id)
+        assert record.status == "pending"

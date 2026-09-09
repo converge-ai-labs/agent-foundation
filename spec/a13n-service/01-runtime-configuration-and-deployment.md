@@ -34,6 +34,8 @@ The executable selects a TOML file only through an explicit `--config PATH`. It 
 
 When no configuration path is supplied, no TOML file is loaded. The process does not search the working directory, user home, or image filesystem for `.env`, `a13n-service.toml`, or another implicit file. It does not merge several files or implement include, inheritance, or named profile semantics.
 
+Relative storage paths, including default values and environment overrides, resolve against the selected TOML file's directory. Without a selected file they resolve against the invocation directory. Serving, migration, and development state operations use the same configuration resolver.
+
 TOML groups settings by stable operational concern:
 
 ```toml

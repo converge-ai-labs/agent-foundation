@@ -222,7 +222,7 @@ class MCPOAuthService:
                 "Remote MCP authorization is temporarily unavailable.",
                 category=ErrorCategory.unavailable,
             ) from error
-        await self._discovery.discover(source.connection_id)
+        await self._discovery.discover(source.connection_id, actor=actor)
         async with transaction(self._sessions) as session:
             record = await require_connection(session, source.connection_id)
             await authorize_connection(session, actor, record, mode="read")

@@ -57,15 +57,15 @@ def test_connectivity_registries_are_copied_only_for_owning_roles() -> None:
     )
 
     control = snapshot_components(
-        Settings(_env_file=None, role=ProcessRole.control),
+        Settings(service={"role": ProcessRole.control}),
         components,
     )
     connectivity = snapshot_components(
-        Settings(_env_file=None, role=ProcessRole.connectivity),
+        Settings(service={"role": ProcessRole.connectivity}),
         components,
     )
     worker = snapshot_components(
-        Settings(_env_file=None, role=ProcessRole.worker),
+        Settings(service={"role": ProcessRole.worker}),
         components,
     )
     ingress_registry.register(

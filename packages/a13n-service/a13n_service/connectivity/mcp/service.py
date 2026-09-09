@@ -35,7 +35,7 @@ from .credentials import (
     normalize_static_header_names,
     static_header_bundle,
 )
-from .discovery import DiscoveryCommand, DiscoveryResult
+from .discovery import DiscoveryResult
 from .domain import (
     CreateMCPConnectionRequest,
     MCPAuthMode,
@@ -60,7 +60,9 @@ from .models import MCPConnectionRecord, MCPOAuthSessionRecord
 
 
 class ConnectionDiscovery(Protocol):
-    async def discover(self, connection_id: str, *, command: DiscoveryCommand | None = None) -> DiscoveryResult: ...
+    async def discover(
+        self, connection_id: str, *, actor: AuthenticatedActor, command_id: str | None = None
+    ) -> DiscoveryResult: ...
 
 
 class RegistrationCleaner(Protocol):
@@ -187,7 +189,7 @@ class MCPConnectionService:
                 category=ErrorCategory.conflict,
             ) from error
         if request.auth_mode is MCPAuthMode.none:
-            result = await self._discovery.discover(connection_id, command=DiscoveryCommand(command_id, actor))
+            result = await self._discovery.discover(connection_id, actor=actor, command_id=command_id)
             return result.connection
         return record.to_resource()
 
@@ -253,7 +255,7 @@ class MCPConnectionService:
             record = await require_connection(session, connection_id)
             await authorize_connection(session, actor, record, mode="manage")
             require_version(record.version, expected_version)
-        result = await self._discovery.discover(connection_id)
+        result = await self._discovery.discover(connection_id, actor=actor)
         async with transaction(self._sessions) as session:
             record = await require_connection(session, connection_id)
             await authorize_connection(session, actor, record, mode="manage")
@@ -333,7 +335,7 @@ class MCPConnectionService:
                 request_fingerprint=request_fingerprint,
                 discovery_pending=True,
             )
-        result = await self._discovery.discover(connection_id, command=DiscoveryCommand(command_id, actor))
+        result = await self._discovery.discover(connection_id, actor=actor, command_id=command_id)
         return result.connection
 
     async def reconnect(
@@ -378,7 +380,7 @@ class MCPConnectionService:
                 request_fingerprint=request_fingerprint,
                 discovery_pending=True,
             )
-        result = await self._discovery.discover(connection_id, command=DiscoveryCommand(command_id, actor))
+        result = await self._discovery.discover(connection_id, actor=actor, command_id=command_id)
         return result.connection
 
     async def set_enabled(

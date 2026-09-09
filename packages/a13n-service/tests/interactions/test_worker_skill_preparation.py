@@ -164,7 +164,7 @@ async def test_workers_complete_shared_environment_skill_preparation_on_first_at
 
     model_factory = Mock(spec=NativeModelFactory)
     model_factory.build.return_value = FunctionModel(stream_function=respond)
-    settings = Settings(_env_file=None, worker_concurrency=2, worker_poll_interval_seconds=0.01)
+    settings = Settings(worker={"concurrency": 2, "poll_interval_seconds": 0.01})
     async with worker_helpers.worker_runtime(
         postgres_interaction_sessions,
         interaction_object_store,

@@ -11,12 +11,12 @@ from pathlib import Path
 
 import anyio
 import httpx2
+from a13n_service.configuration.sources import load_settings
 from a13n_service.database import DatabaseMigrator
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
 from a13n_service.ids import new_object_id
 from a13n_service.log import configure_logging
 from a13n_service.process.server import serve_app
-from a13n_service.settings import Settings
 from a13n_service.storage import transaction
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
 
@@ -42,7 +42,7 @@ async def initialize() -> None:
         }
         save_config(config)
     Path(config["workspace_root"]).mkdir(parents=True, exist_ok=True, mode=0o700)
-    settings = Settings()
+    settings = load_settings()
     # Apply only committed migrations using the repository's make db-upgrade first.
     await anyio.to_thread.run_sync(
         lambda: DatabaseMigrator(settings.database_config(), settings.migration_config()).current(check_heads=True)

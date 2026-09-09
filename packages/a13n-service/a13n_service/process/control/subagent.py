@@ -26,7 +26,7 @@ def build_subagent_maintenance(
         AsyncSubagentSuccessorReconciler(
             sessions, RunStateStore(shared.storage.objects), replay, lifecycle=shared.lifecycle, signals=signals
         ),
-        poll_interval_seconds=settings.subagent_reconcile_poll_interval_seconds,
-        batch_limit=settings.control_recovery_batch_limit,
-        item_timeout_seconds=settings.control_recovery_item_timeout_seconds,
+        poll_interval_seconds=settings.subagents.reconcile_poll_interval_seconds,
+        batch_limit=settings.control.recovery_batch_limit,
+        item_timeout_seconds=settings.control.recovery_item_timeout_seconds,
     )

@@ -272,8 +272,8 @@ async def test_management_tool_preview_rechecks_version_and_authority(
     assert [tool.name for tool in tools.items] == ["search"]
     original = connections._discovery.discover
 
-    async def changed_during_discovery(connection_id):
-        result = await original(connection_id)
+    async def changed_during_discovery(connection_id, **kwargs):
+        result = await original(connection_id, **kwargs)
         await connections.update(
             actor=actor(),
             connection_id=connection_id,
@@ -285,8 +285,8 @@ async def test_management_tool_preview_rechecks_version_and_authority(
     with pytest.raises(MCPConnectionError, match="changed concurrently"):
         await connections.discover_tools(actor=actor(), connection_id=created.id, expected_version=1)
 
-    async def revoked_during_discovery(connection_id):
-        result = await original(connection_id)
+    async def revoked_during_discovery(connection_id, **kwargs):
+        result = await original(connection_id, **kwargs)
         async with transaction(connectivity_sessions) as session:
             await session.execute(
                 update(RoleBindingRecord)

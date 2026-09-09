@@ -19,6 +19,7 @@ def test_serve_role_overrides_environment_role(
         del kwargs
         served_apps.append(app)
 
+    monkeypatch.setattr("a13n_service.cli._prepare_database", lambda settings: None)
     monkeypatch.setattr("a13n_service.cli.serve_app", capture_app)
     try:
         result = CliRunner().invoke(main, ["serve", "--role", "worker"])
@@ -67,4 +68,4 @@ def test_default_build_identity_uses_installed_version(monkeypatch: pytest.Monke
     from a13n_service.settings import Settings
 
     monkeypatch.delenv("A13N_SERVICE_BUILD_VERSION", raising=False)
-    assert Settings(_env_file=None).build_version == version("a13n-service")
+    assert Settings().service.build_version == version("a13n-service")

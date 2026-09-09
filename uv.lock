@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -92,13 +92,16 @@ dependencies = [
     { name = "anyio" },
     { name = "genai-prices" },
     { name = "httpx2" },
+    { name = "jsonschema" },
     { name = "mem0ai" },
     { name = "opentelemetry-api" },
     { name = "pydantic" },
     { name = "pydantic-ai", extra = ["bedrock", "bedrock-mantle", "cohere", "google-realtime", "groq", "huggingface", "mistral", "openai-realtime", "openrouter", "retries", "xai", "xai-realtime"] },
+    { name = "pydantic-core" },
     { name = "pydantic-monty" },
     { name = "pyjwt", extra = ["crypto"] },
     { name = "pyyaml" },
+    { name = "referencing" },
     { name = "tenacity" },
     { name = "typing-extensions" },
 ]
@@ -116,13 +119,16 @@ requires-dist = [
     { name = "anyio", specifier = ">=4,<5" },
     { name = "genai-prices", specifier = ">=0.1.6,<1" },
     { name = "httpx2", specifier = ">=2.5,<3" },
+    { name = "jsonschema", specifier = ">=4.25,<5" },
     { name = "mem0ai", specifier = ">=2.0.19,<3" },
     { name = "opentelemetry-api", specifier = ">=1.39,<2" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pydantic-ai", extras = ["bedrock", "bedrock-mantle", "cohere", "google-realtime", "groq", "huggingface", "mistral", "openai-realtime", "openrouter", "retries", "xai", "xai-realtime"], specifier = ">=2.41.0,<3" },
+    { name = "pydantic-core", specifier = ">=2.41,<3" },
     { name = "pydantic-monty", specifier = ">=0.0.19,<0.1" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.10,<3" },
     { name = "pyyaml", specifier = ">=6.0,<7" },
+    { name = "referencing", specifier = ">=0.37,<1" },
     { name = "tenacity", specifier = ">=9,<10" },
     { name = "typing-extensions", specifier = ">=4.15,<5" },
 ]
@@ -274,7 +280,6 @@ dependencies = [
     { name = "pydantic-ai" },
     { name = "pydantic-core" },
     { name = "pydantic-graph" },
-    { name = "pydantic-settings" },
     { name = "pyyaml" },
     { name = "redis" },
     { name = "referencing" },
@@ -319,7 +324,6 @@ requires-dist = [
     { name = "pydantic-ai", specifier = ">=2.41.0,<3" },
     { name = "pydantic-core", specifier = ">=2.41,<3" },
     { name = "pydantic-graph", specifier = ">=2.38,<3" },
-    { name = "pydantic-settings", specifier = ">=2.10,<3" },
     { name = "pyyaml", specifier = ">=6.0,<7" },
     { name = "redis", specifier = ">=8,<9" },
     { name = "referencing", specifier = ">=0.37,<1" },

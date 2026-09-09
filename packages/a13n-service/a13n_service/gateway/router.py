@@ -686,7 +686,7 @@ class _NotificationConnection:
     async def _receive(self) -> None:
         while True:
             raw = await self._websocket.receive_text()
-            if len(raw.encode()) > self._settings.gateway_notification_max_frame_bytes:
+            if len(raw.encode()) > self._settings.gateway.notification_max_frame_bytes:
                 await self._safe_close(1009, "frame_too_large")
                 return
             try:
@@ -713,10 +713,10 @@ class _NotificationConnection:
                 for key, item in self._subscriptions.items()
                 if key not in {candidate.subscription_id for candidate in frame.subscriptions}
             ) + sum(len(item.topics) for item in frame.subscriptions)
-        if resulting_count > self._settings.gateway_notification_max_subscriptions:
+        if resulting_count > self._settings.gateway.notification_max_subscriptions:
             await self._send_error(frame.request_id, "subscription_limit_exceeded", "Too many subscriptions.")
             return
-        if resulting_topics > self._settings.gateway_notification_max_topics:
+        if resulting_topics > self._settings.gateway.notification_max_topics:
             await self._send_error(frame.request_id, "topic_limit_exceeded", "Too many subscription topics.")
             return
         try:
@@ -752,12 +752,12 @@ class _NotificationConnection:
                 await self._safe_close(1001, "service_draining")
                 return
             now = monotonic()
-            if now - self._started >= self._settings.gateway_notification_maximum_lifetime_seconds:
+            if now - self._started >= self._settings.gateway.notification_maximum_lifetime_seconds:
                 await self._safe_close(1001, "connection_lifetime_reached")
                 return
             async with self._state_lock:
                 subscriptions = tuple(self._subscriptions.values())
-            if now - self._last_authorized >= self._settings.gateway_stream_authorization_interval_seconds:
+            if now - self._last_authorized >= self._settings.gateway.stream_authorization_interval_seconds:
                 subscriptions = tuple(
                     [await self._service.reauthorize(actor=self._actor, subscription=item) for item in subscriptions]
                 )
@@ -769,7 +769,7 @@ class _NotificationConnection:
             for subscription in subscriptions:
                 facts = await self._service.read(
                     subscription,
-                    limit=self._settings.gateway_notification_poll_limit,
+                    limit=self._settings.gateway.notification_poll_limit,
                 )
                 for fact in facts:
                     for topic in _fact_topics(fact, subscription.definition.topics):
@@ -782,10 +782,10 @@ class _NotificationConnection:
                                 current,
                                 after_seq=facts[-1].seq,
                             )
-            await anyio.sleep(self._settings.gateway_notification_poll_interval_seconds)
+            await anyio.sleep(self._settings.gateway.notification_poll_interval_seconds)
 
     async def _heartbeat(self) -> None:
-        interval = self._settings.gateway_notification_heartbeat_interval_seconds
+        interval = self._settings.gateway.notification_heartbeat_interval_seconds
         while True:
             await anyio.sleep(interval)
             if not self._heartbeat_acknowledged:
@@ -832,7 +832,7 @@ class _NotificationConnection:
 
     async def _send_json(self, value: dict[str, object]) -> None:
         async with self._send_lock:
-            with anyio.fail_after(self._settings.gateway_notification_send_timeout_seconds):
+            with anyio.fail_after(self._settings.gateway.notification_send_timeout_seconds):
                 await self._websocket.send_json(value)
 
     async def _safe_close(self, code: int, reason: str) -> None:

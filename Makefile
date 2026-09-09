@@ -6,7 +6,10 @@ A13N_HARNESS_UI_IMAGE ?= a13n-harness-ui:local
 EXAMPLE_DIRS := examples/agent-app examples/environment-provider examples/plugins
 PYTHON_TEST_DIRS ?=
 PYTHON_TEST_WORKERS ?=
-LANGFUSE_COMPOSE := docker compose $(if $(wildcard .env),--env-file .env,) -f dev/langfuse.compose.yaml
+SERVICE_CONFIG ?= dev/service/local.toml
+STATE ?=
+SERVICE_DEV = uv run --locked python -m dev.service --config "$(SERVICE_CONFIG)"
+LANGFUSE_COMPOSE := docker compose $(if $(wildcard .env),--env-file .env,) -f dev/observability/langfuse.compose.yaml
 CHECK_JOBS ?= 4
 CHECK_TARGETS := \
 	lint \
@@ -91,12 +94,11 @@ examples-check-all: examples-check examples-test examples-smoke examples-build #
 
 .PHONY: setup
 setup: sync ## Start local PostgreSQL and Redis
-	@docker compose $(if $(wildcard .env),--env-file .env,) -f dev/compose.yaml up -d --wait
+	@$(SERVICE_DEV) setup
 
 .PHONY: dev
 dev: setup frontend-sync sdk-typescript-build ## Upgrade the schema and run a13n Service and Console
-	@uv run --locked a13n-service db upgrade
-	@bash scripts/dev.sh
+	@bash scripts/dev.sh "$(SERVICE_CONFIG)"
 
 .PHONY: dev-down
 .PHONY: live-test-init live-test-setup live-test-control live-test-worker live-test live-test-local live-test-check live-test-auth-control live-test-round-two live-test-management
@@ -139,8 +141,8 @@ live-test-check: sync ## Validate live-test support without contacting services
 	@uv run --locked mdformat --check dev/live_tests/README.md
 	@uv run --locked python -m pytest dev/live_tests -q
 
-dev-down: ## Stop local infrastructure and remove its data volumes
-	@docker compose -f dev/compose.yaml down --volumes --remove-orphans
+dev-down: ## Stop local infrastructure, preserving all data
+	@$(SERVICE_DEV) stop
 
 .PHONY: langfuse-up
 langfuse-up: ## Start the local Langfuse trace backend
@@ -552,27 +554,27 @@ build: frontend-build python-build rust-build sdk-build a13n-service-cli-build #
 
 .PHONY: db-migrate
 db-migrate: sync ## Generate a migration (usage: make db-migrate msg="description")
-	@bash dev/db-migrate.sh "$(msg)"
+	@bash dev/service/db-migrate.sh "$(msg)"
 
 .PHONY: db-upgrade
 db-upgrade: sync ## Upgrade the local a13n-service database to all heads
-	@uv run --locked a13n-service db upgrade
+	@uv run --locked a13n-service --config "$(SERVICE_CONFIG)" db upgrade
 
 .PHONY: db-downgrade
 db-downgrade: sync ## Downgrade the local database by one reviewed revision
-	@uv run --locked a13n-service db downgrade
+	@uv run --locked a13n-service --config "$(SERVICE_CONFIG)" db downgrade
 
 .PHONY: db-current
 db-current: sync ## Show the current a13n-service database revision
-	@uv run --locked a13n-service db current
+	@uv run --locked a13n-service --config "$(SERVICE_CONFIG)" db current
 
 .PHONY: db-check
 db-check: sync ## Fail unless the a13n-service database is at all heads
-	@uv run --locked a13n-service db current --check-heads
+	@uv run --locked a13n-service --config "$(SERVICE_CONFIG)" db current --check-heads
 
 .PHONY: db-history
 db-history: sync ## Show a13n-service migration history
-	@uv run --locked a13n-service db history
+	@uv run --locked a13n-service --config "$(SERVICE_CONFIG)" db history
 
 .PHONY: release-check
 release-check: ## Validate a component version (component=a13n-harness|a13n-harness-ui|a13n-logging|a13n-service|a13n-envd|a13n-service-cli|a13n-<language> version=X.Y.Z or X.Y.Z-rc.N)
@@ -635,7 +637,7 @@ check: ## Format, then run fast checks in parallel (override with CHECK_JOBS=N)
 	@printf '\n==> Formatting and checks completed\n'
 
 .PHONY: check-all
-check-all: eip-check examples-check-all frontend-check-all python-check-all rust-check-all sdk-check-all a13n-service-cli-check-all ## Run the complete repository gate
+check-all: dev-state-check eip-check examples-check-all frontend-check-all python-check-all rust-check-all sdk-check-all a13n-service-cli-check-all ## Run the complete repository gate
 
 .PHONY: clean
 clean: ## Remove generated local artifacts
@@ -648,3 +650,16 @@ help: ## Show available commands
 	@echo "Usage: make [target]"
 	@echo "Targets:"
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  %-26s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+.PHONY: service-dev dev-reset dev-state-check
+service-dev: setup ## Run only local Service and its scripted model, preserving data
+	@$(SERVICE_DEV) serve
+
+dev-reset: sync ## Reset owned local Service stores (STATE=empty or STATE=seeded)
+	@$(SERVICE_DEV) reset "$(STATE)"
+
+dev-state-check: sync ## Validate local state tools and seed journeys in disposable storage
+	@uv run --locked ruff check --no-fix dev/service
+	@uv run --locked ruff format --check dev/service
+	@uv run --locked pyright dev/service
+	@uv run --locked pytest dev/service/tests -q --tb=short

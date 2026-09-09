@@ -70,7 +70,7 @@ async def mcp_client_metadata(request: Request) -> MCPClientMetadata:
         )
     return MCPClientMetadata(
         client_id=oauth.client_metadata_url,
-        client_name=runtime.settings.connectivity_oauth_client_name,
+        client_name=runtime.settings.connectivity.oauth_client_name,
         redirect_uris=(oauth.redirect_uri,),
     )
 

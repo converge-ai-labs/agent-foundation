@@ -2,23 +2,45 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import click
 
+from a13n_service.configuration.sources import ConfigurationError, load_settings
 from a13n_service.database import DatabaseMigrator
 from a13n_service.log import configure_logging
 from a13n_service.process.server import serve_app
-from a13n_service.settings import ProcessRole, Settings, get_settings
+from a13n_service.settings import ProcessRole, Settings
+
+
+def _settings(*, overrides: dict | None = None) -> Settings:
+    context = click.get_current_context().find_root()
+    if overrides is None and "settings" in context.meta:
+        return context.meta["settings"]
+    try:
+        settings = load_settings(context.obj, overrides=overrides)
+        context.meta["settings"] = settings
+        return settings
+    except ConfigurationError as error:
+        raise click.ClickException(str(error)) from None
 
 
 def _migrator(settings: Settings | None = None) -> DatabaseMigrator:
-    resolved = settings or get_settings()
+    resolved = settings or _settings()
     return DatabaseMigrator(resolved.database_config(), resolved.migration_config())
 
 
 @click.group()
 @click.version_option(package_name="a13n-service")
-def main() -> None:
+@click.option(
+    "--config",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    help="Explicit Service TOML configuration file.",
+)
+@click.pass_context
+def main(ctx: click.Context, config: Path | None) -> None:
     """Run and operate a13n Service."""
+    ctx.obj = config
 
 
 @main.command()
@@ -29,10 +51,11 @@ def serve(host: str | None, role: str | None) -> None:
 
     from a13n_service.app import create_app
 
-    settings = get_settings()
-    if role is not None:
-        settings = settings.model_copy(update={"role": ProcessRole(role)})
+    settings = _settings(
+        overrides={"service": {key: value for key, value in {"role": role, "host": host}.items() if value is not None}}
+    )
     configure_logging(settings)
+    _prepare_database(settings)
     serve_app(create_app(settings), host=host)
 
 
@@ -40,7 +63,7 @@ def serve(host: str | None, role: str | None) -> None:
 def db() -> None:
     """Inspect and migrate the service database."""
 
-    configure_logging(get_settings())
+    configure_logging(_settings())
 
 
 @db.command()
@@ -99,7 +122,7 @@ def reissue_bootstrap() -> None:
     from a13n_service.storage.relational import create_session_factory, create_sql_engine
 
     async def reissue() -> None:
-        settings = get_settings()
+        settings = _settings()
         engine = create_sql_engine(settings.database_config())
         try:
             runtime = await build_identity_runtime(create_session_factory(engine), settings.identity_configuration())
@@ -117,3 +140,40 @@ def reissue_bootstrap() -> None:
             await engine.dispose()
 
     asyncio.run(reissue())
+
+
+@main.group("config")
+def config_commands() -> None:
+    """Inspect the selected configuration without starting Service."""
+
+
+@config_commands.command("check")
+def check_config() -> None:
+    _settings()
+    click.echo("Service configuration is valid.")
+
+
+def _prepare_database(settings: Settings) -> None:
+    migrator = _migrator(settings)
+    if settings.service.role in {ProcessRole.all, ProcessRole.control} and settings.migration.auto_migrate:
+        migrator.upgrade()
+    else:
+        migrator.current(check_heads=True)
+
+
+@config_commands.command("healthcheck")
+def healthcheck() -> None:
+    """Check the selected Service port; used by the container health probe."""
+    import httpx2
+
+    settings = _settings()
+    host = settings.service.host
+    if host in {"0.0.0.0", "::"}:
+        host = "127.0.0.1" if host == "0.0.0.0" else "[::1]"
+    elif ":" in host:
+        host = f"[{host}]"
+    try:
+        with httpx2.Client(trust_env=False, timeout=2) as client:
+            client.get(f"http://{host}:{settings.service.port}/healthz").raise_for_status()
+    except httpx2.HTTPError:
+        raise click.ClickException("Service health probe failed") from None

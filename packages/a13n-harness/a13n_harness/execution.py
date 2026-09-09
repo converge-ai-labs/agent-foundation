@@ -42,7 +42,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models import Model, ModelResolutionContext
 from pydantic_ai.models.instrumented import InstrumentedModel
-from pydantic_ai.output import NativeOutput, OutputSpec, PromptedOutput, StructuredDict, TextOutput, ToolOutput
+from pydantic_ai.output import NativeOutput, OutputSpec, PromptedOutput, TextOutput, ToolOutput
 from pydantic_ai.run import AgentRunResultEvent
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.usage import RunUsage, UsageLimits
@@ -187,6 +187,7 @@ from a13n_harness.observation import (
     _ObservationRuntime,
     observe_operation,
 )
+from a13n_harness.output_schema import structured_output_type
 from a13n_harness.plugin_configuration import HarnessBuildContext, HarnessPluginConfiguration
 from a13n_harness.plugin_factories import (
     HarnessPluginFactoryCatalog,
@@ -2702,7 +2703,7 @@ def _resolve_business_output[OutputT](
     schema = construction_spec.output_schema
     assert schema is not None
     try:
-        business_output = StructuredDict(deepcopy(schema))
+        business_output = structured_output_type(schema)
         output_adapter = TypeAdapter(business_output)
     except Exception as exc:
         raise DefinitionError(
