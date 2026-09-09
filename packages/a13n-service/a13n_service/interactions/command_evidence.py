@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
 from datetime import datetime
 
 from pydantic import BaseModel
@@ -44,98 +43,80 @@ def run_command_scope(actor: AuthenticatedActor) -> EvidenceScope:
     return request_scope(actor, workspace_id=actor.workspace_id, operation="run.accept", scope_id=actor.workspace_id)
 
 
-async def load_run_command(
-    database: AsyncSession,
-    *,
-    actor: AuthenticatedActor,
-    key: str,
-    fingerprint: str,
-    now: datetime,
-) -> RunAcceptanceReceipt | None:
-    evidence = await load_evidence(
-        database,
-        scope=run_command_scope(actor),
-        identity=IdempotencyIdentity(key.removeprefix("idem_"), fingerprint),
-        now=now,
-    )
-    if evidence is None:
-        return None
-    run = await database.get(RunRecord, evidence.result_ref)
-    if run is None or run.organization_id != evidence.organization_id:
-        raise RuntimeError("Run command evidence references a missing Run")
-    await authorize_agent(
-        database,
-        actor=actor,
-        workspace_id=actor.workspace_id,
-        agent_id=run.agent_id,
-        action=WorkspaceAction.run_read,
-    )
-    return RunAcceptanceReceipt.model_validate(evidence.receipt_json)
+class RunCommandEvidence:
+    """One command identity shared by replay, acceptance, and race reconciliation."""
 
+    def __init__(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        *,
+        actor: AuthenticatedActor,
+        operation: str,
+        scope_id: str,
+        supplied_key: str,
+        fingerprint: str,
+        binding: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
+        clock: Clock = utc_now,
+    ) -> None:
+        key = scoped_idempotency_key(actor=actor, operation=operation, scope_id=scope_id, supplied=supplied_key)
+        self._sessions = sessions
+        self._actor = actor
+        self._scope = run_command_scope(actor)
+        self._identity = IdempotencyIdentity(key.removeprefix("idem_"), fingerprint)
+        self._binding = binding
+        self._clock = clock
 
-@dataclass(frozen=True, slots=True)
-class RunCommandCommit:
-    actor: AuthenticatedActor
-    key: str
-    fingerprint: str
-    now: datetime
-    binding: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None
+    @property
+    def fingerprint(self) -> str:
+        return self._identity.request_digest
 
-    async def __call__(self, database: AsyncSession, receipt: RunAcceptanceReceipt) -> None:
+    async def replay(self) -> RunAcceptanceReceipt | None:
+        try:
+            async with transaction(self._sessions) as database:
+                evidence = await load_evidence(database, scope=self._scope, identity=self._identity, now=self._clock())
+                if evidence is None:
+                    return None
+                run = await database.get(RunRecord, evidence.result_ref)
+                if run is None or run.organization_id != evidence.organization_id:
+                    raise RuntimeError("Run command evidence references a missing Run")
+                await authorize_agent(
+                    database,
+                    actor=self._actor,
+                    workspace_id=self._actor.workspace_id,
+                    agent_id=run.agent_id,
+                    action=WorkspaceAction.run_read,
+                )
+                return RunAcceptanceReceipt.model_validate(evidence.receipt_json)
+        except IdempotencyConflict as error:
+            raise idempotency_conflict() from error
+        except AuthorizationError as error:
+            raise command_not_found() from error
+
+    async def commit(self, database: AsyncSession, receipt: RunAcceptanceReceipt, *, now: datetime) -> None:
         """Bind only newly accepted work, then commit its original receipt atomically.
 
         No external I/O is permitted. Neither hook executes on replay; a failure
         rolls back Run acceptance, protocol bindings, and command evidence.
         """
-        if self.binding is not None:
-            await self.binding(database, receipt)
+        if self._binding is not None:
+            await self._binding(database, receipt)
         run = await database.get(RunRecord, receipt.run_id)
         if run is None:
             raise RuntimeError("accepted Run is missing")
         database.add(
             new_evidence(
                 organization_id=run.organization_id,
-                scope=run_command_scope(self.actor),
-                identity=IdempotencyIdentity(self.key.removeprefix("idem_"), self.fingerprint),
+                scope=self._scope,
+                identity=self._identity,
                 result_kind="run_acceptance",
                 result_ref=run.id,
-                now=self.now,
+                now=now,
                 receipt=receipt.model_dump(mode="json"),
             )
         )
 
-
-class RunCommandReceipts:
-    def __init__(self, sessions: async_sessionmaker[AsyncSession], *, clock: Clock = utc_now) -> None:
-        self._sessions = sessions
-        self._clock = clock
-
-    async def load(
-        self,
-        *,
-        actor: AuthenticatedActor,
-        stored_key: str,
-        request_fingerprint: str,
-    ) -> RunAcceptanceReceipt | None:
-        try:
-            async with transaction(self._sessions) as database:
-                return await load_run_command(
-                    database, actor=actor, key=stored_key, fingerprint=request_fingerprint, now=self._clock()
-                )
-        except IdempotencyConflict as error:
-            raise idempotency_conflict() from error
-        except AuthorizationError as error:
-            raise command_not_found() from error
-
-    async def reconcile(
-        self,
-        error: RunAcceptanceError,
-        *,
-        actor: AuthenticatedActor,
-        stored_key: str,
-        request_fingerprint: str,
-    ) -> RunAcceptanceReceipt:
-        replay = await self.load(actor=actor, stored_key=stored_key, request_fingerprint=request_fingerprint)
+    async def reconcile(self, error: RunAcceptanceError) -> RunAcceptanceReceipt:
+        replay = await self.replay()
         if replay is not None:
             return replay
         raise map_acceptance_error(error) from error

@@ -7,13 +7,16 @@ from datetime import timedelta
 import pytest
 from a13n_service.durable_operations.idempotency import digest_visible_ascii_key
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
+from a13n_service.interactions.control_domain import RunAcceptanceReceipt
 from a13n_service.interactions.models import RunRecord
 from a13n_service.storage import short_session
 from a13n_service.storage.object_store import LocalObjectStore
+from anyio import Event, create_task_group, fail_after
 from sqlalchemy import select
 
 from tests.hooks.support import seed_hook_actor_access
 from tests.interactions.conftest import NOW, WORKSPACE_ID
+from tests.interactions.conftest import postgres_interaction_sessions as postgres_interaction_sessions
 
 from .test_commands import _actor, _commands, _Freezing, _frozen, _Preparation, _request
 
@@ -73,6 +76,59 @@ async def test_binding_failure_rolls_back_run_lifecycle_and_http_receipt(
     async with short_session(lifecycle_interaction_sessions) as database:
         for model in (RunRecord, LifecycleEventRecord, OutboxRecord, IdempotencyEvidenceRecord):
             assert (await database.scalars(select(model))).all() == []
+
+
+async def test_concurrent_start_reconciles_to_one_committed_receipt(postgres_interaction_sessions, tmp_path):
+    sessions = postgres_interaction_sessions
+    objects = await LocalObjectStore.create(tmp_path / "race-objects")
+    both_preparing = Event()
+
+    class ConcurrentPreparation(_Preparation):
+        async def prepare(self, **kwargs):
+            prepared = await super().prepare(**kwargs)
+            if self.calls == 2:
+                both_preparing.set()
+            await both_preparing.wait()
+            return prepared
+
+    preparation = ConcurrentPreparation()
+    commands = _commands(sessions, objects, preparation, _Freezing([_frozen()]))
+    await seed_hook_actor_access(sessions)
+    receipts: list[RunAcceptanceReceipt] = []
+    bindings: list[str] = []
+
+    async def bind(database, receipt):
+        assert await database.get(RunRecord, receipt.run_id) is not None
+        bindings.append(receipt.run_id)
+
+    async def submit():
+        receipts.append(
+            await commands.runs.start(
+                actor=_actor(),
+                workspace_id=WORKSPACE_ID,
+                idempotency_key="concurrent-start",
+                request=_request(),
+                transaction_hook=bind,
+            )
+        )
+
+    with fail_after(15):
+        async with create_task_group() as tasks:
+            tasks.start_soon(submit)
+            tasks.start_soon(submit)
+    assert preparation.calls == 2
+    assert receipts[0] == receipts[1]
+    async with short_session(sessions) as database:
+        runs = (await database.scalars(select(RunRecord))).all()
+        evidence = (await database.scalars(select(IdempotencyEvidenceRecord))).all()
+    assert [run.id for run in runs] == [receipts[0].run_id]
+    assert len(evidence) == 1 and evidence[0].result_ref == receipts[0].run_id
+
+    binding_count = len(bindings)
+    await submit()
+    assert receipts[2] == receipts[0]
+    assert len(bindings) == binding_count
+    assert preparation.calls == 2
 
 
 @pytest.mark.anyio

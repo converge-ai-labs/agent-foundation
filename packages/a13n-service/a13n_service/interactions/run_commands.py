@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
+from functools import partial
 
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -54,11 +55,9 @@ from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, utc_now
 
 from .command_evidence import (
-    RunCommandCommit,
-    RunCommandReceipts,
+    RunCommandEvidence,
     fingerprint_request,
     require_idempotency_key,
-    scoped_idempotency_key,
 )
 from .command_preparation import CommandInput, validate_invocation
 from .command_values import (
@@ -80,7 +79,6 @@ class RunCommands:
         acceptance: RunAcceptanceService,
         states: RunStateStore,
         inputs: CommandInput,
-        receipts: RunCommandReceipts,
         policy: NewRunPolicy,
         *,
         clock: Clock = utc_now,
@@ -90,7 +88,6 @@ class RunCommands:
         self._acceptance = acceptance
         self._states = states
         self._inputs = inputs
-        self._receipts = receipts
         self._policy = policy
         self._clock = clock
 
@@ -109,18 +106,17 @@ class RunCommands:
         if workspace_id != actor.workspace_id:
             raise command_not_found()
         require_idempotency_key(idempotency_key)
-        stored_key = scoped_idempotency_key(
+        evidence = RunCommandEvidence(
+            self._sessions,
             actor=actor,
             operation="run.start",
             scope_id=workspace_id,
-            supplied=idempotency_key,
+            supplied_key=idempotency_key,
+            fingerprint=fingerprint_request(request),
+            binding=transaction_hook,
+            clock=self._clock,
         )
-        request_fingerprint = fingerprint_request(request)
-        replay = await self._receipts.load(
-            actor=actor,
-            stored_key=stored_key,
-            request_fingerprint=request_fingerprint,
-        )
+        replay = await evidence.replay()
         if replay is not None:
             return replay
 
@@ -183,7 +179,7 @@ class RunCommands:
             thread_id=thread_id,
             parent_run_id=None,
             lineage_kind=RunLineageKind.root,
-            request_fingerprint=request_fingerprint,
+            request_fingerprint=evidence.fingerprint,
             invocation=frozen,
             input=accepted_input,
             origin=origin,
@@ -216,14 +212,10 @@ class RunCommands:
                 hook_subscription=request.hook_subscription,
                 environment=requested_environment(environment, default=EnvironmentDefault.agent),
                 final_validator=validate_final,
-                transaction_hook=RunCommandCommit(
-                    actor, stored_key, request_fingerprint, self._clock(), transaction_hook
-                ),
+                transaction_hook=partial(evidence.commit, now=self._clock()),
             )
         except RunAcceptanceError as error:
-            return await self._receipts.reconcile(
-                error, actor=actor, stored_key=stored_key, request_fingerprint=request_fingerprint
-            )
+            return await evidence.reconcile(error)
 
     async def continue_from(
         self,
@@ -239,18 +231,17 @@ class RunCommands:
     ) -> RunAcceptanceReceipt:
         environment = request.environment
         require_idempotency_key(idempotency_key)
-        stored_key = scoped_idempotency_key(
+        evidence = RunCommandEvidence(
+            self._sessions,
             actor=actor,
             operation="run.continue_from",
             scope_id=source_run_id,
-            supplied=idempotency_key,
+            supplied_key=idempotency_key,
+            fingerprint=fingerprint_request(request),
+            binding=transaction_hook,
+            clock=self._clock,
         )
-        request_fingerprint = fingerprint_request(request)
-        replay = await self._receipts.load(
-            actor=actor,
-            stored_key=stored_key,
-            request_fingerprint=request_fingerprint,
-        )
+        replay = await evidence.replay()
         if replay is not None:
             return replay
 
@@ -301,7 +292,7 @@ class RunCommands:
             thread_id=source.thread_id,
             parent_run_id=source.id,
             lineage_kind=RunLineageKind.continue_,
-            request_fingerprint=request_fingerprint,
+            request_fingerprint=evidence.fingerprint,
             invocation=frozen,
             input=accepted_input,
             origin=origin,
@@ -336,14 +327,10 @@ class RunCommands:
                     else EnvironmentDefault.thread,
                 ),
                 final_validator=validate_final,
-                transaction_hook=RunCommandCommit(
-                    actor, stored_key, request_fingerprint, self._clock(), transaction_hook
-                ),
+                transaction_hook=partial(evidence.commit, now=self._clock()),
             )
         except RunAcceptanceError as error:
-            return await self._receipts.reconcile(
-                error, actor=actor, stored_key=stored_key, request_fingerprint=request_fingerprint
-            )
+            return await evidence.reconcile(error)
 
     async def continue_empty_thread(
         self,
@@ -358,18 +345,17 @@ class RunCommands:
     ) -> RunAcceptanceReceipt:
         environment = request.environment
         require_idempotency_key(idempotency_key)
-        stored_key = scoped_idempotency_key(
+        evidence = RunCommandEvidence(
+            self._sessions,
             actor=actor,
             operation="run.continue_empty",
             scope_id=thread_id,
-            supplied=idempotency_key,
+            supplied_key=idempotency_key,
+            fingerprint=fingerprint_request(request),
+            binding=transaction_hook,
+            clock=self._clock,
         )
-        request_fingerprint = fingerprint_request(request)
-        replay = await self._receipts.load(
-            actor=actor,
-            stored_key=stored_key,
-            request_fingerprint=request_fingerprint,
-        )
+        replay = await evidence.replay()
         if replay is not None:
             return replay
 
@@ -418,7 +404,7 @@ class RunCommands:
             thread_id=thread.id,
             parent_run_id=None,
             lineage_kind=RunLineageKind.root,
-            request_fingerprint=request_fingerprint,
+            request_fingerprint=evidence.fingerprint,
             invocation=frozen,
             input=accepted_input,
             origin=origin,
@@ -448,14 +434,10 @@ class RunCommands:
                 hook_subscription=request.hook_subscription,
                 environment=requested_environment(environment, default=EnvironmentDefault.thread),
                 final_validator=validate_final,
-                transaction_hook=RunCommandCommit(
-                    actor, stored_key, request_fingerprint, self._clock(), transaction_hook
-                ),
+                transaction_hook=partial(evidence.commit, now=self._clock()),
             )
         except RunAcceptanceError as error:
-            return await self._receipts.reconcile(
-                error, actor=actor, stored_key=stored_key, request_fingerprint=request_fingerprint
-            )
+            return await evidence.reconcile(error)
 
     async def fork(
         self,
@@ -468,18 +450,17 @@ class RunCommands:
     ) -> RunAcceptanceReceipt:
         environment = request.environment
         require_idempotency_key(idempotency_key)
-        stored_key = scoped_idempotency_key(
+        evidence = RunCommandEvidence(
+            self._sessions,
             actor=actor,
             operation="run.fork",
             scope_id=run_id,
-            supplied=idempotency_key,
+            supplied_key=idempotency_key,
+            fingerprint=fingerprint_request(request),
+            binding=transaction_hook,
+            clock=self._clock,
         )
-        request_fingerprint = fingerprint_request(request)
-        replay = await self._receipts.load(
-            actor=actor,
-            stored_key=stored_key,
-            request_fingerprint=request_fingerprint,
-        )
+        replay = await evidence.replay()
         if replay is not None:
             return replay
 
@@ -553,7 +534,7 @@ class RunCommands:
             thread_id=new_thread_id_value,
             parent_run_id=source.id,
             lineage_kind=RunLineageKind.fork,
-            request_fingerprint=request_fingerprint,
+            request_fingerprint=evidence.fingerprint,
             invocation=frozen,
             input=accepted_input,
             origin=_USER_INPUT_ORIGIN,
@@ -607,14 +588,10 @@ class RunCommands:
                     environment, default=RetainedRunEnvironment(source.id, source.thread_id)
                 ),
                 final_validator=validate_final,
-                transaction_hook=RunCommandCommit(
-                    actor, stored_key, request_fingerprint, self._clock(), transaction_hook
-                ),
+                transaction_hook=partial(evidence.commit, now=self._clock()),
             )
         except RunAcceptanceError as error:
-            return await self._receipts.reconcile(
-                error, actor=actor, stored_key=stored_key, request_fingerprint=request_fingerprint
-            )
+            return await evidence.reconcile(error)
 
     async def _load_continue_source(self, *, actor: AuthenticatedActor, source_run_id: str):
         async with short_session(self._sessions) as database:

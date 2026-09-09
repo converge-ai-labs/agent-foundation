@@ -321,6 +321,7 @@ async def lock_hook_workspace(
     organization_id: str,
     workspace_id: str,
 ) -> WorkspaceRecord:
+    # FOR NO KEY UPDATE serializes Hooks while allowing Session foreign-key checks.
     workspace = await database.scalar(
         select(WorkspaceRecord)
         .where(
@@ -328,7 +329,7 @@ async def lock_hook_workspace(
             WorkspaceRecord.organization_id == organization_id,
             WorkspaceRecord.deleted_at.is_(None),
         )
-        .with_for_update()
+        .with_for_update(of=WorkspaceRecord, key_share=True)
     )
     if workspace is None:
         raise HookSubscriptionInvariantError(
@@ -354,7 +355,7 @@ async def _lock_event_workspace(
             SessionRecord.id == event.session_id,
             WorkspaceRecord.deleted_at.is_(None),
         )
-        .with_for_update()
+        .with_for_update(of=WorkspaceRecord, key_share=True)
     )
     if workspace is None:
         raise HookSubscriptionInvariantError(

@@ -9,7 +9,6 @@ from a13n_service.temporal import Clock, utc_now
 
 from .acceptance import RunAcceptanceService
 from .active_commands import ActiveRunCommands
-from .command_evidence import RunCommandReceipts
 from .command_preparation import CommandInput
 from .continuation_commands import ContinuationCommands
 from .domain import ExecutionBudget
@@ -41,7 +40,6 @@ class InteractionCommands:
         clock: Clock = utc_now,
     ) -> None:
         inputs = CommandInput(sessions, assets, endpoint_policy)
-        receipts = RunCommandReceipts(sessions, clock=clock)
         policy = NewRunPolicy(
             priority=priority,
             queue_name=queue_name,
@@ -49,7 +47,7 @@ class InteractionCommands:
                 policy_version="1", max_attempts=execution_max_attempts, max_handoffs=max_handoffs
             ),
         )
-        self.runs = RunCommands(sessions, invocations, acceptance, states, inputs, receipts, policy, clock=clock)
-        self.continuations = ContinuationCommands(sessions, acceptance, states, payloads, inputs, receipts, clock=clock)
+        self.runs = RunCommands(sessions, invocations, acceptance, states, inputs, policy, clock=clock)
+        self.continuations = ContinuationCommands(sessions, acceptance, states, payloads, inputs, clock=clock)
         self.active = ActiveRunCommands(sessions, states, outcomes, inbox, inputs, clock=clock)
         self.queued = QueuedRunCommands(sessions, invocations, acceptance, states, inputs, policy, clock=clock)
