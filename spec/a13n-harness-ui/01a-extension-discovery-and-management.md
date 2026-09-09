@@ -49,6 +49,10 @@ Harness UI enumerates the complete declarative Capability catalog available to i
 
 The resulting selected custom set is supplied to the Harness `CapabilityTypeCatalog`. YAML names a stable serialization name and JSON-compatible arguments; it never supplies a Python import target. Generic Capability construction passes configuration directly to the selected native constructor, without Host-added `validate_call` wrapping, argument filtering, scalar coercion, or validation aliases. Constructor keyword names and any `**kwargs` behavior remain native; unexpected keywords fail through normal Python binding instead of being silently discarded. Nested provider-specific Model settings remain intact. A type's own configuration model and constructor validation remain authoritative, including their default strictness. Harness UI performs only the serialization adaptation needed to instantiate the selected native value, such as enum values and JSON lists.
 
+An unavailable, ambiguous, unloadable, or configuration-invalid Agent Capability is skipped individually with a warning identifying the Agent ID, Capability key, and safe reason. It does not reject the complete configuration generation or block other Agents. Native constructor validation still determines whether configuration is usable; warnings do not expose argument values or raw exception traces. Authored resource files remain unchanged. Configuration validation and App status expose the current process's warnings, and the interactive CLI displays them. Malformed resource structure and invalid non-Capability resources remain errors.
+
+Only effective Capability selections enter a newly captured Run composition and its dependency provenance. Skipping an explicitly configured default Capability does not reintroduce it with default settings. Global tool switches and mandatory Host/runtime authority remain enforced. This tolerance applies to source selection, not reconstruction of immutable captures, runtime hook failures, unsupported native model requests, or incompatible stored Capability state; those failures retain their existing semantics.
+
 `NativeTool` configuration uses the upstream `from_spec` reconstruction so both a flat `{kind: web_search, ...}` mapping and an explicit `{tool: {kind: web_search, ...}}` mapping produce typed native tools, not dictionaries. An Agent and its captured composition may contain multiple `NativeTool` entries to compose different tools. Other Capability keys retain their unique-selection rule; native tool merging and support remain upstream semantics.
 
 The selectable `native_image_generation` key constructs Harness `NativeImageGenerationCapability`, validating its configuration as native `ImageGenerationTool` options and injecting Harness UI's Thread-file saver. The saver is never authored or persisted as a configuration value. This is native generation with saving, not Pydantic AI's separate image API/fallback Capability. [Native Image Generation](../a13n-harness/16-input-model-and-output.md#native-image-generation) owns its result semantics; [Thread file mounts](04-projects-threads-and-environments.md#thread-file-mount) owns the UI destination.
@@ -169,14 +173,15 @@ This value explains what the admitted Run used. Model routes, authentication kin
 
 ## Failure Semantics
 
-| Failure                                        | Outcome                                                                    |
-| ---------------------------------------------- | -------------------------------------------------------------------------- |
-| Metadata enumeration failure                   | Catalog refresh fails with bounded diagnostics                             |
-| Duplicate installed key                        | The key is ambiguous and cannot be selected                                |
-| Selected target import or construction failure | Generation validation or Run capture fails; no partial catalog is accepted |
-| Invalid Capability type                        | It is rejected by Host and Harness catalog validation                      |
-| Provider has no approved Harness UI adapter    | It remains discoverable but cannot be selected for execution               |
-| Factory configuration invalid                  | The resource generation is rejected                                        |
+| Failure                                                       | Outcome                                                                              |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Metadata enumeration failure                                  | Catalog refresh fails with bounded diagnostics                                       |
+| Duplicate installed key                                       | The key is ambiguous and cannot be selected                                          |
+| Selected non-Capability target import or construction failure | Generation validation or Run capture fails; no partial extension catalog is accepted |
+| Unavailable or invalid Agent Capability selection             | The entry is skipped with a warning; other valid entries remain selected             |
+| Provider has no approved Harness UI adapter                   | It remains discoverable but cannot be selected for execution                         |
+| Factory configuration invalid                                 | The resource generation is rejected                                                  |
+| Captured Capability reconstruction or runtime failure         | The failure is propagated; immutable captures are not weakened                       |
 
 ## Invariants
 

@@ -421,6 +421,8 @@ The Capability requires a Host-supplied asynchronous `NativeImageSaver`: a calla
 
 For a completed model response, the Capability saves each final image and records a text reference in place of its binary file part before output validation and continuation capture. Image-only responses therefore satisfy a text output contract without an extra model request. Text, native tool-call/return metadata, and non-image parts retain their native semantics. Stream consumers receive references only after saving, never provisional image bytes. Interrupted or incomplete images are represented as unsaved rather than embedded in continuation history. Saving failures propagate through the ordinary failed-Run path; they do not produce a successful reference or automatically switch to another generation backend.
 
+The Capability instructs the Model to present saved images in replies using Markdown image syntax with the exact saver-returned path or URL. This instruction does not publish a local file to the web or guarantee that a client can render it.
+
 A saved reference is not an image attachment and does not make subsequent Models see the pixels automatically. A later Agent can read the referenced file through its authorized tools. Continuation persistence does not imply that the Host has retained the target forever. Model execution, file saving, and continuation publication are separate effects, not an atomic transaction; cancellation or failure may leave saved files whose references were not published.
 
 ## Failure Semantics

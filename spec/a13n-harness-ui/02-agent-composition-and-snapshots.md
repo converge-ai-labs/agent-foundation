@@ -274,7 +274,7 @@ For each Run, Harness UI:
 1. captures the accepted file-and-Content-Plugin generation and Thread configuration version;
 2. resolves the Thread's current Agent-resource or Markdown-subagent source;
 3. applies exact Thread Harness Plugin and MCP lists to the root Agent;
-4. resolves Capability selections, tool visibility, and every subagent edge;
+4. resolves Capability selections, skipping unusable source entries with [warnings](01a-extension-discovery-and-management.md#capability-catalog), and resolves tool visibility and every subagent edge;
 5. resolves current Model, Plugin, MCP, and Capability definitions;
 6. validates the finite graph and installed catalogs;
 7. records available dependency provenance for selected Capability and extension implementations;

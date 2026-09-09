@@ -107,6 +107,8 @@ async def test_native_image_stream_saves_final_image_and_resumes_without_bytes(t
             for event in events
         )
         assert {tool["type"] for tool in requests[0]["tools"]} == {"image_generation", "web_search"}
+        assert "![brief image description](<saved path or URL>)" in json.dumps(requests[0])
+        assert "Use the exact path or URL returned by the image saver" in json.dumps(requests[0])
 
         await executable.run("Another one", previous_state=result.state, bindings=RunBindings.embedded())
         assert "generated.png" in json.dumps(requests[1]["input"])

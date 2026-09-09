@@ -224,6 +224,48 @@ async def test_application_starts_persists_objects_and_closes(tmp_path: Path) ->
         assert (await reopened._store.read_object(reference)).payload == {"run": "root"}
 
 
+async def test_invalid_capabilities_warn_but_allow_real_composition_and_chat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from a13n_harness_ui.cli import CliRequest, OutputFormat
+    from a13n_harness_ui.cli_runtime import _run_management
+
+    root = _write_configuration(tmp_path)
+    agent = tmp_path / "agents/assistant.yaml"
+    agent.write_text(agent.read_text() + "capabilities:\n  - capability: vendor.missing\n")
+    original = agent.read_bytes()
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages, info
+        yield "conversation still works"
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        status = await app.status()
+        assert status.candidate_error_code is None
+        assert len(status.capability_warnings) == 1
+        assert "agent-assistant" in status.capability_warnings[0]
+        assert "vendor.missing" in status.capability_warnings[0]
+        code = await _run_management(
+            app, CliRequest(command="config", action="validate", output_format=OutputFormat.json)
+        )
+        assert code == 0
+        validation = json.loads(capsys.readouterr().out)
+        assert validation["valid"] is True
+        assert validation["capability_warnings"] == list(status.capability_warnings)
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="hello")
+        operation = await app.wait_root_operation(receipt.receipt_id)
+        assert operation.status is RootOperationStatus.completed
+        assert agent.read_bytes() == original
+        agent.write_text(agent.read_text().replace("  - capability: vendor.missing\n", "  - capability: web\n"))
+        await app.reload_configuration()
+        assert (await app.status()).capability_warnings == ()
+
+
 async def test_invalid_first_candidate_starts_with_diagnostics_and_observer_accepts_repair(
     tmp_path: Path,
 ) -> None:

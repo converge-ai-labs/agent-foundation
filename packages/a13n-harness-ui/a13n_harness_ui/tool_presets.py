@@ -66,7 +66,7 @@ _NATIVE_CHOICES = (
 def tool_choices(
     route: str, *, authentication: str | None = None, base_url: str | None = None
 ) -> tuple[ToolChoice, ...]:
-    """Suggest only tools usable by the selected coding-Agent connection."""
+    """Offer adapter candidates; preselect only reviewed coding-Agent connections."""
     provider, _, model = route.partition(":")
     kinds: set[str] = set()
     known = authentication in {"codex_subscription", "grok_subscription"} or model in API_MODEL_SUGGESTIONS.get(
@@ -79,43 +79,38 @@ def tool_choices(
     else:
         preset = API_PROVIDER_BY_ROUTE.get(provider)
         official = preset is not None and (base_url is None or base_url.rstrip("/") == preset.base_url.rstrip("/"))
-        if official:
-            # Reuse upstream's transport inventory; do not maintain another tool
-            # support matrix. Model/account restrictions still apply at execution.
-            from pydantic_ai.models.anthropic import AnthropicModel
-            from pydantic_ai.models.google import GoogleModel
-            from pydantic_ai.models.openai import OpenAIResponsesModel
-            from pydantic_ai.models.openrouter import OpenRouterModel
-            from pydantic_ai.models.xai import XaiModel
+        # A custom endpoint is unverified, not evidence of missing adapter support.
+        # Offer explicit choices, but preselect only reviewed official connections.
+        known = known and official
+        from pydantic_ai.models.anthropic import AnthropicModel
+        from pydantic_ai.models.google import GoogleModel
+        from pydantic_ai.models.openai import OpenAIResponsesModel
+        from pydantic_ai.models.openrouter import OpenRouterModel
+        from pydantic_ai.models.xai import XaiModel
 
-            model_type = {
-                "openai-responses": OpenAIResponsesModel,
-                "anthropic": AnthropicModel,
-                "google": GoogleModel,
-                "openrouter": OpenRouterModel,
-                "xai": XaiModel,
-            }.get(provider)
-            if model_type is not None:
-                kinds = {tool.kind for tool in model_type.supported_native_tools()}
-            if provider == "openai-responses":
-                if model not in API_MODEL_SUGGESTIONS[provider]:
-                    kinds.discard("image_generation")
-            if provider == "anthropic":
-                from pydantic_ai.profiles.anthropic import anthropic_model_profile
+        model_type = {
+            "openai-responses": OpenAIResponsesModel,
+            "anthropic": AnthropicModel,
+            "google": GoogleModel,
+            "openrouter": OpenRouterModel,
+            "xai": XaiModel,
+        }.get(provider)
+        if model_type is not None:
+            kinds = {tool.kind for tool in model_type.supported_native_tools()}
+        if provider == "anthropic":
+            from pydantic_ai.profiles.anthropic import anthropic_model_profile
 
-                profile_tools = (anthropic_model_profile(model) or {}).get("supported_native_tools")
-                if profile_tools is not None:
-                    kinds &= {tool.kind for tool in profile_tools}
-            if provider == "google":
-                from pydantic_ai.profiles.google import google_model_profile
+            profile_tools = (anthropic_model_profile(model) or {}).get("supported_native_tools")
+            if profile_tools is not None:
+                kinds &= {tool.kind for tool in profile_tools}
+        if provider == "google":
+            from pydantic_ai.profiles.google import google_model_profile
 
-                profile = google_model_profile(model) or {}
-                if not profile.get("google_supports_tool_combination", False) or not profile.get(
-                    "supports_tools", True
-                ):
-                    kinds.clear()
-                # Gemini image-only models cannot use the starter's function tools.
-                kinds.discard("image_generation")
+            profile = google_model_profile(model) or {}
+            if not profile.get("google_supports_tool_combination", False) or not profile.get("supports_tools", True):
+                kinds.clear()
+            # Gemini image-only models cannot use the starter's function tools.
+            kinds.discard("image_generation")
     return tuple(
         replace(choice, recommended=choice.recommended and known) for choice in _NATIVE_CHOICES if choice.key in kinds
     )

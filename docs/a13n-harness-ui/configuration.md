@@ -28,6 +28,14 @@ The root file's directory also contains:
 
 Only immediate lowercase `.yaml` or `.md` files are scanned, plus `.json` in `mcp/`; `subagents/README.md` is ignored. Filenames are for people; the resource `id` owns references. There is no recursive scan, YAML include, ancestor configuration merge, or symlink-based resource discovery. One file defines one resource, except MCP files may contain a multi-server `mcpServers` object. MCP environment/header values accept literals and environment references; see [MCP configuration](extensions-and-mcp.md#mcp-servers). Unknown fields, unsupported schema versions, duplicate IDs/keys, aliases, anchors, and invalid references reject the candidate configuration.
 
+### Skipped Capabilities
+
+A missing, ambiguous, unloadable, or invalid Capability in an Agent produces a warning instead of blocking conversations. Harness UI skips only that entry, keeps valid entries (including other `NativeTool` entries), and leaves your YAML unchanged. The warning names the Agent ID, Capability key, and reason. The interactive CLI displays these warnings; `config validate` and the Web API's App status expose them as `capability_warnings`. Validation still succeeds when these are the only problems.
+
+Correct the Capability name or arguments, install its trusted implementation if needed, or remove the entry. If an explicitly configured default Capability is invalid, it stays skipped rather than being replaced with broader defaults. A missing Shell Review auxiliary Model also skips that review Capability; Environment permissions, mandatory invocation policy, and tool switches still apply.
+
+Only valid selections are captured for a new Run. Already captured Runs do not change, and runtime/model-provider failures are not converted into configuration warnings. Invalid YAML structure, Model resources, and Environment or Plugin configuration still require repair.
+
 ## Complete root document
 
 This example shows every root option. Replace the example default IDs with resources you actually created, or leave those selections `null`.

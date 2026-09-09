@@ -188,6 +188,7 @@ class AppStatus(BaseModel):
     candidate_error_code: str | None = None
     candidate_error_message: str | None = None
     content_plugin_diagnostics: tuple[str, ...] = ()
+    capability_warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -306,6 +307,7 @@ class HarnessUiApp:
             configuration = await self._configurations.current()
             return AppStatus(
                 content_plugin_diagnostics=(() if configuration is None else configuration.content_plugin_diagnostics),
+                capability_warnings=self._configurations.capability_warnings,
                 state=self._state,
                 object_count=await self._store.object_count(),
                 accepted_generation_digest=current_digest,

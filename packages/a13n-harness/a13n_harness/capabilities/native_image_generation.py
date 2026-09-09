@@ -57,6 +57,13 @@ class NativeImageGenerationCapability(AbstractCapability[AgentContext]):
     def get_native_tools(self) -> list[ImageGenerationTool]:
         return [self.tool]
 
+    def get_instructions(self) -> str:
+        return (
+            "When presenting a saved generated image in your reply, display it with Markdown image syntax: "
+            "![brief image description](<saved path or URL>). Use the exact path or URL returned by the image "
+            "saver, not a guessed location or raw image bytes. Do not claim an image was saved if saving failed."
+        )
+
     async def for_run(self, ctx: RunContext[AgentContext]) -> NativeImageGenerationCapability:
         return replace(self)
 

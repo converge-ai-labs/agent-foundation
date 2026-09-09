@@ -1336,6 +1336,14 @@
             "type": "array",
             "title": "Content Plugin Diagnostics",
             "default": []
+          },
+          "capability_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Capability Warnings",
+            "default": []
           }
         },
         "additionalProperties": false,

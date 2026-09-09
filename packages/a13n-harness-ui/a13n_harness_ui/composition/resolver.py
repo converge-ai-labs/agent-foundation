@@ -16,6 +16,7 @@ from a13n_harness.plugin_factories import (
     HarnessPluginFactoryCatalog,
     HarnessPluginFactoryRegistration,
 )
+from a13n_logging import get_logger
 from pydantic import JsonValue
 
 from a13n_harness_ui.configuration import (
@@ -35,7 +36,7 @@ from a13n_harness_ui.environment_profiles import (
     built_in_environment_profile,
 )
 from a13n_harness_ui.errors import CompositionError
-from a13n_harness_ui.extensions import HarnessUiExtensionCatalog, SelectedCapability
+from a13n_harness_ui.extensions import HarnessUiExtensionCatalog
 from a13n_harness_ui.model_adapters import PydanticAiModelAdapter, service_tier_setting
 from a13n_harness_ui.prompts import DEFAULT_SYSTEM_PROMPT
 from a13n_harness_ui.surfaces import RunModelOverrides
@@ -59,6 +60,15 @@ PACKAGE_PROMPT_REVISION = "a13n-harness-ui/3"
 IMPLICIT_NATIVE_PROFILE = FULL_CONTROL_PROFILE_ID
 _MAX_RESOLVED_NODES = 1024
 _MAX_RESOLVED_DEPTH = 128
+_LOGGER = get_logger(__name__)
+_SKIPPABLE_CAPABILITY_ERRORS = frozenset(
+    {
+        "capability_catalog_invalid",
+        "capability_configuration_invalid",
+        "capability_model_missing",
+        "extension_catalog_ambiguous",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,8 +91,8 @@ class AgentCompositionResolver:
         self.catalog = catalog or HarnessUiExtensionCatalog()
         self._model_adapter = PydanticAiModelAdapter()
 
-    def validate_generation(self, source: LoadedHarnessUiConfiguration) -> None:
-        """Validate every configured catalog key and package-owned configuration."""
+    def validate_generation(self, source: LoadedHarnessUiConfiguration, *, warnings: list[str] | None = None) -> None:
+        """Validate a generation, reporting unusable Agent Capabilities separately."""
 
         plugin_keys = tuple(item.plugin_key for item in source.harness_plugins.values())
         plugin_catalog = self.catalog.plugin_catalog(plugin_keys)
@@ -123,7 +133,7 @@ class AgentCompositionResolver:
         for model in source.models.values():
             self._model_recipe(model)
         for agent in source.agents.values():
-            self._capability_recipes(source, agent)
+            self._capability_recipes(source, agent, warnings=warnings)
 
     def resolve_run(
         self,
@@ -409,8 +419,8 @@ class AgentCompositionResolver:
         agent: AgentResource,
         *,
         active_model: ResolvedModelRecipe | None = None,
+        warnings: list[str] | None = None,
     ) -> tuple[ResolvedCapabilityRecipe, ...]:
-        self._capabilities(agent)
         recipes: list[ResolvedCapabilityRecipe] = []
         tools = source.document.tools
         disabled = {
@@ -434,15 +444,26 @@ class AgentCompositionResolver:
             ):
                 configuration["context_window_tokens"] = characteristics.context_window
             model = None
-            if item.capability == "ShellReviewCapability":
-                model_id = item.configuration.get("model")
-                if not isinstance(model_id, str) or model_id not in source.models:
-                    raise CompositionError(
-                        "Shell review must reference an available Model resource.",
-                        code="capability_model_missing",
-                        details={"agent_id": agent.id},
-                    )
-                model = self._model_recipe(source.models[model_id])
+            try:
+                self.catalog.capabilities(((item.capability, configuration),))
+                if item.capability == "ShellReviewCapability":
+                    model_id = item.configuration.get("model")
+                    if not isinstance(model_id, str) or model_id not in source.models:
+                        raise CompositionError(
+                            "Shell review must reference an available Model resource.",
+                            code="capability_model_missing",
+                            details={"agent_id": agent.id},
+                        )
+                    model = self._model_recipe(source.models[model_id])
+            except CompositionError as exc:
+                if exc.code not in _SKIPPABLE_CAPABILITY_ERRORS:
+                    raise
+                warning = f"Agent {agent.id}: skipped Capability {item.capability}: {exc} ({exc.code})"
+                if warnings is not None:
+                    warnings.append(warning)
+                else:
+                    _LOGGER.warning("capability_skipped", extra={"warning": warning})
+                continue
             recipes.append(
                 ResolvedCapabilityRecipe(
                     capability=item.capability,
@@ -451,7 +472,8 @@ class AgentCompositionResolver:
                 )
             )
         for default in ("file_context", "working_state", "user_interaction", "codeact"):
-            if default not in disabled and not any(item.capability == default for item in recipes):
+            # An invalid explicit selection is skipped, never replaced with broader defaults.
+            if default not in disabled and not any(item.capability == default for item in agent.capabilities):
                 recipes.append(
                     ResolvedCapabilityRecipe(
                         capability=default,
@@ -459,9 +481,6 @@ class AgentCompositionResolver:
                     )
                 )
         return tuple(recipes)
-
-    def _capabilities(self, agent: AgentResource) -> tuple[SelectedCapability, ...]:
-        return self.catalog.capabilities(tuple((item.capability, item.configuration) for item in agent.capabilities))
 
     def _plugins(
         self,

@@ -41,6 +41,7 @@ from a13n_harness.environment import (
     build_environment_run_extension_factory_catalog,
     discover_environment_run_extension_factory_references,
 )
+from a13n_harness.errors import DefinitionError
 from a13n_harness.plugin_factories import (
     HarnessPluginFactory,
     HarnessPluginFactoryCatalog,
@@ -249,6 +250,21 @@ class HarnessUiExtensionCatalog:
                 if entry.dist is not None:
                     distribution_name = entry.dist.metadata.get("Name")
                     distribution_version = entry.dist.version
+            if capability_type in custom_types:
+                try:
+                    CapabilityTypeCatalog.from_types(custom_types)
+                except DefinitionError as exc:
+                    raise CompositionError(
+                        "A selected Capability type is not eligible for declarative configuration.",
+                        code="capability_catalog_invalid",
+                        details={"capability": key},
+                    ) from exc
+                if capability_type.get_serialization_name() != key:
+                    raise CompositionError(
+                        "A Capability catalog key does not match its serialization name.",
+                        code="capability_catalog_invalid",
+                        details={"capability": key},
+                    )
             try:
                 capability = _construct_capability(
                     capability_type,
@@ -275,8 +291,6 @@ class HarnessUiExtensionCatalog:
                     ),
                 )
             )
-        if custom_types:
-            CapabilityTypeCatalog.from_types(custom_types)
         return tuple(result)
 
     def plugin_catalog(self, keys: tuple[str, ...]) -> HarnessPluginFactoryCatalog:

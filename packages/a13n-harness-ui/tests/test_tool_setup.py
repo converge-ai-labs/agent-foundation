@@ -195,3 +195,130 @@ async def test_add_model_handoff_publishes_resources_and_native_tools_on_new_age
         assert native["mcp_server"]["url"] == "https://mcp.example/mcp"
         assert ("model", "base_url") not in asked
         assert all(p.read_bytes() == content for p, content in baseline.items())
+
+
+@pytest.mark.parametrize(
+    "route,search,image",
+    [
+        ("openai-responses:gpt-4.1", True, True),
+        ("openai-responses:gpt-6-astra", True, True),
+        ("openai-responses:gateway-model-alias", True, True),
+        ("openai-chat:gpt-4.1", False, False),
+        ("anthropic:claude-sonnet-4-6", True, False),
+        ("google:gemini-3.1-pro-preview", True, False),
+        ("google:gemini-2.5-pro", False, False),
+        ("google:gemini-3-pro-image-preview", False, False),
+        ("openrouter:openai/gpt-5.4", True, False),
+        ("xai:grok-4.6", True, False),
+        ("grok:grok-4.6", False, False),
+    ],
+)
+@pytest.mark.parametrize("endpoint", [None, "https://gateway.example/v1"])
+def test_api_native_choices_follow_adapter_not_endpoint_or_model_suggestion_list(route, search, image, endpoint):
+    choices = tool_choices(route, authentication="api_key", base_url=endpoint)
+    keys = {choice.key for choice in choices}
+    assert ("web_search" in keys) is search
+    assert ("image_generation" in keys) is image
+    if endpoint is not None:
+        assert not any(choice.recommended for choice in choices)
+
+
+@pytest.mark.parametrize("mode", ["setup", "agent", "model"])
+@pytest.mark.parametrize("advanced", [False, True])
+@pytest.mark.parametrize("provider", ["codex", "grok", "openai-responses", "openai-chat", "xai"])
+def test_wizard_progress_counts_only_visible_steps(mode, advanced, provider):
+    wizard = SetupWizard(add_agent=mode == "agent", add_model=mode == "model", advanced=advanced)
+    visited = []
+    totals = []
+    while wizard.question is not None:
+        question = wizard.question
+        current, total = wizard.progress
+        assert current == len(visited) + 1
+        assert current <= total
+        assert wizard.notice().startswith(f"{current} / {total} · ")
+        visited.append(question.key)
+        totals.append(total)
+        answer = question.default
+        if question.key == "provider":
+            answer = provider if provider in {"codex", "grok"} else "api"
+        elif question.key == "api_provider":
+            answer = provider
+        elif question.key == "credential":
+            answer = "env:TEST_KEY"
+        wizard.accept(answer)
+    assert wizard.progress == (len(visited), len(visited))
+    assert totals[-1] == len(visited)
+    assert ("tools" in visited) is (mode != "model" and provider != "openai-chat")
+    if provider == "xai":
+        assert "base_url" not in visited
+    for index, key in reversed(list(enumerate(visited))):
+        assert wizard.back()
+        assert wizard.question.key == key
+        assert wizard.progress[0] == index + 1
+    assert not wizard.back()
+
+
+def test_resource_steps_change_progress_when_selected_and_removed():
+    wizard = _wizard("api", "gpt-4.1")
+    current, total = wizard.progress
+    wizard.accept("file_search,mcp_server")
+    assert wizard.progress == (current + 1, total + 3)
+    for key, answer in [("file_stores", "vs_docs"), ("mcp_url", "https://mcp.example"), ("mcp_id", "docs")]:
+        assert wizard.question.key == key
+        wizard.accept(answer)
+    assert wizard.progress[0] == wizard.progress[1]
+    for _ in range(4):
+        assert wizard.back()
+    assert wizard.question.key == "tools"
+    wizard.accept("none")
+    assert wizard.question.key == "environment"
+    assert wizard.progress == (total, total)
+
+
+@pytest.mark.anyio
+async def test_custom_api_setup_and_existing_model_agent_publish_selected_search_and_saved_images(tmp_path):
+    from a13n_harness_ui.interactive.selection import Choice
+
+    path = tmp_path / "config.yaml"
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    asked = []
+
+    async def ask(question, selection):
+        asked.append(question.key)
+        answers = {
+            "provider": "api",
+            "api_provider": "openai-responses",
+            "base_url": "https://gateway.example/v1",
+            "credential": "env:TEST_KEY",
+            "model": "gateway-model-alias",
+            "tools": "web_search,image_generation",
+        }
+        if question.key == "tools":
+            assert not selection.checked
+        return answers.get(question.key, question.default)
+
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda _: None)
+        configuration = await app.current_configuration()
+        model = configuration.models["model-api-key"]
+        original = {file: file.read_bytes() for file in tmp_path.rglob("*.yaml")}
+        wizard = SetupWizard(
+            add_agent=True,
+            model_choices=(Choice(model.id, model.name),),
+            model_resources={model.id: model},
+        )
+        wizard.accept(model.id)
+        assert wizard.question.key == "tools"
+        assert wizard.progress == (2, 3)
+        asked.clear()
+        assert await run_setup(
+            app, tmp_path, add_agent=True, existing_model_id=model.id, ask_user=ask, emit=lambda _: None
+        )
+        assert asked == ["model_source", "tools", "name"]
+        configuration = await app.current_configuration()
+        for agent in configuration.agents.values():
+            caps = {cap.capability: cap.configuration for cap in agent.capabilities}
+            assert caps["web"] == {"search": {"mode": "off"}, "scrape": {"mode": "host"}}
+            assert caps["NativeTool"]["kind"] == "web_search"
+            assert caps["native_image_generation"] == {}
+        assert all(file.read_bytes() == content for file, content in original.items())

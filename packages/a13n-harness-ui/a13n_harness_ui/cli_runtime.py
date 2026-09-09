@@ -181,6 +181,7 @@ async def _run_management(
             projection = {
                 "valid": status.candidate_error_code is None,
                 "content_plugin_diagnostics": status.content_plugin_diagnostics,
+                "capability_warnings": status.capability_warnings,
                 "accepted_generation_digest": status.accepted_generation_digest,
                 "error": (
                     None

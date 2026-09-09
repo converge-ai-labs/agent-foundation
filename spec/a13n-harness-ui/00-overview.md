@@ -101,7 +101,7 @@ A Thread configuration patch and root admission form one App operation. Every no
 
 The receipt returns before preparation completes. It supports exact current-process query, wait, cancel, and, once a Harness stream exists, steer. A suspended continuation can be resumed only by a response naming that exact continuation and completely answering its detached pending request set. Receipts and response input are not durable records.
 
-`HarnessState` preserves the conversation and Capability namespaces across composition changes. An unavailable or incompatible newly selected component fails the new Run explicitly; Harness UI does not silently substitute the previous component or reset state.
+`HarnessState` preserves the conversation and Capability namespaces across composition changes. Unusable Agent Capability source selections are [skipped with warnings](01a-extension-discovery-and-management.md#capability-catalog) before capture. Other unavailable or incompatible selected components fail explicitly; Harness UI does not silently substitute the previous component or reset state.
 
 Environment-state publication and continuation selection are independent completion boundaries. Known changed state is published after adapter cleanup even when execution or continuation publication fails.
 

@@ -152,6 +152,7 @@ def test_api_wizard_backtracking_drops_incompatible_settings_and_endpoints() -> 
         "claude-sonnet-4-5",
         "interleaved",
         "200k",
+        "none",  # Custom endpoints offer explicit native choices without recommendations.
         "Coding",
     ):
         wizard.accept(answer)

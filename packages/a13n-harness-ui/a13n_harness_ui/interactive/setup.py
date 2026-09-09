@@ -233,7 +233,19 @@ class SetupWizard:
                 return Question("environment", WINDOWS_EXECUTION_NOTICE, "full-control", ("full-control",))
         return replace(question, default=default)
 
+    @property
+    def progress(self) -> tuple[int, int]:
+        visible = tuple(index for index, question in enumerate(_QUESTIONS) if self._is_relevant(question.key))
+        current = visible.index(self.index) + 1 if self.index < len(_QUESTIONS) else len(visible)
+        return current, len(visible)
+
     def notice(self) -> str:
+        if self.question is None:
+            return "Ready to save."
+        current, total = self.progress
+        return f"{current} / {total} · {self._notice()}"
+
+    def _notice(self) -> str:
         question = self.question
         if question is None:
             return "Ready to save."
@@ -245,33 +257,13 @@ class SetupWizard:
                 "Native Search replaces Host search; native Web Fetch replaces Host scrape. No extra web keys needed.\n"
                 "Memory requires a Host memory handler and is not available in this wizard. "
                 "Listed native tools follow adapter support; provider/model restrictions still apply.\n"
+                "Custom endpoints and unreviewed model IDs are not preselected: verify their native-tool support before enabling.\n"
                 f"Provider requirements and all native options: {NATIVE_TOOLS_DOCS}"
             )
         if question.key in {"file_stores", "mcp_url", "mcp_id", "advisor_model"}:
             return "Configure the selected native tool · Esc returns to your choices. No remote resource is created."
-        keys = (
-            (
-                "provider",
-                "api_provider",
-                "base_url",
-                "credential",
-                "model",
-                "preset",
-                "context",
-                "name" if self.add_agent or self.add_model else "environment",
-            )
-            if self.values.get("provider") == "api"
-            else (
-                "provider",
-                "model",
-                *(("fast",) if self.values.get("provider", self.default_provider) == "codex" else ()),
-                "name" if self.add_agent or self.add_model else "environment",
-            )
-        )
-        if self.add_agent:
-            keys = ("model_source", "name") if self.existing_model_id else ("model_source", *keys)
-        if question.key in keys:
-            hint = f"{keys.index(question.key) + 1} / {len(keys)} · "
+        if question.key in {"environment", "name", "provider", "preset"}:
+            hint = ""
             if question.key in {"environment", "name"}:
                 hint += "Review your selection. "
                 hint += "Saved after this choice."
@@ -326,10 +318,8 @@ class SetupWizard:
                 hint += "Reuse a subscription or connect an API key."
             elif question.key == "preset":
                 hint += "Choose settings supported by this model. Provider limits still apply."
-            else:
-                hint += "Esc goes back; Ctrl+C cancels."
             return hint
-        return "Advanced options · Esc back · Ctrl+C cancel."
+        return "Esc goes back; Ctrl+C cancels."
 
     def selection_prompt(self) -> Selection | None:
         question = self.question
@@ -533,57 +523,61 @@ class SetupWizard:
         self._skip_irrelevant()
 
     def _skip_irrelevant(self) -> None:
+        while self.index < len(_QUESTIONS) and not self._is_relevant(_QUESTIONS[self.index].key):
+            self.index += 1
+
+    def _is_relevant(self, key: str) -> bool:
+        """One visibility rule for navigation and progress, including conditional resource steps."""
         provider = self.values.get("provider", self.default_provider)
-        while self.question is not None:
-            key = self.question.key
-            if (
-                key in {"subagents", "context", "thinking", "review", "instructions"}
-                and not self.advanced
-                and not (key == "context" and provider == "api")
-            ):
-                self.index += 1
-            elif key == "model_source" and not self.add_agent:
-                self.index += 1
-            elif self.existing_model_id is not None and key in {
-                "provider",
-                "api_provider",
-                "base_url",
-                "credential",
-                "model",
-                "preset",
-                "fast",
-                "context",
-                "thinking",
-            }:
-                self.index += 1
-            elif key == "subagents" and (self.add_agent or self.add_model):
-                self.index += 1
-            elif key in {"file_stores", "mcp_url", "mcp_id", "advisor_model"} and {
-                "file_stores": "file_search",
-                "mcp_url": "mcp_server",
-                "mcp_id": "mcp_server",
-                "advisor_model": "advisor",
-            }[key] not in self.values.get("tools", "").split(","):
-                self.index += 1
-            elif key == "tools" and not self.question.choices:
-                self.index += 1
-            elif self.add_model and key in {"review", "instructions", "tools"}:
-                self.index += 1
-            elif key == "base_url" and self.values.get("api_provider") == "xai":
-                self.index += 1
-            elif key == "fast" and provider != "codex":
-                self.index += 1
-            elif key in {"api_provider", "base_url", "credential", "preset"} and provider != "api":
-                self.index += 1
-            elif (key == "context" and provider not in {"codex", "api"}) or (key == "thinking" and provider != "codex"):
-                self.index += 1
-            elif key == "review" and (
-                provider == "api"
-                or (self.existing_model_id is not None and self.existing_model_id not in self.subscription_models)
-            ):
-                self.index += 1
-            else:
-                break
+        if (
+            key in {"subagents", "context", "thinking", "review", "instructions"}
+            and not self.advanced
+            and not (key == "context" and provider == "api")
+        ):
+            return False
+        if key == "model_source" and not self.add_agent:
+            return False
+        if self.existing_model_id is not None and key in {
+            "provider",
+            "api_provider",
+            "base_url",
+            "credential",
+            "model",
+            "preset",
+            "fast",
+            "context",
+            "thinking",
+        }:
+            return False
+        if key == "subagents" and (self.add_agent or self.add_model):
+            return False
+        resources = {
+            "file_stores": "file_search",
+            "mcp_url": "mcp_server",
+            "mcp_id": "mcp_server",
+            "advisor_model": "advisor",
+        }
+        if key in resources:
+            return not self.add_model and resources[key] in self.values.get("tools", "").split(",")
+        if self.add_model and key in {"review", "instructions", "tools"}:
+            return False
+        if key == "tools":
+            route, authentication, base_url = self.tool_connection()
+            return bool(tool_choices(route, authentication=authentication, base_url=base_url))
+        if key == "base_url" and self.values.get("api_provider") == "xai":
+            return False
+        if key == "fast" and provider != "codex":
+            return False
+        if key in {"api_provider", "base_url", "credential", "preset"} and provider != "api":
+            return False
+        if (key == "context" and provider not in {"codex", "api"}) or (key == "thinking" and provider != "codex"):
+            return False
+        if key == "review" and (
+            provider == "api"
+            or (self.existing_model_id is not None and self.existing_model_id not in self.subscription_models)
+        ):
+            return False
+        return True
 
     def selection(self, directory: str) -> dict[str, object]:
         provider = self.values.get("provider", "existing")
