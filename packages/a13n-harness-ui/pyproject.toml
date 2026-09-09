@@ -50,6 +50,7 @@ test = [
     "fastmcp>=3.4,<4",
     "pyright>=1.1,<2",
     "pytest>=9,<10",
+    "pytest-xdist>=3.8,<4",
 ]
 
 [build-system]

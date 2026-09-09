@@ -16,6 +16,9 @@ on:
       - "packages/a13n-stream-protocol/**"
       - "packages/a13n-harness-ui/**"
       - "pyproject.toml"
+      - "conftest.py"
+      - "scripts/run_python_tests.py"
+      - "scripts/tests/test_harness_ui_ci_workflow.py"
       - "scripts/check-a13n-harness-ui-distribution.py"
       - "scripts/check_a13n_harness_ui_distribution.py"
       - "scripts/export-a13n-harness-ui-openapi.py"
@@ -41,6 +44,9 @@ on:
       - "packages/a13n-stream-protocol/**"
       - "packages/a13n-harness-ui/**"
       - "pyproject.toml"
+      - "conftest.py"
+      - "scripts/run_python_tests.py"
+      - "scripts/tests/test_harness_ui_ci_workflow.py"
       - "scripts/check-a13n-harness-ui-distribution.py"
       - "scripts/check_a13n_harness_ui_distribution.py"
       - "scripts/export-a13n-harness-ui-openapi.py"
@@ -51,6 +57,9 @@ on:
       - "scripts/tests/test_prepare_release_version.py"
       - "scripts/tests/test_prepare_a13n_harness_ui_assets.py"
       - "uv.lock"
+  # Full Windows coverage is a backstop, not a second sweep after every merge.
+  schedule:
+    - cron: "23 4 * * 1"
   workflow_dispatch:
 
 env:
@@ -60,22 +69,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  ui:
-    name: Harness UI (${{ matrix.name }})
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Linux
-            runner: ubuntu-24.04
-          - name: Windows
-            runner: windows-2025
-    runs-on: ${{ matrix.runner }}
+  linux:
+    name: Harness UI (Linux)
+    if: github.event_name != 'schedule' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
       - name: Checkout
@@ -95,13 +96,11 @@ jobs:
           cache-dependency-glob: uv.lock
 
       - name: Set up pnpm
-        if: matrix.name == 'Linux'
         uses: pnpm/action-setup@v4
         with:
           package_json_file: frontend/package.json
 
       - name: Set up Node.js
-        if: matrix.name == 'Linux'
         uses: actions/setup-node@v6
         with:
           node-version: "24"
@@ -109,7 +108,6 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Install and check frontend workspace
-        if: matrix.name == 'Linux'
         run: |
           make sdk-typescript-build
           pnpm --dir frontend install --frozen-lockfile
@@ -120,13 +118,11 @@ jobs:
         run: uv sync --locked --package a13n-harness-ui --group test --no-default-groups
 
       - name: Prepare bundled Harness UI WebUI assets
-        if: matrix.name == 'Linux'
-        run: uv run --locked python scripts/prepare-a13n-harness-ui-assets.py
+        run: uv run --locked --no-sync python scripts/prepare-a13n-harness-ui-assets.py
 
       - name: Type-check Harness UI
-        if: matrix.name == 'Linux'
         run: >-
-          uv run --locked pyright
+          uv run --locked --no-sync pyright
           packages/a13n-harness-ui/a13n_harness_ui
           scripts/check-a13n-harness-ui-distribution.py
           scripts/check_a13n_harness_ui_distribution.py
@@ -135,30 +131,76 @@ jobs:
           scripts/release_version.py
 
       - name: Test Harness UI
-        if: matrix.name == 'Linux'
+        env:
+          PYTEST_ADDOPTS: --durations=20
         run: >-
-          uv run --locked python -m pytest
+          uv run --locked --no-sync python -m scripts.run_python_tests --workers 2
           packages/a13n-harness-ui/tests
           scripts/tests/test_check_a13n_harness_ui_distribution.py
           scripts/tests/test_prepare_a13n_harness_ui_assets.py
           scripts/tests/test_prepare_release_version.py
-
-      - name: Test Harness UI on Windows
-        if: matrix.name == 'Windows'
-        run: uv run --locked python -m pytest packages/a13n-harness-ui/tests
+          scripts/tests/test_harness_ui_ci_workflow.py
 
       - name: Test native command lifecycle
         run: >-
-          uv run --locked python -m pytest
+          uv run --locked --no-sync python -m pytest
           packages/a13n-environment/tests/test_direct_local.py
           packages/a13n-environment/tests/test_direct_local_processes.py
 
       - name: Build Harness UI distribution
-        if: matrix.name == 'Linux'
         run: uv build --package a13n-harness-ui --out-dir dist/a13n-harness-ui
 
       - name: Verify bundled assets and sdist wheel rebuild
-        if: matrix.name == 'Linux'
         run: >-
-          uv run --locked python scripts/check-a13n-harness-ui-distribution.py
+          uv run --locked --no-sync python scripts/check-a13n-harness-ui-distribution.py
           dist/a13n-harness-ui --rebuild-wheel
+
+  windows:
+    name: Harness UI (Windows)
+    if: github.event_name != 'push' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    runs-on: windows-2025
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Synchronize Harness UI test environment
+        run: uv sync --locked --package a13n-harness-ui --group test --no-default-groups
+
+      - name: Test Windows native UI integration
+        if: github.event_name == 'pull_request'
+        # Keep real subprocess, filesystem, shell, and input-backend coverage.
+        # Mocked platform-policy tests still run in the full Linux suite.
+        run: >-
+          uv run --locked --no-sync python -m pytest --durations=20
+          packages/a13n-harness-ui/tests/test_entrypoint.py
+          packages/a13n-harness-ui/tests/test_thread_files.py
+          packages/a13n-harness-ui/tests/test_configuration_mutation.py
+          packages/a13n-harness-ui/tests/test_composition.py::test_full_control_shell_inherits_host_path_and_custom_variables
+          packages/a13n-harness-ui/tests/test_projectless_threads.py::test_scratch_cwd_and_selected_configuration_file_mount
+          packages/a13n-harness-ui/tests/test_cli_interactions.py::test_inline_decision_keys_preserve_preexisting_draft
+          packages/a13n-harness-ui/tests/test_configuration.py::test_loads_multi_file_resources_and_canonical_markdown_set
+          packages/a13n-harness-ui/tests/test_configuration.py::test_rejects_symlinked_canonical_directory
+
+      - name: Test full Harness UI suite on Windows
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: uv run --locked --no-sync python -m pytest --durations=20 packages/a13n-harness-ui/tests
+
+      - name: Test native command lifecycle
+        run: >-
+          uv run --locked --no-sync python -m pytest --durations=20
+          packages/a13n-environment/tests/test_direct_local.py
+          packages/a13n-environment/tests/test_direct_local_processes.py
