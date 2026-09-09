@@ -1,25 +1,39 @@
-import { PageActions } from "../../shared/page-actions";
-import { useState } from "react";
+import {
+  Button,
+  ChoiceField,
+  DisclosureSection,
+  FormField,
+  Input,
+  ModalFrame,
+} from "a13n-ui";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Dialog, Input, SelectField } from "a13n-ui";
+import { useState } from "react";
+import { PageActions } from "../../shared/page-actions";
+
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { allPages, commandHeaders, data, type Schema } from "../../shared/api";
+import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import {
-  ErrorNotice,
   Empty,
+  ErrorNotice,
   Loading,
   StateBadge,
   Timestamp,
 } from "../../shared/feedback";
-import { Confirm, FormActions, JsonView, TextArea } from "../../shared/form";
-import { Table, Pagination, useCursor } from "../../shared/collection";
-import { jsonObject, jsonValue } from "../../shared/validation";
+import {
+  Confirm,
+  FormActions,
+  JsonView,
+  TextAreaField,
+} from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
+import styles from "../../shared/shared.module.css";
+import { jsonObject, jsonValue } from "../../shared/validation";
 import { environmentApi } from "./api";
 import { useEnvironmentTypes } from "./providers";
-import styles from "../../shared/shared.module.css";
 
 export function EnvironmentInstances() {
   const client = useClient(),
@@ -50,7 +64,7 @@ export function EnvironmentInstances() {
         <Loading />
       ) : query.data?.items.length ? (
         <>
-          <Table
+          <ResourceTable
             items={query.data.items}
             columns={[
               {
@@ -161,15 +175,20 @@ function EnvironmentDetails({
     setCommandId(receipt.id);
   }
   return (
-    <Dialog
+    <ModalFrame
+      onOpenChange={setOpen}
+      trigger={
+        <Button size="sm" variant="outline" type="button">
+          {t("Details")}
+        </Button>
+      }
+      size={"md"}
       title={t("Environment details")}
       description={t(
         "Deleting a managed target removes its files. Later use may rebuild an empty target from the original recipe.",
       )}
       closeLabel={t("Close")}
       open={open}
-      onOpenChange={setOpen}
-      trigger={<Button size="sm">{t("Details")}</Button>}
     >
       <div className={styles.stack}>
         <ErrorNotice error={detail.error ?? command.error} />
@@ -203,25 +222,30 @@ function EnvironmentDetails({
           </div>
         )}
       </div>
-    </Dialog>
+    </ModalFrame>
   );
 }
 function CreateEnvironment() {
   const { t } = useTranslation(),
     [open, setOpen] = useState(false);
   return (
-    <Dialog
-      open={open}
+    <ModalFrame
       onOpenChange={setOpen}
+      trigger={
+        <Button variant="default" type="button">
+          {t("Create environment")}
+        </Button>
+      }
+      size={"md"}
       title={t("Create environment")}
       description={t(
         "Allocate from a template or connect an externally managed target.",
       )}
       closeLabel={t("Close")}
-      trigger={<Button variant="primary">{t("Create environment")}</Button>}
+      open={open}
     >
       {open && <EnvironmentForm close={() => setOpen(false)} />}
-    </Dialog>
+    </ModalFrame>
   );
 }
 function EnvironmentForm({ close }: { close: () => void }) {
@@ -305,11 +329,12 @@ function EnvironmentForm({ close }: { close: () => void }) {
         save.mutate();
       }}
     >
-      <SelectField
-        label={t("Ownership")}
+      <ChoiceField
         placeholder={t("Select ownership")}
         value={kind}
+        className="min-w-0"
         onValueChange={setKind}
+        label={t("Ownership")}
         options={[
           { value: "managed", label: t("Managed from template") },
           { value: "external", label: t("External target") },
@@ -318,46 +343,52 @@ function EnvironmentForm({ close }: { close: () => void }) {
       <ErrorNotice error={templates.error ?? providers.error ?? types.error} />
       {kind === "managed" ? (
         <>
-          <SelectField
-            label={t("Template")}
+          <ChoiceField
             placeholder={t("Select template")}
-            required
             value={templateId}
+            className="min-w-0"
+            required
             onValueChange={setTemplateId}
+            label={t("Template")}
             options={
               templates.data
                 ?.filter((item) => !item.archived_at)
                 .map((item) => ({ value: item.id, label: item.name })) ?? []
             }
           />
-          <Input
+          <FormField
+            className="min-w-0 w-full"
             label={t("Template version (optional)")}
-            hint={t("Leave empty to select the current revision.")}
-            type="number"
-            min={1}
-            step={1}
-            value={version}
-            onChange={(event) => setVersion(event.target.value)}
-          />
+            description={t("Leave empty to select the current revision.")}
+          >
+            <Input
+              type="number"
+              min={1}
+              step={1}
+              value={version}
+              onChange={(event) => setVersion(event.target.value)}
+            />
+          </FormField>
         </>
       ) : (
         <>
-          <SelectField
-            label={t("Provider")}
+          <ChoiceField
             placeholder={t("Select provider")}
-            required
             value={providerId}
+            className="min-w-0"
+            required
             onValueChange={setProviderId}
+            label={t("Provider")}
             options={
               providers.data
                 ?.filter((item) => item.enabled)
                 .map((item) => ({ value: item.id, label: item.name })) ?? []
             }
           />
-          <SelectField
-            label={t("Access ceiling")}
+          <ChoiceField
             placeholder={t("Select access")}
             value={access}
+            className="min-w-0"
             onValueChange={(value) => {
               if (
                 value === "full" ||
@@ -366,38 +397,45 @@ function EnvironmentForm({ close }: { close: () => void }) {
               )
                 setAccess(value);
             }}
+            label={t("Access ceiling")}
             options={[
               { value: "full", label: t("Full access") },
               { value: "read_write", label: t("Read and write") },
               { value: "read_only", label: t("Read only") },
             ]}
           />
-          <Input
+          <FormField
+            className="min-w-0 w-full"
             label={t("Configuration schema version")}
-            value={schemaVersion}
-            onChange={(event) => setSchemaVersion(event.target.value)}
-            required
-          />
-          <TextArea
+          >
+            <Input
+              required={true}
+              value={schemaVersion}
+              onChange={(event) => setSchemaVersion(event.target.value)}
+            />
+          </FormField>
+          <TextAreaField
             label={t("Connection configuration (JSON)")}
             value={configuration}
             onChange={setConfiguration}
             code
           />
-          <details>
-            <summary>{t("Existing target state (optional)")}</summary>
-            <Input
-              label={t("State version")}
-              value={stateVersion}
-              onChange={(event) => setStateVersion(event.target.value)}
-            />
-            <TextArea
+          <DisclosureSection
+            title={<>{t("Existing target state (optional)")}</>}
+          >
+            <FormField className="min-w-0 w-full" label={t("State version")}>
+              <Input
+                value={stateVersion}
+                onChange={(event) => setStateVersion(event.target.value)}
+              />
+            </FormField>
+            <TextAreaField
               label={t("Provider state (JSON)")}
               value={state}
               onChange={setState}
               code
             />
-          </details>
+          </DisclosureSection>
         </>
       )}
       <ErrorNotice error={save.error} />

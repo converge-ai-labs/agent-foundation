@@ -1,56 +1,85 @@
 .layout {
   display: grid;
-  grid-template-columns: 232px minmax(0, 1fr);
+  grid-template-columns: 244px minmax(0, 1fr);
   min-height: 100dvh;
   background: var(--a13n-surface);
 }
 .outline {
-  padding: 18px 10px;
+  padding: 16px 12px 24px;
   position: sticky;
   top: 0;
   height: 100dvh;
   overflow-y: auto;
   scrollbar-width: thin;
 }
-.surface {
-  min-width: 0;
-  margin: 8px 8px 8px 0;
-  background: var(--a13n-canvas);
-  border: 1px solid var(--a13n-border-soft);
-  border-radius: 12px;
-}
-.scopeGroup {
-  margin-bottom: 16px;
-}
-.sectionLinks {
-  margin-top: 6px;
-  display: grid;
-  gap: 0;
-}
 .back {
   display: flex;
   align-items: center;
   gap: 8px;
+  height: 28px;
+  margin: 0 8px 12px;
   color: var(--a13n-secondary);
   font-size: 12px;
   text-decoration: none;
-  margin: 0 10px 20px;
+}
+.back:hover {
+  color: var(--a13n-text);
+}
+.settingsSearch {
+  margin-bottom: 24px;
+}
+.settingsSearch > div {
+  min-height: 30px;
+}
+.settingsSearch input {
+  min-height: 28px;
+  height: 28px;
+  font-size: 12px;
 }
 .outline nav {
   display: grid;
-  gap: 3px;
+  gap: 24px;
+}
+.scopeLabel {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  color: var(--a13n-secondary);
+  margin: 0 8px 6px;
+}
+.scopeName {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 18px;
+  color: var(--a13n-text);
+  overflow-wrap: anywhere;
+}
+.scopeName svg {
+  flex: none;
+  color: var(--a13n-secondary);
+}
+.sectionLinks {
+  display: grid;
+}
+.scopeGroup:not([data-scope="personal"]) .sectionLinks {
+  margin-left: 16px;
 }
 .outline nav a {
   display: flex;
-  gap: 9px;
+  gap: 8px;
   align-items: center;
   border-radius: 6px;
-  padding: 5px 10px;
-  min-height: var(--a13n-navigation-row);
-  line-height: 20px;
+  padding: 5px 8px;
+  min-height: 28px;
+  line-height: 18px;
   color: var(--a13n-secondary);
   text-decoration: none;
-  font-size: 12px;
+  font-size: 13px;
 }
 .outline nav a svg {
   flex-shrink: 0;
@@ -62,74 +91,136 @@
 .outline nav a[aria-current] {
   background: var(--a13n-selected);
   color: var(--a13n-text);
-  font-weight: 550;
+}
+.noResults {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  padding: 0 8px;
+}
+.surface {
+  min-width: 0;
+  margin: 8px 8px 8px 0;
+  background: var(--a13n-canvas);
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 12px;
 }
 .content {
-  padding: 40px 40px 64px;
+  padding: 60px 40px 80px;
   width: 100%;
-  max-width: 800px;
+  max-width: 720px;
   min-width: 0;
   margin: 0 auto;
 }
+.content[data-content="collection"] {
+  max-width: 1120px;
+}
 .heading {
-  margin-bottom: var(--a13n-space-8);
+  margin-bottom: 36px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 24px;
 }
-.heading > div > span {
-  font-size: 11px;
-  color: var(--a13n-secondary);
+.content[data-content="collection"] .heading {
+  padding: 0;
+  margin-bottom: 24px;
 }
 .heading h1 {
-  font-size: 20px;
+  font-size: 24px;
+  line-height: 32px;
   letter-spacing: -0.6px;
   font-weight: 580;
-  margin: 0 0 6px;
+  margin: 0;
 }
 .heading p {
   color: var(--a13n-secondary);
   font-size: 13px;
-  line-height: 1.65;
-  margin: 0;
+  line-height: 20px;
+  margin: 8px 0 0;
+}
+.headingActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.headingActions:empty {
+  display: none;
+}
+.sections,
+.preferences {
+  display: grid;
+  gap: 40px;
 }
 .profile {
   display: grid;
   gap: 16px;
 }
+.profile > section > div:first-child:has(h3),
+.preferences > section > div:first-child:has(h3) {
+  margin: 0 0 14px;
+}
 .profileImage {
   display: flex;
-  gap: 14px;
+  gap: 8px;
   align-items: center;
 }
-.profileImage > span {
-  width: 32px;
-  height: 32px;
-  flex-basis: 32px;
-  font-size: 11px;
+.profileImage > span,
+.imageButton > span:first-child {
+  width: 36px;
+  height: 36px;
+  flex-basis: 36px;
+  font-size: 12px;
+}
+.imageButton {
+  position: relative;
+  display: flex;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.imageButton:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: 3px;
+}
+.imageButton:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.imageOverlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  color: white;
+  background: rgb(0 0 0 / 48%);
+  opacity: 0;
+}
+.imageButton:hover .imageOverlay,
+.imageButton:focus-visible .imageOverlay {
+  opacity: 1;
+}
+.nameControl {
+  width: 200px;
+  max-width: 100%;
 }
 .saveRow {
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-height: 36px;
+  gap: 8px;
   justify-content: flex-end;
-}
-.saveRow > span {
-  color: var(--a13n-secondary);
-  font-size: 12px;
-}
-@media (max-width: 1000px) {
-  .layout {
-    grid-template-columns: 232px minmax(0, 1fr);
-  }
-  .content {
-    padding: 30px 24px 60px;
-  }
 }
 .mobileNavigation {
   display: none;
+}
+@media (max-width: 1000px) {
+  .content {
+    padding: 48px 24px 64px;
+  }
 }
 @media (max-width: 650px) {
   .layout {
@@ -156,52 +247,42 @@
   .outline[data-open="true"] {
     display: block;
   }
-  .surface > .settingsTopbar {
-    display: none;
+  .outline nav a {
+    min-height: 36px;
   }
   .surface {
+    min-height: calc(100dvh - 49px);
     margin: 0;
     border-radius: 0;
     border: 0;
   }
   .content {
-    padding: 26px 18px 48px;
+    padding: 32px 20px 56px;
+  }
+  .heading {
+    padding: 0;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+  .profile input {
+    min-height: 40px;
+    font-size: 16px;
+  }
+  .imageButton,
+  .imageButton > span:first-child {
+    width: 44px;
+    height: 44px;
+    flex-basis: 44px;
   }
 }
 
-.sections {
-  display: grid;
-  gap: var(--a13n-space-8);
-}
-.preferences {
-  composes: sections;
-  max-width: 760px;
-}
 .themeOptions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-  padding: 18px 0;
-}
-.themeChoice {
-  border: 1px solid var(--a13n-border-soft);
-  border-radius: 9px;
-  padding: 6px;
-  color: inherit;
-  background: var(--a13n-elevated);
-  cursor: pointer;
-}
-.themeChoice[aria-pressed="true"] {
-  border-color: var(--a13n-focus);
-  box-shadow: 0 0 0 2px var(--a13n-accent-soft);
-}
-.themeChoice > span:last-child {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  font-size: 12px;
-  padding: 10px 0 4px;
+  gap: 12px;
+  padding: 16px 0;
 }
 .themePreview {
   display: grid;
@@ -264,85 +345,4 @@
   .themePreview > span:last-child {
     padding: 8px;
   }
-}
-.settingsSearch {
-  margin: 0 0 20px;
-}
-.scopeLabel {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--a13n-secondary);
-  margin: 0 10px 6px;
-}
-.scopeName {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 4px 4px;
-  padding: 5px 6px;
-  font-size: 12px;
-  font-weight: 550;
-  border-radius: 6px;
-  color: var(--a13n-text);
-  overflow-wrap: anywhere;
-}
-.settingsTopbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  height: 44px;
-  padding: 0 24px;
-  border-bottom: 1px solid var(--a13n-border-soft);
-  font-size: 12px;
-}
-.settingsTopbar span {
-  color: var(--a13n-muted);
-}
-.noResults {
-  color: var(--a13n-secondary);
-  font-size: 12px;
-  padding: 0 10px;
-}
-
-.nameControl {
-  width: 256px;
-  max-width: 100%;
-}
-.resourceId {
-  font: 11px var(--a13n-mono);
-  color: var(--a13n-secondary);
-  overflow-wrap: anywhere;
-}
-.headingActions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-.headingActions:empty {
-  display: none;
-}
-@media (max-width: 650px) {
-  .heading {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 16px;
-  }
-}
-
-.securityForm {
-  padding: 0 0 16px;
-}
-.securityForm > p {
-  font-size: 12px;
-  color: var(--a13n-secondary);
-  margin: 8px 0 0;
-}
-
-.scopeName svg {
-  flex: none;
-  color: var(--a13n-secondary);
-}
-.scopeGroup:not([data-scope="personal"]) .sectionLinks {
-  margin-left: 16px;
 }

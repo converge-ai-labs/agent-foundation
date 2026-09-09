@@ -579,14 +579,6 @@
   overflow-wrap: anywhere;
   text-decoration: none;
 }
-.confirmation {
-  display: flex;
-  gap: 10px;
-  align-items: start;
-  padding: 0 0 20px;
-  font-size: 12px;
-  line-height: 1.6;
-}
 
 .markdown {
   font-size: 14px;

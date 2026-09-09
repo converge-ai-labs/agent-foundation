@@ -1,20 +1,18 @@
-import { PageActions } from "../../shared/page-actions";
+import { useQuery } from "@tanstack/react-query";
+import { Badge, Button, ModalFrame } from "a13n-ui";
+import { PlugZap, Plus } from "lucide-react";
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Badge, Button, Dialog, Input, SelectField, Switch } from "a13n-ui";
-import { Plus, PlugZap } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useAccess } from "../../layout/workspace";
-import { data, type Schema } from "../../shared/api";
+import { data } from "../../shared/api";
+import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
-import { FormActions } from "../../shared/form";
-import { Pagination, Table, useCursor } from "../../shared/collection";
-import { SchemaFields } from "../../shared/schema-fields";
-import { validateSettings } from "../../shared/validation";
-import { modelApi, type ModelScope } from "./api";
-import { ModelEditor } from "./model-editor";
+import { PageActions } from "../../shared/page-actions";
 import styles from "../../shared/shared.module.css";
+import { modelApi, type ModelScope } from "./api";
+import { Discovery, ProviderTest } from "./provider-discovery";
+import { ProviderForm } from "./provider-form";
 
 export function Providers({ scope }: { scope: ModelScope }) {
   const client = useClient(),
@@ -42,7 +40,7 @@ export function Providers({ scope }: { scope: ModelScope }) {
         <ErrorNotice error={query.error} />
       ) : query.data?.items.length ? (
         <>
-          <Table
+          <ResourceTable
             items={query.data.items}
             columns={[
               {
@@ -57,7 +55,7 @@ export function Providers({ scope }: { scope: ModelScope }) {
               {
                 label: t("Scope"),
                 render: (item) => (
-                  <Badge>
+                  <Badge variant={"secondary"}>
                     {t(item.workspace_id ? "Workspace" : "Organization")}
                   </Badge>
                 ),
@@ -114,7 +112,8 @@ export function Providers({ scope }: { scope: ModelScope }) {
     </div>
   );
 }
-function ProviderEditor({
+
+export function ProviderEditor({
   scope,
   providerId,
 }: {
@@ -137,23 +136,25 @@ function ProviderEditor({
     queryFn: ({ signal }) => api.provider(providerId!, signal),
   });
   return (
-    <Dialog
+    <ModalFrame
+      onOpenChange={setOpen}
+      trigger={
+        <Button
+          size={providerId ? "sm" : "default"}
+          variant={providerId ? "outline" : "default"}
+          type="button"
+        >
+          {!providerId && <Plus size={14} />}
+          {t(providerId ? "Edit" : "Add provider")}
+        </Button>
+      }
+      size={"md"}
       title={t(providerId ? "Edit provider" : "Add provider")}
       description={t(
         "Credentials are stored securely and never returned by the service.",
       )}
       closeLabel={t("Close")}
       open={open}
-      onOpenChange={setOpen}
-      trigger={
-        <Button
-          size={providerId ? "sm" : "md"}
-          variant={providerId ? "secondary" : "primary"}
-          icon={!providerId && <Plus size={14} />}
-        >
-          {t(providerId ? "Edit" : "Add provider")}
-        </Button>
-      }
     >
       {open &&
         (definitions.isPending || (providerId && resource.isPending) ? (
@@ -176,251 +177,6 @@ function ProviderEditor({
             />
           )
         ))}
-    </Dialog>
-  );
-}
-function ProviderForm({
-  scope,
-  resource,
-  definitions,
-  close,
-  reload,
-}: {
-  reload: () => Promise<void>;
-  scope: ModelScope;
-  resource?: { value: Schema["ModelProvider"]; etag?: string };
-  definitions: Schema["ModelProviderDefinition"][];
-  close: () => void;
-}) {
-  const [original] = useState(resource),
-    { t } = useTranslation(),
-    client = useClient(),
-    cache = useQueryClient(),
-    api = modelApi(client, scope);
-  const [type, setType] = useState(
-      original?.value.type ?? definitions[0]?.type ?? "",
-    ),
-    [name, setName] = useState(original?.value.name ?? ""),
-    [configuration, setConfiguration] = useState<Record<string, unknown>>(
-      original?.value.configuration ?? {},
-    ),
-    [credential, setCredential] = useState(""),
-    [removeCredential, setRemoveCredential] = useState(false),
-    [enabled, setEnabled] = useState(original?.value.enabled ?? true);
-  const definition = definitions.find((item) => item.type === type);
-  const save = useMutation({
-    gcTime: 0,
-    mutationFn: async () => {
-      if (!definition) throw new Error(t("Choose a provider type."));
-      validateSettings(definition.configuration_schema, configuration);
-      const body = {
-        name,
-        configuration,
-        enabled,
-        ...(removeCredential
-          ? { credential: null }
-          : credential
-            ? { credential }
-            : {}),
-      };
-      if (!original) return api.createProvider({ ...body, type });
-      if (!original.etag)
-        throw new Error(
-          t("Version information is unavailable. Reload this page."),
-        );
-      return api.updateProvider(original.value.id, original.etag, body);
-    },
-    onSuccess: () => {
-      setCredential("");
-      void cache.invalidateQueries();
-      close();
-    },
-  });
-  return (
-    <form
-      className={styles.form}
-      onSubmit={(event) => {
-        event.preventDefault();
-        save.mutate();
-      }}
-    >
-      <Input
-        label={t("Name")}
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-        required
-        maxLength={128}
-      />
-      <SelectField
-        label={t("Provider type")}
-        placeholder={t("Choose a provider…")}
-        value={type}
-        disabled={!!original}
-        onValueChange={(value) => {
-          setType(value);
-          setConfiguration({});
-          setCredential("");
-        }}
-        options={definitions.map((item) => ({
-          value: item.type,
-          label: item.display_name,
-        }))}
-      />
-      {definition && (
-        <SchemaFields
-          key={type}
-          schema={definition.configuration_schema}
-          value={configuration}
-          onChange={setConfiguration}
-        />
-      )}
-      <Input
-        label={t("Credential")}
-        type="password"
-        autoComplete="off"
-        value={credential}
-        onChange={(event) => {
-          setCredential(event.target.value);
-          setRemoveCredential(false);
-        }}
-        hint={t(
-          original?.value.credential_configured
-            ? "Leave empty to keep the current credential."
-            : "Enter the credential required by this provider.",
-        )}
-      />
-      {original?.value.credential_configured && (
-        <Switch
-          label={t("Remove stored credential")}
-          checked={removeCredential}
-          onCheckedChange={setRemoveCredential}
-        />
-      )}
-      <Switch
-        label={t("Enabled")}
-        checked={enabled}
-        onCheckedChange={setEnabled}
-      />
-      <ErrorNotice
-        error={save.error}
-        retry={original ? () => void reload() : undefined}
-      />
-      <FormActions pending={save.isPending} />
-    </form>
-  );
-}
-function ProviderTest({
-  scope,
-  providerId,
-}: {
-  scope: ModelScope;
-  providerId: string;
-}) {
-  const api = modelApi(useClient(), scope),
-    { t } = useTranslation();
-  const test = useMutation({ mutationFn: () => api.testProvider(providerId) });
-  return (
-    <Dialog
-      title={t("Test provider")}
-      description={t(
-        "This contacts the provider and may consume quota or incur cost.",
-      )}
-      closeLabel={t("Close")}
-      trigger={<Button size="sm">{t("Test")}</Button>}
-    >
-      <Button onClick={() => test.mutate()} loading={test.isPending}>
-        {t("Run connection test")}
-      </Button>
-      <ErrorNotice error={test.error} />
-      {test.data && (
-        <p role="status">
-          <StateBadge state={test.data.success ? "succeeded" : "failed"} />{" "}
-          {test.data.message} · {test.data.elapsed_ms} ms
-        </p>
-      )}
-    </Dialog>
-  );
-}
-function Discovery({
-  scope,
-  provider,
-}: {
-  scope: ModelScope;
-  provider: Schema["ModelProvider"];
-}) {
-  const api = modelApi(useClient(), scope),
-    { t } = useTranslation(),
-    [search, setSearch] = useState(""),
-    [page, setPage] = useState(0);
-  const discover = useMutation({ mutationFn: () => api.discover(provider.id) });
-  const candidates =
-    discover.data?.items.filter((item) =>
-      `${item.upstream_model} ${item.display_name}`
-        .toLowerCase()
-        .includes(search.toLowerCase()),
-    ) ?? [];
-  return (
-    <Dialog
-      title={t("Discover models")}
-      description={t(
-        "Candidates are suggestions. Add a model to make it available to agents.",
-      )}
-      closeLabel={t("Close")}
-      trigger={<Button size="sm">{t("Discover")}</Button>}
-    >
-      <div className={styles.stack}>
-        <Button
-          loading={discover.isPending}
-          onClick={() => {
-            setPage(0);
-            discover.mutate();
-          }}
-        >
-          {t("Refresh catalog")}
-        </Button>
-        <ErrorNotice error={discover.error} />
-        {discover.data && (
-          <>
-            <Input
-              label={t("Search models")}
-              value={search}
-              onChange={(event) => {
-                setSearch(event.target.value);
-                setPage(0);
-              }}
-            />
-            {candidates.slice(page * 10, page * 10 + 10).map((candidate) => (
-              <div key={candidate.upstream_model} className={styles.toolbar}>
-                <span>
-                  {candidate.display_name ?? candidate.upstream_model}
-                  <small className={styles.muted}>
-                    {candidate.upstream_model}
-                  </small>
-                </span>
-                <ModelEditor
-                  scope={scope}
-                  candidate={candidate}
-                  providerId={provider.id}
-                />
-              </div>
-            ))}
-            {!candidates.length && (
-              <p>{t("No models found. You can still add a model manually.")}</p>
-            )}
-            <div className={styles.pagination}>
-              <Button disabled={!page} onClick={() => setPage(page - 1)}>
-                {t("Previous")}
-              </Button>
-              <Button
-                disabled={(page + 1) * 10 >= candidates.length}
-                onClick={() => setPage(page + 1)}
-              >
-                {t("Next")}
-              </Button>
-            </div>
-          </>
-        )}
-      </div>
-    </Dialog>
+    </ModalFrame>
   );
 }

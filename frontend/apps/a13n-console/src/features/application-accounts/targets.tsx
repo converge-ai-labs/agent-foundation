@@ -1,23 +1,34 @@
-import { useState } from "react";
+import {
+  Button,
+  ChoiceField,
+  DisclosureSection,
+  FormField,
+  Input,
+  Label,
+  ModalFrame,
+  Switch,
+} from "a13n-ui";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Dialog, Input, SelectField, Switch } from "a13n-ui";
+import { useState } from "react";
+
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
-import { ErrorNotice, Empty, Loading, StateBadge } from "../../shared/feedback";
-import { Confirm, FormActions, TextArea } from "../../shared/form";
-import { Table, Pagination, useCursor } from "../../shared/collection";
+import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
+import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
+import { Confirm, FormActions, TextAreaField } from "../../shared/form";
+import { useIdempotency } from "../../shared/idempotency";
 import { SchemaFields } from "../../shared/schema-fields";
+import styles from "../../shared/shared.module.css";
 import {
   inputOverride,
   jsonObject,
   validateSettings,
 } from "../../shared/validation";
-import { useIdempotency } from "../../shared/idempotency";
 import { useAccountProviders, useReceptionOptions } from "./data";
 import { BatchingFields } from "./form";
-import styles from "../../shared/shared.module.css";
 
 export function AccountTargets({ account }: { account: Schema["Account"] }) {
   const client = useClient(),
@@ -55,7 +66,7 @@ export function AccountTargets({ account }: { account: Schema["Account"] }) {
         <Loading />
       ) : query.data?.items.length ? (
         <>
-          <Table
+          <ResourceTable
             items={query.data.items}
             columns={[
               {
@@ -144,17 +155,22 @@ function TargetEditor({
   const { t } = useTranslation(),
     [open, setOpen] = useState(false);
   return (
-    <Dialog
+    <ModalFrame
+      onOpenChange={setOpen}
+      trigger={
+        <Button
+          size="sm"
+          variant={target ? "outline" : "default"}
+          type="button"
+        >
+          {t(target ? "Edit" : "Add target")}
+        </Button>
+      }
+      size={"md"}
       title={t(target ? "Edit target override" : "Add target override")}
       description={t("Match one provider object by its exact identifier.")}
       closeLabel={t("Close")}
       open={open}
-      onOpenChange={setOpen}
-      trigger={
-        <Button size="sm" variant={target ? "secondary" : "primary"}>
-          {t(target ? "Edit" : "Add target")}
-        </Button>
-      }
     >
       {open && (
         <TargetForm
@@ -163,7 +179,7 @@ function TargetEditor({
           close={() => setOpen(false)}
         />
       )}
-    </Dialog>
+    </ModalFrame>
   );
 }
 function TargetForm({
@@ -282,14 +298,15 @@ function TargetForm({
       <ErrorNotice
         error={definitions.error ?? options.agents.error ?? reload.error}
       />
-      <SelectField
-        label={t("Target kind")}
+      <ChoiceField
         placeholder={t("Select target kind")}
         value={kind}
+        className="min-w-0"
         disabled={!!basis}
         onValueChange={(value) =>
           setKind(value === "repository" ? "repository" : "conversation")
         }
+        label={t("Target kind")}
         options={
           definition?.target_kinds.map((value) => ({
             value,
@@ -297,19 +314,24 @@ function TargetForm({
           })) ?? []
         }
       />
-      <Input
+      <FormField
+        className="min-w-0 w-full"
         label={t("External target ID")}
-        value={targetId}
-        onChange={(event) => setTargetId(event.target.value)}
         disabled={!!basis}
-        required
-        maxLength={2048}
-      />
-      <SelectField
-        label={t("Agent")}
+      >
+        <Input
+          required={true}
+          value={targetId}
+          onChange={(event) => setTargetId(event.target.value)}
+          maxLength={2048}
+        />
+      </FormField>
+      <ChoiceField
         placeholder={t("Select agent")}
         value={agentId || "default"}
+        className="min-w-0"
         onValueChange={(value) => setAgentId(value === "default" ? "" : value)}
+        label={t("Agent")}
         options={[
           { value: "default", label: t("Account default") },
           ...(options.agents.data?.map((item) => ({
@@ -318,25 +340,25 @@ function TargetForm({
           })) ?? []),
         ]}
       />
-      <Switch
-        label={t("Receive events")}
-        checked={receive}
-        onCheckedChange={setReceive}
-      />
+      <Label className="flex items-center gap-2">
+        <Switch checked={receive} onCheckedChange={setReceive} />
+        {t("Receive events")}
+      </Label>
       <BatchingFields value={batching} onChange={setBatching} />
       {definition && (
-        <details>
-          <summary>{t("Provider reception policy")}</summary>
+        <DisclosureSection title={<>{t("Provider reception policy")}</>}>
           <SchemaFields
             schema={definition.reception_policy_schema}
             value={policy}
             onChange={setPolicy}
           />
-        </details>
+        </DisclosureSection>
       )}
-      <details open={!!save.error}>
-        <summary>{t("Advanced overrides")}</summary>
-        <TextArea
+      <DisclosureSection
+        defaultOpen={!!save.error}
+        title={<>{t("Advanced overrides")}</>}
+      >
+        <TextAreaField
           label={t("Capability overrides (JSON)")}
           hint={t(
             "Optional model, skill, MCP, and connector selections. Leave empty to inherit.",
@@ -345,7 +367,7 @@ function TargetForm({
           onChange={setOverride}
           code
         />
-      </details>
+      </DisclosureSection>
       <ErrorNotice
         error={save.error}
         retry={basis ? () => reload.mutate() : undefined}

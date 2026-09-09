@@ -1,0 +1,183 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Button, FormField, Input } from "a13n-ui";
+import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import { useClient } from "../../auth/context";
+import { useWorkspace } from "../../layout/workspace";
+import { commandHeaders, data, type Schema } from "../../shared/api";
+import { AuthorizationLink } from "../../shared/authorization-link";
+import { ErrorNotice, StateBadge } from "../../shared/feedback";
+import { FormActions } from "../../shared/form";
+import { useIdempotency } from "../../shared/idempotency";
+import styles from "../../shared/shared.module.css";
+
+export function MCPAuthorization({
+  initial,
+  reload,
+}: {
+  initial: Schema["MCPConnection"];
+  reload: () => Promise<void>;
+}) {
+  const client = useClient(),
+    cache = useQueryClient(),
+    { workspace } = useWorkspace(),
+    { t } = useTranslation(),
+    key = useIdempotency(),
+    [basis] = useState(initial),
+    [bearer, setBearer] = useState(""),
+    [headers, setHeaders] = useState<Record<string, string>>({});
+  const authorize = useMutation({
+    gcTime: 0,
+    mutationFn: () => {
+      const body = { expected_version: basis.version };
+      return client.http
+        .POST("/api/v1/mcp-connections/{connection_id}/authorize", {
+          params: {
+            path: { connection_id: basis.id },
+            header: commandHeaders(
+              workspace.id,
+              key.forBody({ authorize: basis.id, ...body }),
+            ),
+          },
+          body,
+        })
+        .then(data);
+    },
+  });
+  const credentials = useMutation({
+    gcTime: 0,
+    mutationFn: () => {
+      const body = {
+        expected_version: basis.version,
+        ...(basis.auth_mode === "bearer"
+          ? { bearer }
+          : { static_headers: headers }),
+      };
+      return client.http
+        .POST("/api/v1/mcp-connections/{connection_id}/credentials", {
+          params: {
+            path: { connection_id: basis.id },
+            header: commandHeaders(workspace.id, key.forBody(body)),
+          },
+          body,
+        })
+        .then(data);
+    },
+    onSuccess: () => {
+      setBearer("");
+      setHeaders({});
+      void cache.invalidateQueries({ queryKey: ["mcp-connections"] });
+      void reload();
+    },
+  });
+  const reconnect = useMutation({
+    mutationFn: () => {
+      const body = { expected_version: basis.version };
+      return client.http
+        .POST("/api/v1/mcp-connections/{connection_id}/reconnect", {
+          params: {
+            path: { connection_id: basis.id },
+            header: commandHeaders(
+              workspace.id,
+              key.forBody({ reconnect: basis.id, ...body }),
+            ),
+          },
+          body,
+        })
+        .then(data);
+    },
+    onSuccess: () => {
+      void cache.invalidateQueries({ queryKey: ["mcp-connections"] });
+      void reload();
+    },
+  });
+  return (
+    <div className={styles.stack}>
+      <StateBadge state={basis.status} />
+      {basis.auth_mode === "oauth" ? (
+        <>
+          {authorize.data ? (
+            <AuthorizationLink
+              url={authorize.data.authorization_url}
+              expiresAt={authorize.data.expires_at}
+            />
+          ) : (
+            <Button
+              variant="default"
+              loading={authorize.isPending}
+              onClick={() => authorize.mutate()}
+              type="button"
+            >
+              {t("Authorize with OAuth")}
+            </Button>
+          )}
+          <Button variant="outline" onClick={() => void reload()} type="button">
+            {t("Refresh connection")}
+          </Button>
+        </>
+      ) : (
+        basis.auth_mode !== "none" && (
+          <form
+            className={styles.form}
+            onSubmit={(event) => {
+              event.preventDefault();
+              credentials.mutate();
+            }}
+          >
+            <h3>{t("Replace credentials")}</h3>
+            <p className={styles.muted}>
+              {t(
+                "Existing credentials are never displayed. Supply a complete replacement.",
+              )}
+            </p>
+            {basis.auth_mode === "bearer" ? (
+              <FormField className="min-w-0 w-full" label={t("Bearer token")}>
+                <Input
+                  required={true}
+                  type="password"
+                  autoComplete="off"
+                  value={bearer}
+                  onChange={(event) => setBearer(event.target.value)}
+                />
+              </FormField>
+            ) : (
+              basis.static_header_names.map((name) => (
+                <FormField className="min-w-0 w-full" label={name} key={name}>
+                  <Input
+                    required={true}
+
+                    type="password"
+                    autoComplete="off"
+                    value={headers[name] ?? ""}
+                    onChange={(event) =>
+                      setHeaders((current) => ({
+                        ...current,
+                        [name]: event.target.value,
+                      }))
+                    }
+                  />
+                </FormField>
+              ))
+            )}
+            <FormActions
+              pending={credentials.isPending}
+              label={t("Save credentials")}
+            />
+          </form>
+        )
+      )}
+      <Button
+        variant="outline"
+        loading={reconnect.isPending}
+        onClick={() => reconnect.mutate()}
+        type="button"
+      >
+        {t("Reconnect and verify tools")}
+      </Button>
+      <ErrorNotice
+        error={authorize.error ?? credentials.error ?? reconnect.error}
+        retry={() => void reload()}
+      />
+    </div>
+  );
+}

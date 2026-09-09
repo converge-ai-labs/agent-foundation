@@ -1,10 +1,3 @@
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-  type ReactNode,
-} from "react";
 import { createClient, type Client } from "@converge.ai/a13n";
 import {
   MutationCache,
@@ -13,6 +6,13 @@ import {
   QueryClientProvider,
   useQuery,
 } from "@tanstack/react-query";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import { data, isUnauthorized, representation } from "../shared/api";
 
 const ClientContext = createContext<Client | null>(null);

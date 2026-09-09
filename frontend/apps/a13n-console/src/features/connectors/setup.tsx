@@ -1,18 +1,20 @@
-import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
+
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
+import { AuthorizationLink } from "../../shared/authorization-link";
 import { ErrorNotice, StateBadge } from "../../shared/feedback";
 import { FormActions } from "../../shared/form";
 import { SchemaFields, withSchemaConstants } from "../../shared/schema-fields";
-import { AuthorizationLink } from "../../shared/authorization-link";
-import { jsonObject, validateSettings } from "../../shared/validation";
 import { useIdempotency } from "../../shared/idempotency";
 import { createBrowserNonce, saveAuthorization } from "./authorization-context";
 import styles from "../../shared/shared.module.css";
+import { jsonObject, validateSettings } from "../../shared/validation";
 
 export function ConnectionSetup({
   connection,
@@ -165,7 +167,11 @@ export function ConnectionSetup({
                 {t("Restart authorization")}
               </Button>
             )}
-          <Button onClick={() => void status.refetch()}>
+          <Button
+            variant="outline"
+            type="button"
+            onClick={() => void status.refetch()}
+          >
             {t("Refresh connection")}
           </Button>
         </>

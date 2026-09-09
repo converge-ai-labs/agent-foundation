@@ -1,11 +1,15 @@
-import { PageActions } from "../../shared/page-actions";
+import { Badge, FormField, Input } from "a13n-ui";
+
+import { useQuery } from "@tanstack/react-query";
 import { Layers } from "lucide-react";
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Badge, SearchInput } from "a13n-ui";
+import { PageActions } from "../../shared/page-actions";
+
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
-import { useWorkspace, useAccess } from "../../layout/workspace";
+import { useAccess, useWorkspace } from "../../layout/workspace";
+import { allPages, type Schema } from "../../shared/api";
+import { Pagination, useCursor } from "../../shared/collection";
 import {
   Empty,
   ErrorNotice,
@@ -13,13 +17,11 @@ import {
   Page,
   StateBadge,
 } from "../../shared/feedback";
-import { Pagination, useCursor } from "../../shared/collection";
-import { allPages, type Schema } from "../../shared/api";
-import { modelApi, type ModelScope } from "./api";
-import { Providers } from "./providers";
-import { ModelEditor, ModelTest } from "./model-editor";
 import styles from "../../shared/shared.module.css";
+import { modelApi, type ModelScope } from "./api";
+import { ModelEditor, ModelTest } from "./model-editor";
 import modelStyles from "./models.module.css";
+import { Providers } from "./providers";
 
 export function ModelsPage({ providers = false }: { providers?: boolean }) {
   const { t } = useTranslation(),
@@ -68,15 +70,21 @@ export function Models({ scope }: { scope: ModelScope }) {
     <div className={styles.stack}>
       <PageActions>{manage && <ModelEditor scope={scope} />}</PageActions>
       <div className={styles.toolbar}>
-        <SearchInput
+        <FormField
+          className="min-w-0 w-full"
           label={t("Search models")}
-          placeholder={t("Name or model key…")}
-          value={search}
-          onChange={(event) => {
-            setSearch(event.target.value);
-            page.reset();
-          }}
-        />
+          hideLabel={true}
+        >
+          <Input
+            placeholder={t("Name or model key…")}
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              page.reset();
+            }}
+            type="search"
+          />
+        </FormField>
       </div>
       {query.isPending ? (
         <Loading />
@@ -131,7 +139,7 @@ export function Models({ scope }: { scope: ModelScope }) {
                         </header>
                         <p>{item.description || item.upstream_model}</p>
                         <div className={modelStyles.modelDetails}>
-                          <Badge>
+                          <Badge variant={"secondary"}>
                             {t(
                               item.workspace_id ? "Workspace" : "Organization",
                             )}

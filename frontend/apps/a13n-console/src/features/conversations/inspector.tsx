@@ -1,7 +1,9 @@
+import { Button, DisclosureSection, ModalFrame } from "a13n-ui";
+
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router";
-import { useQuery } from "@tanstack/react-query";
-import { Button, Dialog } from "a13n-ui";
+
 import { Info } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -10,8 +12,8 @@ import type { Schema } from "../../shared/api";
 import { ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
 import { JsonView } from "../../shared/form";
 import { conversationQueries, runPath } from "./api";
-import { RunEvents } from "./events";
 import styles from "./conversations.module.css";
+import { RunEvents } from "./events";
 
 export function RunInspector({ run }: { run: Schema["RunResource"] }) {
   const { t } = useTranslation(),
@@ -22,17 +24,19 @@ export function RunInspector({ run }: { run: Schema["RunResource"] }) {
   const attempts = useQuery({ ...queries.attempts(run.id), enabled: open });
   const lineage = useQuery({ ...queries.lineage(run.id), enabled: open });
   return (
-    <Dialog
+    <ModalFrame
+      onOpenChange={setOpen}
+      trigger={
+        <Button size="sm" variant="outline" type="button">
+          {<Info size={13} />}
+          {t("Details")}
+        </Button>
+      }
+      size={"md"}
       title={t("Run details")}
       description={run.id}
       closeLabel={t("Close")}
       open={open}
-      onOpenChange={setOpen}
-      trigger={
-        <Button size="sm" icon={<Info size={13} />}>
-          {t("Details")}
-        </Button>
-      }
     >
       <h3>{t("Configuration evidence")}</h3>
       {can("trace.read") && (
@@ -62,13 +66,18 @@ export function RunInspector({ run }: { run: Schema["RunResource"] }) {
         <Loading />
       ) : (
         attempts.data?.map((attempt) => (
-          <details key={attempt.id}>
-            <summary>
-              {t("Attempt")} {attempt.attempt_number}{" "}
-              <StateBadge state={attempt.status} />
-            </summary>
+          <DisclosureSection
+            key={attempt.id}
+            title={
+              <>
+                {t("Attempt")}
+                {attempt.attempt_number}
+                <StateBadge state={attempt.status} />
+              </>
+            }
+          >
             <JsonView value={attempt} />
-          </details>
+          </DisclosureSection>
         ))
       )}
       <h3>{t("Lineage")}</h3>
@@ -84,10 +93,9 @@ export function RunInspector({ run }: { run: Schema["RunResource"] }) {
         </p>
       ))}
       <RunEvents runId={run.id} />
-      <details>
-        <summary>{t("Full run metadata")}</summary>
+      <DisclosureSection title={<>{t("Full run metadata")}</>}>
         <JsonView value={run} />
-      </details>
-    </Dialog>
+      </DisclosureSection>
+    </ModalFrame>
   );
 }

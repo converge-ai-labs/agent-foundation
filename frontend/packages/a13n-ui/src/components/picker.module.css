@@ -1,7 +1,0 @@
-.content {
-  composes: surface from "./menu.module.css";
-  width: 280px;
-  max-width: var(--radix-popover-content-available-width);
-  padding: 0;
-  overflow: hidden;
-}

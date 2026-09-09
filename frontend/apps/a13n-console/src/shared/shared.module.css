@@ -41,24 +41,6 @@
   gap: 10px;
   color: var(--a13n-secondary);
 }
-.error {
-  display: flex;
-  gap: 12px;
-  background: var(--a13n-elevated);
-  border: 1px solid var(--a13n-danger);
-  border-radius: 8px;
-  padding: 16px;
-  margin: 16px 0;
-  color: var(--a13n-danger);
-}
-.error p {
-  margin: 4px 0 8px;
-  font-size: 13px;
-}
-.error small {
-  display: block;
-  margin: 8px 0;
-}
 .back {
   color: var(--a13n-secondary);
   display: inline-flex;
@@ -75,17 +57,6 @@
 }
 .field small {
   color: var(--a13n-secondary);
-}
-.field textarea {
-  width: 100%;
-  resize: vertical;
-  border: 1px solid var(--a13n-border);
-  border-radius: 6px;
-  background: var(--a13n-elevated);
-  padding: 10px 12px;
-  font: inherit;
-  color: inherit;
-  line-height: 1.6;
 }
 .code,
 .json {
@@ -125,48 +96,6 @@
   margin-bottom: 0;
   align-items: center;
 }
-.table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-.table th {
-  text-align: left;
-  color: var(--a13n-secondary);
-  font-size: 11px;
-  font-weight: 500;
-  background: transparent;
-}
-.table td,
-.table th {
-  padding: 12px 12px;
-  border-bottom: 1px solid var(--a13n-border-soft);
-}
-.table th {
-  padding-block: 10px;
-}
-.table td:last-child {
-  white-space: nowrap;
-}
-.table td {
-  color: var(--a13n-secondary);
-}
-.table td:first-child {
-  color: var(--a13n-text);
-}
-.table tr:hover td {
-  background: var(--a13n-hover);
-}
-.table a {
-  color: inherit;
-  text-decoration: none;
-  font-weight: 500;
-}
-.table small {
-  display: block;
-  color: var(--a13n-secondary);
-  margin-top: 3px;
-}
 .tableWrap {
   overflow-x: auto;
 }
@@ -182,11 +111,6 @@
 .stack {
   display: grid;
   gap: 16px;
-}
-.divider {
-  border: 0;
-  border-top: 1px solid var(--a13n-border-soft);
-  margin: 16px 0;
 }
 @media (max-width: 760px) {
   .page {
@@ -272,39 +196,6 @@
   margin: 8px 0 0;
   padding-top: 16px;
   border-top: 1px solid var(--a13n-border-soft);
-}
-.form details > summary {
-  cursor: pointer;
-  color: var(--a13n-secondary);
-  font-size: 12px;
-  padding: 8px 0;
-}
-.form details[open] > summary {
-  margin-bottom: 12px;
-}
-
-.table [data-align="right"] {
-  text-align: right;
-}
-
-.field input[type="file"] {
-  font: inherit;
-  color: var(--a13n-secondary);
-  border: 1px dashed var(--a13n-border);
-  padding: 16px;
-  border-radius: 8px;
-  background: var(--a13n-elevated);
-  width: 100%;
-}
-.field input[type="file"]::file-selector-button {
-  font: inherit;
-  color: var(--a13n-text);
-  padding: 6px 10px;
-  margin-right: 12px;
-  border: 1px solid var(--a13n-border);
-  border-radius: 6px;
-  background: var(--a13n-surface);
-  cursor: pointer;
 }
 
 .schemaFields {

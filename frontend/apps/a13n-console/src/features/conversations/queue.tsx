@@ -1,12 +1,13 @@
+import { Button, ChoiceField, DisclosureSection, ModalFrame } from "a13n-ui";
+
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Dialog, Select } from "a13n-ui";
-import { ArrowUp, ArrowDown, Play } from "lucide-react";
+
+import { ArrowDown, ArrowUp, Play } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useAuth, useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { useIdempotency } from "../../shared/idempotency";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import {
   ErrorNotice,
@@ -15,10 +16,11 @@ import {
   Timestamp,
 } from "../../shared/feedback";
 import { Confirm, JsonView } from "../../shared/form";
-import { OptionsComposer } from "./options";
-import { InputContent } from "./items";
+import { useIdempotency } from "../../shared/idempotency";
 import { conversationQueries, invalidateConversation, runPath } from "./api";
 import styles from "./conversations.module.css";
+import { InputContent } from "./items";
+import { OptionsComposer } from "./options";
 
 export function ThreadQueue({
   thread,
@@ -108,14 +110,18 @@ export function ThreadQueue({
     reorder.mutate(ids);
   }
   return (
-    <details className={styles.queue}>
-      <summary>
-        {t("Thread queue")} · {items.length} {t(state)}
-      </summary>
+    <DisclosureSection
+      className={styles.queue}
+      title={
+        <>
+          {t("Thread queue")}· {items.length}
+          {t(state)}
+        </>
+      }
+    >
       <div className={styles.queueBody}>
         <div className={styles.inline}>
-          <Select
-            label={t("Queue state")}
+          <ChoiceField
             placeholder={t("Queue state")}
             value={state}
             onValueChange={(value) => {
@@ -126,6 +132,8 @@ export function ThreadQueue({
               )
                 setState(value);
             }}
+            label={t("Queue state")}
+            hideLabel
             options={[
               { value: "queued", label: t("Queued") },
               { value: "consumed", label: t("Consumed") },
@@ -134,11 +142,13 @@ export function ThreadQueue({
           />
           {state === "queued" && can("queued_submission.consume") && (
             <Button
-              icon={<Play size={13} />}
+              variant="outline"
               disabled={!canConsume || !items.length}
               loading={consume.isPending}
               onClick={() => consume.mutate()}
+              type="button"
             >
+              <Play size={13} />
               {t("Run next message")}
             </Button>
           )}
@@ -195,19 +205,25 @@ export function ThreadQueue({
                 {state === "queued" && can("queued_submission.reorder") && (
                   <>
                     <Button
-                      size="sm"
-                      disabled={index === 0 || reorder.isPending}
                       aria-label={t("Move message up")}
-                      icon={<ArrowUp size={13} />}
+                      variant="outline"
+                      disabled={index === 0 || reorder.isPending}
                       onClick={() => move(index, -1)}
-                    />
+                      size="icon-sm"
+                      type="button"
+                    >
+                      {<ArrowUp size={13} />}
+                    </Button>
                     <Button
-                      size="sm"
-                      disabled={index === items.length - 1 || reorder.isPending}
                       aria-label={t("Move message down")}
-                      icon={<ArrowDown size={13} />}
+                      variant="outline"
+                      disabled={index === items.length - 1 || reorder.isPending}
                       onClick={() => move(index, 1)}
-                    />
+                      size="icon-sm"
+                      type="button"
+                    >
+                      {<ArrowDown size={13} />}
+                    </Button>
                   </>
                 )}
                 {state === "queued" &&
@@ -252,7 +268,7 @@ export function ThreadQueue({
           ))
         )}
       </div>
-    </details>
+    </DisclosureSection>
   );
 }
 function QueueEditor({
@@ -267,15 +283,20 @@ function QueueEditor({
     { workspace } = useWorkspace(),
     [open, setOpen] = useState(false);
   return (
-    <Dialog
+    <ModalFrame
+      onOpenChange={setOpen}
+      trigger={
+        <Button size="sm" variant="outline" type="button">
+          {t("Edit")}
+        </Button>
+      }
+      size={"md"}
       title={t("Edit queued message")}
       description={t(
         "Changes retain the queued agent configuration and authority.",
       )}
       closeLabel={t("Close")}
       open={open}
-      onOpenChange={setOpen}
-      trigger={<Button size="sm">{t("Edit")}</Button>}
     >
       <OptionsComposer
         key={`${item.queued_submission_id}:${item.version}`}
@@ -287,7 +308,9 @@ function QueueEditor({
               "/api/v1/queued-submissions/{queued_submission_id}",
               {
                 params: {
-                  path: { queued_submission_id: item.queued_submission_id },
+                  path: {
+                    queued_submission_id: item.queued_submission_id,
+                  },
                   header: commandHeaders(workspace.id, key),
                 },
                 body: { expected_version: item.version, submission },
@@ -298,6 +321,6 @@ function QueueEditor({
           setOpen(false);
         }}
       />
-    </Dialog>
+    </ModalFrame>
   );
 }

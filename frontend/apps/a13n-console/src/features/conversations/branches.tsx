@@ -1,12 +1,15 @@
+import { Button, Checkbox, Label } from "a13n-ui";
+
+import { ModalFrame } from "a13n-ui";
+
 import { useState } from "react";
-import { Dialog, Button } from "a13n-ui";
+
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { Composer } from "./composer";
 import { OptionsComposer } from "./options";
-import styles from "./conversations.module.css";
 
 export function ContinueBranch({
   run,
@@ -22,22 +25,23 @@ export function ContinueBranch({
     { workspace } = useWorkspace(),
     [confirmed, setConfirmed] = useState(false);
   return (
-    <Dialog
+    <ModalFrame
+      trigger={
+        <Button size="sm" variant="outline" type="button">
+          {t("Continue from here")}
+        </Button>
+      }
+      size={"md"}
       title={t("Continue from this run")}
       description={t(
         "Move this thread forward from the selected completed run. A waiting branch will be abandoned.",
       )}
       closeLabel={t("Close")}
-      trigger={<Button size="sm">{t("Continue from here")}</Button>}
     >
-      <label className={styles.confirmation}>
-        <input
-          type="checkbox"
-          checked={confirmed}
-          onChange={(event) => setConfirmed(event.target.checked)}
-        />
+      <Label className="flex items-center gap-2">
+        <Checkbox checked={confirmed} onCheckedChange={setConfirmed} />
         {t("Use this run as the new parent for the thread.")}
-      </label>
+      </Label>
       <OptionsComposer
         commandBasis={thread.version}
         disabled={!confirmed}
@@ -50,13 +54,16 @@ export function ContinueBranch({
                   path: { source_run_id: run.id },
                   header: commandHeaders(workspace.id, key),
                 },
-                body: { ...intent, expected_thread_version: thread.version },
+                body: {
+                  ...intent,
+                  expected_thread_version: thread.version,
+                },
               }),
             ),
           )
         }
       />
-    </Dialog>
+    </ModalFrame>
   );
 }
 export function ContinueWithoutFeedback({
@@ -73,22 +80,23 @@ export function ContinueWithoutFeedback({
     { workspace } = useWorkspace(),
     [confirmed, setConfirmed] = useState(false);
   return (
-    <Dialog
+    <ModalFrame
+      trigger={
+        <Button size="sm" variant="outline" type="button">
+          {t("Continue without feedback")}
+        </Button>
+      }
+      size={"md"}
       title={t("Continue with a new message")}
       description={t(
         "This rejects every pending approval and provides no response to pending tools and questions. The new message is submitted after resolving the entire waiting batch.",
       )}
       closeLabel={t("Close")}
-      trigger={<Button size="sm">{t("Continue without feedback")}</Button>}
     >
-      <label className={styles.confirmation}>
-        <input
-          type="checkbox"
-          checked={confirmed}
-          onChange={(event) => setConfirmed(event.target.checked)}
-        />
+      <Label className="flex items-center gap-2">
+        <Checkbox checked={confirmed} onCheckedChange={setConfirmed} />
         {t("Reject pending approvals and leave other actions unanswered.")}
-      </label>
+      </Label>
       <Composer
         disabled={!confirmed}
         label={t("Resolve and continue")}
@@ -112,6 +120,6 @@ export function ContinueWithoutFeedback({
           if (receipt.run) accepted(receipt.run);
         }}
       />
-    </Dialog>
+    </ModalFrame>
   );
 }

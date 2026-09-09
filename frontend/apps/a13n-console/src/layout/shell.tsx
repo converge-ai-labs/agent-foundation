@@ -1,314 +1,181 @@
-import { Suspense, useState } from "react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
-import { useQueryClient, useMutation } from "@tanstack/react-query";
 import {
-  type LucideIcon,
-  Bot,
-  MessagesSquare,
-  Boxes,
-  Sparkles,
-  File,
-  Monitor,
-  Cable,
-  Plug,
-  Network,
-  Activity,
-  Settings,
-  ChevronsUpDown,
-  LogOut,
-  Menu as MenuIcon,
-  X,
-  ChevronDown,
-} from "lucide-react";
-import { Button, Logo, Wordmark, Menu } from "a13n-ui";
+  Button,
+  Logo,
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+  SidebarProvider,
+  useSidebar,
+  Wordmark,
+} from "a13n-ui";
+import { ChevronDown, Menu, X } from "lucide-react";
+import { Suspense, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
-import { useAuth } from "../auth/context";
+import { NavLink, Outlet, useLocation } from "react-router";
+import { Loading } from "../shared/feedback";
+import { AccountMenu } from "./account-menu";
+import { navigationGroups } from "./navigation";
 import { useWorkspace } from "./workspace";
-import { ErrorNotice, Loading } from "../shared/feedback";
-import styles from "./shell.module.css";
-
+import { WorkspaceMenu } from "./workspace-menu";
+function PageOutlet() {
+  return (
+    <main id="main-content" className="min-w-0">
+      <Suspense fallback={<Loading />}>
+        <Outlet />
+      </Suspense>
+    </main>
+  );
+}
 export function Shell() {
-  const { t } = useTranslation(),
-    auth = useAuth(),
-    context = useWorkspace(),
-    navigate = useNavigate(),
-    cache = useQueryClient(),
-    location = useLocation();
-  const [open, setOpen] = useState(false);
+  const location = useLocation();
   const contextual =
     /^\/workspaces\/[^/]+\/(sessions|settings)(\/|$)/.test(location.pathname) ||
     location.pathname === "/settings/profile" ||
     location.pathname === "/organization/settings";
-  const user = auth.data!.user.value;
-  const base = `/workspaces/${context.workspace.id}`;
-  const groups: {
-    label: string;
-    entries: [string, string, LucideIcon, [string, string][]?][];
-  }[] = [
-    {
-      label: "",
-      entries: [
-        ["agents", "Agents", Bot],
-        ["sessions", "Sessions", MessagesSquare],
-      ],
-    },
-    {
-      label: "Resources",
-      entries: [
-        [
-          "models",
-          "Models",
-          Boxes,
-          [
-            ["models", "All models"],
-            ["models/providers", "Providers"],
-          ],
-        ],
-        ["skills", "Skills", Sparkles],
-        ["assets", "Assets", File],
-        [
-          "environments",
-          "Environments",
-          Monitor,
-          [
-            ["environments", "Templates"],
-            ["environments/instances", "Instances"],
-            ["environments/providers", "Providers"],
-          ],
-        ],
-      ],
-    },
-    {
-      label: "Integrations",
-      entries: [
-        ["application-accounts", "Application accounts", Cable],
-        [
-          "connectors",
-          "Connectors",
-          Plug,
-          [
-            ["connectors", "Connections"],
-            ["connectors/providers", "Providers"],
-          ],
-        ],
-        ["mcp", "MCP connections", Network],
-      ],
-    },
-    {
-      label: "Observe",
-      entries: [["traces", "Traces", Activity]],
-    },
-  ];
-  const logout = useMutation({
-    mutationFn: auth.logout,
-    onSuccess: () => navigate("/login", { replace: true }),
-  });
-  const current = groups
+  if (contextual)
+    return (
+      <div className="min-h-svh bg-background">
+        <PageOutlet />
+      </div>
+    );
+  return (
+    <SidebarProvider style={{ "--sidebar-width": "14.5rem" } as CSSProperties}>
+      <WorkspaceNavigation />
+    </SidebarProvider>
+  );
+}
+function WorkspaceNavigation() {
+  const { t } = useTranslation();
+  const { workspace } = useWorkspace();
+  const { pathname } = useLocation();
+  const { setOpenMobile } = useSidebar();
+  const base = `/workspaces/${workspace.id}`;
+  const close = () => setOpenMobile(false);
+  const current = navigationGroups
     .flatMap((group) => group.entries)
-    .find(([path]) => location.pathname.includes(`/${path}`));
+    .find(
+      ([path]) =>
+        pathname === `${base}/${path}` ||
+        pathname.startsWith(`${base}/${path}/`),
+    );
   const currentChild = current?.[3]?.find(
-    ([path]) => path !== current[0] && location.pathname === `${base}/${path}`,
+    ([path]) => path !== current[0] && pathname === `${base}/${path}`,
   );
   return (
-    <div className={styles.shell} data-contextual={contextual}>
-      {open && !contextual && (
-        <button
-          className={styles.scrim}
-          aria-label={t("Close navigation")}
-          onClick={() => setOpen(false)}
-        />
-      )}
-      {!contextual && (
-        <aside
-          className={styles.sidebar}
-          data-open={open}
-          aria-label={t("Main navigation")}
-        >
-          <div className={styles.brand}>
-            <Logo alt="" />
+    <>
+      <Sidebar
+        role="complementary"
+        aria-label={t("Main navigation")}
+        title={t("Main navigation")}
+        description={t("Workspace navigation")}
+      >
+        <SidebarHeader className="gap-2 px-2 pt-4">
+          <div className="flex items-center gap-2 px-2 text-xl text-foreground">
+            <Logo alt="" width={28} height={28} />
             <Wordmark />
             <Button
               variant="ghost"
-              className={styles.mobileClose}
+              size="icon-sm"
+              className="ml-auto md:hidden"
               aria-label={t("Close navigation")}
-              icon={<X size={16} />}
-              onClick={() => setOpen(false)}
-            />
+              onClick={close}
+            >
+              <X />
+            </Button>
           </div>
-          <div className={styles.workspace}>
-            <Menu
-              label={t("Workspace menu")}
-              align="start"
-              trigger={
-                <button
-                  className={styles.workspaceTrigger}
-                  aria-label={t("Workspace menu")}
-                >
-                  <span className={styles.workspaceIcon}>
-                    {context.workspace.image_url ? (
-                      <img src={context.workspace.image_url} alt="" />
-                    ) : (
-                      context.workspace.name.slice(0, 2).toUpperCase()
-                    )}
-                  </span>
-                  <span className={styles.workspaceName}>
-                    {context.workspace.name}
-                  </span>
-                  <ChevronDown size={13} />
-                </button>
-              }
-              groups={[
-                {
-                  actions: [
-                    {
-                      id: "settings",
-                      label: t("Settings"),
-                      icon: <Settings size={15} />,
-                      onSelect: () => {
-                        setOpen(false);
-                        navigate("/settings/profile?section=preferences");
-                      },
-                    },
-                  ],
-                },
-                {
-                  actions: [
-                    {
-                      id: "switch-workspace",
-                      label: t("Switch workspace"),
-                      items: context.workspaces.map((item) => ({
-                        id: item.id,
-                        label: item.name,
-                        selected: item.id === context.workspace.id,
-                        onSelect: () => {
-                          if (item.id !== context.workspace.id) {
-                            void cache.cancelQueries();
-                            cache.removeQueries({
-                              predicate: (query) =>
-                                query.queryKey.includes(context.workspace.id),
-                            });
-                            navigate(`/workspaces/${item.id}/agents`);
-                          }
-                          setOpen(false);
-                        },
-                      })),
-                    },
-                  ],
-                },
-              ]}
-            />
-          </div>
-          <nav>
-            {groups.map((group) => (
-              <div className={styles.navGroup} key={group.label}>
+          <WorkspaceMenu onNavigate={close} />
+        </SidebarHeader>
+        <SidebarContent>
+          <nav aria-label={t("Resources")}>
+            {navigationGroups.map((group) => (
+              <SidebarGroup key={group.label}>
                 {group.label && (
-                  <span className={styles.groupLabel}>{t(group.label)}</span>
+                  <SidebarGroupLabel>{t(group.label)}</SidebarGroupLabel>
                 )}
-                {group.entries.map(([path, label, Icon, children]) => (
-                  <div key={path}>
-                    <NavLink
-                      to={`${base}/${path}`}
-                      onClick={() => setOpen(false)}
-                      className={({ isActive }) =>
-                        `${styles.navItem} ${isActive ? styles.active : ""}`
-                      }
-                    >
-                      <Icon size={16} strokeWidth={1.7} />
-                      <span>{t(label)}</span>
-                      {children && (
-                        <ChevronDown size={12} className={styles.navChevron} />
-                      )}
-                    </NavLink>
-                    {children &&
-                      (location.pathname === `${base}/${path}` ||
-                        location.pathname.startsWith(`${base}/${path}/`)) && (
-                        <div className={styles.navChildren}>
-                          {children.map(([childPath, childLabel]) => (
-                            <NavLink
-                              key={childPath}
-                              to={`${base}/${childPath}`}
-                              end
-                              onClick={() => setOpen(false)}
-                              className={({ isActive }) =>
-                                `${styles.navChild} ${isActive ? styles.active : ""}`
-                              }
-                            >
-                              {t(childLabel)}
-                            </NavLink>
-                          ))}
-                        </div>
-                      )}
-                  </div>
-                ))}
-              </div>
+                <SidebarMenu>
+                  {group.entries.map(([path, label, Icon, children]) => {
+                    const active =
+                      pathname === `${base}/${path}` ||
+                      pathname.startsWith(`${base}/${path}/`);
+                    return (
+                      <SidebarMenuItem key={path}>
+                        <SidebarMenuButton
+                          isActive={active}
+                          render={
+                            <NavLink to={`${base}/${path}`} onClick={close} />
+                          }
+                        >
+                          <Icon />
+                          <span>{t(label)}</span>
+                          {children && (
+                            <ChevronDown className="ml-auto size-3" />
+                          )}
+                        </SidebarMenuButton>
+                        {children && active && (
+                          <SidebarMenuSub className="mt-0.5 gap-0.5 border-0 py-0">
+                            {children.map(([childPath, childLabel]) => (
+                              <SidebarMenuSubItem key={childPath}>
+                                <SidebarMenuSubButton
+                                  isActive={pathname === `${base}/${childPath}`}
+                                  render={
+                                    <NavLink
+                                      to={`${base}/${childPath}`}
+                                      end
+                                      onClick={close}
+                                    />
+                                  }
+                                >
+                                  {t(childLabel)}
+                                </SidebarMenuSubButton>
+                              </SidebarMenuSubItem>
+                            ))}
+                          </SidebarMenuSub>
+                        )}
+                      </SidebarMenuItem>
+                    );
+                  })}
+                </SidebarMenu>
+              </SidebarGroup>
             ))}
           </nav>
-          <div className={styles.sidebarFooter}>
-            <Menu
-              label={t("Your account")}
-              align="start"
-              trigger={
-                <button className={styles.user}>
-                  <Avatar name={user.name} url={user.image_url} />
-                  <span>
-                    <strong>{user.name}</strong>
-                  </span>
-                  <ChevronsUpDown size={14} />
-                </button>
-              }
-              groups={[
-                {
-                  label: user.email,
-                  actions: [
-                    {
-                      id: "logout",
-                      label: t("Sign out"),
-                      icon: <LogOut size={15} />,
-                      disabled: logout.isPending,
-                      onSelect: () => logout.mutate(),
-                    },
-                  ],
-                },
-              ]}
-            />
-          </div>
-        </aside>
-      )}
-      <div className={styles.main}>
-        {!contextual && (
-          <header className={styles.topbar}>
-            {!contextual && (
-              <Button
-                className={styles.mobileMenu}
-                aria-label={t("Open navigation")}
-                variant="ghost"
-                icon={<MenuIcon size={18} />}
-                onClick={() => setOpen(true)}
-              />
-            )}
-            <strong>{t(current?.[1] ?? "Settings")}</strong>
-            {currentChild && (
-              <>
-                <span className={styles.slash}>/</span>
-                <strong>{t(currentChild[1])}</strong>
-              </>
-            )}
-          </header>
-        )}
-        <ErrorNotice error={logout.error} />
-        <main id="main-content">
-          <Suspense fallback={<Loading />}>
-            <Outlet />
-          </Suspense>
-        </main>
-      </div>
-    </div>
-  );
-}
-export function Avatar({ name, url }: { name: string; url?: string | null }) {
-  return (
-    <span className={styles.avatar}>
-      {url ? <img src={url} alt="" /> : name.slice(0, 2).toUpperCase()}
-    </span>
+        </SidebarContent>
+        <SidebarFooter>
+          <AccountMenu onNavigate={close} />
+        </SidebarFooter>
+      </Sidebar>
+      <SidebarInset className="min-w-0">
+        <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4 text-sm sm:px-7">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="md:hidden"
+            aria-label={t("Open navigation")}
+            onClick={() => setOpenMobile(true)}
+          >
+            <Menu />
+          </Button>
+          <strong className="font-medium">
+            {t(current?.[1] ?? "Settings")}
+          </strong>
+          {currentChild && (
+            <>
+              <span className="text-muted-foreground">/</span>
+              <strong className="font-medium">{t(currentChild[1])}</strong>
+            </>
+          )}
+        </header>
+        <PageOutlet />
+      </SidebarInset>
+    </>
   );
 }

@@ -1,8 +1,17 @@
+import {
+  Checkbox,
+  ChoiceField,
+  FormField,
+  Input,
+  Label,
+  Textarea,
+} from "a13n-ui";
+
 import { useState } from "react";
-import { Input, SelectField, Checkbox } from "a13n-ui";
+
 import { useTranslation } from "react-i18next";
-import { jsonValue } from "./validation";
 import styles from "./shared.module.css";
+import { jsonValue } from "./validation";
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -81,34 +90,36 @@ export function SchemaFields({
           field.enum.every((item) => typeof item === "string")
         )
           return (
-            <SelectField
+            <ChoiceField
               key={key}
-              label={label}
-              hint={description}
               placeholder={t("Select…")}
               value={typeof current === "string" ? current : undefined}
+              className="min-w-0"
+              required={required}
               onValueChange={(next) => change(key, next)}
+              label={label}
               options={field.enum.map((item) => ({
                 value: String(item),
                 label: String(item),
               }))}
-              required={required}
+              description={description}
             />
           );
         if (field.type === "boolean")
           return (
-            <Checkbox
-              key={key}
-              label={label}
-              checked={current === true}
-              onCheckedChange={(next) => change(key, next === true)}
-            />
+            <Label key={key} className="flex items-center gap-2">
+              <Checkbox
+                checked={current === true}
+                onCheckedChange={(next) => change(key, next === true)}
+              />
+              {label}
+            </Label>
           );
         if (field.contentMediaType === "application/x-pem-file")
           return (
             <label key={key} className={styles.field}>
               <span>{label}</span>
-              <textarea
+              <Textarea
                 autoComplete="off"
                 spellCheck={false}
                 rows={6}
@@ -123,42 +134,47 @@ export function SchemaFields({
           );
         if (["string", "number", "integer"].includes(String(field.type)))
           return (
-            <Input
-              key={key}
+            <FormField
+              className="min-w-0 w-full"
               label={label}
-              hint={description}
-              type={
-                secret || field.format === "password"
-                  ? "password"
-                  : field.type === "string"
-                    ? "text"
-                    : "number"
-              }
-              autoComplete={secret ? "off" : undefined}
-              value={
-                typeof current === "string" || typeof current === "number"
-                  ? current
-                  : ""
-              }
-              onChange={(event) =>
-                change(
-                  key,
-                  event.target.value === ""
-                    ? undefined
+              description={description}
+              key={key}
+            >
+              <Input
+                required={required}
+
+                type={
+                  secret || field.format === "password"
+                    ? "password"
                     : field.type === "string"
-                      ? event.target.value
-                      : Number(event.target.value),
-                )
-              }
-              min={
-                typeof field.minimum === "number" ? field.minimum : undefined
-              }
-              max={
-                typeof field.maximum === "number" ? field.maximum : undefined
-              }
-              step={field.type === "integer" ? 1 : "any"}
-              required={required}
-            />
+                      ? "text"
+                      : "number"
+                }
+                autoComplete={secret ? "off" : undefined}
+                value={
+                  typeof current === "string" || typeof current === "number"
+                    ? current
+                    : ""
+                }
+                onChange={(event) =>
+                  change(
+                    key,
+                    event.target.value === ""
+                      ? undefined
+                      : field.type === "string"
+                        ? event.target.value
+                        : Number(event.target.value),
+                  )
+                }
+                min={
+                  typeof field.minimum === "number" ? field.minimum : undefined
+                }
+                max={
+                  typeof field.maximum === "number" ? field.maximum : undefined
+                }
+                step={field.type === "integer" ? 1 : "any"}
+              />
+            </FormField>
           );
         return (
           <JsonField
@@ -188,7 +204,7 @@ function JsonField({
   return (
     <label className={styles.field}>
       <span>{label}</span>
-      <textarea
+      <Textarea
         className={styles.code}
         rows={4}
         value={text}

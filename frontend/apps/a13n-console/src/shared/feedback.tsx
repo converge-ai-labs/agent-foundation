@@ -1,8 +1,26 @@
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+  Badge,
+  Button,
+  Spinner,
+} from "a13n-ui";
+
+import {
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  Empty as EmptyRoot,
+  EmptyTitle,
+} from "a13n-ui";
+
+import { ApiError } from "@converge.ai/a13n";
+import { AlertCircle, ArrowLeft, Inbox, RefreshCw } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { PageActionsTarget } from "./page-actions";
-import { AlertCircle, ArrowLeft, Inbox, RefreshCw } from "lucide-react";
-import { ApiError } from "@converge.ai/a13n";
-import { Button, EmptyState, Spinner, Badge } from "a13n-ui";
+
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import styles from "./shared.module.css";
@@ -12,7 +30,7 @@ export function Loading() {
   const { t } = useTranslation();
   return (
     <div role="status" className={styles.loading}>
-      <Spinner />
+      <Spinner aria-hidden="true" />
       {t("Loading…")}
     </div>
   );
@@ -35,12 +53,12 @@ export function ErrorNotice({
         "queue_version_conflict",
       ].includes(error.code));
   return (
-    <div role="alert" className={styles.error}>
-      <AlertCircle size={17} />
-      <div>
-        <strong>
-          {t(conflict ? "This resource changed" : "Something went wrong")}
-        </strong>
+    <Alert variant="error" className="my-4">
+      <AlertCircle aria-hidden="true" />
+      <AlertTitle>
+        {t(conflict ? "This resource changed" : "Something went wrong")}
+      </AlertTitle>
+      <AlertDescription>
         <p>
           {conflict
             ? t(
@@ -56,12 +74,13 @@ export function ErrorNotice({
           </small>
         )}
         {retry && (
-          <Button size="sm" icon={<RefreshCw size={14} />} onClick={retry}>
+          <Button size="sm" variant="outline" onClick={retry} type="button">
+            {<RefreshCw size={14} />}
             {t("Reload")}
           </Button>
         )}
-      </div>
-    </div>
+      </AlertDescription>
+    </Alert>
   );
 }
 export function Page({
@@ -114,12 +133,16 @@ export function Empty({
   action?: ReactNode;
 }) {
   return (
-    <EmptyState
-      icon={<Inbox size={24} />}
-      title={title}
-      description={description}
-      action={action}
-    />
+    <EmptyRoot>
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <Inbox aria-hidden="true" />
+        </EmptyMedia>
+        <EmptyTitle>{title}</EmptyTitle>
+        <EmptyDescription>{description}</EmptyDescription>
+      </EmptyHeader>
+      {action && <EmptyContent>{action}</EmptyContent>}
+    </EmptyRoot>
   );
 }
 export function StateBadge({ state }: { state: string }) {
@@ -133,12 +156,12 @@ export function StateBadge({ state }: { state: string }) {
   ].includes(state)
     ? "success"
     : ["failed", "error"].includes(state)
-      ? "danger"
+      ? "error"
       : ["waiting", "queued", "pending"].includes(state)
         ? "warning"
-        : "neutral";
+        : "secondary";
   return (
-    <Badge tone={tone} variant="status">
+    <Badge variant={tone}>
       {t(`state.${state}`, { defaultValue: state.replaceAll("_", " ") })}
     </Badge>
   );

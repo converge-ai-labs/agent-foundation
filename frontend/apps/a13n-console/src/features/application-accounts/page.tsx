@@ -1,24 +1,32 @@
+import {
+  Button,
+  ModalFrame,
+  Tabs,
+  TabsList,
+  TabsPanel,
+  TabsTab,
+} from "a13n-ui";
+
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { useQuery } from "@tanstack/react-query";
-import { Button, Dialog, Tabs } from "a13n-ui";
+
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data } from "../../shared/api";
+import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import {
-  Page,
-  ErrorNotice,
   Empty,
+  ErrorNotice,
   Loading,
+  Page,
   StateBadge,
 } from "../../shared/feedback";
-import { Confirm, JsonView } from "../../shared/form";
-import { Table, Pagination, useCursor } from "../../shared/collection";
+import { Confirm } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
-import { AccountForm } from "./form";
 import { AccountCredentials } from "./credentials";
-import { AccountTargets } from "./targets";
+import { AccountForm } from "./form";
 
 export function ApplicationAccountsPage() {
   const client = useClient(),
@@ -48,16 +56,20 @@ export function ApplicationAccountsPage() {
       )}
       actions={
         can("application_account.manage") && (
-          <Dialog
-            size="wide"
+          <ModalFrame
+            onOpenChange={setOpen}
+            trigger={
+              <Button variant="default" type="button">
+                {t("Add account")}
+              </Button>
+            }
+            size={"lg"}
             title={t("Add application account")}
             description={t(
               "Configure one concrete external identity and its reception settings.",
             )}
             closeLabel={t("Close")}
             open={open}
-            onOpenChange={setOpen}
-            trigger={<Button variant="primary">{t("Add account")}</Button>}
           >
             {open && (
               <AccountForm
@@ -67,7 +79,7 @@ export function ApplicationAccountsPage() {
                 }}
               />
             )}
-          </Dialog>
+          </ModalFrame>
         )
       }
     >
@@ -76,7 +88,7 @@ export function ApplicationAccountsPage() {
         <Loading />
       ) : query.data?.items.length ? (
         <>
-          <Table
+          <ResourceTable
             items={query.data.items}
             columns={[
               {
@@ -215,42 +227,14 @@ export function ApplicationAccountDetail() {
         )
       }
     >
-      <Tabs
-        key={generation}
-        label={t("Application account")}
-        defaultValue="details"
-        items={[
-          {
-            value: "details",
-            label: t("Details"),
-            content: manage ? (
-              <AccountForm
-                initial={account}
-                onSuccess={() => void reload()}
-                reload={reload}
-              />
-            ) : (
-              <JsonView value={account} />
-            ),
-          },
-          {
-            value: "targets",
-            label: t("Targets"),
-            content: <AccountTargets account={account} />,
-          },
-          ...(manage
-            ? [
-                {
-                  value: "credentials",
-                  label: t("Credentials"),
-                  content: (
-                    <AccountCredentials account={account} reload={reload} />
-                  ),
-                },
-              ]
-            : []),
-        ]}
-      />
+      <Tabs key={generation} defaultValue="details">
+        <TabsList aria-label={t("Application account")}>
+          <TabsTab value={"credentials"}>{t("Credentials")}</TabsTab>
+        </TabsList>
+        <TabsPanel value={"credentials"}>
+          {<AccountCredentials account={account} reload={reload} />}
+        </TabsPanel>
+      </Tabs>
     </Page>
   );
 }

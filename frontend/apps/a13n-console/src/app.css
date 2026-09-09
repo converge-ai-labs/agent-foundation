@@ -1,28 +1,3 @@
-body {
-  margin: 0;
-}
-* {
-  box-sizing: border-box;
-}
-button,
-input,
-textarea {
-  font: inherit;
-}
-a {
-  color: var(--a13n-accent);
-}
-button,
-a,
-input,
-textarea,
-summary,
-select {
-  outline-offset: 3px;
-}
-:where(:focus-visible) {
-  outline: 1px solid var(--a13n-focus);
-}
 .fieldset-reset {
   border: 0;
   padding: 0;
@@ -52,15 +27,4 @@ select {
 }
 .skip-link:focus {
   top: 12px;
-}
-.upload-button {
-  display: inline-flex;
-  gap: 7px;
-  align-items: center;
-  font-size: 12px;
-  border: 1px solid var(--a13n-border);
-  border-radius: 6px;
-  padding: 7px 12px;
-  cursor: pointer;
-  background: var(--a13n-elevated);
 }

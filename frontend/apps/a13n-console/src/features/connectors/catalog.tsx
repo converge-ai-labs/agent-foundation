@@ -1,15 +1,23 @@
-import { useState } from "react";
+import {
+  Button,
+  DisclosureSection,
+  FormField,
+  Input,
+  ModalFrame,
+} from "a13n-ui";
+
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button, Dialog, Input, SearchInput } from "a13n-ui";
+import { useState } from "react";
+
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
-import { ErrorNotice, Empty } from "../../shared/feedback";
+import { Empty, ErrorNotice } from "../../shared/feedback";
 import { FormActions, JsonView } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
-import { ConnectionSetup } from "./setup";
 import styles from "../../shared/shared.module.css";
+import { ConnectionSetup } from "./setup";
 
 export function ConnectorCatalog({
   provider,
@@ -39,11 +47,7 @@ export function ConnectorCatalog({
         .includes(search.toLocaleLowerCase()),
     ) ?? [];
   return (
-    <Dialog
-      title={t("Discover connectors")}
-      description={provider.name}
-      closeLabel={t("Close")}
-      open={open}
+    <ModalFrame
       onOpenChange={(value) => {
         setOpen(value);
         if (!value) setSelected(undefined);
@@ -51,18 +55,29 @@ export function ConnectorCatalog({
       trigger={
         <Button
           size="sm"
+          variant="outline"
           onClick={() => {
             if (!discover.data) discover.mutate();
           }}
+          type="button"
         >
           {t("Discover connectors")}
         </Button>
       }
+      size={"md"}
+      title={t("Discover connectors")}
+      description={provider.name}
+      closeLabel={t("Close")}
+      open={open}
     >
       <div className={styles.stack}>
         {selected ? (
           <>
-            <Button onClick={() => setSelected(undefined)}>
+            <Button
+              variant="outline"
+              onClick={() => setSelected(undefined)}
+              type="button"
+            >
               {t("Back to connectors")}
             </Button>
             <ConnectConnector connector={selected} />
@@ -70,18 +85,26 @@ export function ConnectorCatalog({
         ) : (
           <>
             <div className={styles.toolbar}>
-              <SearchInput
+              <FormField
+                className="min-w-0 w-full"
                 label={t("Search connectors")}
-                placeholder={t("Search connectors")}
-                value={search}
-                onChange={(event) => {
-                  setSearch(event.target.value);
-                  setPage(0);
-                }}
-              />
+                hideLabel={true}
+              >
+                <Input
+                  placeholder={t("Search connectors")}
+                  value={search}
+                  onChange={(event) => {
+                    setSearch(event.target.value);
+                    setPage(0);
+                  }}
+                  type="search"
+                />
+              </FormField>
               <Button
+                variant="outline"
                 loading={discover.isPending}
                 onClick={() => discover.mutate()}
+                type="button"
               >
                 {t("Refresh discovery")}
               </Button>
@@ -96,9 +119,10 @@ export function ConnectorCatalog({
                   <ToolPreview connector={item} />
                   {can("connector_connection.manage") && (
                     <Button
-                      variant="primary"
+                      variant="default"
                       size="sm"
                       onClick={() => setSelected(item)}
+                      type="button"
                     >
                       {t("Connect")}
                     </Button>
@@ -114,14 +138,18 @@ export function ConnectorCatalog({
             )}
             <div className={styles.pagination}>
               <Button
+                variant="outline"
                 disabled={page === 0}
                 onClick={() => setPage((value) => value - 1)}
+                type="button"
               >
                 {t("Previous")}
               </Button>
               <Button
+                variant="outline"
                 disabled={(page + 1) * 10 >= matches.length}
                 onClick={() => setPage((value) => value + 1)}
+                type="button"
               >
                 {t("Next")}
               </Button>
@@ -129,7 +157,7 @@ export function ConnectorCatalog({
           </>
         )}
       </div>
-    </Dialog>
+    </ModalFrame>
   );
 }
 function ToolPreview({ connector }: { connector: Schema["Connector"] }) {
@@ -152,34 +180,36 @@ function ToolPreview({ connector }: { connector: Schema["Connector"] }) {
         .then(data),
   });
   return (
-    <Dialog
+    <ModalFrame
+      trigger={
+        <Button
+          size="sm"
+          variant="outline"
+          loading={preview.isPending}
+          onClick={() => preview.mutate()}
+          type="button"
+        >
+          {t("Preview tools")}
+        </Button>
+      }
+      size={"md"}
       title={t("Tool preview")}
       description={t(
         "Available tools are advisory until the external account is authorized.",
       )}
       closeLabel={t("Close")}
-      trigger={
-        <Button
-          size="sm"
-          onClick={() => preview.mutate()}
-          loading={preview.isPending}
-        >
-          {t("Preview tools")}
-        </Button>
-      }
     >
       <ErrorNotice error={preview.error} />
       {preview.data && (
         <div className={styles.stack}>
           {preview.data.items.map((tool) => (
-            <details key={tool.key}>
-              <summary>{tool.key}</summary>
+            <DisclosureSection key={tool.key} title={<>{tool.key}</>}>
               <JsonView value={tool} />
-            </details>
+            </DisclosureSection>
           ))}
         </div>
       )}
-    </Dialog>
+    </ModalFrame>
   );
 }
 function ConnectConnector({ connector }: { connector: Schema["Connector"] }) {
@@ -223,13 +253,14 @@ function ConnectConnector({ connector }: { connector: Schema["Connector"] }) {
       }}
     >
       <h3>{connector.name}</h3>
-      <Input
-        label={t("Connection name")}
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-        required
-        maxLength={128}
-      />
+      <FormField className="min-w-0 w-full" label={t("Connection name")}>
+        <Input
+          required={true}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          maxLength={128}
+        />
+      </FormField>
       <ErrorNotice error={create.error} />
       <FormActions pending={create.isPending} label={t("Create connection")} />
     </form>

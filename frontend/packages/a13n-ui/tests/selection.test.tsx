@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Button, Dialog, Picker, SelectField } from "../src";
+import { Button, ModalFrame, SearchPicker, ChoiceField } from "../src";
 const groups = [
   {
     label: "Workspace",
@@ -25,10 +25,10 @@ const groups = [
 describe("selection", () => {
   it("keeps field semantics separate from the standalone control", () => {
     render(
-      <SelectField
+      <ChoiceField
         label="Location"
         placeholder="Choose"
-        hint="Select a location"
+        description="Select a location"
         error="Required"
         options={[]}
       />,
@@ -47,7 +47,7 @@ describe("selection", () => {
     function Example() {
       const [value, setValue] = useState<string>();
       return (
-        <Picker
+        <SearchPicker
           label="Location"
           placeholder="Find a location"
           emptyMessage="No locations"
@@ -58,10 +58,12 @@ describe("selection", () => {
       );
     }
     render(<Example />);
-    const trigger = screen.getByRole("button", { name: "Location" });
+    const trigger = screen.getByRole("combobox", { name: "Location" });
     await user.click(trigger);
-    const search = screen.getByRole("combobox", { name: "Location" });
-    expect(document.activeElement).toBe(search);
+    const search = within(
+      await screen.findByRole("dialog", { name: "Location" }),
+    ).getByRole("combobox");
+    await waitFor(() => expect(document.activeElement).toBe(search));
     await user.type(search, "教程");
     expect(screen.getByRole("option", { name: /Guides/ })).toBeTruthy();
     expect(screen.queryByRole("option", { name: /Private/ })).toBeNull();
@@ -70,13 +72,19 @@ describe("selection", () => {
     expect(trigger.textContent).toBe("Guides");
     expect(document.activeElement).toBe(trigger);
     await user.click(trigger);
-    expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe("");
+    expect(
+      (
+        within(
+          await screen.findByRole("dialog", { name: "Location" }),
+        ).getByRole("combobox") as HTMLInputElement
+      ).value,
+    ).toBe("");
   });
   it("shows empty results and cannot activate a disabled result", async () => {
     const user = userEvent.setup();
     const change = vi.fn();
     render(
-      <Picker
+      <SearchPicker
         label="Location"
         placeholder="Search"
         emptyMessage="No locations"
@@ -84,14 +92,22 @@ describe("selection", () => {
         groups={groups}
       />,
     );
-    await user.click(screen.getByRole("button", { name: "Location" }));
-    const search = screen.getByRole("combobox");
+    await user.click(screen.getByRole("combobox", { name: "Location" }));
+    const search = within(
+      await screen.findByRole("dialog", { name: "Location" }),
+    ).getByRole("combobox");
+    await waitFor(() => expect(document.activeElement).toBe(search));
     await user.type(search, "zzzz");
     expect(screen.getByText("No locations")).toBeTruthy();
     await user.keyboard("{Enter}");
     expect(change).not.toHaveBeenCalled();
-    await user.clear(search);
-    await user.type(search, "Private");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await user.click(screen.getByRole("combobox", { name: "Location" }));
+    const reopened = within(
+      await screen.findByRole("dialog", { name: "Location" }),
+    ).getByRole("combobox");
+    await waitFor(() => expect(document.activeElement).toBe(reopened));
+    await user.type(reopened, "Private");
     expect(
       screen
         .getByRole("option", { name: /Private/ })
@@ -103,29 +119,36 @@ describe("selection", () => {
   it("Escape closes only the inner picker before closing its dialog", async () => {
     const user = userEvent.setup();
     render(
-      <Dialog
+      <ModalFrame
         trigger={<Button>Open</Button>}
         title="Preferences"
         description="Edit preferences"
         closeLabel="Close"
       >
-        <Picker
+        <SearchPicker
           label="Location"
           placeholder="Search"
           emptyMessage="No locations"
           onValueChange={() => {}}
           groups={groups}
         />
-      </Dialog>,
+      </ModalFrame>,
     );
     await user.click(screen.getByRole("button", { name: "Open" }));
-    const trigger = screen.getByRole("button", { name: "Location" });
+    const trigger = screen.getByRole("combobox", { name: "Location" });
     await user.click(trigger);
+    const innerSearch = within(
+      await screen.findByRole("dialog", { name: "Location" }),
+    ).getByRole("combobox");
+    await waitFor(() => expect(document.activeElement).toBe(innerSearch));
     await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Location" })).toBeNull(),
+    );
     expect(screen.getByRole("dialog", { name: "Preferences" })).toBeTruthy();
-    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.queryByRole("textbox")).toBeNull();
     expect(document.activeElement).toBe(trigger);
     await user.keyboard("{Escape}");
-    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 });

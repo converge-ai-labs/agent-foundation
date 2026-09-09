@@ -1,22 +1,34 @@
+import {
+  Button,
+  DisclosureSection,
+  FormField,
+  Input,
+  ModalFrame,
+  Tabs,
+  TabsList,
+  TabsPanel,
+  TabsTab,
+} from "a13n-ui";
+
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plug } from "lucide-react";
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Dialog, Input, Tabs } from "a13n-ui";
+
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
-import { ErrorNotice, Empty, Loading, StateBadge } from "../../shared/feedback";
-import { Confirm, FormActions, JsonView } from "../../shared/form";
 import {
-  Table,
   Pagination,
   ResourceIdentity,
+  ResourceTable,
   useCursor,
 } from "../../shared/collection";
+import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
+import { Confirm, FormActions, JsonView } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
-import { ConnectionSetup } from "./setup";
 import styles from "../../shared/shared.module.css";
+import { ConnectionSetup } from "./setup";
 
 export function ConnectorConnections() {
   const client = useClient(),
@@ -43,7 +55,12 @@ export function ConnectorConnections() {
         <div role="status">
           <h3>{t("Cleanup result")}</h3>
           <JsonView value={cleanup} />
-          <Button size="sm" onClick={() => setCleanup(undefined)}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setCleanup(undefined)}
+            type="button"
+          >
             {t("Dismiss")}
           </Button>
         </div>
@@ -53,7 +70,7 @@ export function ConnectorConnections() {
         <Loading />
       ) : query.data?.items.length ? (
         <>
-          <Table
+          <ResourceTable
             items={query.data.items}
             columns={[
               {
@@ -129,16 +146,20 @@ function ConnectionDetails({
     setGeneration((value) => value + 1);
   }
   return (
-    <Dialog
-      size="wide"
+    <ModalFrame
+      onOpenChange={setOpen}
+      trigger={
+        <Button size="sm" variant="outline" type="button">
+          {t("Details")}
+        </Button>
+      }
+      size={"lg"}
       title={connection.name}
       description={t(
         "Manage this workspace connection and its external authorization.",
       )}
       closeLabel={t("Close")}
       open={open}
-      onOpenChange={setOpen}
-      trigger={<Button size="sm">{t("Details")}</Button>}
     >
       {open &&
         (query.isPending ? (
@@ -148,35 +169,30 @@ function ConnectionDetails({
         ) : (
           query.data &&
           (can("connector_connection.manage") ? (
-            <Tabs
-              key={generation}
-              label={t("Connection details")}
-              defaultValue="details"
-              items={[
+            <Tabs key={generation} defaultValue="details">
+              <TabsList aria-label={t("Connection details")}>
+                <TabsTab value={"details"}>{t("Details")}</TabsTab>
+                <TabsTab value={"setup"}>{t("Authorization")}</TabsTab>
+              </TabsList>
+              <TabsPanel value={"details"}>
                 {
-                  value: "details",
-                  label: t("Details"),
-                  content: (
-                    <ConnectionSettings
-                      onCleanup={onCleanup}
-                      initial={query.data}
-                      close={() => setOpen(false)}
-                      reload={reload}
-                    />
-                  ),
-                },
-                {
-                  value: "setup",
-                  label: t("Authorization"),
-                  content: <ConnectionSetup connection={query.data} />,
-                },
-              ]}
-            />
+                  <ConnectionSettings
+                    onCleanup={onCleanup}
+                    initial={query.data}
+                    close={() => setOpen(false)}
+                    reload={reload}
+                  />
+                }
+              </TabsPanel>
+              <TabsPanel value={"setup"}>
+                {<ConnectionSetup connection={query.data} />}
+              </TabsPanel>
+            </Tabs>
           ) : (
             <JsonView value={query.data} />
           ))
         ))}
-    </Dialog>
+    </ModalFrame>
   );
 }
 function ConnectionSettings({
@@ -222,20 +238,20 @@ function ConnectionSettings({
           save.mutate();
         }}
       >
-        <Input
-          label={t("Name")}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          required
-          maxLength={128}
-        />
+        <FormField className="min-w-0 w-full" label={t("Name")}>
+          <Input
+            required={true}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            maxLength={128}
+          />
+        </FormField>
         <ErrorNotice error={save.error} retry={() => void reload()} />
         <FormActions pending={save.isPending} />
       </form>
-      <details>
-        <summary>{t("Account metadata")}</summary>
+      <DisclosureSection title={<>{t("Account metadata")}</>}>
         <JsonView value={basis.safe_metadata} />
-      </details>
+      </DisclosureSection>
       <div className={styles.actions}>
         <Confirm
           title={t(

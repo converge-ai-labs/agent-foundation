@@ -1,6 +1,6 @@
+import { useTranslation } from "react-i18next";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useTranslation } from "react-i18next";
 import styles from "./conversations.module.css";
 
 export function MessageMarkdown({ text }: { text: string }) {

@@ -1,6 +1,8 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
+
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -38,13 +40,16 @@ export function RunEvents({ runId }: { runId: string }) {
             <div className={styles.inline}>
               <Button
                 size="sm"
+                variant="outline"
                 disabled={pages.length === 1}
                 onClick={() => setPages((previous) => previous.slice(0, -1))}
+                type="button"
               >
                 {t("Previous")}
               </Button>
               <Button
                 size="sm"
+                variant="outline"
                 disabled={
                   query.data.next_resource_seq >=
                   query.data.high_watermark_resource_seq
@@ -55,6 +60,7 @@ export function RunEvents({ runId }: { runId: string }) {
                     query.data!.next_resource_seq,
                   ])
                 }
+                type="button"
               >
                 {t("Next")}
               </Button>

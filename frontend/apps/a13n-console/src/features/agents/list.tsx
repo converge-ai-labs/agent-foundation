@@ -1,12 +1,20 @@
+import { Button, ChoiceField, FormField, Input } from "a13n-ui";
+
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { useQuery } from "@tanstack/react-query";
-import { Button, SearchInput, Select } from "a13n-ui";
-import { Bot, Plus, Layers } from "lucide-react";
+
+import { Bot, Layers, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, workspaceHeaders } from "../../shared/api";
+import {
+  Pagination,
+  ResourceIdentity,
+  ResourceTable,
+  useCursor,
+} from "../../shared/collection";
 import {
   Empty,
   ErrorNotice,
@@ -15,14 +23,8 @@ import {
   StateBadge,
   Timestamp,
 } from "../../shared/feedback";
-import {
-  Pagination,
-  Table,
-  ResourceIdentity,
-  useCursor,
-} from "../../shared/collection";
-import styles from "./agents.module.css";
 import shared from "../../shared/shared.module.css";
+import styles from "./agents.module.css";
 
 export function Agents() {
   const { t } = useTranslation(),
@@ -50,11 +52,8 @@ export function Agents() {
         .then(data),
   });
   const create = can("agent.create") ? (
-    <Button
-      variant="primary"
-      icon={<Plus size={15} />}
-      onClick={() => navigate("new")}
-    >
+    <Button variant="default" onClick={() => navigate("new")} type="button">
+      {<Plus size={15} />}
       {t("Create agent")}
     </Button>
   ) : undefined;
@@ -71,21 +70,27 @@ export function Agents() {
       actions={create}
     >
       <div className={shared.toolbar}>
-        <SearchInput
+        <FormField
+          className="min-w-0 w-full"
           label={t("Search this page")}
-          placeholder={t("Find an agent…")}
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-        />
-        <Select
-          size="sm"
-          label={t("Agent status")}
+          hideLabel={true}
+        >
+          <Input
+            placeholder={t("Find an agent…")}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            type="search"
+          />
+        </FormField>
+        <ChoiceField
           placeholder={t("Status")}
           value={filter}
           onValueChange={(value) => {
             setFilter(value);
             page.reset();
           }}
+          label={t("Agent status")}
+          hideLabel
           options={[
             { value: "active", label: t("Current agents") },
             { value: "all", label: t("Include archived") },
@@ -109,7 +114,7 @@ export function Agents() {
           action={!search && create}
         />
       ) : (
-        <Table
+        <ResourceTable
           items={visible}
           columns={[
             {

@@ -1,88 +1,58 @@
 import { Logo, Wordmark } from "../src";
 import type { Translate } from "./showcase";
 const colors = [
-  "app",
-  "canvas",
-  "elevated",
-  "surface",
-  "text",
-  "secondary",
+  "background",
+  "foreground",
   "muted",
-  "border",
-  "selected",
+  "muted-foreground",
   "accent",
-  "success",
-  "warning",
-  "danger",
+  "primary",
+  "border",
+  "destructive",
 ];
 export function Foundations({ t }: { t: Translate }) {
   return (
     <>
-      <section>
-        <h2>{t("Brand", "品牌")}</h2>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 16,
-            fontSize: 48,
-          }}
-        >
+      <h1 className="text-2xl font-semibold">{t("Foundations", "基础规范")}</h1>
+      <section className="flex flex-col gap-4">
+        <h2 className="font-semibold">{t("Brand", "品牌")}</h2>
+        <div className="flex items-center gap-4 text-5xl">
           <Logo alt="" width={48} height={48} />
           <Wordmark />
         </div>
-        <p>
-          {t(
-            "Space Grotesk Bold. Use Wordmark for the a13n name across product surfaces.",
-            "Space Grotesk Bold。产品中的 a13n 名称统一使用 Wordmark。",
-          )}
-        </p>
+        <p className="text-sm text-muted-foreground">Space Grotesk Bold</p>
       </section>
-      <section>
-        <h2>{t("Foundations", "基础规范")}</h2>
-        <p>
-          {t(
-            "Use color to clarify meaning; use space before adding borders. Keep secondary text readable and focus visible.",
-            "颜色传达含义，优先用留白划分区域。辅助文字应可读，焦点应清晰。",
-          )}
-        </p>
-        <div className="swatches">
+      <section className="flex flex-col gap-4">
+        <h2 className="font-semibold">{t("Semantic colors", "语义颜色")}</h2>
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           {colors.map((color) => (
-            <div key={color}>
-              <span
-                className="swatch"
-                style={{ background: `var(--a13n-${color})` }}
+            <div key={color} className="flex flex-col gap-2">
+              <div
+                className="h-16 rounded-lg border"
+                style={{ background: `var(--${color})` }}
               />
-              <code>{color}</code>
+              <code className="text-xs">{color}</code>
             </div>
           ))}
         </div>
       </section>
-      <section>
-        <h2>{t("Type & rhythm", "字体与节奏")}</h2>
-        <div className="columns">
-          <div>
-            {["title", "heading", "body", "control", "sm", "xs"].map((size) => (
-              <p key={size} style={{ fontSize: `var(--a13n-text-${size})` }}>
-                {size} · {t("A clear place to begin", "从清晰的起点开始")}
-              </p>
-            ))}
-          </div>
-          <div>
-            <p className="secondary">
-              {t(
-                "Navigation uses compact rows. Forms, toolbars, and settings share a spacing scale and use controls sized for their context.",
-                "导航使用紧凑行高；表单、工具栏和设置共用间距尺度，并按使用场景选择控件尺寸。",
-              )}
-            </p>
-            {[1, 2, 3, 4, 5, 6, 8, 12].map((space) => (
-              <div className="space-row" key={space}>
-                <code>space-{space}</code>
-                <span style={{ width: `var(--a13n-space-${space})` }} />
-              </div>
-            ))}
-          </div>
-        </div>
+      <section className="flex flex-col gap-4">
+        <h2 className="font-semibold">{t("Typography", "字体")}</h2>
+        <p className="text-3xl font-semibold">
+          {t("A clear place to begin", "从清晰的起点开始")}
+        </p>
+        <p>
+          {t(
+            "A shared language for focused work.",
+            "为专注工作建立共同的界面语言。",
+          )}
+        </p>
+        <p className="text-sm text-muted-foreground">
+          {t(
+            "Secondary text stays readable in both themes.",
+            "辅助文字在两种主题下均保持清晰可读。",
+          )}
+        </p>
       </section>
     </>
   );

@@ -1,57 +1,46 @@
 # a13n UI
 
-Private shared React components and design tokens for the frontend workspace. Uses Radix primitives, unstyled cmdk search behavior, CSS Modules, and CSS custom properties. See the [design system contract](../../../spec/frontend/design-system.md).
+Private shared React components for the frontend workspace, built from the MIT [Coss UI registry](https://github.com/cosscom/coss). The components use Base UI, DayPicker, and Tailwind CSS. See the [design system contract](../../../spec/frontend/design-system.md).
 
-Import components from `a13n-ui` and load `a13n-ui/styles.css` once at the application entry. Add `a13n-root` to the application container for base typography. Set `data-a13n-theme="light"` or `"dark"` on the document element so portaled overlays inherit the same tokens. Light is the default.
+Import components from `a13n-ui` and load `a13n-ui/styles.css` once at the application entry. Use `a13n-root` for application typography. Toggle the `dark` class on the document element so portaled overlays inherit the selected theme.
 
 ```tsx
-import { Button } from "a13n-ui";
+import { Button, FormField, Input } from "a13n-ui";
 import "a13n-ui/styles.css";
 
-<Button loading={saving} loadingLabel="Saving…">Save changes</Button>
+<FormField label="Name" description="Use a recognizable name.">
+  <Input required />
+</FormField>
+<Button type="submit" loading={saving}>Save changes</Button>
 ```
 
-Pass `loading` consistently as a boolean to reserve the spinner slot, and provide a translated `loadingLabel` when the label changes. Both labels participate in layout, preserving dimensions. Icon-only buttons need an accessible name. Spinner is decorative; its owner supplies loading text or a status announcement. Components accept display strings; applications own translations and business state.
+## Organization
 
-`Logo` renders the shared brand asset. Supply `alt="a13n"` when it identifies the brand, or `alt=""` when adjacent text already names it. It defaults to 32 × 32 pixels and accepts native image sizing and styling props. Applications own surrounding wordmarks, product names, and navigation.
+- `src/components`, `src/hooks`, and `src/lib`: Coss UI registry primitives and their dependencies. [coss-source.json](./coss-source.json) records the upstream revision, imported files, and local adaptations; [LICENSE.coss](./LICENSE.coss) preserves the license.
+- `src/patterns`: small compositions shared across application features, including FormField, ChoiceField, ModalFrame, SearchPicker, DisclosureSection, SettingsRow, and SettingsSection.
+- `src/styles`: the Tailwind entry, semantic Coss UI light and dark themes, application layout tokens, and bundled fonts.
+- `src/brand`: Logo, Wordmark, and licensed identity assets.
+- `dev`: a standalone interactive showcase with foundations, component states, settings, and collection examples.
+- `tests`: interaction checks for shared compositions.
 
 ## Composition
 
-Use `Select` for a standalone control, with its required `label` serving as the accessible name. Use `SelectField` for a visible form label, hint, and error. Existing labeled Select callers must migrate to SelectField. Both share the same interaction implementation; `size="sm"` and `variant="ghost"` support settings and inline properties.
+Use the Coss UI component API directly. Button uses `onClick`, `disabled`, `loading`, and `variant`; icon buttons use an icon size and an accessible name. Loading preserves the action label and exposes busy state. Add translated status text to standalone Spinner uses.
 
-```tsx
-<SettingsSection title="Appearance">
-  <SettingsRow label="Theme" controlId="theme" description="Choose your preferred appearance.">
-    <Select
-      id="theme"
-      aria-describedby="theme-description"
-      label="Theme"
-      placeholder="Choose theme"
-      size="sm"
-      value={theme}
-      onValueChange={setTheme}
-      options={[{ value: "light", label: "Light" }, { value: "dark", label: "Dark" }]}
-    />
-  </SettingsRow>
-</SettingsSection>
-```
+FormField associates a label, description, and error with its Input or Textarea. ChoiceField accepts options and controlled `value` / `onValueChange`; use `hideLabel` when another visible label already names the control. For custom composition, use Field and Select parts directly.
 
-`Picker` takes grouped options and controlled `value` / `onValueChange`. It searches labels, descriptions, group names, and `keywords`. Provide unique option values and group names, a translated search label, placeholder, and empty message. Describe disabled reasons in option descriptions. The trigger announces its current value; search resets when the popover closes.
+SearchPicker accepts grouped options and controlled `value` / `onValueChange`. It searches labels, descriptions, group names, and keywords. Supply unique option values and group names, translated labels, a placeholder, and an empty message. Selection persists while the search query resets on close. Disabled options cannot activate.
 
-`Menu` takes groups of actions with `onSelect` callbacks. `CommandPalette` takes grouped search options and a controlled open state, focusing search on open. `Kbd` only displays a shortcut; applications register the actual keyboard action. The showcase demonstrates a command palette opened by a button or Cmd/Ctrl+K. Keep shortcut policy, domain commands, and navigation in the application.
+ModalFrame supplies a named dialog, a bounded scroll region, and an optional fixed footer. Use `size="lg"` for complex resource forms. A form-owned footer marked `data-a13n-form-actions` stays reachable while scrolling and preserves native submission.
 
-`SettingsSection` and `SettingsRow` lay out related preferences. Give the row a `controlId` to connect its label, and pass `<controlId>-description` as the control's `aria-describedby` when using a description. `Switch labelHidden` fits rows without duplicating the visible label. Disabled explanations remain visible. `Tabs` owns keyboard tab selection; `EmptyState` pairs an explanation with an optional recovery action.
+SettingsRow pairs explanatory copy with a control and stacks them in narrow containers. Its `controlId` associates the visible label and produces a `<controlId>-description` ID for callers to connect with `aria-describedby`.
 
-## Development showcase
+Applications own translations, navigation, persistence, data fetching, and domain state. Keep those concerns out of the shared package. Prefer Tailwind semantic utilities and `cn` for composition; preserve CSS Modules only where they clarify application-specific layouts.
 
-From the repository root:
+## Registry updates
 
-```bash
-make frontend-sync
-pnpm --dir frontend --filter a13n-ui dev
-make frontend-check-all
-```
+`coss-source.json` records the imported registry revision and local changes. Review upstream diffs before updating imported sources. Keep application-specific behavior in `src/patterns`, and the Coss semantic theme in `src/styles/theme.css`.
 
-Open `http://127.0.0.1:5175/#settings`. Use the navigation to explore foundations, components, settings, and a searchable collection with a detail pane. The independent showcase in `dev/` exercises foundations, control states, validation, icon options, keyboard interactions and overlays in English and Simplified Chinese, light and dark themes, and a narrow preview. It is not exported by the package or routed through Console. `build:showcase` writes disposable assets to `dist/showcase`; package checks include type checking, interaction tests, and the showcase build.
+## Development
 
-The typed exports in `src/index.ts` own the component API; `src/styles/tokens.css` owns concrete design values. Add shared primitives only for established UI needs, and keep product compositions in applications.
+Run `pnpm --dir frontend --filter a13n-ui dev` for the showcase and `pnpm --dir frontend --filter a13n-ui check` for type checking, interaction tests, and the showcase build. The complete frontend gate is `make frontend-check-all`.

@@ -1,16 +1,16 @@
 import {
-  User,
-  Settings,
-  Shield,
-  Users,
-  KeyRound,
-  Mail,
   Activity,
-  Monitor,
   Boxes,
   Cable,
+  KeyRound,
   Layers,
+  Mail,
+  Monitor,
+  Settings,
+  Shield,
   SlidersHorizontal,
+  User,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import { useWorkspace } from "../../layout/workspace";

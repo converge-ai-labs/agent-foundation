@@ -1,9 +1,12 @@
+import { Button } from "a13n-ui";
+import { ResourceTable } from "../../shared/collection";
+
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Input, SettingsRow, SettingsSection } from "a13n-ui";
+import { CopyableId } from "../../shared/copy";
+
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router";
-import { useAuth, useClient } from "../../auth/context";
+import { useClient } from "../../auth/context";
 import { data } from "../../shared/api";
 import {
   ErrorNotice,
@@ -11,13 +14,13 @@ import {
   StateBadge,
   Timestamp,
 } from "../../shared/feedback";
-import { Confirm, FormActions } from "../../shared/form";
+import { Confirm } from "../../shared/form";
+import styles from "../../shared/shared.module.css";
+import { Audit } from "./audit";
 import { SettingsLayout } from "./layout";
 import { Preferences } from "./preferences";
 import { Profile } from "./profile";
-import { Audit } from "./audit";
-import styles from "../../shared/shared.module.css";
-import settingsStyles from "./settings.module.css";
+import { Security } from "./security";
 
 export function PersonalSettings() {
   return (
@@ -31,151 +34,6 @@ export function PersonalSettings() {
         activity: <Audit scope={{ kind: "personal" }} />,
       }}
     />
-  );
-}
-function Security() {
-  const { t } = useTranslation(),
-    auth = useAuth(),
-    client = useClient(),
-    navigate = useNavigate();
-  const [email, setEmail] = useState(auth.data!.user.value.email),
-    [emailPassword, setEmailPassword] = useState(""),
-    [currentPassword, setCurrentPassword] = useState(""),
-    [password, setPassword] = useState("");
-  const config = useQuery({
-    queryKey: ["auth-configuration"],
-    queryFn: ({ signal }) =>
-      client.http.GET("/api/v1/auth/configuration", { signal }).then(data),
-  });
-  const changeEmail = useMutation({
-    mutationFn: () =>
-      client.http.POST("/api/v1/users/me/email-change", {
-        body: { email, current_password: emailPassword },
-      }),
-    onSuccess: () => setEmailPassword(""),
-  });
-  const changePassword = useMutation({
-    mutationFn: () =>
-      client.http.POST("/api/v1/users/me/password", {
-        body: { current_password: currentPassword, password },
-      }),
-    onSuccess: () => {
-      setCurrentPassword("");
-      setPassword("");
-      void auth.refresh();
-      navigate("/login");
-    },
-  });
-  return (
-    <div className={settingsStyles.sections}>
-      <SettingsSection
-        title={t("Email address")}
-        description={t(
-          "Verify a new address before it becomes your sign-in email.",
-        )}
-      >
-        <form
-          className={settingsStyles.securityForm}
-          onSubmit={(event) => {
-            event.preventDefault();
-            changeEmail.mutate();
-          }}
-        >
-          <SettingsRow label={t("Email address")}>
-            <div className={settingsStyles.nameControl}>
-              <Input
-                hideLabel
-                label={t("Email address")}
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                required
-              />
-            </div>
-          </SettingsRow>
-          <SettingsRow label={t("Current password")}>
-            <div className={settingsStyles.nameControl}>
-              <Input
-                hideLabel
-                label={t("Current password")}
-                type="password"
-                autoComplete="current-password"
-                value={emailPassword}
-                onChange={(event) => setEmailPassword(event.target.value)}
-                required
-              />
-            </div>
-          </SettingsRow>
-          {config.data?.email_delivery === false ? (
-            <p className={styles.muted}>
-              {t(
-                "Email delivery is not configured. Contact your organization administrator.",
-              )}
-            </p>
-          ) : (
-            <FormActions
-              pending={changeEmail.isPending}
-              label={t("Send verification email")}
-            />
-          )}
-          <ErrorNotice error={changeEmail.error} />
-          {changeEmail.isSuccess && (
-            <p role="status">
-              {t("Check your new inbox for the verification link.")}
-            </p>
-          )}
-        </form>
-      </SettingsSection>
-      <SettingsSection
-        title={t("Change password")}
-        description={t(
-          "Changing your password signs out all browser sessions. API keys remain active.",
-        )}
-      >
-        <form
-          className={settingsStyles.securityForm}
-          onSubmit={(event) => {
-            event.preventDefault();
-            changePassword.mutate();
-          }}
-        >
-          <SettingsRow label={t("Current password")}>
-            <div className={settingsStyles.nameControl}>
-              <Input
-                hideLabel
-                label={t("Current password")}
-                type="password"
-                autoComplete="current-password"
-                value={currentPassword}
-                onChange={(event) => setCurrentPassword(event.target.value)}
-                required
-              />
-            </div>
-          </SettingsRow>
-          <SettingsRow label={t("New password")}>
-            <div className={settingsStyles.nameControl}>
-              <Input
-                hideLabel
-                label={t("New password")}
-                type="password"
-                autoComplete="new-password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
-                minLength={15}
-                maxLength={128}
-                hint={t("Use at least 15 characters.")}
-              />
-            </div>
-          </SettingsRow>
-          <ErrorNotice error={changePassword.error} />
-          <FormActions
-            pending={changePassword.isPending}
-            label={t("Change password")}
-          />
-        </form>
-      </SettingsSection>
-    </div>
   );
 }
 function BrowserSessions() {
@@ -198,66 +56,67 @@ function BrowserSessions() {
   return (
     <>
       <div className={styles.tableWrap}>
-        <table className={styles.table}>
-          <thead>
-            <tr>
-              <th>{t("Session")}</th>
-              <th>{t("Created")}</th>
-              <th>{t("Expires")}</th>
-              <th>{t("Status")}</th>
-              <th>{t("Actions")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sessions.data.items.map((item) => (
-              <tr key={item.id}>
-                <td>
-                  <code>{item.id}</code>
-                </td>
-                <td>
-                  <Timestamp value={item.created_at} />
-                </td>
-                <td>
-                  <Timestamp value={item.expires_at} />
-                </td>
-                <td>
-                  <StateBadge state={item.revoked_at ? "revoked" : "active"} />
-                </td>
-                <td>
-                  {!item.revoked_at && (
-                    <Confirm
-                      title={t("Revoke session")}
-                      description={t(
-                        "This browser will need to sign in again.",
-                      )}
-                      trigger={t("Revoke")}
-                      danger
-                      action={async () => {
-                        await client.http.DELETE(
-                          "/api/v1/users/me/auth-sessions/{session_id}",
-                          { params: { path: { session_id: item.id } } },
-                        );
-                        await cache.invalidateQueries({
-                          queryKey: ["identity"],
-                        });
-                      }}
-                    />
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <ResourceTable
+          caption={t("Browser sessions")}
+          items={sessions.data.items}
+          columns={[
+            {
+              label: t("Session"),
+              render: (item) => <CopyableId value={item.id} />,
+            },
+            {
+              label: t("Created"),
+              render: (item) => <Timestamp value={item.created_at} />,
+            },
+            {
+              label: t("Expires"),
+              render: (item) => <Timestamp value={item.expires_at} />,
+            },
+            {
+              label: t("Status"),
+              render: (item) => (
+                <StateBadge state={item.revoked_at ? "revoked" : "active"} />
+              ),
+            },
+            {
+              label: t("Actions"),
+              render: (item) =>
+                !item.revoked_at && (
+                  <Confirm
+                    title={t("Revoke session")}
+                    description={t("This browser will need to sign in again.")}
+                    trigger={t("Revoke")}
+                    danger
+                    action={async () => {
+                      await client.http.DELETE(
+                        "/api/v1/users/me/auth-sessions/{session_id}",
+                        { params: { path: { session_id: item.id } } },
+                      );
+                      await cache.invalidateQueries({
+                        queryKey: ["identity"],
+                      });
+                    }}
+                  />
+                ),
+            },
+          ]}
+        />
       </div>
       <div className={styles.pagination}>
         {cursor && (
-          <Button onClick={() => setCursor(undefined)}>
+          <Button
+            variant="outline"
+            onClick={() => setCursor(undefined)}
+            type="button"
+          >
             {t("First page")}
           </Button>
         )}
         {sessions.data.next_cursor && (
           <Button
+            variant="outline"
             onClick={() => setCursor(sessions.data.next_cursor ?? undefined)}
+            type="button"
           >
             {t("Next page")}
           </Button>

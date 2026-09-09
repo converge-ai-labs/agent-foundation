@@ -1,17 +1,26 @@
 import {
+  Checkbox,
+  Fieldset,
+  FieldsetLegend,
+  FormField,
+  Input,
+  Label,
+} from "a13n-ui";
+
+import {
   useState,
   type Dispatch,
-  type SetStateAction,
   type ReactNode,
+  type SetStateAction,
 } from "react";
-import { Checkbox, Input, SearchInput } from "a13n-ui";
-import { Sparkles, Network, Plug, ArrowUpRight } from "lucide-react";
-import { Link } from "react-router";
+
+import { ArrowUpRight, Network, Plug, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router";
 import { useWorkspace } from "../../layout/workspace";
-import type { AgentConfig } from "./configuration";
-import type { useAgentChoices } from "./choices";
 import styles from "./agents.module.css";
+import type { useAgentChoices } from "./choices";
+import type { AgentConfig } from "./configuration";
 
 type Skills = NonNullable<AgentConfig["skills"]>;
 type MCP = NonNullable<AgentConfig["mcp_tools"]>;
@@ -66,27 +75,28 @@ export function AgentCapabilities({
                   : previous.filter((item) => item.skill_key !== skill.key),
               ),
             settings: selected && (
-              <Input
-                label={t("Pinned version")}
-                type="number"
-                min={1}
-                value={selected.version ?? ""}
-                placeholder={t("Latest")}
-                onChange={(event) =>
-                  setSkills((previous) =>
-                    previous.map((item) =>
-                      item.skill_key === skill.key
-                        ? {
-                            ...item,
-                            version: event.target.value
-                              ? Number(event.target.value)
-                              : null,
-                          }
-                        : item,
-                    ),
-                  )
-                }
-              />
+              <FormField className="min-w-0 w-full" label={t("Pinned version")}>
+                <Input
+                  type="number"
+                  min={1}
+                  value={selected.version ?? ""}
+                  placeholder={t("Latest")}
+                  onChange={(event) =>
+                    setSkills((previous) =>
+                      previous.map((item) =>
+                        item.skill_key === skill.key
+                          ? {
+                              ...item,
+                              version: event.target.value
+                                ? Number(event.target.value)
+                                : null,
+                            }
+                          : item,
+                      ),
+                    )
+                  }
+                />
+              </FormField>
             ),
           };
         })}
@@ -223,22 +233,31 @@ function CapabilityGroup({
       </header>
       <div className={styles.capabilityChoices}>
         {choices.length > 6 && (
-          <SearchInput
+          <FormField
+            className="min-w-0 w-full"
             label={t("Search {{kind}}", { kind: title })}
-            placeholder={t("Search…")}
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
+            hideLabel={true}
+          >
+            <Input
+              placeholder={t("Search…")}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              type="search"
+            />
+          </FormField>
         )}
-        <div className={styles.choiceList}>
+        <Fieldset className={styles.choiceList}>
+          <FieldsetLegend className="sr-only">{title}</FieldsetLegend>
           {visible.map((choice) => (
             <div key={choice.key} className={styles.choice}>
               <div className={styles.choiceHeading}>
-                <Checkbox
-                  label={choice.name}
-                  checked={choice.checked}
-                  onCheckedChange={(value) => choice.onChange(value === true)}
-                />
+                <Label className="flex items-center gap-2">
+                  <Checkbox
+                    checked={choice.checked}
+                    onCheckedChange={(value) => choice.onChange(value === true)}
+                  />
+                  {choice.name}
+                </Label>
                 {choice.unavailable && !loading && (
                   <small>{t("Unavailable")}</small>
                 )}
@@ -258,7 +277,7 @@ function CapabilityGroup({
               {t("No matching capabilities")}
             </p>
           )}
-        </div>
+        </Fieldset>
         <Link
           className={styles.setupCapability}
           to={setup}
@@ -284,20 +303,24 @@ function ToolNames({
   const { t } = useTranslation();
   const [text, setText] = useState(tools?.join(", ") ?? "");
   return (
-    <Input
+    <FormField
+      className="min-w-0 w-full"
       label={t("Tool names")}
-      hint={t("Comma-separated; empty selects all.")}
-      value={text}
-      placeholder={t("All tools")}
-      onChange={(event) => {
-        const value = event.target.value;
-        setText(value);
-        const names = value
-          .split(",")
-          .map((name) => name.trim())
-          .filter(Boolean);
-        onChange(names.length ? names : null);
-      }}
-    />
+      description={t("Comma-separated; empty selects all.")}
+    >
+      <Input
+        value={text}
+        placeholder={t("All tools")}
+        onChange={(event) => {
+          const value = event.target.value;
+          setText(value);
+          const names = value
+            .split(",")
+            .map((name) => name.trim())
+            .filter(Boolean);
+          onChange(names.length ? names : null);
+        }}
+      />
+    </FormField>
   );
 }

@@ -1,12 +1,16 @@
-import { PageActions } from "../../shared/page-actions";
-import { useState } from "react";
+import { Button, ChoiceField, FormField, Input, ModalFrame } from "a13n-ui";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Dialog, Input } from "a13n-ui";
-import { Copy, KeyRound, Plus } from "lucide-react";
+import { useState } from "react";
+import { CopyButton, CopyableId } from "../../shared/copy";
+import { PageActions } from "../../shared/page-actions";
+
+import { KeyRound, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data } from "../../shared/api";
+import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import {
   Empty,
   ErrorNotice,
@@ -15,8 +19,12 @@ import {
   Timestamp,
 } from "../../shared/feedback";
 import { Confirm, FormActions } from "../../shared/form";
-import { Pagination, Table, useCursor } from "../../shared/collection";
 import styles from "../../shared/shared.module.css";
+import {
+  expirationOptions,
+  expirationTimestamp,
+  type Expiration,
+} from "./expiration";
 
 export function ApiKeys({
   accountId,
@@ -68,7 +76,7 @@ export function ApiKeys({
         <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       ) : query.data?.items.length ? (
         <>
-          <Table
+          <ResourceTable
             items={query.data.items}
             columns={[
               {
@@ -76,7 +84,9 @@ export function ApiKeys({
                 render: (item) => (
                   <>
                     <KeyRound size={13} /> {item.name}
-                    <small>{item.id}</small>
+                    <small>
+                      <CopyableId value={item.id} />
+                    </small>
                   </>
                 ),
               },
@@ -86,7 +96,7 @@ export function ApiKeys({
                       label: t("Owner"),
                       render: (
                         item: NonNullable<typeof query.data>["items"][number],
-                      ) => <code>{item.principal_id}</code>,
+                      ) => <CopyableId value={item.principal_id} />,
                     },
                   ]
                 : []),
@@ -160,13 +170,13 @@ function CreateKey({ accountId }: { accountId?: string }) {
     cache = useQueryClient();
   const [open, setOpen] = useState(false),
     [name, setName] = useState(""),
-    [expires, setExpires] = useState("");
+    [expires, setExpires] = useState<Expiration>("never");
   const create = useMutation({
     gcTime: 0,
     mutationFn: async () => {
       const body = {
         name,
-        expires_at: expires ? new Date(expires).toISOString() : null,
+        expires_at: expirationTimestamp(expires),
       };
       return accountId
         ? client.http
@@ -187,26 +197,28 @@ function CreateKey({ accountId }: { accountId?: string }) {
     },
   });
   return (
-    <Dialog
+    <ModalFrame
+      onOpenChange={(value) => {
+        if (!create.isPending) {
+          setOpen(value);
+          create.reset();
+          setName("");
+          setExpires("never");
+        }
+      }}
+      trigger={
+        <Button variant="default" type="button">
+          {<Plus size={14} />}
+          {t("Create key")}
+        </Button>
+      }
+      size={"md"}
       title={t("Create API key")}
       description={t(
         "The key belongs to this workspace and is shown only once.",
       )}
       closeLabel={t("Close")}
       open={open}
-      onOpenChange={(value) => {
-        if (!create.isPending) {
-          setOpen(value);
-          create.reset();
-          setName("");
-          setExpires("");
-        }
-      }}
-      trigger={
-        <Button icon={<Plus size={14} />} variant="primary">
-          {t("Create key")}
-        </Button>
-      }
     >
       {create.data ? (
         <SecretReveal value={create.data.bearer} />
@@ -218,46 +230,47 @@ function CreateKey({ accountId }: { accountId?: string }) {
             create.mutate();
           }}
         >
-          <Input
-            label={t("Name")}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            required
-            maxLength={128}
-            autoFocus
-          />
-          <Input
-            label={t("Expiration date")}
-            type="datetime-local"
+          <FormField className="min-w-0 w-full" label={t("Name")}>
+            <Input
+              required={true}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              maxLength={128}
+              autoFocus
+            />
+          </FormField>
+          <ChoiceField
+            placeholder={t("Select expiration")}
             value={expires}
-            onChange={(event) => setExpires(event.target.value)}
-            hint={t("Leave empty for no expiration.")}
+            className="min-w-0"
+            onValueChange={(value) => {
+              const option = expirationOptions.find(
+                (option) => option.value === value,
+              );
+              if (option) setExpires(option.value);
+            }}
+            label={t("Expires after")}
+            options={expirationOptions.map((option) => ({
+              ...option,
+              label: t(option.label),
+            }))}
           />
           <ErrorNotice error={create.error} />
           <FormActions pending={create.isPending} label={t("Create key")} />
         </form>
       )}
-    </Dialog>
+    </ModalFrame>
   );
 }
 export function SecretReveal({ value }: { value: string }) {
   const { t } = useTranslation();
-  const copy = useMutation({
-    mutationFn: () => navigator.clipboard.writeText(value),
-  });
   return (
     <div className={styles.stack}>
       <p>{t("Copy this value now. It will not be displayed again.")}</p>
-      <Input
-        label={t("One-time value")}
-        value={value}
-        readOnly
-        autoComplete="off"
-      />
-      <Button icon={<Copy size={14} />} onClick={() => copy.mutate()}>
-        {t(copy.isSuccess ? "Copied" : "Copy")}
-      </Button>
-      <ErrorNotice error={copy.error} />
+      <FormField className="min-w-0 w-full" label={t("One-time value")}>
+        <Input value={value} readOnly autoComplete="off" />
+      </FormField>
+      <CopyButton value={value} />
     </div>
   );
 }

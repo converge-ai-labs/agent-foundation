@@ -1,13 +1,21 @@
-import { useState } from "react";
+import {
+  Button,
+  Checkbox,
+  ChoiceField,
+  DisclosureSection,
+  Label,
+} from "a13n-ui";
+
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { useNavigate } from "react-router";
-import { Button, Select, Checkbox } from "a13n-ui";
+
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { JsonView, TextArea } from "../../shared/form";
+import { JsonView, TextAreaField } from "../../shared/form";
 import { invalidateConversation, runPath } from "./api";
 import styles from "./conversations.module.css";
 
@@ -129,10 +137,9 @@ export function PendingFeedback({
                 <strong>{action.tool_name ?? action.call_id}</strong>
                 <small>{t(action.kind)}</small>
                 {action.presentation != null && (
-                  <details>
-                    <summary>{t("Request details")}</summary>
+                  <DisclosureSection title={<>{t("Request details")}</>}>
                     <JsonView value={action.presentation} />
-                  </details>
+                  </DisclosureSection>
                 )}
                 {action.kind === "approval" ? (
                   <div className={styles.approvalChoices}>
@@ -141,7 +148,7 @@ export function PendingFeedback({
                         key={choice}
                         type="button"
                         variant={
-                          answer.action === choice ? "primary" : "secondary"
+                          answer.action === choice ? "default" : "outline"
                         }
                         aria-pressed={answer.action === choice}
                         onClick={() =>
@@ -153,13 +160,14 @@ export function PendingFeedback({
                     ))}
                   </div>
                 ) : (
-                  <Select
-                    label={t("Response")}
+                  <ChoiceField
                     placeholder={t("Choose a response")}
                     value={answer.action}
                     onValueChange={(value) =>
                       change(action.call_id, { ...answer, action: value })
                     }
+                    label={t("Response")}
+                    hideLabel
                     options={
                       action.kind === "approval"
                         ? [
@@ -189,18 +197,20 @@ export function PendingFeedback({
                 {["complete", "respond"].includes(answer.action) && (
                   <>
                     {answer.action === "respond" && (
-                      <Checkbox
-                        label={t("Structured response")}
-                        checked={!!answer.structured}
-                        onCheckedChange={(checked) =>
-                          change(action.call_id, {
-                            ...answer,
-                            structured: checked === true,
-                          })
-                        }
-                      />
+                      <Label className="flex items-center gap-2">
+                        <Checkbox
+                          checked={!!answer.structured}
+                          onCheckedChange={(checked) =>
+                            change(action.call_id, {
+                              ...answer,
+                              structured: checked === true,
+                            })
+                          }
+                        />
+                        {t("Structured response")}
+                      </Label>
                     )}
-                    <TextArea
+                    <TextAreaField
                       label={t(
                         answer.action === "complete" || answer.structured
                           ? "Response (JSON)"
@@ -219,11 +229,11 @@ export function PendingFeedback({
           })}
           <Button
             type="submit"
-            variant="primary"
-            loading={mutation.isPending}
+            variant="default"
             disabled={
               !actions.every((action) => !!answers[action.call_id]?.action)
             }
+            loading={mutation.isPending}
           >
             {t("Submit responses")}
           </Button>

@@ -1,7 +1,9 @@
+import { Button, FormField, Input, ModalFrame } from "a13n-ui";
+
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button, Dialog, Input } from "a13n-ui";
+
 import { Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -39,19 +41,21 @@ export function CreateWorkspace({
     },
   });
   return (
-    <Dialog
-      title={t("Create workspace")}
-      description={t("Choose a name your teammates will recognize.")}
-      closeLabel={t("Close")}
-      open={open}
+    <ModalFrame
       onOpenChange={(value) => {
         if (!create.isPending) setOpen(value);
       }}
       trigger={
-        <Button variant="primary" icon={<Plus size={14} />}>
+        <Button variant="default" type="button">
+          {<Plus size={14} />}
           {t("Create workspace")}
         </Button>
       }
+      size={"md"}
+      title={t("Create workspace")}
+      description={t("Choose a name your teammates will recognize.")}
+      closeLabel={t("Close")}
+      open={open}
     >
       <form
         className={styles.form}
@@ -60,17 +64,21 @@ export function CreateWorkspace({
           create.mutate();
         }}
       >
-        <Input
+        <FormField
+          className="min-w-0 w-full"
           label={t("Workspace name")}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          required
-          maxLength={128}
           disabled={create.isPending}
-        />
+        >
+          <Input
+            required={true}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            maxLength={128}
+          />
+        </FormField>
         <ErrorNotice error={create.error} />
         <FormActions pending={create.isPending} label={t("Create workspace")} />
       </form>
-    </Dialog>
+    </ModalFrame>
   );
 }

@@ -1,8 +1,8 @@
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
 import { Page } from "../../shared/feedback";
-import { ConnectorProviders } from "./providers";
 import { ConnectorConnections } from "./connections";
+import { ConnectorProviders } from "./providers";
 
 export function ConnectorsPage({ providers = false }: { providers?: boolean }) {
   const { workspace } = useWorkspace(),

@@ -1,9 +1,9 @@
-import { Link, useParams } from "react-router";
 import { Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { Link, useParams } from "react-router";
 import { useWorkspace } from "../../layout/workspace";
-import { useRun, useRunAgent } from "./queries";
 import styles from "./conversations.module.css";
+import { useRun, useRunAgent } from "./queries";
 
 export function SessionIdentity() {
   const { runId, sessionId, threadId } = useParams();

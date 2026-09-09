@@ -1,10 +1,20 @@
-import { useState } from "react";
+import {
+  Button,
+  ChoiceField,
+  DisclosureSection,
+  FormField,
+  Input,
+  ModalFrame,
+} from "a13n-ui";
+import { FileUpload } from "../../shared/file-upload";
+
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button, Dialog, Input, SelectField } from "a13n-ui";
+import { useState } from "react";
+
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { data, commandHeaders, type Schema } from "../../shared/api";
+import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { FormActions, JsonView } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
@@ -20,19 +30,20 @@ export function ImportSkill({
   const { t } = useTranslation(),
     [open, setOpen] = useState(false);
   return (
-    <Dialog
-      open={open}
+    <ModalFrame
       onOpenChange={setOpen}
+      trigger={
+        <Button variant="default" type="button">
+          {t(skill ? "Publish revision" : "Import skill")}
+        </Button>
+      }
+      size={"md"}
       title={t(skill ? "Publish skill revision" : "Import skill")}
       description={t(
         "Import a normalized skill package from a ZIP file or GitHub repository.",
       )}
       closeLabel={t("Close")}
-      trigger={
-        <Button variant="primary">
-          {t(skill ? "Publish revision" : "Import skill")}
-        </Button>
-      }
+      open={open}
     >
       {open && (
         <ImportForm
@@ -43,7 +54,7 @@ export function ImportSkill({
           }}
         />
       )}
-    </Dialog>
+    </ModalFrame>
   );
 }
 function ImportForm({
@@ -134,18 +145,23 @@ function ImportForm({
       }}
     >
       {!basis && (
-        <Input
+        <FormField
+          className="min-w-0 w-full"
           label={t("Display name")}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          hint={t("Leave empty to use the package name.")}
-        />
+          description={t("Leave empty to use the package name.")}
+        >
+          <Input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </FormField>
       )}
-      <SelectField
+      <ChoiceField
         placeholder={t("Select source")}
-        label={t("Source")}
         value={kind}
+        className="min-w-0"
         onValueChange={setKind}
+        label={t("Source")}
         options={[
           { value: "zip_upload", label: t("ZIP file") },
           { value: "github", label: "GitHub" },
@@ -153,62 +169,65 @@ function ImportForm({
       />
       {kind === "zip_upload" ? (
         <>
-          <label className={styles.field}>
-            {t("ZIP file")}
-            <input
-              type="file"
-              accept=".zip,application/zip"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                setUpload(
-                  file ? { file, key: crypto.randomUUID() } : undefined,
-                );
-                setReceipt(undefined);
-                stage.reset();
-              }}
-            />
-          </label>
+          <FileUpload
+            label={t("ZIP file")}
+            file={upload?.file}
+            acceptedFileTypes={[".zip", "application/zip"]}
+            onSelect={(file) => {
+              setUpload(file ? { file, key: crypto.randomUUID() } : undefined);
+              setReceipt(undefined);
+              stage.reset();
+            }}
+          />
           <Button
+            variant="outline"
             disabled={!upload}
             loading={stage.isPending}
             onClick={() => stage.mutate()}
+            type="button"
           >
             {t("Validate package")}
           </Button>
           {receipt && (
-            <details>
-              <summary>{t("Validated package")}</summary>
+            <DisclosureSection title={<>{t("Validated package")}</>}>
               <JsonView value={receipt.manifest} />
-            </details>
+            </DisclosureSection>
           )}
           <ErrorNotice error={stage.error} />
         </>
       ) : (
         <>
-          <Input
-            label={t("Repository URL")}
-            type="url"
-            value={repository}
-            onChange={(event) => setRepository(event.target.value)}
-            required
-            placeholder="https://github.com/owner/repository"
-          />
-          <Input
-            label={t("Git ref")}
-            value={ref}
-            onChange={(event) => setRef(event.target.value)}
-            placeholder={t("Default branch")}
-          />
-          <Input
-            label={t("Subdirectory")}
-            value={subdirectory}
-            onChange={(event) => setSubdirectory(event.target.value)}
-          />
-          <Input
+          <FormField className="min-w-0 w-full" label={t("Repository URL")}>
+            <Input
+              required={true}
+              type="url"
+              value={repository}
+              onChange={(event) => setRepository(event.target.value)}
+              placeholder="https://github.com/owner/repository"
+            />
+          </FormField>
+          <FormField className="min-w-0 w-full" label={t("Git ref")}>
+            <Input
+              value={ref}
+              onChange={(event) => setRef(event.target.value)}
+              placeholder={t("Default branch")}
+            />
+          </FormField>
+          <FormField className="min-w-0 w-full" label={t("Subdirectory")}>
+            <Input
+              value={subdirectory}
+              onChange={(event) => setSubdirectory(event.target.value)}
+            />
+          </FormField>
+          <FormField
+            className="min-w-0 w-full"
             label={t("Expected commit SHA (optional)")}
-            value={commit}
-            onChange={(event) => setCommit(event.target.value)}
-          />
+          >
+            <Input
+              value={commit}
+              onChange={(event) => setCommit(event.target.value)}
+            />
+          </FormField>
         </>
       )}
       <ErrorNotice error={publish.error} />

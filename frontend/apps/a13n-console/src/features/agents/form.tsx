@@ -1,24 +1,28 @@
-import { Link } from "react-router";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { Button, DisclosureSection, FormField, Input } from "a13n-ui";
+
+import { SearchPicker } from "a13n-ui";
+
 import { ApiError } from "@converge.ai/a13n";
-import { Input, Picker, Button } from "a13n-ui";
-import { useTranslation } from "react-i18next";
-import { jsonObject } from "../../shared/validation";
-import { ErrorNotice } from "../../shared/feedback";
-import { TextArea } from "../../shared/form";
-import { advancedConfig, buildConfig, type AgentConfig } from "./configuration";
-import styles from "./agents.module.css";
-import { useAgentChoices } from "./choices";
-import { AgentCapabilities } from "./capabilities";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { Link } from "react-router";
+
 import {
+  ArrowLeft,
   Check,
   Circle,
-  Sparkles,
-  ArrowLeft,
+  Layers,
   Maximize2,
   Minimize2,
-  Layers,
+  Sparkles,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { ErrorNotice } from "../../shared/feedback";
+import { TextAreaField } from "../../shared/form";
+import { jsonObject } from "../../shared/validation";
+import styles from "./agents.module.css";
+import { AgentCapabilities } from "./capabilities";
+import { useAgentChoices } from "./choices";
+import { advancedConfig, buildConfig, type AgentConfig } from "./configuration";
 
 export function AgentForm({
   initial: providedInitial,
@@ -144,32 +148,32 @@ export function AgentForm({
           <div className={styles.main}>
             {creating && (
               <section className={styles.section}>
-                <Input
-                  label={t("Agent name")}
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  required
-                  maxLength={128}
-                />
-                <Input
-                  label={t("Description")}
-                  value={description}
-                  onChange={(event) => setDescription(event.target.value)}
-                  maxLength={4096}
-                />
+                <FormField className="min-w-0 w-full" label={t("Agent name")}>
+                  <Input
+                    required={true}
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    maxLength={128}
+                  />
+                </FormField>
+                <FormField className="min-w-0 w-full" label={t("Description")}>
+                  <Input
+                    value={description}
+                    onChange={(event) => setDescription(event.target.value)}
+                    maxLength={4096}
+                  />
+                </FormField>
               </section>
             )}
             <section className={styles.modelProperty}>
               <h2>{t("Model")}</h2>
-              <Picker
-                variant="ghost"
+              <SearchPicker
                 label={t("Model")}
                 placeholder={t("Choose a model…")}
                 emptyMessage={t(
                   "No models available. Configure a provider and model first.",
                 )}
                 value={model}
-                onValueChange={setModel}
                 groups={[
                   {
                     label: t("Available models"),
@@ -186,6 +190,7 @@ export function AgentForm({
                       })) ?? [],
                   },
                 ]}
+                onValueChange={setModel}
               />
             </section>
             <section className={styles.instructions}>
@@ -195,26 +200,26 @@ export function AgentForm({
                   <span>Markdown</span>
                   <Button
                     variant="ghost"
-                    size="sm"
                     aria-label={t(
                       instructionsExpanded
                         ? "Collapse instructions"
                         : "Expand instructions",
                     )}
-                    icon={
-                      instructionsExpanded ? (
-                        <Minimize2 size={14} />
-                      ) : (
-                        <Maximize2 size={14} />
-                      )
-                    }
                     onClick={() =>
                       setInstructionsExpanded(!instructionsExpanded)
                     }
-                  />
+                    size="icon-sm"
+                    type="button"
+                  >
+                    {instructionsExpanded ? (
+                      <Minimize2 size={14} />
+                    ) : (
+                      <Maximize2 size={14} />
+                    )}
+                  </Button>
                 </div>
               </header>
-              <TextArea
+              <TextAreaField
                 label={t("System instructions")}
                 hideLabel
                 value={instructions}
@@ -239,14 +244,18 @@ export function AgentForm({
               connectors={connectors}
               setConnectors={setConnectors}
             />
-            <details
+            <DisclosureSection
               className={styles.advanced}
               open={expanded}
-              onToggle={(event) => setExpanded(event.currentTarget.open)}
+              onOpenChange={(isExpanded) =>
+                ((event) => setExpanded(event.currentTarget.open))({
+                  currentTarget: { open: isExpanded },
+                })
+              }
+              title={<>{t("Advanced configuration")}</>}
             >
-              <summary>{t("Advanced configuration")}</summary>
               <div>
-                <TextArea
+                <TextAreaField
                   label={t("Model settings")}
                   hint={t(
                     "Settings override the selected model's defaults. Use a JSON object.",
@@ -256,7 +265,7 @@ export function AgentForm({
                   onChange={setSettings}
                   rows={4}
                 />
-                <TextArea
+                <TextAreaField
                   label={t("Configuration JSON")}
                   hint={t(
                     "Input adapter, protocol, structured output, retries, subagents, and client tools.",
@@ -268,7 +277,7 @@ export function AgentForm({
                 />
                 <ErrorNotice error={validation} />
               </div>
-            </details>
+            </DisclosureSection>
           </div>
         </fieldset>
 
@@ -287,11 +296,11 @@ export function AgentForm({
             {!readonly && (
               <Button
                 type="submit"
-                variant="primary"
-                loading={pending}
+                variant="default"
                 disabled={
                   pending || !dirty || !model || (creating && !name.trim())
                 }
+                loading={pending}
               >
                 {t(creating ? "Create agent" : "Save changes")}
               </Button>

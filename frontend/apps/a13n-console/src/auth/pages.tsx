@@ -1,3 +1,8 @@
+import { Button, FormField, Input } from "a13n-ui";
+
+import { Logo, Wordmark } from "a13n-ui";
+
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 import {
   Link,
@@ -6,13 +11,12 @@ import {
   useNavigate,
   useParams,
 } from "react-router";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { Button, Input, Logo, Wordmark } from "a13n-ui";
+
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useAuth, useClient } from "./context";
 import { data } from "../shared/api";
 import { ErrorNotice, Loading } from "../shared/feedback";
+import { useAuth, useClient } from "./context";
 import styles from "./pages.module.css";
 
 export function AuthPage() {
@@ -140,38 +144,41 @@ export function AuthPage() {
         ) : (
           <form onSubmit={submit} className={styles.form}>
             {mode === "invite" && (
-              <Input
-                label={t("Your name")}
-                autoComplete="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                maxLength={128}
-              />
+              <FormField className="min-w-0 w-full" label={t("Your name")}>
+                <Input
+                  required={true}
+                  autoComplete="name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  maxLength={128}
+                />
+              </FormField>
             )}
             {["login", "forgot"].includes(mode) && (
-              <Input
-                label={t("Email address")}
-                type="email"
-                autoComplete="username"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
+              <FormField className="min-w-0 w-full" label={t("Email address")}>
+                <Input
+                  required={true}
+                  type="email"
+                  autoComplete="username"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </FormField>
             )}
             {["login", "invite", "reset"].includes(mode) && (
-              <Input
-                label={t("Password")}
-                type="password"
-                autoComplete={
-                  mode === "login" ? "current-password" : "new-password"
-                }
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={mode === "login" ? 1 : 15}
-                maxLength={128}
-              />
+              <FormField className="min-w-0 w-full" label={t("Password")}>
+                <Input
+                  required={true}
+                  type="password"
+                  autoComplete={
+                    mode === "login" ? "current-password" : "new-password"
+                  }
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  minLength={mode === "login" ? 1 : 15}
+                  maxLength={128}
+                />
+              </FormField>
             )}
             {["reset", "invite", "email"].includes(mode) && !token && (
               <ErrorNotice
@@ -205,7 +212,11 @@ export function AuthPage() {
                 <a href="/login" target="_blank" rel="noopener noreferrer">
                   {t("Sign in")}
                 </a>{" "}
-                <Button onClick={() => void auth.refresh()}>
+                <Button
+                  variant="outline"
+                  onClick={() => void auth.refresh()}
+                  type="button"
+                >
                   {t("Refresh sign-in")}
                 </Button>
               </p>
@@ -213,16 +224,16 @@ export function AuthPage() {
             <ErrorNotice error={mutation.error} />
             <Button
               type="submit"
-              variant="primary"
-              icon={<ArrowRight size={16} />}
-              loading={mutation.isPending}
+              variant="default"
               disabled={
                 (["reset", "invite", "email"].includes(mode) && !token) ||
                 (mode === "email" && (!auth.data || auth.anonymous)) ||
                 (mode === "forgot" &&
                   configuration.data?.email_delivery === false)
               }
+              loading={mutation.isPending}
             >
+              <ArrowRight size={16} />
               {t(
                 mode === "login"
                   ? "Sign in"

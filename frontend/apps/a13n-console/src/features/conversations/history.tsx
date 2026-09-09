@@ -1,16 +1,17 @@
+import { Button } from "a13n-ui";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
-import { useQuery } from "@tanstack/react-query";
-import { Button } from "a13n-ui";
+
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
 import { conversationQueries, runPath } from "./api";
-import { InputContent, PresentedItems } from "./items";
-import { mergeRetainedItems } from "./projection";
-import { MessageMarkdown } from "./markdown";
 import styles from "./conversations.module.css";
+import { InputContent, PresentedItems } from "./items";
+import { MessageMarkdown } from "./markdown";
+import { mergeRetainedItems } from "./projection";
 
 export function HistoryTranscript({ runId }: { runId: string }) {
   const client = useClient(),
@@ -27,7 +28,12 @@ export function HistoryTranscript({ runId }: { runId: string }) {
     <>
       <ErrorNotice error={lineage.error} retry={() => void lineage.refetch()} />
       {ancestors.length > limit && (
-        <Button size="sm" onClick={() => setLimit((value) => value + 10)}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setLimit((value) => value + 10)}
+          type="button"
+        >
           {t("Load earlier messages")}
         </Button>
       )}
@@ -86,7 +92,7 @@ function HistoricalRun({ runId }: { runId: string }) {
       {!retained.data.available && (
         <p className={styles.notice}>
           {t("Detailed items are currently unavailable for this run.")}
-          <Button size="sm" onClick={reload}>
+          <Button size="sm" variant="outline" type="button" onClick={reload}>
             {t("Reload")}
           </Button>
         </p>

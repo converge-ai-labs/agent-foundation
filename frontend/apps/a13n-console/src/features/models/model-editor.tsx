@@ -1,24 +1,30 @@
-import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Badge,
   Button,
-  Dialog,
+  ChoiceField,
+  DisclosureSection,
+  FormField,
   Input,
-  Picker,
-  SelectField,
+  Label,
+  ModalFrame,
   Switch,
 } from "a13n-ui";
+
+import { SearchPicker } from "a13n-ui";
+
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+
 import { Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { allPages, data, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
-import { FormActions, TextArea } from "../../shared/form";
+import { FormActions, TextAreaField } from "../../shared/form";
 import { SchemaFields } from "../../shared/schema-fields";
+import styles from "../../shared/shared.module.css";
 import { jsonObject, validateSettings } from "../../shared/validation";
 import { modelApi, type ModelScope } from "./api";
-import styles from "../../shared/shared.module.css";
 
 export function ModelEditor({
   scope,
@@ -42,24 +48,25 @@ export function ModelEditor({
     queryFn: ({ signal }) => api.model(modelId!, signal),
   });
   return (
-    <Dialog
-      size="wide"
+    <ModalFrame
+      onOpenChange={setOpen}
+      trigger={
+        <Button
+          size={modelId || candidate ? "sm" : "default"}
+          variant={modelId ? "ghost" : candidate ? "outline" : "default"}
+          type="button"
+        >
+          {!modelId && <Plus size={14} />}
+          {t(modelId ? "Edit" : "Add model")}
+        </Button>
+      }
+      size={"lg"}
       title={t(modelId ? "Edit model" : "Add model")}
       description={t(
         "A stable model key connects your agents to one provider and calling API.",
       )}
       closeLabel={t("Close")}
       open={open}
-      onOpenChange={setOpen}
-      trigger={
-        <Button
-          size={modelId || candidate ? "sm" : "md"}
-          variant={modelId ? "ghost" : candidate ? "secondary" : "primary"}
-          icon={!modelId && <Plus size={14} />}
-        >
-          {t(modelId ? "Edit" : "Add model")}
-        </Button>
-      }
     >
       {open &&
         (modelId && model.isPending ? (
@@ -80,7 +87,7 @@ export function ModelEditor({
             close={() => setOpen(false)}
           />
         ))}
-    </Dialog>
+    </ModalFrame>
   );
 }
 function ModelForm({
@@ -190,65 +197,77 @@ function ModelForm({
       }}
     >
       <div className={styles.twoColumns}>
-        <Input
-          label={t("Name")}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          required
-        />
-        <Input
+        <FormField className="min-w-0 w-full" label={t("Name")}>
+          <Input
+            required={true}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </FormField>
+        <FormField
+          className="min-w-0 w-full"
           label={t("Model key")}
-          value={key}
-          onChange={(event) => setKey(event.target.value)}
-          readOnly={!!original}
-          required
-          hint={t("Agents select this stable key.")}
-        />
+          description={t("Agents select this stable key.")}
+        >
+          <Input
+            required={true}
+            value={key}
+            onChange={(event) => setKey(event.target.value)}
+            readOnly={!!original}
+          />
+        </FormField>
       </div>
-      <Picker
-        label={t("Provider")}
-        placeholder={t("Choose a provider…")}
-        emptyMessage={t("Add a provider first.")}
-        value={provider}
-        disabled={!!original}
-        onValueChange={(value) => {
-          setProvider(value);
-          setModelApiKey("");
-          describe.reset();
-        }}
-        groups={[
-          {
-            label: t("Providers"),
-            options:
-              providers.data?.map((item) => ({
-                value: item.id,
-                label: item.name,
-                description: item.type,
-              })) ?? [],
-          },
-        ]}
-      />
-      <Input
+      <FormField label={t("Provider")}>
+        <SearchPicker
+          label={t("Provider")}
+          placeholder={t("Choose a provider…")}
+          emptyMessage={t("Add a provider first.")}
+          value={provider}
+          groups={[
+            {
+              label: t("Providers"),
+              options:
+                providers.data?.map((item) => ({
+                  value: item.id,
+                  label: item.name,
+                  description: item.type,
+                })) ?? [],
+            },
+          ]}
+          disabled={!!original}
+          onValueChange={(value) => {
+            setProvider(value);
+            setModelApiKey("");
+            describe.reset();
+          }}
+        />
+      </FormField>
+      <FormField
+        className="min-w-0 w-full"
         label={t("Upstream model")}
-        value={upstream}
-        onChange={(event) => {
-          setUpstream(event.target.value);
-          describe.reset();
-        }}
-        required
-        maxLength={256}
-        hint={t(
+        description={t(
           "Use the model or deployment identifier accepted by your provider.",
         )}
-      />
-      <SelectField
-        label={t("Calling API")}
+      >
+        <Input
+          required={true}
+          value={upstream}
+          onChange={(event) => {
+            setUpstream(event.target.value);
+            describe.reset();
+          }}
+          maxLength={256}
+        />
+      </FormField>
+      <ChoiceField
         placeholder={t("Select API")}
         value={modelApiKey || definition?.default_model_api}
+        className="min-w-0"
         onValueChange={(value) => {
           setModelApiKey(value);
           describe.reset();
         }}
+        label={t("Calling API")}
         options={
           definition?.supported_model_apis.map((value) => ({
             value,
@@ -257,9 +276,11 @@ function ModelForm({
         }
       />
       <Button
-        loading={describe.isPending}
+        variant="outline"
         disabled={!provider || !upstream}
+        loading={describe.isPending}
         onClick={() => describe.mutate()}
+        type="button"
       >
         {t("Load model information")}
       </Button>
@@ -269,12 +290,12 @@ function ModelForm({
       {describe.data && (
         <>
           <div className={styles.actions}>
-            <Badge>
+            <Badge variant={"secondary"}>
               {t("Context window")}:{" "}
               {describe.data.limits?.context_window_tokens?.toLocaleString() ??
                 t("Unknown")}
             </Badge>
-            <Badge>
+            <Badge variant={"secondary"}>
               {t("Max output")}:{" "}
               {describe.data.limits?.max_output_tokens?.toLocaleString() ??
                 t("Unknown")}
@@ -291,26 +312,25 @@ function ModelForm({
           )}
         </>
       )}
-      <details>
-        <summary>{t("Advanced model settings")}</summary>
-        <TextArea
+      <DisclosureSection title={<>{t("Advanced model settings")}</>}>
+        <TextAreaField
           code
           label={t("Settings JSON")}
           value={settingsText}
           onChange={setSettingsText}
           rows={6}
         />
-      </details>
-      <Input
-        label={t("Description")}
-        value={description}
-        onChange={(event) => setDescription(event.target.value)}
-      />
-      <Switch
-        label={t("Enabled")}
-        checked={enabled}
-        onCheckedChange={setEnabled}
-      />
+      </DisclosureSection>
+      <FormField className="min-w-0 w-full" label={t("Description")}>
+        <Input
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
+        />
+      </FormField>
+      <Label className="flex items-center gap-2">
+        <Switch checked={enabled} onCheckedChange={setEnabled} />
+        {t("Enabled")}
+      </Label>
       <ErrorNotice
         error={save.error}
         retry={original ? () => void reload() : undefined}
@@ -330,19 +350,25 @@ export function ModelTest({
     api = modelApi(useClient(), scope);
   const test = useMutation({ mutationFn: () => api.testModel(modelId) });
   return (
-    <Dialog
+    <ModalFrame
+      trigger={
+        <Button size="sm" variant="ghost" type="button">
+          {t("Test")}
+        </Button>
+      }
+      size={"md"}
       title={t("Test model")}
       description={t(
         "This makes a model request and may consume quota or incur cost.",
       )}
       closeLabel={t("Close")}
-      trigger={
-        <Button size="sm" variant="ghost">
-          {t("Test")}
-        </Button>
-      }
     >
-      <Button loading={test.isPending} onClick={() => test.mutate()}>
+      <Button
+        variant="outline"
+        loading={test.isPending}
+        onClick={() => test.mutate()}
+        type="button"
+      >
         {t("Run model test")}
       </Button>
       <ErrorNotice error={test.error} />
@@ -352,6 +378,6 @@ export function ModelTest({
           {test.data.message} · {test.data.elapsed_ms} ms
         </p>
       )}
-    </Dialog>
+    </ModalFrame>
   );
 }

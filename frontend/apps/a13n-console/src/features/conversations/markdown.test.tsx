@@ -1,5 +1,5 @@
-import { expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import { expect, it } from "vitest";
 import { MessageMarkdown } from "./markdown";
 
 it("renders untrusted model Markdown without executable HTML or automatic remote image loads", () => {

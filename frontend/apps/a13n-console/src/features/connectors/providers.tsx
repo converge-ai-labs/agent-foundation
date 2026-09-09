@@ -1,24 +1,33 @@
-import { PageActions } from "../../shared/page-actions";
-import { useState } from "react";
+import {
+  Button,
+  ChoiceField,
+  DisclosureSection,
+  FormField,
+  Input,
+  ModalFrame,
+} from "a13n-ui";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Dialog, Input, SelectField } from "a13n-ui";
+import { useState } from "react";
+import { PageActions } from "../../shared/page-actions";
+
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useAccess } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
-import { ErrorNotice, Empty, Loading, StateBadge } from "../../shared/feedback";
+import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
+import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
 import { Confirm, FormActions, JsonView } from "../../shared/form";
-import { Table, Pagination, useCursor } from "../../shared/collection";
+import { useIdempotency } from "../../shared/idempotency";
 import { SchemaFields } from "../../shared/schema-fields";
+import styles from "../../shared/shared.module.css";
 import {
   jsonObject,
-  validateSettings,
   stringValues,
+  validateSettings,
 } from "../../shared/validation";
-import { useIdempotency } from "../../shared/idempotency";
 import { connectorApi, type ConnectorScope } from "./api";
 import { ConnectorCatalog } from "./catalog";
-import styles from "../../shared/shared.module.css";
 
 export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
   const client = useClient(),
@@ -48,7 +57,7 @@ export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
         <Loading />
       ) : query.data?.items.length ? (
         <>
-          <Table
+          <ResourceTable
             items={query.data.items}
             columns={[
               {
@@ -147,22 +156,24 @@ function ProviderEditor({
     setGeneration((value) => value + 1);
   }
   return (
-    <Dialog
+    <ModalFrame
+      onOpenChange={setOpen}
+      trigger={
+        <Button
+          size={providerId ? "sm" : "default"}
+          variant={providerId ? "outline" : "default"}
+          type="button"
+        >
+          {t(providerId ? "Manage" : "Add provider")}
+        </Button>
+      }
+      size={"md"}
       title={t(providerId ? "Connector provider" : "Add connector provider")}
       description={t(
         "Provider credentials authenticate the integration service. External account authorization happens separately.",
       )}
       closeLabel={t("Close")}
       open={open}
-      onOpenChange={setOpen}
-      trigger={
-        <Button
-          size={providerId ? "sm" : "md"}
-          variant={providerId ? "secondary" : "primary"}
-        >
-          {t(providerId ? "Manage" : "Add provider")}
-        </Button>
-      }
     >
       {open &&
         (definitions.isPending || (providerId && resource.isPending) ? (
@@ -179,7 +190,7 @@ function ProviderEditor({
             reload={reload}
           />
         ))}
-    </Dialog>
+    </ModalFrame>
   );
 }
 function ProviderForm({
@@ -286,30 +297,31 @@ function ProviderForm({
           save.mutate();
         }}
       >
-        <Input
-          label={t("Name")}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          required
-          maxLength={128}
-        />
+        <FormField className="min-w-0 w-full" label={t("Name")}>
+          <Input
+            required={true}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            maxLength={128}
+          />
+        </FormField>
         {basis ? (
-          <details>
-            <summary>{t("Configuration")}</summary>
+          <DisclosureSection title={<>{t("Configuration")}</>}>
             <JsonView value={configuration} />
-          </details>
+          </DisclosureSection>
         ) : (
           <>
-            <SelectField
-              label={t("Provider type")}
+            <ChoiceField
               placeholder={t("Select provider type")}
-              required
               value={type}
+              className="min-w-0"
+              required
               onValueChange={(value) => {
                 setType(value);
                 setConfiguration({});
                 setCredentials({});
               }}
+              label={t("Provider type")}
               options={definitions.map((item) => ({
                 value: item.type,
                 label: item.display_name,
@@ -343,7 +355,12 @@ function ProviderForm({
       {basis && (
         <>
           <div className={styles.actions}>
-            <Button loading={test.isPending} onClick={() => test.mutate()}>
+            <Button
+              variant="outline"
+              loading={test.isPending}
+              onClick={() => test.mutate()}
+              type="button"
+            >
               {t("Test connection")}
             </Button>
             <Confirm

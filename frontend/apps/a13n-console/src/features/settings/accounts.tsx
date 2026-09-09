@@ -1,17 +1,19 @@
-import { PageActions } from "../../shared/page-actions";
-import { useState } from "react";
+import { Button, ChoiceField, FormField, Input, ModalFrame } from "a13n-ui";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Dialog, Input, SelectField } from "a13n-ui";
-import { Plus, ArrowLeft } from "lucide-react";
+import { useState } from "react";
+import { PageActions } from "../../shared/page-actions";
+
+import { ArrowLeft, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
+import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
 import { Confirm, FormActions } from "../../shared/form";
-import { Pagination, Table, useCursor } from "../../shared/collection";
-import { ApiKeys } from "./keys";
 import styles from "../../shared/shared.module.css";
+import { ApiKeys } from "./keys";
 
 export function ServiceAccounts() {
   const client = useClient(),
@@ -38,9 +40,10 @@ export function ServiceAccounts() {
       <div className={styles.stack}>
         <Button
           variant="ghost"
-          icon={<ArrowLeft size={14} />}
           onClick={() => setSelected(undefined)}
+          type="button"
         >
+          {<ArrowLeft size={14} />}
           {t("Service accounts")}
         </Button>
         <h2>{selected.name}</h2>
@@ -58,13 +61,17 @@ export function ServiceAccounts() {
         <ErrorNotice error={query.error} />
       ) : query.data?.items.length ? (
         <>
-          <Table
+          <ResourceTable
             items={query.data.items}
             columns={[
               {
                 label: t("Name"),
                 render: (item) => (
-                  <Button variant="ghost" onClick={() => setSelected(item)}>
+                  <Button
+                    variant="ghost"
+                    onClick={() => setSelected(item)}
+                    type="button"
+                  >
                     {item.name}
                   </Button>
                 ),
@@ -180,11 +187,7 @@ function AccountEditor({ account }: { account?: Schema["ServiceAccount"] }) {
     },
   });
   return (
-    <Dialog
-      title={t(account ? "Edit service account" : "Create service account")}
-      description={t("Select the minimum role this application needs.")}
-      closeLabel={t("Close")}
-      open={open}
+    <ModalFrame
       onOpenChange={(value) => {
         if (!mutation.isPending) {
           if (value) load(account);
@@ -194,13 +197,19 @@ function AccountEditor({ account }: { account?: Schema["ServiceAccount"] }) {
       }}
       trigger={
         <Button
-          size={account ? "sm" : "md"}
-          variant={account ? "secondary" : "primary"}
-          icon={!account && <Plus size={14} />}
+          size={account ? "sm" : "default"}
+          variant={account ? "outline" : "default"}
+          type="button"
         >
+          {!account && <Plus size={14} />}
           {t(account ? "Edit" : "Create account")}
         </Button>
       }
+      size={"md"}
+      title={t(account ? "Edit service account" : "Create service account")}
+      description={t("Select the minimum role this application needs.")}
+      closeLabel={t("Close")}
+      open={open}
     >
       <form
         className={styles.form}
@@ -209,33 +218,36 @@ function AccountEditor({ account }: { account?: Schema["ServiceAccount"] }) {
           mutation.mutate();
         }}
       >
-        <Input
-          label={t("Name")}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          required
-        />
-        <SelectField
+        <FormField className="min-w-0 w-full" label={t("Name")}>
+          <Input
+            required={true}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </FormField>
+        <ChoiceField
           placeholder={t("Select…")}
-          label={t("Role")}
           value={role}
+          className="min-w-0"
           onValueChange={(value) => {
             if (value === "viewer" || value === "runner" || value === "builder")
               setRole(value);
           }}
+          label={t("Role")}
           options={["viewer", "runner", "builder"].map((value) => ({
             value,
             label: t(`role.${value}`, { defaultValue: value }),
           }))}
         />
         {account && (
-          <SelectField
+          <ChoiceField
             placeholder={t("Select…")}
-            label={t("Status")}
             value={status}
+            className="min-w-0"
             onValueChange={(value) => {
               if (value === "active" || value === "disabled") setStatus(value);
             }}
+            label={t("Status")}
             options={[
               { value: "active", label: t("Active") },
               { value: "disabled", label: t("Disabled") },
@@ -248,6 +260,6 @@ function AccountEditor({ account }: { account?: Schema["ServiceAccount"] }) {
         />
         <FormActions pending={mutation.isPending} />
       </form>
-    </Dialog>
+    </ModalFrame>
   );
 }

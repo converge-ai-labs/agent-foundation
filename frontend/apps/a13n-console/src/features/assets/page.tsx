@@ -1,21 +1,24 @@
-import { useState } from "react";
+import { Button, ChoiceField, ModalFrame, Spinner } from "a13n-ui";
+import { FileUpload } from "../../shared/file-upload";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Dialog, Select } from "a13n-ui";
-import { Upload, Download } from "lucide-react";
+import { useState } from "react";
+
+import { Download, Upload } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { data, commandHeaders, type Schema } from "../../shared/api";
+import { commandHeaders, data, type Schema } from "../../shared/api";
+import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
+import { downloadBlob } from "../../shared/download";
 import {
-  Page,
-  Loading,
-  ErrorNotice,
   Empty,
+  ErrorNotice,
+  Loading,
+  Page,
   Timestamp,
 } from "../../shared/feedback";
-import { Table, Pagination, useCursor } from "../../shared/collection";
 import { Confirm, FormActions, JsonView } from "../../shared/form";
-import { downloadBlob } from "../../shared/download";
 import styles from "../../shared/shared.module.css";
 
 export function AssetsPage() {
@@ -81,13 +84,7 @@ export function AssetsPage() {
       )}
       actions={
         can("asset.create") && (
-          <Dialog
-            title={t("Upload asset")}
-            description={t(
-              "Each upload creates an immutable file. Upload a new asset to replace content.",
-            )}
-            closeLabel={t("Close")}
-            open={open}
+          <ModalFrame
             onOpenChange={(value) => {
               if (!mutation.isPending) {
                 setOpen(value);
@@ -95,10 +92,18 @@ export function AssetsPage() {
               }
             }}
             trigger={
-              <Button variant="primary" icon={<Upload size={15} />}>
+              <Button variant="default" type="button">
+                {<Upload size={15} />}
                 {t("Upload asset")}
               </Button>
             }
+            size={"md"}
+            title={t("Upload asset")}
+            description={t(
+              "Each upload creates an immutable file. Upload a new asset to replace content.",
+            )}
+            closeLabel={t("Close")}
+            open={open}
           >
             <form
               className={styles.form}
@@ -107,30 +112,25 @@ export function AssetsPage() {
                 mutation.mutate();
               }}
             >
-              <label className={styles.field}>
-                {t("File")}
-                <input
-                  type="file"
-                  required
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    setUpload(
-                      file ? { file, key: crypto.randomUUID() } : undefined,
-                    );
-                  }}
-                />
-              </label>
+              <FileUpload
+                label={t("File")}
+                file={upload?.file}
+                onSelect={(file) => {
+                  setUpload(
+                    file ? { file, key: crypto.randomUUID() } : undefined,
+                  );
+                }}
+              />
               <ErrorNotice error={mutation.error} />
               <FormActions pending={mutation.isPending} label={t("Upload")} />
             </form>
-          </Dialog>
+          </ModalFrame>
         )
       }
     >
       <div className={styles.toolbar}>
-        <Select
+        <ChoiceField
           placeholder={t("All sources")}
-          label={t("Source")}
           value={source || "all"}
           onValueChange={(value) => {
             setSource(
@@ -138,6 +138,8 @@ export function AssetsPage() {
             );
             page.reset();
           }}
+          label={t("Source")}
+          hideLabel
           options={[
             { value: "all", label: t("All sources") },
             { value: "upload", label: t("Uploaded") },
@@ -150,7 +152,7 @@ export function AssetsPage() {
         <Loading />
       ) : query.data?.items.length ? (
         <>
-          <Table
+          <ResourceTable
             items={query.data.items}
             columns={[
               {
@@ -183,22 +185,34 @@ export function AssetsPage() {
                   <div className={styles.actions}>
                     <Button
                       size="sm"
-                      icon={<Download size={14} />}
-                      onClick={() => download.mutate(item)}
+                      variant="outline"
                       loading={
                         download.isPending && download.variables?.id === item.id
                       }
+                      onClick={() => download.mutate(item)}
+                      type="button"
                     >
+                      {download.isPending &&
+                      download.variables?.id === item.id ? (
+                        <Spinner />
+                      ) : (
+                        <Download size={14} />
+                      )}
                       {t("Download")}
                     </Button>
-                    <Dialog
-                      description={t("Immutable file metadata and provenance.")}
+                    <ModalFrame
+                      trigger={
+                        <Button size="sm" variant="outline" type="button">
+                          {t("Details")}
+                        </Button>
+                      }
+                      size={"md"}
                       title={item.filename}
+                      description={t("Immutable file metadata and provenance.")}
                       closeLabel={t("Close")}
-                      trigger={<Button size="sm">{t("Details")}</Button>}
                     >
                       <JsonView value={item} />
-                    </Dialog>
+                    </ModalFrame>
                     {can("asset.delete") && (
                       <Confirm
                         title={t("Delete asset")}

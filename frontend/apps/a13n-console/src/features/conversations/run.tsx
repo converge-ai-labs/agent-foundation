@@ -1,18 +1,14 @@
+import { Button, ChoiceField, DisclosureSection, ModalFrame } from "a13n-ui";
+
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Dialog, Select } from "a13n-ui";
-import { GitFork, RefreshCw, Square, ArrowDown } from "lucide-react";
+
+import { ArrowDown, GitFork, RefreshCw, Square } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { useIdempotency } from "../../shared/idempotency";
-import {
-  commandHeaders,
-  data,
-  workspaceHeaders,
-  type Schema,
-} from "../../shared/api";
+import { commandHeaders, data, type Schema } from "../../shared/api";
 import {
   ErrorNotice,
   Loading,
@@ -20,25 +16,26 @@ import {
   Timestamp,
 } from "../../shared/feedback";
 import { JsonView } from "../../shared/form";
+import { useIdempotency } from "../../shared/idempotency";
 import {
   conversationQueries,
   invalidateConversation,
   isActiveRun,
   runPath,
 } from "./api";
-import { useLiveRun } from "./live";
-import { useRun, useRunAgent } from "./queries";
-import { InputContent, PresentedItems } from "./items";
+import { ContinueBranch, ContinueWithoutFeedback } from "./branches";
 import { Composer } from "./composer";
+import styles from "./conversations.module.css";
+import { HistoryTranscript } from "./history";
+import { RunInspector } from "./inspector";
+import { InputContent, PresentedItems } from "./items";
+import { useLiveRun } from "./live";
+import { MessageMarkdown } from "./markdown";
 import { OptionsComposer } from "./options";
 import { PendingFeedback } from "./pending";
+import { useRun, useRunAgent } from "./queries";
 import { ThreadQueue } from "./queue";
-import { RunInspector } from "./inspector";
 import { SteeringStatus } from "./steer";
-import { HistoryTranscript } from "./history";
-import { ContinueBranch, ContinueWithoutFeedback } from "./branches";
-import { MessageMarkdown } from "./markdown";
-import styles from "./conversations.module.css";
 
 export function RunPage() {
   const { runId = "", threadId = "", sessionId = "" } = useParams();
@@ -205,26 +202,30 @@ function RunContent({
             ["failed", "cancelled"].includes(run.status) &&
             can("run.retry") && (
               <Button
-                loading={retry.isPending}
                 size="sm"
-                icon={<RefreshCw size={13} />}
+                variant="outline"
+                loading={retry.isPending}
                 onClick={() => retry.mutate()}
+                type="button"
               >
+                <RefreshCw size={13} />
                 {t("Retry run")}
               </Button>
             )}
           {run.status === "completed" && can("run.fork") && (
-            <Dialog
+            <ModalFrame
+              trigger={
+                <Button size="sm" variant="outline" type="button">
+                  {<GitFork size={13} />}
+                  {t("Fork")}
+                </Button>
+              }
+              size={"md"}
               title={t("Fork conversation")}
               description={t(
                 "Start a new thread from this completed run with the same agent configuration.",
               )}
               closeLabel={t("Close")}
-              trigger={
-                <Button size="sm" icon={<GitFork size={13} />}>
-                  {t("Fork")}
-                </Button>
-              }
             >
               <OptionsComposer
                 label={t("Fork and send")}
@@ -242,7 +243,7 @@ function RunContent({
                   )
                 }
               />
-            </Dialog>
+            </ModalFrame>
           )}
         </div>
       </header>
@@ -308,17 +309,15 @@ function RunContent({
                 "Your messages are saved. Review the details or retry this run.",
               )}
             </p>
-            <details>
-              <summary>{t("Error details")}</summary>
+            <DisclosureSection title={<>{t("Error details")}</>}>
               <JsonView value={run.failure} />
-            </details>
+            </DisclosureSection>
           </section>
         )}
         {run.output != null && run.output !== run.output_text && (
-          <details>
-            <summary>{t("Structured output")}</summary>
+          <DisclosureSection title={<>{t("Structured output")}</>}>
             <JsonView value={run.output} />
-          </details>
+          </DisclosureSection>
         )}
       </div>
       {waiting && run.sealed_state_digest_sha256 && (
@@ -353,7 +352,7 @@ function RunContent({
         <Button
           className={styles.jumpToLatest}
           size="sm"
-          icon={<ArrowDown size={14} />}
+          variant="outline"
           onClick={() => {
             const viewport = transcript.current?.closest(
               "[data-session-stage]",
@@ -363,20 +362,21 @@ function RunContent({
               behavior: "smooth",
             });
           }}
+          type="button"
         >
+          {<ArrowDown size={14} />}
           {t("Jump to latest")}
         </Button>
       )}
       <div className={styles.composerDock}>
         <div className={styles.dockControls}>
           {steer && can("run.continue") && (
-            <Select
-              size="sm"
-              variant="ghost"
-              label={t("Send mode")}
+            <ChoiceField
               placeholder={t("Send mode")}
               value={steer ? mode : "message"}
               onValueChange={setMode}
+              label={t("Send mode")}
+              hideLabel
               options={[
                 {
                   value: "message",
@@ -397,10 +397,11 @@ function RunContent({
             <Button
               size="sm"
               variant="ghost"
-              icon={<Square size={13} />}
               loading={interrupt.isPending}
               onClick={() => interrupt.mutate()}
+              type="button"
             >
+              <Square size={13} />
               {t("Stop")}
             </Button>
           )}

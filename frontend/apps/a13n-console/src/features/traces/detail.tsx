@@ -1,22 +1,24 @@
-import { Link, useParams } from "react-router";
+import { Button, DisclosureSection, ModalFrame } from "a13n-ui";
+
 import { useQuery } from "@tanstack/react-query";
-import { Dialog } from "a13n-ui";
+import { Link, useParams } from "react-router";
+
 import { ExternalLink } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
 import {
-  Page,
   ErrorNotice,
   Loading,
+  Page,
   StateBadge,
   Timestamp,
 } from "../../shared/feedback";
 import { JsonView } from "../../shared/form";
+import shared from "../../shared/shared.module.css";
 import { observationRows } from "./timeline";
 import styles from "./traces.module.css";
-import shared from "../../shared/shared.module.css";
 
 export function TraceDetailPage() {
   const { traceId = "" } = useParams();
@@ -117,15 +119,14 @@ export function TraceDetail({ traceId }: { traceId: string }) {
                     ),
                   );
           return (
-            <Dialog
+            <ModalFrame
               key={observation.id}
-              title={observation.name}
-              description={t(
-                "Telemetry content reflects the producer's content policy and backend retention.",
-              )}
-              closeLabel={t("Close")}
               trigger={
-                <button className={styles.observation}>
+                <Button
+                  className={styles.observation}
+                  variant="ghost"
+                  type="button"
+                >
                   <span
                     className={styles.observationName}
                     style={{ paddingInlineStart: Math.min(depth, 12) * 14 }}
@@ -153,11 +154,17 @@ export function TraceDetail({ traceId }: { traceId: string }) {
                         : `${observation.duration_ms} ms`}
                     </span>
                   </span>
-                </button>
+                </Button>
               }
+              size={"md"}
+              title={observation.name}
+              description={t(
+                "Telemetry content reflects the producer's content policy and backend retention.",
+              )}
+              closeLabel={t("Close")}
             >
               <ObservationDetails observation={observation} />
-            </Dialog>
+            </ModalFrame>
           );
         })}
         {!observations.length && (
@@ -167,18 +174,15 @@ export function TraceDetail({ traceId }: { traceId: string }) {
         )}
       </div>
       <div className={styles.payloads}>
-        <details>
-          <summary>{t("Input")}</summary>
+        <DisclosureSection title={<>{t("Input")}</>}>
           <JsonView value={trace.input} />
-        </details>
-        <details>
-          <summary>{t("Output")}</summary>
+        </DisclosureSection>
+        <DisclosureSection title={<>{t("Output")}</>}>
           <JsonView value={trace.output} />
-        </details>
-        <details>
-          <summary>{t("Usage")}</summary>
+        </DisclosureSection>
+        <DisclosureSection title={<>{t("Usage")}</>}>
           <JsonView value={trace.usage} />
-        </details>
+        </DisclosureSection>
       </div>
     </Page>
   );
@@ -212,10 +216,13 @@ function ObservationDetails({
       </p>
       <p>{observation.model}</p>
       {(["input", "output", "metadata", "usage"] as const).map((key) => (
-        <details key={key} open={key === "input" || key === "output"}>
-          <summary>{t(key[0]!.toUpperCase() + key.slice(1))}</summary>
+        <DisclosureSection
+          key={key}
+          defaultOpen={key === "input" || key === "output"}
+          title={<>{t(key[0]!.toUpperCase() + key.slice(1))}</>}
+        >
           <JsonView value={observation[key]} />
-        </details>
+        </DisclosureSection>
       ))}
     </div>
   );

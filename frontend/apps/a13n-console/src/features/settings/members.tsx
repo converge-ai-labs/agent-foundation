@@ -1,17 +1,21 @@
-import { PageActions } from "../../shared/page-actions";
-import { useState } from "react";
+import { Button, ChoiceField, FormField, ModalFrame } from "a13n-ui";
+
+import { SearchPicker } from "a13n-ui";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Dialog, SelectField, Picker } from "a13n-ui";
+import { useState } from "react";
+import { PageActions } from "../../shared/page-actions";
+
 import { ApiError } from "@converge.ai/a13n";
 import { Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
+import { UserAvatar as Avatar } from "../../layout/avatar";
 import { useAccess } from "../../layout/workspace";
 import { allPages, data, representation, type Schema } from "../../shared/api";
+import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import { Empty, ErrorNotice, Loading } from "../../shared/feedback";
 import { Confirm, FormActions } from "../../shared/form";
-import { Pagination, Table, useCursor } from "../../shared/collection";
-import { Avatar } from "../../layout/shell";
 import styles from "../../shared/shared.module.css";
 
 export type MembershipScope = {
@@ -110,7 +114,7 @@ export function Members({ scope }: { scope: MembershipScope }) {
         <ErrorNotice error={members.error ?? bindings.error} />
       ) : bindings.data?.items.length ? (
         <>
-          <Table
+          <ResourceTable
             items={bindings.data.items}
             columns={[
               {
@@ -228,11 +232,7 @@ function ChangeRole({
     },
   });
   return (
-    <Dialog
-      title={t("Change role")}
-      description={t("Role changes apply immediately.")}
-      closeLabel={t("Close")}
-      open={open}
+    <ModalFrame
       onOpenChange={(value) => {
         if (!change.isPending) {
           if (value) {
@@ -243,7 +243,16 @@ function ChangeRole({
           change.reset();
         }
       }}
-      trigger={<Button size="sm">{t("Change role")}</Button>}
+      trigger={
+        <Button size="sm" variant="outline" type="button">
+          {t("Change role")}
+        </Button>
+      }
+      size={"md"}
+      title={t("Change role")}
+      description={t("Role changes apply immediately.")}
+      closeLabel={t("Close")}
+      open={open}
     >
       <form
         onSubmit={(event) => {
@@ -251,14 +260,15 @@ function ChangeRole({
           change.mutate();
         }}
       >
-        <SelectField
-          label={t("Role")}
+        <ChoiceField
           placeholder={t("Select role")}
           value={role}
+          className="min-w-0"
           onValueChange={(value) => {
             const role = roles.find((role) => role === value);
             if (role) setRole(role);
           }}
+          label={t("Role")}
           options={roleOptions(scope.kind).map((value) => ({
             value,
             label: t(`role.${value}`, { defaultValue: value }),
@@ -270,7 +280,7 @@ function ChangeRole({
         />
         <FormActions pending={change.isPending} />
       </form>
-    </Dialog>
+    </ModalFrame>
   );
 }
 function AddMember({
@@ -314,15 +324,21 @@ function AddMember({
     },
   });
   return (
-    <Dialog
+    <ModalFrame
+      onOpenChange={setOpen}
+      trigger={
+        <Button variant="outline" type="button">
+          {<Plus size={14} />}
+          {t("Add member")}
+        </Button>
+      }
+      size={"md"}
       title={t("Add existing member")}
       description={t(
         "Choose someone who already belongs to your organization.",
       )}
       closeLabel={t("Close")}
       open={open}
-      onOpenChange={setOpen}
-      trigger={<Button icon={<Plus size={14} />}>{t("Add member")}</Button>}
     >
       <form
         className={styles.form}
@@ -331,32 +347,35 @@ function AddMember({
           if (userId) add.mutate();
         }}
       >
-        <Picker
-          label={t("Member")}
-          placeholder={t("Find a member…")}
-          emptyMessage={t("No members found")}
-          value={userId}
-          onValueChange={setUserId}
-          groups={[
-            {
-              label: t("Organization members"),
-              options:
-                users.data?.map((user) => ({
-                  value: user.id,
-                  label: user.name,
-                  description: user.email,
-                })) ?? [],
-            },
-          ]}
-        />
-        <SelectField
-          label={t("Role")}
+        <FormField label={t("Member")}>
+          <SearchPicker
+            label={t("Member")}
+            placeholder={t("Find a member…")}
+            emptyMessage={t("No members found")}
+            value={userId}
+            groups={[
+              {
+                label: t("Organization members"),
+                options:
+                  users.data?.map((user) => ({
+                    value: user.id,
+                    label: user.name,
+                    description: user.email,
+                  })) ?? [],
+              },
+            ]}
+            onValueChange={setUserId}
+          />
+        </FormField>
+        <ChoiceField
           placeholder={t("Select role")}
           value={role}
+          className="min-w-0"
           onValueChange={(value) => {
             const role = roles.find((role) => role === value);
             if (role) setRole(role);
           }}
+          label={t("Role")}
           options={roleOptions(scope.kind).map((value) => ({
             value,
             label: t(`role.${value}`, { defaultValue: value }),
@@ -365,6 +384,6 @@ function AddMember({
         <ErrorNotice error={users.error ?? add.error} />
         <FormActions pending={add.isPending} label={t("Add member")} />
       </form>
-    </Dialog>
+    </ModalFrame>
   );
 }

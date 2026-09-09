@@ -1,11 +1,10 @@
-// @vitest-environment jsdom
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter, Route, Routes, Navigate } from "react-router";
-import { Shell } from "./shell";
+import { MemoryRouter, Route, Routes } from "react-router";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SettingsLayout } from "../features/settings/layout";
+import { Shell } from "./shell";
 
 vi.mock("../auth/context", () => ({
   useAuth: () => ({
@@ -48,59 +47,74 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("replaces the main sidebar with settings navigation and restores it on return", async () => {
-  const user = userEvent.setup();
-  render(
-    <QueryClientProvider client={new QueryClient()}>
-      <MemoryRouter initialEntries={["/workspaces/workspace/agents"]}>
-        <Routes>
-          <Route path="/workspaces/:workspaceId" element={<Shell />}>
-            <Route path="agents" element={<h1>Agent directory</h1>} />
+it.each([
+  ["Workspace menu", "Workspace profile"],
+  ["Alex", "Personal profile"],
+])(
+  "opens settings from %s at its own scope and restores navigation on return",
+  async (trigger, landing) => {
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter initialEntries={["/workspaces/workspace/agents"]}>
+          <Routes>
+            <Route path="/workspaces/:workspaceId" element={<Shell />}>
+              <Route path="agents" element={<h1>Agent directory</h1>} />
+              <Route
+                path="settings"
+                element={
+                  <SettingsLayout
+                    scope="workspace"
+                    content={{
+                      profile: <p>Workspace profile</p>,
+                      members: <p>Workspace members</p>,
+                    }}
+                  />
+                }
+              />
+            </Route>
             <Route
-              path="settings"
+              path="/settings/profile"
               element={
                 <SettingsLayout
-                  scope="workspace"
-                  content={{
-                    profile: <p>Workspace profile</p>,
-                    members: <p>Workspace members</p>,
-                  }}
+                  scope="personal"
+                  content={{ profile: <p>Personal profile</p> }}
                 />
               }
             />
-          </Route>
-          <Route
-            path="/settings/profile"
-            element={<Navigate to="/workspaces/workspace/settings" replace />}
-          />
-          <Route path="/" element={<Shell />} />
-        </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
-  expect(
-    screen.getByRole("complementary", { name: "Main navigation" }),
-  ).toBeTruthy();
-  await user.click(screen.getByRole("button", { name: "Workspace menu" }));
-  await user.click(screen.getByRole("menuitem", { name: "Settings" }));
-  expect(
-    screen.queryByRole("complementary", { name: "Main navigation" }),
-  ).toBeNull();
-  expect(
-    screen.getByRole("navigation", { name: "Settings navigation" }),
-  ).toBeTruthy();
-  expect(screen.getAllByRole("complementary")).toHaveLength(1);
-  await user.click(screen.getByRole("link", { name: "Members" }));
-  expect(screen.getByText("Workspace members")).toBeTruthy();
-  expect(screen.queryByText("Workspace profile")).toBeNull();
-  await user.click(screen.getByRole("link", { name: "Back to workspace" }));
-  expect(
-    screen.getByRole("complementary", { name: "Main navigation" }),
-  ).toBeTruthy();
-  expect(
-    screen.queryByRole("navigation", { name: "Settings navigation" }),
-  ).toBeNull();
-});
+            <Route path="/" element={<Shell />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(
+      screen.getByRole("complementary", { name: "Main navigation" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
+    await user.hover(
+      screen.getByRole("button", { name: new RegExp(`${trigger}$`) }),
+    );
+    await user.click(await screen.findByRole("menuitem", { name: "Settings" }));
+    expect(screen.getByText(landing)).toBeTruthy();
+    expect(
+      screen.queryByRole("complementary", { name: "Main navigation" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("navigation", { name: "Settings navigation" }),
+    ).toBeTruthy();
+    expect(screen.getAllByRole("complementary")).toHaveLength(1);
+    await user.click(screen.getByRole("link", { name: "Members" }));
+    expect(screen.getByText("Workspace members")).toBeTruthy();
+    expect(screen.queryByText("Workspace profile")).toBeNull();
+    await user.click(screen.getByRole("link", { name: "Back to workspace" }));
+    expect(
+      screen.getByRole("complementary", { name: "Main navigation" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("navigation", { name: "Settings navigation" }),
+    ).toBeNull();
+  },
+);
 
 it("keeps resource categories in sidebar links and restores the selected category from its URL", async () => {
   const user = userEvent.setup();
@@ -154,14 +168,18 @@ it("keeps workspace switching available with one workspace and marks the current
     </QueryClientProvider>,
   );
   await user.click(screen.getByRole("button", { name: "Workspace menu" }));
-  expect(screen.getAllByRole("menuitem", { name: "Settings" })).toHaveLength(1);
-  const switcher = screen.getByRole("menuitem", { name: "Switch workspace" });
+  expect(
+    await screen.findByRole("menuitem", { name: "Settings" }),
+  ).toBeTruthy();
+  const switcher = await screen.findByRole("menuitem", {
+    name: "Switch workspace",
+  });
   switcher.focus();
   await user.keyboard("{ArrowRight}");
   expect(
-    screen
-      .getByRole("menuitem", { name: "Design" })
-      .getAttribute("aria-current"),
+    (await screen.findByRole("menuitem", { name: "Design" })).getAttribute(
+      "aria-current",
+    ),
   ).toBe("true");
 });
 

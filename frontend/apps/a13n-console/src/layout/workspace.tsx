@@ -1,12 +1,14 @@
+import { Button } from "a13n-ui";
+
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, type ReactNode } from "react";
 import { Link, Navigate, Outlet, useLocation, useParams } from "react-router";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { Button } from "a13n-ui";
+
 import { useTranslation } from "react-i18next";
 import { useAuth, useClient } from "../auth/context";
+import { CreateWorkspace } from "../features/settings/create-workspace";
 import { allPages, data, type Schema } from "../shared/api";
 import { Empty, ErrorNotice, Loading, Page } from "../shared/feedback";
-import { CreateWorkspace } from "../features/settings/create-workspace";
 
 interface WorkspaceContextValue {
   workspace?: Schema["Workspace"];
@@ -181,8 +183,10 @@ function NoWorkspace({
                 </Link>
               )}
               <Button
-                onClick={() => logout.mutate()}
+                variant="outline"
                 loading={logout.isPending}
+                onClick={() => logout.mutate()}
+                type="button"
               >
                 {t("Sign out")}
               </Button>
@@ -230,7 +234,12 @@ function NoOrganization() {
       <Page
         title={t("No organization access")}
         actions={
-          <Button onClick={() => logout.mutate()} loading={logout.isPending}>
+          <Button
+            variant="outline"
+            loading={logout.isPending}
+            onClick={() => logout.mutate()}
+            type="button"
+          >
             {t("Sign out")}
           </Button>
         }

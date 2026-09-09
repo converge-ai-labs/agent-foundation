@@ -1,11 +1,14 @@
-import { PageActions } from "../../shared/page-actions";
-import { useState } from "react";
+import { Button, ChoiceField, FormField, Input, ModalFrame } from "a13n-ui";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Dialog, Input, SelectField } from "a13n-ui";
+import { useState } from "react";
+import { PageActions } from "../../shared/page-actions";
+
 import { Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { data, type Schema } from "../../shared/api";
+import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import {
   Empty,
   ErrorNotice,
@@ -14,10 +17,9 @@ import {
   Timestamp,
 } from "../../shared/feedback";
 import { Confirm, FormActions } from "../../shared/form";
-import { Pagination, Table, useCursor } from "../../shared/collection";
-import { roleOptions, type MembershipScope } from "./members";
-import { SecretReveal } from "./keys";
 import styles from "../../shared/shared.module.css";
+import { SecretReveal } from "./keys";
+import { roleOptions, type MembershipScope } from "./members";
 
 export function Invitations({ scope }: { scope: MembershipScope }) {
   const client = useClient(),
@@ -57,7 +59,7 @@ export function Invitations({ scope }: { scope: MembershipScope }) {
         <ErrorNotice error={query.error} />
       ) : query.data?.items.length ? (
         <>
-          <Table
+          <ResourceTable
             items={query.data.items}
             columns={[
               { label: t("Email"), render: (item) => item.email },
@@ -190,15 +192,7 @@ function InvitationEditor({
     },
   });
   return (
-    <Dialog
-      title={t(invitation ? "Resend invitation" : "Invite member")}
-      description={t(
-        invitation
-          ? "A new link replaces the previous invitation link."
-          : "New members receive a single-use invitation link.",
-      )}
-      closeLabel={t("Close")}
-      open={open}
+    <ModalFrame
       onOpenChange={(value) => {
         if (!mutation.isPending) {
           setOpen(value);
@@ -207,13 +201,23 @@ function InvitationEditor({
       }}
       trigger={
         <Button
-          variant={invitation ? "secondary" : "primary"}
-          size={invitation ? "sm" : "md"}
-          icon={!invitation && <Plus size={14} />}
+          variant={invitation ? "outline" : "default"}
+          size={invitation ? "sm" : "default"}
+          type="button"
         >
+          {!invitation && <Plus size={14} />}
           {t(invitation ? "Resend" : "Invite member")}
         </Button>
       }
+      size={"md"}
+      title={t(invitation ? "Resend invitation" : "Invite member")}
+      description={t(
+        invitation
+          ? "A new link replaces the previous invitation link."
+          : "New members receive a single-use invitation link.",
+      )}
+      closeLabel={t("Close")}
+      open={open}
     >
       {mutation.data ? (
         <div className={styles.stack}>
@@ -240,26 +244,30 @@ function InvitationEditor({
         >
           {!invitation && (
             <>
-              <Input
-                label={t("Email address")}
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                required
-              />
-              <SelectField
-                label={t("Role")}
+              <FormField className="min-w-0 w-full" label={t("Email address")}>
+                <Input
+                  required={true}
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                />
+              </FormField>
+              <ChoiceField
                 placeholder={t("Select role")}
                 value={role}
+                className="min-w-0"
                 onValueChange={(value) => {
                   const role = roleOptions(scope.kind).find(
                     (role) => role === value,
                   );
                   if (role) setRole(role);
                 }}
+                label={t("Role")}
                 options={roleOptions(scope.kind).map((value) => ({
                   value,
-                  label: t(`role.${value}`, { defaultValue: value }),
+                  label: t(`role.${value}`, {
+                    defaultValue: value,
+                  }),
                 }))}
               />
             </>
@@ -271,6 +279,6 @@ function InvitationEditor({
           />
         </form>
       )}
-    </Dialog>
+    </ModalFrame>
   );
 }

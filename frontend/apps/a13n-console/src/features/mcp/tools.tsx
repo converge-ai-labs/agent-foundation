@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { Button, DisclosureSection, FormField, Input } from "a13n-ui";
+
 import { useMutation } from "@tanstack/react-query";
-import { Button, SearchInput } from "a13n-ui";
+import { useState } from "react";
+
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { data, type Schema } from "../../shared/api";
@@ -39,23 +41,33 @@ export function MCPTools({
           "Discover the tools currently available to this connection. The agent checks availability again when it runs.",
         )}
       </p>
-      <Button loading={discovery.isPending} onClick={() => discovery.mutate()}>
+      <Button
+        variant="outline"
+        loading={discovery.isPending}
+        onClick={() => discovery.mutate()}
+        type="button"
+      >
         {t("Discover tools")}
       </Button>
       <ErrorNotice error={discovery.error} />
       {discovery.data && (
         <>
-          <SearchInput
+          <FormField
+            className="min-w-0 w-full"
             label={t("Search tools")}
-            value={search}
-            onChange={(event) => {
-              setSearch(event.target.value);
-              setLimit(30);
-            }}
-          />
+            hideLabel={true}
+          >
+            <Input
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setLimit(30);
+              }}
+              type="search"
+            />
+          </FormField>
           {tools.slice(0, limit).map((tool) => (
-            <details key={tool.name}>
-              <summary>{tool.name}</summary>
+            <DisclosureSection key={tool.name} title={<>{tool.name}</>}>
               <p>{tool.description}</p>
               <h4>{t("Input schema")}</h4>
               <JsonView value={tool.input_schema} />
@@ -67,10 +79,14 @@ export function MCPTools({
               )}
               <h4>{t("Annotations")}</h4>
               <JsonView value={tool.annotations} />
-            </details>
+            </DisclosureSection>
           ))}
           {tools.length > limit && (
-            <Button onClick={() => setLimit((value) => value + 30)}>
+            <Button
+              variant="outline"
+              onClick={() => setLimit((value) => value + 30)}
+              type="button"
+            >
               {t("Show more tools")}
             </Button>
           )}

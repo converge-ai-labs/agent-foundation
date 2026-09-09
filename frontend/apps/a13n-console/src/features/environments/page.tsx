@@ -1,9 +1,9 @@
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
 import { Page } from "../../shared/feedback";
+import { EnvironmentInstances } from "./instances";
 import { EnvironmentProviders } from "./providers";
 import { EnvironmentTemplates } from "./templates";
-import { EnvironmentInstances } from "./instances";
 
 export function EnvironmentsPage({
   section = "templates",

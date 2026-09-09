@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import type { RunEvent } from "@converge.ai/a13n";
+import { describe, expect, it } from "vitest";
 import {
   applyRunEvent,
   compareCursors,

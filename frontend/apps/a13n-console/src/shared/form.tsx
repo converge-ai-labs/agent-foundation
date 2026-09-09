@@ -1,11 +1,13 @@
-import { useId, useState, type ReactNode } from "react";
-import { Button, Dialog } from "a13n-ui";
+import { Button, FormField, ModalFrame, Textarea } from "a13n-ui";
+
+import { useState, type ReactNode } from "react";
+
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ErrorNotice } from "./feedback";
 import styles from "./shared.module.css";
 
-export function TextArea({
+export function TextAreaField({
   label,
   value,
   onChange,
@@ -24,23 +26,16 @@ export function TextArea({
   code?: boolean;
   hideLabel?: boolean;
 }) {
-  const id = useId();
   return (
-    <div className={styles.field}>
-      <label htmlFor={id} className={hideLabel ? "visually-hidden" : undefined}>
-        {label}
-      </label>
-      <textarea
-        id={id}
+    <FormField label={label} description={hint} hideLabel={hideLabel}>
+      <Textarea
         className={code ? styles.code : ""}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         rows={rows}
         required={required}
-        aria-describedby={hint ? `${id}-hint` : undefined}
       />
-      {hint && <small id={`${id}-hint`}>{hint}</small>}
-    </div>
+    </FormField>
   );
 }
 export function Confirm({
@@ -72,8 +67,7 @@ export function Confirm({
     },
   });
   return (
-    <Dialog
-      open={open}
+    <ModalFrame
       onOpenChange={(value) => {
         if (!mutation.isPending) {
           setOpen(value);
@@ -81,31 +75,43 @@ export function Confirm({
         }
       }}
       trigger={
-        <Button variant={danger ? "danger" : "secondary"} size="sm">
+        <Button
+          variant={danger ? "destructive" : "outline"}
+          size="sm"
+          type="button"
+        >
           {trigger}
         </Button>
       }
+      size={"md"}
       title={title}
       description={description}
       closeLabel={t("Close")}
       footer={
         <>
-          <Button disabled={mutation.isPending} onClick={() => setOpen(false)}>
+          <Button
+            variant="outline"
+            disabled={mutation.isPending}
+            onClick={() => setOpen(false)}
+            type="button"
+          >
             {t("Cancel")}
           </Button>
           <Button
+            variant={danger ? "destructive" : "default"}
             loading={mutation.isPending}
-            variant={danger ? "danger" : "primary"}
             onClick={() => mutation.mutate()}
+            type="button"
           >
             {t("Confirm")}
           </Button>
         </>
       }
+      open={open}
     >
       {children}
       <ErrorNotice error={mutation.error} />
-    </Dialog>
+    </ModalFrame>
   );
 }
 export function JsonView({ value }: { value: unknown }) {
@@ -123,8 +129,12 @@ export function FormActions({
   const { t } = useTranslation();
   return (
     <footer data-a13n-form-actions className={styles.formActions}>
-      {onCancel && <Button onClick={onCancel}>{t("Cancel")}</Button>}
-      <Button type="submit" variant="primary" loading={pending}>
+      {onCancel && (
+        <Button variant="outline" onClick={onCancel} type="button">
+          {t("Cancel")}
+        </Button>
+      )}
+      <Button type="submit" variant="default" loading={pending}>
         {label ?? t("Save changes")}
       </Button>
     </footer>

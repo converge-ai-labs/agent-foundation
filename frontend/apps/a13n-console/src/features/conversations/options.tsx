@@ -1,15 +1,26 @@
+import {
+  Button,
+  Checkbox,
+  ChoiceField,
+  DisclosureSection,
+  FormField,
+  Input,
+  Label,
+  ModalFrame,
+} from "a13n-ui";
+
+import { useQuery } from "@tanstack/react-query";
 import { SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Checkbox, Input, Select, Button, Dialog } from "a13n-ui";
+
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { allPages, data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { TextArea } from "../../shared/form";
-import { jsonObject, runOverride } from "../../shared/validation";
+import { TextAreaField } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
+import { jsonObject, runOverride } from "../../shared/validation";
 import { Composer } from "./composer";
 import styles from "./conversations.module.css";
 
@@ -205,22 +216,19 @@ export function RunOptions({
     },
   });
   return (
-    <Dialog
-      open={open}
+    <ModalFrame
       onOpenChange={setOpen}
-      description={t("Customize the next run.")}
-      title={t("Run options")}
-      closeLabel={t("Close")}
       trigger={
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          icon={<SlidersHorizontal size={14} />}
-        >
+        <Button type="button" size="sm" variant="ghost">
+          {<SlidersHorizontal size={14} />}
           {t("Options")}
         </Button>
       }
+      size={"md"}
+      title={t("Run options")}
+      description={t("Customize the next run.")}
+      closeLabel={t("Close")}
+      open={open}
     >
       <div className={styles.composerOptions}>
         <p className={styles.notice}>
@@ -230,29 +238,34 @@ export function RunOptions({
         </p>
         <ErrorNotice error={choices.error} />
         {showAgent && (
-          <Select
-            label={t("Agent")}
+          <ChoiceField
             placeholder={t("Inherit")}
             value={options.agent || "inherit"}
             onValueChange={(value) => {
               options.setAgent(value === "inherit" ? "" : value);
               options.setRevision("");
             }}
+            label={t("Agent")}
+            hideLabel
             options={[
               { value: "inherit", label: t("Inherit") },
               ...(choices.data?.agents ?? [])
                 .filter((agent) => agent.enabled)
-                .map((agent) => ({ value: agent.id, label: agent.name })),
+                .map((agent) => ({
+                  value: agent.id,
+                  label: agent.name,
+                })),
             ]}
           />
         )}
-        <Select
-          label={t("Model")}
+        <ChoiceField
           placeholder={t("Inherit")}
           value={options.model || "inherit"}
           onValueChange={(value) =>
             options.setModel(value === "inherit" ? "" : value)
           }
+          label={t("Model")}
+          hideLabel
           options={[
             { value: "inherit", label: t("Inherit") },
             ...(choices.data?.models ?? []).map((model) => ({
@@ -261,11 +274,12 @@ export function RunOptions({
             })),
           ]}
         />
-        <Select
-          label={t("Environment")}
+        <ChoiceField
           placeholder={t("Inherit")}
           value={options.environment}
-          onValueChange={options.setEnvironment}
+          onValueChange={(value) => options.setEnvironment(value)}
+          label={t("Environment")}
+          hideLabel
           options={[
             { value: "inherit", label: t("Inherit") },
             { value: "none", label: t("No environment") },
@@ -279,37 +293,42 @@ export function RunOptions({
             })),
           ]}
         />
-        <Checkbox
-          label={t("Override instructions")}
-          checked={options.overrideInstructions}
-          onCheckedChange={(value) =>
-            options.setOverrideInstructions(value === true)
-          }
-        />
+        <Label className="flex items-center gap-2">
+          <Checkbox
+            checked={options.overrideInstructions}
+            onCheckedChange={(value) =>
+              options.setOverrideInstructions(value === true)
+            }
+          />
+          {t("Override instructions")}
+        </Label>
         {options.overrideInstructions && (
-          <TextArea
+          <TextAreaField
             label={t("Instructions override")}
             value={options.instructions}
             onChange={options.setInstructions}
             rows={4}
           />
         )}
-        <TextArea
+        <TextAreaField
           label={t("Model settings (JSON)")}
           value={options.settings}
           onChange={options.setSettings}
           rows={3}
           code
         />
-        <details>
-          <summary>{t("Advanced configuration")}</summary>
+        <DisclosureSection title={<>{t("Advanced configuration")}</>}>
           <div className={styles.composerOptions}>
-            <Input
+            <FormField
+              className="min-w-0 w-full"
               label={t("Pinned agent revision ID")}
-              value={options.revision}
-              onChange={(event) => options.setRevision(event.target.value)}
-            />
-            <TextArea
+            >
+              <Input
+                value={options.revision}
+                onChange={(event) => options.setRevision(event.target.value)}
+              />
+            </FormField>
+            <TextAreaField
               label={t("Run configuration (JSON)")}
               hint={t(
                 "Skills, MCP and connector tools, client tools, output format, retries, and subagents.",
@@ -320,8 +339,8 @@ export function RunOptions({
               rows={8}
             />
           </div>
-        </details>
+        </DisclosureSection>
       </div>
-    </Dialog>
+    </ModalFrame>
   );
 }

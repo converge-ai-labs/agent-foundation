@@ -1,7 +1,18 @@
-import { PageActions } from "../../shared/page-actions";
-import { useState } from "react";
+import {
+  Button,
+  ChoiceField,
+  DisclosureSection,
+  FormField,
+  Input,
+  Label,
+  ModalFrame,
+  Switch,
+} from "a13n-ui";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Dialog, Input, SelectField, Switch } from "a13n-ui";
+import { useState } from "react";
+import { PageActions } from "../../shared/page-actions";
+
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useAccess } from "../../layout/workspace";
@@ -11,13 +22,13 @@ import {
   workspaceHeaders,
   type Schema,
 } from "../../shared/api";
-import { ErrorNotice, Empty, Loading, StateBadge } from "../../shared/feedback";
+import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
+import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
 import { FormActions, JsonView } from "../../shared/form";
-import { Table, Pagination, useCursor } from "../../shared/collection";
 import { SchemaFields } from "../../shared/schema-fields";
+import styles from "../../shared/shared.module.css";
 import { jsonObject, validateSettings } from "../../shared/validation";
 import { environmentApi, type EnvironmentScope } from "./api";
-import styles from "../../shared/shared.module.css";
 
 export function useEnvironmentTypes() {
   const client = useClient(),
@@ -66,7 +77,7 @@ export function EnvironmentProviders({ scope }: { scope: EnvironmentScope }) {
         <Loading />
       ) : query.data?.items.length ? (
         <>
-          <Table
+          <ResourceTable
             items={query.data.items}
             columns={[
               {
@@ -160,7 +171,18 @@ function ProviderEditor({
         .then(representation),
   });
   return (
-    <Dialog
+    <ModalFrame
+      onOpenChange={setOpen}
+      trigger={
+        <Button
+          size={providerId ? "sm" : "default"}
+          variant={providerId ? "outline" : "default"}
+          type="button"
+        >
+          {t(providerId ? "Edit" : "Add provider")}
+        </Button>
+      }
+      size={"md"}
       title={t(
         providerId ? "Edit environment provider" : "Add environment provider",
       )}
@@ -169,15 +191,6 @@ function ProviderEditor({
       )}
       closeLabel={t("Close")}
       open={open}
-      onOpenChange={setOpen}
-      trigger={
-        <Button
-          size={providerId ? "sm" : "md"}
-          variant={providerId ? "secondary" : "primary"}
-        >
-          {t(providerId ? "Edit" : "Add provider")}
-        </Button>
-      }
     >
       {open &&
         (definitions.isPending || (providerId && query.isPending) ? (
@@ -197,7 +210,7 @@ function ProviderEditor({
             }}
           />
         ))}
-    </Dialog>
+    </ModalFrame>
   );
 }
 function ProviderForm({
@@ -284,37 +297,37 @@ function ProviderForm({
           save.mutate();
         }}
       >
-        <Input
-          label={t("Name")}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          required
-          maxLength={128}
-        />
+        <FormField className="min-w-0 w-full" label={t("Name")}>
+          <Input
+            required={true}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            maxLength={128}
+          />
+        </FormField>
         {basis ? (
           <>
-            <Switch
-              label={t("Enabled")}
-              checked={enabled}
-              onCheckedChange={setEnabled}
-            />
-            <details>
-              <summary>{t("Configuration")}</summary>
+            <Label className="flex items-center gap-2">
+              <Switch checked={enabled} onCheckedChange={setEnabled} />
+              {t("Enabled")}
+            </Label>
+            <DisclosureSection title={<>{t("Configuration")}</>}>
               <JsonView value={configuration} />
-            </details>
+            </DisclosureSection>
           </>
         ) : (
           <>
-            <SelectField
-              label={t("Provider type")}
+            <ChoiceField
               placeholder={t("Select provider type")}
               value={type}
+              className="min-w-0"
               required
               onValueChange={(value) => {
                 setType(value);
                 setConfiguration({});
                 setCredential({});
               }}
+              label={t("Provider type")}
               options={definitions.flatMap((item) =>
                 typeof item.type === "string"
                   ? [{ value: item.type, label: item.type }]
@@ -364,14 +377,15 @@ function ProviderForm({
           />
           <ErrorNotice error={rotate.error} retry={() => void reload()} />
           <div className={styles.actions}>
-            <Button type="submit" variant="primary" loading={rotate.isPending}>
+            <Button type="submit" variant="default" loading={rotate.isPending}>
               {t("Replace credentials")}
             </Button>
             {basis.value.credential_configured && (
               <Button
-                variant="danger"
-                onClick={() => rotate.mutate(true)}
+                variant="destructive"
                 loading={rotate.isPending}
+                onClick={() => rotate.mutate(true)}
+                type="button"
               >
                 {t("Remove credentials")}
               </Button>

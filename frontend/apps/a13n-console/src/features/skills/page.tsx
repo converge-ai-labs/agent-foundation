@@ -1,8 +1,20 @@
+import {
+  Button,
+  DisclosureSection,
+  FormField,
+  Input,
+  Spinner,
+  Tabs,
+  TabsList,
+  TabsPanel,
+  TabsTab,
+} from "a13n-ui";
+
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Sparkles } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Input, Tabs } from "a13n-ui";
+
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -13,22 +25,22 @@ import {
   type Schema,
 } from "../../shared/api";
 import {
-  Page,
-  Loading,
-  ErrorNotice,
-  Empty,
-  Timestamp,
-} from "../../shared/feedback";
-import {
-  Table,
   Pagination,
   ResourceIdentity,
+  ResourceTable,
   useCursor,
 } from "../../shared/collection";
-import { Confirm, FormActions, JsonView } from "../../shared/form";
 import { downloadBlob } from "../../shared/download";
-import { ImportSkill } from "./import";
+import {
+  Empty,
+  ErrorNotice,
+  Loading,
+  Page,
+  Timestamp,
+} from "../../shared/feedback";
+import { Confirm, FormActions, JsonView } from "../../shared/form";
 import styles from "../../shared/shared.module.css";
+import { ImportSkill } from "./import";
 
 export function SkillsPage() {
   const { workspace, can } = useWorkspace(),
@@ -64,7 +76,7 @@ export function SkillsPage() {
         <Loading />
       ) : query.data?.items.length ? (
         <>
-          <Table
+          <ResourceTable
             items={query.data.items}
             columns={[
               {
@@ -131,38 +143,30 @@ export function SkillDetail() {
       back={`../skills`}
       actions={can("skill.revision.publish") && <ImportSkill skill={skill} />}
     >
-      <Tabs
-        label={t("Skill details")}
-        value={tab}
-        onValueChange={setTab}
-        items={[
+      <Tabs value={tab} onValueChange={(key) => setTab(String(key))}>
+        <TabsList aria-label={t("Skill details")}>
+          <TabsTab value={"revisions"}>{t("Revisions")}</TabsTab>
+          <TabsTab value={"references"}>{t("Used by agents")}</TabsTab>
+          <TabsTab value={"settings"}>{t("Settings")}</TabsTab>
+        </TabsList>
+        <TabsPanel value={"revisions"}>{<Revisions skill={skill} />}</TabsPanel>
+        <TabsPanel value={"references"}>
+          {<References skill={skill} />}
+        </TabsPanel>
+        <TabsPanel value={"settings"}>
           {
-            value: "revisions",
-            label: t("Revisions"),
-            content: <Revisions skill={skill} />,
-          },
-          {
-            value: "references",
-            label: t("Used by agents"),
-            content: <References skill={skill} />,
-          },
-          {
-            value: "settings",
-            label: t("Settings"),
-            content: (
-              <SkillSettings
-                key={generation}
-                initial={query.data}
-                reload={() => {
-                  void query.refetch().then((result) => {
-                    if (!result.error) setGeneration((value) => value + 1);
-                  });
-                }}
-              />
-            ),
-          },
-        ]}
-      />
+            <SkillSettings
+              key={generation}
+              initial={query.data}
+              reload={() => {
+                void query.refetch().then((result) => {
+                  if (!result.error) setGeneration((value) => value + 1);
+                });
+              }}
+            />
+          }
+        </TabsPanel>
+      </Tabs>
     </Page>
   );
 }
@@ -214,7 +218,7 @@ function Revisions({ skill }: { skill: Schema["Skill"] }) {
       ) : (
         query.data && (
           <>
-            <Table
+            <ResourceTable
               items={query.data.items}
               columns={[
                 {
@@ -231,19 +235,17 @@ function Revisions({ skill }: { skill: Schema["Skill"] }) {
                 {
                   label: t("Source"),
                   render: (item) => (
-                    <details>
-                      <summary>{item.imported_from.kind}</summary>
+                    <DisclosureSection title={<>{item.imported_from.kind}</>}>
                       <JsonView value={item.imported_from} />
-                    </details>
+                    </DisclosureSection>
                   ),
                 },
                 {
                   label: t("Package"),
                   render: (item) => (
-                    <details>
-                      <summary>{t("Manifest")}</summary>
+                    <DisclosureSection title={<>{t("Manifest")}</>}>
                       <JsonView value={item.manifest} />
-                    </details>
+                    </DisclosureSection>
                   ),
                 },
                 {
@@ -256,11 +258,17 @@ function Revisions({ skill }: { skill: Schema["Skill"] }) {
                   render: (item) => (
                     <Button
                       size="sm"
-                      onClick={() => download.mutate(item)}
+                      variant="outline"
                       loading={
                         download.isPending && download.variables?.id === item.id
                       }
+                      onClick={() => download.mutate(item)}
+                      type="button"
                     >
+                      {download.isPending &&
+                      download.variables?.id === item.id ? (
+                        <Spinner />
+                      ) : undefined}
                       {t("Download ZIP")}
                     </Button>
                   ),
@@ -310,7 +318,7 @@ function References({ skill }: { skill: Schema["Skill"] }) {
         <Loading />
       ) : query.data?.items.length ? (
         <>
-          <Table
+          <ResourceTable
             items={query.data.items.map((item) => ({
               ...item,
               id: item.agent_id,
@@ -385,12 +393,13 @@ function SkillSettings({
             save.mutate();
           }}
         >
-          <Input
-            label={t("Display name")}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            required
-          />
+          <FormField className="min-w-0 w-full" label={t("Display name")}>
+            <Input
+              required={true}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </FormField>
           <ErrorNotice error={save.error} retry={reload} />
           <FormActions pending={save.isPending} />
         </form>

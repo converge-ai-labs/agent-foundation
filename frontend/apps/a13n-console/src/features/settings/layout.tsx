@@ -1,9 +1,11 @@
-import { PageActionsTarget } from "../../shared/page-actions";
-import type { ReactNode } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Button, FormField, Input } from "a13n-ui";
+
 import { ArrowLeft, Building2, ChevronDown, Layers } from "lucide-react";
+import type { ReactNode } from "react";
 import { useState } from "react";
-import { Button, SearchInput } from "a13n-ui";
+import { Link, useSearchParams } from "react-router";
+import { PageActionsTarget } from "../../shared/page-actions";
+
 import { useTranslation } from "react-i18next";
 import { useSettingsNavigation, type SettingsScope } from "./navigation";
 import styles from "./settings.module.css";
@@ -48,6 +50,9 @@ export function SettingsLayout({
     current.sections.find(
       (item) => item.value === search.get("section") && item.value in content,
     ) ?? current.sections.find((item) => item.value in content)!;
+  const isForm = ["profile", "preferences", "security"].includes(
+    selected.value,
+  );
   const visible = groups
     .map((group) => ({
       ...group,
@@ -67,6 +72,7 @@ export function SettingsLayout({
             aria-expanded={navigationOpen}
             aria-controls="settings-outline"
             onClick={() => setNavigationOpen(!navigationOpen)}
+            type="button"
           >
             {t("Settings")}
             <ChevronDown size={14} />
@@ -83,12 +89,18 @@ export function SettingsLayout({
             {t("Back to workspace")}
           </Link>
           <div className={styles.settingsSearch}>
-            <SearchInput
+            <FormField
+              className="min-w-0 w-full"
               label={t("Search settings")}
-              placeholder={t("Search settings…")}
-              value={filter}
-              onChange={(event) => setFilter(event.target.value)}
-            />
+              hideLabel={true}
+            >
+              <Input
+                placeholder={t("Search settings…")}
+                value={filter}
+                onChange={(event) => setFilter(event.target.value)}
+                type="search"
+              />
+            </FormField>
           </div>
           <nav aria-label={t("Settings navigation")}>
             {visible.map((group) => (
@@ -120,7 +132,7 @@ export function SettingsLayout({
                           : undefined
                       }
                     >
-                      <item.icon size={15} />
+                      <item.icon size={14} />
                       {t(item.label)}
                     </Link>
                   ))}
@@ -132,14 +144,14 @@ export function SettingsLayout({
             )}
           </nav>
         </aside>
-        <div className={styles.surface}>
-          <div className={styles.settingsTopbar}>
-            {t("Settings")}
-            <span>/</span>
-            {t(current.label)}
-          </div>
-          <div className={styles.content} key={`${scope}:${selected.value}`}>
-            <header className={styles.heading}>
+        <div className={styles.surface} data-settings-part="surface">
+          <div
+            className={styles.content}
+            data-settings-part="content"
+            data-content={isForm ? "form" : "collection"}
+            key={`${scope}:${selected.value}`}
+          >
+            <header className={styles.heading} data-settings-part="heading">
               <div>
                 <h1>{t(selected.label)}</h1>
                 {selected.value !== "profile" && (

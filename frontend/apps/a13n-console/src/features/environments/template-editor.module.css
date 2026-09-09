@@ -22,10 +22,6 @@
   padding-top: 20px;
   font-size: 13px;
 }
-.advanced summary {
-  cursor: pointer;
-  color: var(--a13n-secondary);
-}
 .advancedBody {
   display: grid;
   gap: 20px;

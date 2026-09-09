@@ -1,12 +1,17 @@
-import { useId, useRef, useState, type FormEvent } from "react";
+import { Button, Input } from "a13n-ui";
+
+import { SettingsRow, SettingsSection } from "a13n-ui";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Input, SettingsRow, SettingsSection } from "a13n-ui";
-import { Upload, Trash2 } from "lucide-react";
+import { useId, useRef, useState, type FormEvent } from "react";
+
+import { Camera, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
+import { UserAvatar } from "../../layout/avatar";
 import { representation, type Schema } from "../../shared/api";
+import { CopyableId } from "../../shared/copy";
 import { ErrorNotice, Loading } from "../../shared/feedback";
-import { Avatar } from "../../layout/shell";
 import styles from "./settings.module.css";
 
 export type ProfileTarget =
@@ -201,18 +206,48 @@ function ProfileForm({
         save.mutate();
       }}
     >
-      <SettingsSection>
+      <SettingsSection
+        title={
+          target.kind === "personal"
+            ? undefined
+            : t(target.kind === "workspace" ? "Workspace" : "Organization")
+        }
+      >
         <SettingsRow
           label={t(target.kind === "personal" ? "Avatar" : "Icon")}
           description={t("PNG, JPEG, or WebP. Up to 5 MB.")}
         >
           <div className={styles.profileImage}>
-            <Avatar name={current.value.name} url={current.value.image_url} />
+            {editable ? (
+              <Button
+                type="button"
+                className={styles.imageButton}
+                aria-label={t("Upload image")}
+                variant="ghost"
+                disabled={pending}
+                onClick={() => uploadInput.current?.click()}
+              >
+                <UserAvatar
+                  name={current.value.name}
+                  url={current.value.image_url}
+                />
+                <span className={styles.imageOverlay} aria-hidden="true">
+                  <Camera size={16} />
+                </span>
+              </Button>
+            ) : (
+              <UserAvatar
+                name={current.value.name}
+                url={current.value.image_url}
+              />
+            )}
             {editable && (
               <>
-                <input
+                <Input
                   ref={uploadInput}
                   type="file"
+                  nativeInput
+                  unstyled
                   accept="image/png,image/jpeg,image/webp"
                   hidden
                   disabled={pending}
@@ -222,21 +257,17 @@ function ProfileForm({
                     event.target.value = "";
                   }}
                 />
-                <Button
-                  disabled={pending}
-                  icon={<Upload size={14} />}
-                  onClick={() => uploadInput.current?.click()}
-                >
-                  {t("Upload image")}
-                </Button>
                 {current.value.image_url && (
                   <Button
                     aria-label={t("Remove image")}
                     variant="ghost"
-                    icon={<Trash2 size={14} />}
                     disabled={pending}
                     onClick={() => image.mutate(null)}
-                  />
+                    size="icon"
+                    type="button"
+                  >
+                    {<Trash2 size={14} />}
+                  </Button>
                 )}
               </>
             )}
@@ -245,19 +276,17 @@ function ProfileForm({
         <SettingsRow label={nameLabel} controlId={nameId}>
           <div className={styles.nameControl}>
             <Input
-              id={nameId}
-              label={nameLabel}
-              hideLabel
-              value={name}
-              onChange={(event) => setName(event.target.value)}
               required
-              maxLength={128}
+              id={nameId}
+              value={name}
               disabled={!editable || pending}
+              onChange={(event) => setName(event.target.value)}
+              maxLength={128}
             />
           </div>
         </SettingsRow>
         <SettingsRow label={t("ID")}>
-          <code className={styles.resourceId}>{current.value.id}</code>
+          <CopyableId value={current.value.id} />
         </SettingsRow>
       </SettingsSection>
       <ErrorNotice
@@ -267,14 +296,16 @@ function ProfileForm({
       {editable && name !== current.value.name && (
         <div className={styles.saveRow}>
           <Button
+            variant="outline"
             disabled={pending}
             onClick={() => setName(current.value.name)}
+            type="button"
           >
             {t("Cancel")}
           </Button>
           <Button
             type="submit"
-            variant="primary"
+            variant="default"
             disabled={pending || !name.trim()}
             loading={save.isPending}
           >
