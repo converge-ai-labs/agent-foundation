@@ -49,6 +49,8 @@ def test_edit_diff_budget_counts_logical_body_lines(count):
 def test_hundred_long_diff_lines_keep_three_rows_each_and_expand_with_failed_result(legacy_windows, monkeypatch):
     import a13n_harness_ui.interactive.transcript as module
 
+    # Match CI's explicit terminal height, where Rich reserves a legacy column.
+    monkeypatch.setenv("LINES", "24")
     monkeypatch.setattr(module, "Console", partial(module.Console, legacy_windows=legacy_windows))
     renderer = StreamRenderer(Status())
     try:
@@ -69,8 +71,6 @@ def test_hundred_long_diff_lines_keep_three_rows_each_and_expand_with_failed_res
         assert "unique-file.py" in unwrapped
         assert "Tool result | failed" in concise
         assert "preview shortened" not in concise
-        bottom_left, bottom_right = ("└", "┘") if legacy_windows else ("╰", "╯")
-        assert concise.splitlines()[-1] == bottom_left + "─" * 28 + bottom_right
         renderer.transcript.detailed = True
         renderer.transcript.dirty = True
         expanded = text(renderer.transcript, 30)

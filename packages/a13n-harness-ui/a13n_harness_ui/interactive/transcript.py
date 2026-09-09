@@ -320,6 +320,9 @@ class Transcript:
             return
         self.width = width
         console = Console(file=StringIO(), width=width, force_terminal=True, color_system="truecolor")
+        # Rich may reserve a column in legacy Windows mode. Budget previews
+        # against the width it actually renders, not the requested terminal width.
+        width = console.width
 
         def rows(
             source: str, markdown: bool, kind: str = "text", *, folded: bool = False
