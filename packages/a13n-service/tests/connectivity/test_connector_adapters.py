@@ -462,6 +462,73 @@ async def test_composio_details_are_bounded_parallel_and_keep_catalog_order():
     )
 
 
+async def test_composio_directory_definitions_avoid_redundant_detail_requests():
+    detail_requests = []
+    schema = {"type": "object", "$defs": {"Id": {"type": "integer"}}, "properties": {"id": {"$ref": "#/$defs/Id"}}}
+
+    def definition(key):
+        return {
+            "slug": key,
+            "toolkit": {"slug": "github"},
+            "version": "20260903_01",
+            "input_parameters": {"type": "object"},
+            "output_parameters": schema,
+        }
+
+    def respond(request):
+        path = request.url.path
+        if path.endswith("/toolkits/github"):
+            return httpx2.Response(200, json={"slug": "github", "meta": {"version": "20260903_01"}})
+        if path.endswith("/tools"):
+            assert request.url.params["toolkit_versions[github]"] == "20260903_01"
+            if request.url.params.get("cursor") == "next":
+                return httpx2.Response(200, json={"items": [definition("GITHUB_THIRD")]})
+            return httpx2.Response(
+                200,
+                json={"items": [definition("GITHUB_FIRST"), {"slug": "GITHUB_SECOND"}], "next_cursor": "next"},
+            )
+        assert path.endswith("/tools/GITHUB_SECOND")
+        assert request.url.params["version"] == "20260903_01"
+        detail_requests.append(path)
+        return httpx2.Response(200, json=definition("GITHUB_SECOND"))
+
+    from a13n_service.connectivity.connectors.tool_discovery import discover_tools
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
+        tools, version = await discover_tools(_composio(http).tool_catalog("github"))
+    assert [tool.key for tool in tools] == ["GITHUB_FIRST", "GITHUB_SECOND", "GITHUB_THIRD"]
+    assert version == "20260903_01"
+    assert all(tool.output_schema == schema for tool in tools)
+    assert len(detail_requests) == 1
+
+
+@pytest.mark.parametrize("changed", [{"toolkit": {"slug": "gmail"}}, {"version": "20260903_02"}])
+async def test_composio_complete_directory_definition_rejects_identity_changes(changed):
+    def respond(request):
+        if request.url.path.endswith("/toolkits/github"):
+            return httpx2.Response(200, json={"slug": "github", "meta": {"version": "20260903_01"}})
+        assert request.url.path.endswith("/tools"), "Invalid complete definitions must not fall back to detail requests"
+        return httpx2.Response(
+            200,
+            json={
+                "items": [
+                    {
+                        "slug": "GITHUB_FIRST",
+                        "toolkit": {"slug": "github"},
+                        "version": "20260903_01",
+                        "input_parameters": {"type": "object"},
+                        "output_parameters": None,
+                        **changed,
+                    }
+                ]
+            },
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
+        with pytest.raises(ConnectorProviderError, match="incompatible_tool_version"):
+            await _composio(http).tool_catalog("github").discover_tools(cursor=None)
+
+
 async def test_connector_http_wall_deadline_preserves_unknown_write():
     import anyio
 

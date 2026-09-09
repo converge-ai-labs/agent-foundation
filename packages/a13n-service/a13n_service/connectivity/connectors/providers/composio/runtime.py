@@ -36,6 +36,7 @@ from ...validation import (
 )
 from ..discovery import DirectoryBudget, directory_items, setup_schema, validate_discovered_setup
 from .configuration import ComposioConfiguration, ComposioSetup
+from .output_schema import corrected_output_schema
 
 _TOOLKIT_VERSION = re.compile(r"^[0-9]{8}_[0-9]{2}$")
 
@@ -265,15 +266,21 @@ class ComposioToolCatalog:
         items = value.get("items")
         if not isinstance(items, list) or len(items) > 100:
             raise ConnectorProviderError("invalid_provider_response")
-        keys = [required_string(required_object(item), "slug", max_length=128) for item in items]
+        entries = [required_object(item) for item in items]
+        keys = [required_string(item, "slug", max_length=128) for item in entries]
         if len(keys) != len(set(keys)):
             raise ConnectorProviderError("invalid_provider_response")
         tools: dict[str, ConnectorTool] = {}
         limit = Semaphore(32)
 
-        async def load(key: str) -> None:
-            async with limit:
-                tools[key] = await detail_for(key)
+        async def load(key: str, entry: JsonObject) -> None:
+            # Current directory pages already carry complete, versioned schemas.
+            # Sparse directory entries still need the individual detail endpoint.
+            if {"toolkit", "version", "input_parameters", "output_parameters"} <= entry.keys():
+                tools[key] = parse_detail(key, entry)
+            else:
+                async with limit:
+                    tools[key] = await detail_for(key)
 
         async def detail_for(key: str) -> ConnectorTool:
             detail = required_object(
@@ -285,6 +292,9 @@ class ComposioToolCatalog:
                     params={"version": version},
                 )
             )
+            return parse_detail(key, detail)
+
+        def parse_detail(key: str, detail: JsonObject) -> ConnectorTool:
             if (
                 required_string(detail, "slug", max_length=128) != key
                 or required_string(required_object(detail.get("toolkit")), "slug", max_length=128)
@@ -296,8 +306,8 @@ class ComposioToolCatalog:
 
         try:
             async with create_task_group() as group:
-                for key in keys:
-                    group.start_soon(load, key)
+                for key, entry in zip(keys, entries, strict=True):
+                    group.start_soon(load, key, entry)
         except* (ConnectorProviderError, ValueError) as failures:
             raise failures.exceptions[0] from None
         return ConnectorToolPage(
@@ -448,13 +458,17 @@ def _status(value: str) -> tuple[AdapterConnectionStatus, AdapterStatusReason | 
 
 
 def _tool(value: JsonObject) -> ConnectorTool:
+    key = required_string(value, "slug", max_length=128)
+    version = required_string(value, "version", max_length=128)
     return ConnectorTool(
-        provider_version=required_string(value, "version", max_length=128),
-        key=required_string(value, "slug", max_length=128),
+        provider_version=version,
+        key=key,
         description=optional_string(value.get("description"), max_length=16_384) or "",
         input_schema=required_object(value.get("input_parameters")),
         output_schema=(
-            required_object(value.get("output_parameters")) if value.get("output_parameters") is not None else None
+            corrected_output_schema(required_object(value["output_parameters"]), tool_key=key, version=version)
+            if value.get("output_parameters") is not None
+            else None
         ),
         annotations={},
     )
