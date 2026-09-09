@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from functools import partial
 
 import pytest
 from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
@@ -92,12 +93,18 @@ def test_registration_and_run_finish_do_not_claim_an_answer(renderer):
 
 
 @pytest.mark.parametrize("native", [False, True])
-def test_typed_question_survives_fresh_response_run(renderer, native):
+@pytest.mark.parametrize("legacy_windows", [False, True])
+def test_typed_question_survives_fresh_response_run(renderer, native, legacy_windows, monkeypatch):
+    from a13n_harness_ui.interactive import transcript as module
+
+    monkeypatch.setattr(module, "Console", partial(module.Console, legacy_windows=legacy_windows))
     renderer.register_questions(request())
     renderer.ingest("RUN_FINISHED", {}, run_id="question-run")
     result(renderer, {"answers": {request().questions[0].question: "Python"}}, native=native)
     concise = render(renderer)
-    assert "Questions" in concise and concise.startswith(("╭", "┌"))
+    assert "Questions" in concise
+    top_left, bottom_left = ("┌", "└") if legacy_windows else ("╭", "╰")
+    assert concise.startswith(top_left) and concise.splitlines()[-1].startswith(bottom_left)
     assert "Answered · Language" in concise and "Which language should we use?" in concise
     assert "[x] Python" in concise and "[ ] Rust" in concise
     assert "→ Python" not in concise

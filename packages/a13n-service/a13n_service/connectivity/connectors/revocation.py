@@ -82,30 +82,30 @@ class ConnectorRevocationService:
             if replay is not None:
                 return replay.restore(ConnectionCleanupReceipt)
             require_version(connection.version, expected_version)
-            if connection.external_ref is not None:
-                try:
-                    if connection.external_user_correlation is not None:
-                        binding = connection_binding(connection)
-                    else:
-                        # Pending authorization can still need remote cleanup, but is never a runtime binding.
-                        attempt = await session.scalar(
-                            select(ConnectorSetupAttemptRecord).where(
-                                ConnectorSetupAttemptRecord.connector_connection_id == connection.id,
-                                ConnectorSetupAttemptRecord.generation == connection.setup_generation,
-                                ConnectorSetupAttemptRecord.external_ref == connection.external_ref,
-                            )
+            try:
+                if connection.external_ref is not None and connection.external_user_correlation is not None:
+                    binding = connection_binding(connection)
+                else:
+                    # A temporary account remains attempt evidence until verified completion.
+                    attempt = await session.scalar(
+                        select(ConnectorSetupAttemptRecord).where(
+                            ConnectorSetupAttemptRecord.connector_connection_id == connection.id,
+                            ConnectorSetupAttemptRecord.generation == connection.setup_generation,
                         )
-                        if attempt is None:
+                    )
+                    if attempt is not None and attempt.external_ref is not None:
+                        if connection.external_ref is not None and connection.external_ref != attempt.external_ref:
                             raise ConnectorError(
-                                "setup_unavailable",
-                                "Setup cleanup reference is unavailable.",
+                                "connection_substitution",
+                                "Setup cleanup account differs.",
                                 category=ErrorCategory.conflict,
                             )
                         binding = ConnectionBinding(
-                            external_ref=connection.external_ref,
+                            external_ref=attempt.external_ref,
                             connector_key=connection.connector_key,
                             external_user_correlation=attempt.external_user_correlation,
                         )
+                if binding is not None:
                     connector = await require_connector_provider(
                         session,
                         connection.connector_provider_id,
@@ -113,9 +113,9 @@ class ConnectorRevocationService:
                     )
                     credential = connector.credential_snapshot()
                     provider = ProviderSnapshot.from_record(connector)
-                except (ConnectorError, SecretProtectionError):
-                    # Missing remote prerequisites must never prevent local invalidation.
-                    pass
+            except (ConnectorError, SecretProtectionError):
+                # Missing remote prerequisites must never prevent local invalidation.
+                pass
             now = self._clock()
             connection.status = "disabled"
             connection.status_reason = None

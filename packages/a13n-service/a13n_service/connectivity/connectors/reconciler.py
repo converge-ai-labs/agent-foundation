@@ -6,7 +6,7 @@ from contextlib import aclosing
 from datetime import datetime, timedelta
 
 from anyio import move_on_after
-from sqlalchemy import or_, select
+from sqlalchemy import and_, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
@@ -126,6 +126,13 @@ class ConnectorReconciler:
                 select(ConnectorSetupAttemptRecord)
                 .where(
                     ConnectorSetupAttemptRecord.status.in_(("pending", "starting", "attached", "reserved")),
+                    not_(
+                        and_(
+                            ConnectorSetupAttemptRecord.status == "attached",
+                            ConnectorSetupAttemptRecord.supports_verified_callback.is_(True),
+                            ConnectorSetupAttemptRecord.browser_binding_digest.is_not(None),
+                        )
+                    ),
                     ConnectorSetupAttemptRecord.available_at <= now,
                     ConnectorSetupAttemptRecord.expires_at > now,
                     or_(
@@ -151,6 +158,15 @@ class ConnectorReconciler:
                 if attempt is None:
                     return
                 status = attempt.status
+                legacy = attempt.type == "composio" and attempt.browser_binding_digest is None
+            if legacy:
+                await self._setup.fail_attempt(
+                    attempt_id,
+                    code="setup_protocol_changed",
+                    claim_owner=self._instance_id,
+                    claim_generation=claim_generation,
+                )
+                return
             if status in {"pending", "starting"}:
                 try:
                     await self._setup.start_attempt(
@@ -222,7 +238,8 @@ class ConnectorReconciler:
             attempt.available_at = max(assume_utc(attempt.available_at), self._clock() + timedelta(seconds=5))
             if increment:
                 attempt.attempt_count += 1
-            attempt.last_error_code = code
+            if code is not None and (increment or attempt.last_error_code is None):
+                attempt.last_error_code = code
 
 
 def _owns_attempt(

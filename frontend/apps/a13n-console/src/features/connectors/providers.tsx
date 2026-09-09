@@ -25,7 +25,13 @@ export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
     { t } = useTranslation(),
     page = useCursor();
   const query = useQuery({
-    queryKey: ["connector-providers", scope.kind, scope.id, page.cursor],
+    queryKey: [
+      "connector-providers",
+      scope.kind,
+      scope.id,
+      "list",
+      page.cursor,
+    ],
     queryFn: ({ signal }) =>
       connectorApi(client, scope).providers(signal, page.cursor),
   });
@@ -125,7 +131,13 @@ function ProviderEditor({
         .then(data),
   });
   const resource = useQuery({
-    queryKey: ["connector-providers", scope.kind, scope.id, providerId],
+    queryKey: [
+      "connector-providers",
+      scope.kind,
+      scope.id,
+      "detail",
+      providerId,
+    ],
     enabled: open && !!providerId,
     queryFn: ({ signal }) =>
       client.http
@@ -163,7 +175,7 @@ function ProviderEditor({
           <ProviderForm
             key={generation}
             scope={scope}
-            initial={resource.data}
+            initial={providerId ? resource.data : undefined}
             definitions={definitions.data?.items ?? []}
             close={() => setOpen(false)}
             reload={reload}

@@ -160,6 +160,7 @@ async def test_connection_setup_is_durable_before_external_work_and_callback_is_
         idempotency_key="start-setup",
         expected_version=connection.version,
         setup={"scopes": ["read"]},
+        browser_nonce="b" * 64,
         return_path="/settings/connectors",
     )
     assert launch.connection.status == "pending"
@@ -172,6 +173,8 @@ async def test_connection_setup_is_durable_before_external_work_and_callback_is_
     assert attempt is not None
     return_path = await connections.complete_callback(
         actor=actor(),
+        attempt_id=attempt.id,
+        browser_nonce="b" * 64,
         session_uri=f"session://{attempt.id}",
     )
     assert return_path == "/settings/connectors"
@@ -184,13 +187,17 @@ async def test_connection_setup_is_durable_before_external_work_and_callback_is_
         idempotency_key="start-setup",
         expected_version=connection.version,
         setup={"scopes": ["read"]},
+        browser_nonce="b" * 64,
         return_path="/settings/connectors",
     )
     assert replay.status == "completed"
     assert replay.redirect_url is None
-    with pytest.raises(ConnectorError) as replayed:
-        await connections.complete_callback(actor=actor(), session_uri=f"session://{attempt.id}")
-    assert replayed.value.code == "invalid_callback"
+    assert (
+        await connections.complete_callback(
+            actor=actor(), attempt_id=attempt.id, browser_nonce="b" * 64, session_uri=f"session://{attempt.id}"
+        )
+        == return_path
+    )
 
 
 @pytest.mark.anyio
@@ -212,6 +219,7 @@ async def test_local_delete_and_one_shot_remote_revoke(
         idempotency_key="setup-for-revoke",
         expected_version=connection.version,
         setup={"scopes": ["read"]},
+        browser_nonce="b" * 64,
         return_path="/connections",
     )
     receipt = await connections.delete(
@@ -249,6 +257,7 @@ async def test_reconciler_completes_attached_setup_by_exact_external_reference(
         idempotency_key="setup-for-reconcile",
         expected_version=connection.version,
         setup={"scopes": ["read"]},
+        browser_nonce="b" * 64,
         return_path="/connections",
     )
     registry = fake_registry(connector_backend)
@@ -288,10 +297,13 @@ async def test_unknown_revoke_is_never_retried(
         idempotency_key="setup-for-unknown-revoke",
         expected_version=connection.version,
         setup={"scopes": ["read"]},
+        browser_nonce="b" * 64,
         return_path="/connections",
     )
     await connections.complete_callback(
         actor=actor(),
+        attempt_id=launch.attempt_id,
+        browser_nonce="b" * 64,
         session_uri=f"session://{launch.attempt_id}",
     )
     ready = await connections.get(actor=actor(), connection_id=connection.id)
@@ -417,6 +429,7 @@ async def test_disabled_provider_stops_setup_and_releases_callback_reservation(
         idempotency_key="disabled-setup",
         expected_version=connection.version,
         setup={"scopes": ["read"]},
+        browser_nonce="b" * 64,
         return_path="/connections",
     )
     await providers.set_status(
@@ -431,7 +444,12 @@ async def test_disabled_provider_stops_setup_and_releases_callback_reservation(
     assert raised.value.code == "connector_provider_disabled"
     assert connector_backend.started == 1
     with pytest.raises(ConnectorError):
-        await connections.complete_callback(actor=actor(), session_uri=f"session://{launch.attempt_id}")
+        await connections.complete_callback(
+            actor=actor(),
+            attempt_id=launch.attempt_id,
+            browser_nonce="b" * 64,
+            session_uri=f"session://{launch.attempt_id}",
+        )
     async with connectivity_sessions() as session:
         attempt = await session.get(ConnectorSetupAttemptRecord, launch.attempt_id)
         assert attempt is not None and attempt.status == "attached"
@@ -469,11 +487,14 @@ async def test_worker_connector_uses_verified_binding_and_preserves_unknown_writ
         idempotency_key="runtime-setup",
         expected_version=connection.version,
         setup={"scopes": ["read"]},
+        browser_nonce="b" * 64,
         return_path="/settings/connectors",
     )
     async with connectivity_sessions() as session:
         attempt = await session.scalar(select(ConnectorSetupAttemptRecord))
-    await connections.complete_callback(actor=actor(), session_uri=f"session://{attempt.id}")
+    await connections.complete_callback(
+        actor=actor(), attempt_id=attempt.id, browser_nonce="b" * 64, session_uri=f"session://{attempt.id}"
+    )
     calls = []
     guards = []
 
@@ -551,9 +572,15 @@ async def test_org_provider_keeps_connections_and_external_correlation_in_worksp
             idempotency_key="setup",
             expected_version=connection.version,
             setup={"scopes": ["read"]},
+            browser_nonce="b" * 64,
             return_path="/connections",
         )
-        await connections.complete_callback(actor=selected_actor, session_uri=f"session://{launch.attempt_id}")
+        await connections.complete_callback(
+            actor=selected_actor,
+            attempt_id=launch.attempt_id,
+            browser_nonce="b" * 64,
+            session_uri=f"session://{launch.attempt_id}",
+        )
     async with short_session(connectivity_sessions) as session:
         attempts = tuple(
             await session.scalars(
@@ -595,6 +622,7 @@ async def test_disabled_connection_callback_cannot_restore_readiness(connector_s
         idempotency_key="setup",
         expected_version=connection.version,
         setup={"scopes": ["read"]},
+        browser_nonce="b" * 64,
         return_path="/connections",
     )
     disabled = await connections.set_enabled(
@@ -605,7 +633,12 @@ async def test_disabled_connection_callback_cannot_restore_readiness(connector_s
         enabled=False,
     )
     with pytest.raises(ConnectorError):
-        await connections.complete_callback(actor=actor(), session_uri=f"session://{launch.attempt_id}")
+        await connections.complete_callback(
+            actor=actor(),
+            attempt_id=launch.attempt_id,
+            browser_nonce="b" * 64,
+            session_uri=f"session://{launch.attempt_id}",
+        )
     assert (await connections.get(actor=actor(), connection_id=connection.id)).status == "disabled"
     with pytest.raises(ConnectorError):
         await connections.set_enabled(
@@ -631,11 +664,15 @@ async def test_local_delete_survives_missing_remote_binding(
         idempotency_key="setup",
         expected_version=connection.version,
         setup={"scopes": ["read"]},
+        browser_nonce="b" * 64,
         return_path="/connections",
     )
     async with transaction(connectivity_sessions) as session:
         attempt = await session.get(ConnectorSetupAttemptRecord, launch.attempt_id)
         await session.delete(attempt)
+        # Legacy partially attached connection whose attempt evidence was lost.
+        record = await session.get(ConnectorConnectionRecord, connection.id)
+        record.external_ref = "external-1"
     receipt = await connections.delete(
         actor=actor(),
         connection_id=connection.id,
@@ -692,19 +729,26 @@ async def test_setup_rechecks_initiator_management_authority(
         idempotency_key="setup",
         expected_version=connection.version,
         setup={"scopes": ["read"]},
+        browser_nonce="b" * 64,
         return_path="/connections",
     )
     inspection = None
     if completion == "after_inspection":
         inspection = await connections.setup_coordinator._complete_attempt(
-            launch.attempt_id, session_uri=f"session://{launch.attempt_id}"
+            launch.attempt_id,
+            session_uri=f"session://{launch.attempt_id}",
         )
     async with transaction(connectivity_sessions) as session:
         binding = await session.get(RoleBindingRecord, "rb_connectivity_admin")
         binding.role_key = "viewer"
     with pytest.raises(ConnectorError):
         if completion == "callback":
-            await connections.complete_callback(actor=actor(), session_uri=f"session://{launch.attempt_id}")
+            await connections.complete_callback(
+                actor=actor(),
+                attempt_id=launch.attempt_id,
+                browser_nonce="b" * 64,
+                session_uri=f"session://{launch.attempt_id}",
+            )
         elif completion == "polling":
             await connections.setup_coordinator.attempt_snapshot(launch.attempt_id)
         else:
@@ -727,9 +771,15 @@ async def test_verified_binding_survives_setup_history_removal(connector_service
         idempotency_key="setup",
         expected_version=connection.version,
         setup={"scopes": ["read"]},
+        browser_nonce="b" * 64,
         return_path="/connections",
     )
-    await connections.complete_callback(actor=actor(), session_uri=f"session://{launch.attempt_id}")
+    await connections.complete_callback(
+        actor=actor(),
+        attempt_id=launch.attempt_id,
+        browser_nonce="b" * 64,
+        session_uri=f"session://{launch.attempt_id}",
+    )
     async with transaction(connectivity_sessions) as session:
         record = await session.get(ConnectorConnectionRecord, connection.id)
         expected = connection_binding(record)
@@ -781,6 +831,7 @@ async def test_expired_unattached_setup_requires_action_without_a_binding(
             expected_version=connection.version,
             idempotency_key="setup",
             setup={"scopes": ["read"]},
+            browser_nonce="b" * 64,
             return_path="/connections",
         )
     reconciler = ConnectorReconciler(
@@ -810,9 +861,15 @@ async def test_reconnect_cannot_reenable_a_previous_verified_generation(connecto
         expected_version=connection.version,
         idempotency_key="setup",
         setup={"scopes": ["read"]},
+        browser_nonce="b" * 64,
         return_path="/connections",
     )
-    await connections.complete_callback(actor=actor(), session_uri=f"session://{launch.attempt_id}")
+    await connections.complete_callback(
+        actor=actor(),
+        attempt_id=launch.attempt_id,
+        browser_nonce="b" * 64,
+        session_uri=f"session://{launch.attempt_id}",
+    )
     ready = await connections.get(actor=actor(), connection_id=connection.id)
     ready = await connections.set_enabled(
         actor=actor(),
@@ -827,6 +884,7 @@ async def test_reconnect_cannot_reenable_a_previous_verified_generation(connecto
         expected_version=ready.version,
         idempotency_key="reconnect",
         setup={"scopes": ["read"]},
+        browser_nonce="b" * 64,
         return_path="/connections",
     )
     disabled = await connections.set_enabled(

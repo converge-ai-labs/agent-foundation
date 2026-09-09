@@ -5,20 +5,19 @@ from __future__ import annotations
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
-from fastapi.responses import RedirectResponse
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.etags import resource_etag
 from a13n_service.http_types import IdempotencyKey
 from a13n_service.iam import AuthenticatedActor, authenticate_request
-from a13n_service.iam.http.authentication import authenticate_mutation
 from a13n_service.iam.resource_routes import require_organization_boundary
 from a13n_service.request_runtime import get_connectivity_control_runtime
 
 from .connections import ConnectorConnectionService
 from .contracts import ConnectorToolPage
 from .domain import (
+    CompleteConnectorSetupRequest,
     ConnectorCollection,
     ConnectorConnection,
     ConnectorConnectionCollection,
@@ -28,6 +27,7 @@ from .domain import (
     ConnectorProviderCommandRequest,
     ConnectorProviderStatus,
     ConnectorProviderTestResult,
+    ConnectorSetupCompletion,
     ConnectorSetupLaunch,
     CreateConnectorConnectionRequest,
     CreateConnectorProviderRequest,
@@ -258,6 +258,7 @@ async def start_connector_connection_setup(
         expected_version=body.expected_version,
         setup=body.setup,
         return_path=body.return_path,
+        browser_nonce=body.browser_nonce,
     )
 
 
@@ -351,6 +352,7 @@ async def reconnect_connector_connection(
         idempotency_key=idempotency_key,
         setup=body.setup,
         return_path=body.return_path,
+        browser_nonce=body.browser_nonce,
     )
 
 
@@ -393,19 +395,19 @@ async def delete_connector_connection(
     )
 
 
-@router.get("/connectivity/v1/connector-setup/callback", include_in_schema=False)
-async def connector_setup_callback(
+@router.post("/api/v1/connector-setup/complete", response_model=ConnectorSetupCompletion)
+async def complete_connector_setup(
     request: Request,
-    actor: Annotated[AuthenticatedActor, Depends(authenticate_mutation)],
-    session_uri: Annotated[str, Query(min_length=1, max_length=4096)],
-) -> RedirectResponse:
-    return_path = await _connections(request).complete_callback(actor=actor, session_uri=session_uri)
-    runtime = get_connectivity_control_runtime(request)
-    if runtime is None or runtime.public_origin is None:
-        raise ConnectorError(
-            "callback_unavailable", "ConnectorProvider callback is unavailable.", category=ErrorCategory.unavailable
-        )
-    return RedirectResponse(f"{runtime.public_origin.rstrip('/')}{return_path}", status_code=303)
+    body: CompleteConnectorSetupRequest,
+    actor: Actor,
+) -> ConnectorSetupCompletion:
+    return_path = await _connections(request).complete_callback(
+        actor=actor,
+        attempt_id=body.attempt_id,
+        browser_nonce=body.browser_nonce,
+        session_uri=body.session_uri,
+    )
+    return ConnectorSetupCompletion(return_path=return_path)
 
 
 @router.post(

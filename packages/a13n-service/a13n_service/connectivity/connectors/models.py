@@ -218,7 +218,9 @@ class ConnectorSetupAttemptRecord(Base):
     setup_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     external_ref: Mapped[str | None] = mapped_column(String(2048))
     setup_ref: Mapped[str | None] = mapped_column(String(2048))
+    # Retained during the additive migration; old callback digests are never trusted.
     external_handle_digest: Mapped[str | None] = mapped_column(String(64))
+    browser_binding_digest: Mapped[str | None] = mapped_column(String(64))
     supports_verified_callback: Mapped[bool] = mapped_column(Boolean, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

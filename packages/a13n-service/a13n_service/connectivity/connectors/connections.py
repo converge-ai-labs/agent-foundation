@@ -44,6 +44,7 @@ from .management import (
     authorize_provider,
     connector_actor_scope,
     map_management_value_error,
+    require_active_provider,
     require_connection,
     require_connector_provider,
     require_implementation,
@@ -53,7 +54,7 @@ from .models import (
     ConnectorSetupAttemptRecord,
 )
 from .revocation import ConnectorRevocationService
-from .setup import ConnectorSetupCoordinator
+from .setup import ConnectorSetupCoordinator, browser_digest
 
 
 class ConnectorConnectionService:
@@ -193,6 +194,7 @@ class ConnectorConnectionService:
         expected_version: int,
         setup: JsonObject,
         return_path: str,
+        browser_nonce: str | None = None,
     ) -> ConnectorSetupLaunch:
         if actor.principal.principal_type is not PrincipalType.user:
             raise ConnectorError(
@@ -200,9 +202,15 @@ class ConnectorConnectionService:
             )
         key_digest = idempotency_digest(idempotency_key)
         request_fingerprint = digest_request(
-            {"expected_version": expected_version, "setup": setup, "return_path": return_path}
+            {
+                "expected_version": expected_version,
+                "setup": setup,
+                "return_path": return_path,
+                "browser_binding": browser_digest(browser_nonce),
+            }
         )
         attempt_id = new_object_id("csa")
+        initial_claim = None
         now = self._clock()
         async with transaction(self._sessions) as session:
             connection = await require_connection(session, connection_id, lock=True)
@@ -234,6 +242,12 @@ class ConnectorConnectionService:
                     raise ConnectorError(
                         "connector_disabled", "ConnectorProvider is disabled.", category=ErrorCategory.conflict
                     )
+                if connector.type == "composio" and connection.external_ref is not None:
+                    raise ConnectorError(
+                        "reconnect_unsupported",
+                        "Reauthorizing this account is unsupported. Create a new Connection.",
+                        category=ErrorCategory.conflict,
+                    )
                 adapter = require_implementation(self._adapters, connector.type)
                 try:
                     validated_setup = adapter.validate_setup(
@@ -247,17 +261,19 @@ class ConnectorConnectionService:
                         "ConnectorProvider setup is invalid.",
                         category=ErrorCategory.invalid_request,
                     ) from error
-                session.add(
-                    self._setup.new_attempt(
-                        connection,
-                        connector=connector,
-                        actor=actor,
-                        attempt_id=attempt_id,
-                        setup=validated_setup,
-                        return_path=return_path,
-                        now=now,
-                    )
+                attempt = self._setup.new_attempt(
+                    connection,
+                    connector=connector,
+                    actor=actor,
+                    attempt_id=attempt_id,
+                    setup=validated_setup,
+                    return_path=return_path,
+                    now=now,
+                    browser_nonce=browser_nonce,
                 )
+                session.add(attempt)
+                assert attempt.claim_owner is not None
+                initial_claim = (attempt.claim_owner, attempt.claim_generation)
                 record_command(
                     session,
                     actor=actor,
@@ -284,7 +300,7 @@ class ConnectorConnectionService:
                         now=now,
                     )
                 )
-        return await self._setup.launch(attempt_id, connection_id)
+        return await self._setup.launch(attempt_id, connection_id, initial_claim=initial_claim)
 
     async def list(
         self,
@@ -465,6 +481,7 @@ class ConnectorConnectionService:
         idempotency_key: str,
         setup: JsonObject,
         return_path: str,
+        browser_nonce: str | None = None,
     ) -> ConnectorSetupLaunch:
         if actor.principal.principal_type is not PrincipalType.user:
             raise ConnectorError(
@@ -472,9 +489,15 @@ class ConnectorConnectionService:
             )
         key_digest = idempotency_digest(idempotency_key)
         request_fingerprint = digest_request(
-            {"expected_version": expected_version, "setup": setup, "return_path": return_path}
+            {
+                "expected_version": expected_version,
+                "setup": setup,
+                "return_path": return_path,
+                "browser_binding": browser_digest(browser_nonce),
+            }
         )
         attempt_id = new_object_id("csa")
+        initial_claim = None
         now = self._clock()
         async with transaction(self._sessions) as session:
             connection = await require_connection(session, connection_id, lock=True)
@@ -507,6 +530,13 @@ class ConnectorConnectionService:
                     connection.connector_provider_id,
                     scope=ResourceScope(connection.organization_id, connection.workspace_id),
                 )
+                require_active_provider(connector)
+                if connector.type == "composio" and connection.external_ref is not None:
+                    raise ConnectorError(
+                        "reconnect_unsupported",
+                        "Reauthorizing this account is unsupported. Create a new Connection.",
+                        category=ErrorCategory.conflict,
+                    )
                 adapter = require_implementation(self._adapters, connector.type)
                 try:
                     validated_setup = adapter.validate_setup(
@@ -526,17 +556,19 @@ class ConnectorConnectionService:
                 connection.status_reason = None
                 connection.version += 1
                 connection.updated_at = now
-                session.add(
-                    self._setup.new_attempt(
-                        connection,
-                        connector=connector,
-                        actor=actor,
-                        attempt_id=attempt_id,
-                        setup=validated_setup,
-                        return_path=return_path,
-                        now=now,
-                    )
+                attempt = self._setup.new_attempt(
+                    connection,
+                    connector=connector,
+                    actor=actor,
+                    attempt_id=attempt_id,
+                    setup=validated_setup,
+                    return_path=return_path,
+                    now=now,
+                    browser_nonce=browser_nonce,
                 )
+                session.add(attempt)
+                assert attempt.claim_owner is not None
+                initial_claim = (attempt.claim_owner, attempt.claim_generation)
                 record_command(
                     session,
                     actor=actor,
@@ -563,7 +595,7 @@ class ConnectorConnectionService:
                         now=now,
                     )
                 )
-        return await self._setup.launch(attempt_id, connection_id)
+        return await self._setup.launch(attempt_id, connection_id, initial_claim=initial_claim)
 
     async def revoke(
         self,
@@ -602,5 +634,9 @@ class ConnectorConnectionService:
         *,
         actor: AuthenticatedActor,
         session_uri: str,
+        attempt_id: str,
+        browser_nonce: str,
     ) -> str:
-        return await self._setup.complete_callback(actor=actor, session_uri=session_uri)
+        return await self._setup.complete_callback(
+            actor=actor, attempt_id=attempt_id, browser_nonce=browser_nonce, session_uri=session_uri
+        )

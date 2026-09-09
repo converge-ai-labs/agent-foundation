@@ -1,0 +1,18 @@
+# Copy to providers.local.toml (gitignored) and chmod 600 the copy.
+# All sections are optional. Keep unused sections entirely blank.
+[environment]
+type = "" # a13n.e2b
+api_key = ""
+template = "" # Optional; defaults to base when enabled.
+
+[connector]
+provider = "" # composio
+api_key = ""
+# Optional when enabled; defaults to ["github"].
+# toolkits = ["github"]
+
+[model]
+provider = "" # openrouter or openai_compatible
+api_key = ""
+model = "" # Required when enabled: an upstream Chat Completions model ID.
+base_url = "" # Required only for openai_compatible; leave blank for openrouter.
