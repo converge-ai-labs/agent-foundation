@@ -198,12 +198,12 @@ pub async fn delete_workspaces_workspace_agents_agent_avatar(
         let content = resp.text().await?;
         let entity: Option<DeleteWorkspacesWorkspaceAgentsAgentAvatarError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -265,12 +265,12 @@ pub async fn get_agent_revisions_agent_revision_id(
         let content = resp.text().await?;
         let entity: Option<GetAgentRevisionsAgentRevisionIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -356,12 +356,12 @@ pub async fn get_workspaces_workspace_agents(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceAgentsError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -426,12 +426,12 @@ pub async fn get_workspaces_workspace_agents_agent(
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceAgentsAgentError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -500,12 +500,12 @@ pub async fn get_workspaces_workspace_agents_agent_avatar_image_id(
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceAgentsAgentAvatarImageIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -583,12 +583,12 @@ pub async fn get_workspaces_workspace_agents_agent_revisions(
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceAgentsAgentRevisionsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -661,12 +661,12 @@ pub async fn patch_workspaces_workspace_agents_agent(
         let content = resp.text().await?;
         let entity: Option<PatchWorkspacesWorkspaceAgentsAgentError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -737,12 +737,12 @@ pub async fn post_workspaces_workspace_agents(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceAgentsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -818,12 +818,12 @@ pub async fn post_workspaces_workspace_agents_agent_action(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceAgentsAgentActionError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -896,12 +896,12 @@ pub async fn post_workspaces_workspace_agents_agent_duplicate(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceAgentsAgentDuplicateError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -977,12 +977,12 @@ pub async fn post_workspaces_workspace_agents_agent_revisions(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceAgentsAgentRevisionsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1061,12 +1061,12 @@ pub async fn post_workspaces_workspace_agents_agent_revisions_revision_id_restor
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceAgentsAgentRevisionsRevisionIdRestoreError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1140,11 +1140,11 @@ pub async fn put_workspaces_workspace_agents_agent_avatar(
         let content = resp.text().await?;
         let entity: Option<PutWorkspacesWorkspaceAgentsAgentAvatarError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }

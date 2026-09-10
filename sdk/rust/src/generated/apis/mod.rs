@@ -22,7 +22,7 @@ pub enum Error<T> {
     Reqwest(reqwest::Error),
     Serde(serde_json::Error),
     Io(std::io::Error),
-    ResponseError(ResponseContent<T>),
+    ResponseError(Box<ResponseContent<T>>),
 }
 
 impl<T> fmt::Display for Error<T> {

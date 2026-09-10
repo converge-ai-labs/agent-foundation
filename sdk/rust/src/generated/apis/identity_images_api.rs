@@ -159,12 +159,12 @@ pub async fn delete_organizations_organization_icon(
         let content = resp.text().await?;
         let entity: Option<DeleteOrganizationsOrganizationIconError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -224,12 +224,12 @@ pub async fn delete_users_me_avatar(
     } else {
         let content = resp.text().await?;
         let entity: Option<DeleteUsersMeAvatarError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -296,12 +296,12 @@ pub async fn delete_workspaces_workspace_icon(
         let content = resp.text().await?;
         let entity: Option<DeleteWorkspacesWorkspaceIconError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -341,12 +341,12 @@ pub async fn get_organizations_organization_icon_image_id(
         let content = resp.text().await?;
         let entity: Option<GetOrganizationsOrganizationIconImageIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -385,12 +385,12 @@ pub async fn get_users_user_id_avatar_image_id(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetUsersUserIdAvatarImageIdError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -430,12 +430,12 @@ pub async fn get_workspaces_workspace_icon_image_id(
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceIconImageIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -506,12 +506,12 @@ pub async fn put_organizations_organization_icon(
         let content = resp.text().await?;
         let entity: Option<PutOrganizationsOrganizationIconError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -575,12 +575,12 @@ pub async fn put_users_me_avatar(
     } else {
         let content = resp.text().await?;
         let entity: Option<PutUsersMeAvatarError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -650,11 +650,11 @@ pub async fn put_workspaces_workspace_icon(
     } else {
         let content = resp.text().await?;
         let entity: Option<PutWorkspacesWorkspaceIconError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }

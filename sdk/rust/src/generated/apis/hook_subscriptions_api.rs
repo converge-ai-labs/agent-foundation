@@ -118,12 +118,12 @@ pub async fn delete_hook_subscriptions_subscription_id(
         let content = resp.text().await?;
         let entity: Option<DeleteHookSubscriptionsSubscriptionIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -185,12 +185,12 @@ pub async fn get_hook_subscriptions_subscription_id(
         let content = resp.text().await?;
         let entity: Option<GetHookSubscriptionsSubscriptionIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -265,12 +265,12 @@ pub async fn get_workspaces_workspace_hook_subscriptions(
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceHookSubscriptionsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -340,12 +340,12 @@ pub async fn patch_hook_subscriptions_subscription_id(
         let content = resp.text().await?;
         let entity: Option<PatchHookSubscriptionsSubscriptionIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -392,12 +392,12 @@ pub async fn post_hook_subscriptions_subscription_id_deliveries_delivery_id_redr
         let content = resp.text().await?;
         let entity: Option<PostHookSubscriptionsSubscriptionIdDeliveriesDeliveryIdRedriveError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -465,12 +465,12 @@ pub async fn post_workspaces_workspace_hook_subscriptions(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceHookSubscriptionsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -538,11 +538,11 @@ pub async fn put_hook_subscriptions_subscription_id(
         let content = resp.text().await?;
         let entity: Option<PutHookSubscriptionsSubscriptionIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }

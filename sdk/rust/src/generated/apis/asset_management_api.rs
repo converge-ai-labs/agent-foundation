@@ -98,12 +98,12 @@ pub async fn delete_assets_asset_id(
     } else {
         let content = resp.text().await?;
         let entity: Option<DeleteAssetsAssetIdError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -164,12 +164,12 @@ pub async fn get_assets_asset_id(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetAssetsAssetIdError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -205,12 +205,12 @@ pub async fn get_assets_asset_id_content(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetAssetsAssetIdContentError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -291,12 +291,12 @@ pub async fn get_workspaces_workspace_assets(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceAssetsError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -377,11 +377,11 @@ pub async fn post_workspaces_workspace_assets(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceAssetsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }

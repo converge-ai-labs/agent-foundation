@@ -325,12 +325,12 @@ pub async fn delete_queued_submissions_queued_submission_id(
         let content = resp.text().await?;
         let entity: Option<DeleteQueuedSubmissionsQueuedSubmissionIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -393,12 +393,12 @@ pub async fn get_queued_submissions_queued_submission_id(
         let content = resp.text().await?;
         let entity: Option<GetQueuedSubmissionsQueuedSubmissionIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -459,12 +459,12 @@ pub async fn get_run_attempts_run_attempt_id(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetRunAttemptsRunAttemptIdError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -525,12 +525,12 @@ pub async fn get_runs_run_id(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetRunsRunIdError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -601,12 +601,12 @@ pub async fn get_runs_run_id_attempts(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetRunsRunIdAttemptsError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -677,12 +677,12 @@ pub async fn get_runs_run_id_items(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetRunsRunIdItemsError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -743,12 +743,12 @@ pub async fn get_runs_run_id_lineage(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetRunsRunIdLineageError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -809,12 +809,12 @@ pub async fn get_runs_run_id_pending_actions(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetRunsRunIdPendingActionsError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -878,12 +878,12 @@ pub async fn get_runs_run_id_steers_steer_id(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetRunsRunIdSteersSteerIdError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -954,12 +954,12 @@ pub async fn get_runs_run_id_stream(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetRunsRunIdStreamError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1030,12 +1030,12 @@ pub async fn get_sessions_session_id_threads(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetSessionsSessionIdThreadsError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1096,12 +1096,12 @@ pub async fn get_threads_thread_id(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetThreadsThreadIdError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1176,12 +1176,12 @@ pub async fn get_threads_thread_id_queued_submissions(
         let content = resp.text().await?;
         let entity: Option<GetThreadsThreadIdQueuedSubmissionsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1252,12 +1252,12 @@ pub async fn get_threads_thread_id_runs(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetThreadsThreadIdRunsError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1328,12 +1328,12 @@ pub async fn get_workspaces_workspace_runs(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceRunsError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1405,12 +1405,12 @@ pub async fn get_workspaces_workspace_sessions(
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceSessionsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1483,12 +1483,12 @@ pub async fn patch_queued_submissions_queued_submission_id(
         let content = resp.text().await?;
         let entity: Option<PatchQueuedSubmissionsQueuedSubmissionIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1557,12 +1557,12 @@ pub async fn post_runs_run_id_feedback(
     } else {
         let content = resp.text().await?;
         let entity: Option<PostRunsRunIdFeedbackError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1631,12 +1631,12 @@ pub async fn post_runs_run_id_fork(
     } else {
         let content = resp.text().await?;
         let entity: Option<PostRunsRunIdForkError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1705,12 +1705,12 @@ pub async fn post_runs_run_id_interrupt(
     } else {
         let content = resp.text().await?;
         let entity: Option<PostRunsRunIdInterruptError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1779,12 +1779,12 @@ pub async fn post_runs_run_id_retry(
     } else {
         let content = resp.text().await?;
         let entity: Option<PostRunsRunIdRetryError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1853,12 +1853,12 @@ pub async fn post_runs_run_id_steer(
     } else {
         let content = resp.text().await?;
         let entity: Option<PostRunsRunIdSteerError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1927,12 +1927,12 @@ pub async fn post_runs_source_run_id_continue(
     } else {
         let content = resp.text().await?;
         let entity: Option<PostRunsSourceRunIdContinueError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2005,12 +2005,12 @@ pub async fn post_threads_thread_id_queued_submissions_consume(
         let content = resp.text().await?;
         let entity: Option<PostThreadsThreadIdQueuedSubmissionsConsumeError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2083,12 +2083,12 @@ pub async fn post_threads_thread_id_queued_submissions_reorder(
         let content = resp.text().await?;
         let entity: Option<PostThreadsThreadIdQueuedSubmissionsReorderError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2157,12 +2157,12 @@ pub async fn post_threads_thread_id_runs(
     } else {
         let content = resp.text().await?;
         let entity: Option<PostThreadsThreadIdRunsError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2231,11 +2231,11 @@ pub async fn post_workspaces_workspace_runs(
     } else {
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceRunsError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }

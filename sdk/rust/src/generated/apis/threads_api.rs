@@ -88,11 +88,11 @@ pub async fn post_workspaces_workspace_threads(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceThreadsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }

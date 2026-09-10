@@ -287,12 +287,12 @@ pub async fn get_model_provider_types(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetModelProviderTypesError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -382,12 +382,12 @@ pub async fn get_organizations_organization_model_providers(
         let content = resp.text().await?;
         let entity: Option<GetOrganizationsOrganizationModelProvidersError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -455,12 +455,12 @@ pub async fn get_organizations_organization_model_providers_provider_id(
         let content = resp.text().await?;
         let entity: Option<GetOrganizationsOrganizationModelProvidersProviderIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -547,12 +547,12 @@ pub async fn get_organizations_organization_models(
         let content = resp.text().await?;
         let entity: Option<GetOrganizationsOrganizationModelsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -617,12 +617,12 @@ pub async fn get_organizations_organization_models_model_id(
         let content = resp.text().await?;
         let entity: Option<GetOrganizationsOrganizationModelsModelIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -712,12 +712,12 @@ pub async fn get_workspaces_workspace_model_providers(
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceModelProvidersError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -785,12 +785,12 @@ pub async fn get_workspaces_workspace_model_providers_provider_id(
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceModelProvidersProviderIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -876,12 +876,12 @@ pub async fn get_workspaces_workspace_models(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceModelsError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -946,12 +946,12 @@ pub async fn get_workspaces_workspace_models_model_id(
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceModelsModelIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1027,12 +1027,12 @@ pub async fn patch_organizations_organization_model_providers_provider_id(
         let content = resp.text().await?;
         let entity: Option<PatchOrganizationsOrganizationModelProvidersProviderIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1105,12 +1105,12 @@ pub async fn patch_organizations_organization_models_model_id(
         let content = resp.text().await?;
         let entity: Option<PatchOrganizationsOrganizationModelsModelIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1186,12 +1186,12 @@ pub async fn patch_workspaces_workspace_model_providers_provider_id(
         let content = resp.text().await?;
         let entity: Option<PatchWorkspacesWorkspaceModelProvidersProviderIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1264,12 +1264,12 @@ pub async fn patch_workspaces_workspace_models_model_id(
         let content = resp.text().await?;
         let entity: Option<PatchWorkspacesWorkspaceModelsModelIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1337,12 +1337,12 @@ pub async fn post_organizations_organization_model_providers(
         let content = resp.text().await?;
         let entity: Option<PostOrganizationsOrganizationModelProvidersError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1416,12 +1416,12 @@ pub async fn post_organizations_organization_model_providers_provider_id_describ
         let entity: Option<
             PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelError,
         > = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1492,12 +1492,12 @@ pub async fn post_organizations_organization_model_providers_provider_id_discove
         let entity: Option<
             PostOrganizationsOrganizationModelProvidersProviderIdDiscoverModelsError,
         > = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1567,12 +1567,12 @@ pub async fn post_organizations_organization_model_providers_provider_id_test(
         let content = resp.text().await?;
         let entity: Option<PostOrganizationsOrganizationModelProvidersProviderIdTestError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1639,12 +1639,12 @@ pub async fn post_organizations_organization_models(
         let content = resp.text().await?;
         let entity: Option<PostOrganizationsOrganizationModelsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1717,12 +1717,12 @@ pub async fn post_organizations_organization_models_model_id_test(
         let content = resp.text().await?;
         let entity: Option<PostOrganizationsOrganizationModelsModelIdTestError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1789,12 +1789,12 @@ pub async fn post_workspaces_workspace_model_providers(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceModelProvidersError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1867,12 +1867,12 @@ pub async fn post_workspaces_workspace_model_providers_provider_id_describe_mode
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1942,12 +1942,12 @@ pub async fn post_workspaces_workspace_model_providers_provider_id_discover_mode
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceModelProvidersProviderIdDiscoverModelsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2017,12 +2017,12 @@ pub async fn post_workspaces_workspace_model_providers_provider_id_test(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceModelProvidersProviderIdTestError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2089,12 +2089,12 @@ pub async fn post_workspaces_workspace_models(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceModelsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2167,11 +2167,11 @@ pub async fn post_workspaces_workspace_models_model_id_test(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceModelsModelIdTestError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }

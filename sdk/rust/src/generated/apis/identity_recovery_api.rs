@@ -103,12 +103,12 @@ pub async fn get_auth_configuration(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetAuthConfigurationError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -165,12 +165,12 @@ pub async fn post_auth_password_reset(
     } else {
         let content = resp.text().await?;
         let entity: Option<PostAuthPasswordResetError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -210,12 +210,12 @@ pub async fn post_auth_password_reset_complete(
         let content = resp.text().await?;
         let entity: Option<PostAuthPasswordResetCompleteError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -275,12 +275,12 @@ pub async fn post_users_me_email_change(
     } else {
         let content = resp.text().await?;
         let entity: Option<PostUsersMeEmailChangeError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -323,11 +323,11 @@ pub async fn post_users_me_email_change_complete(
         let content = resp.text().await?;
         let entity: Option<PostUsersMeEmailChangeCompleteError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }

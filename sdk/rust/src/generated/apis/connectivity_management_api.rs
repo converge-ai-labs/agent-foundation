@@ -476,12 +476,12 @@ pub async fn delete_application_accounts_account_id(
         let content = resp.text().await?;
         let entity: Option<DeleteApplicationAccountsAccountIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -530,12 +530,12 @@ pub async fn delete_application_accounts_account_id_targets_target_id(
         let content = resp.text().await?;
         let entity: Option<DeleteApplicationAccountsAccountIdTargetsTargetIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -608,12 +608,12 @@ pub async fn delete_connector_connections_connection_id(
         let content = resp.text().await?;
         let entity: Option<DeleteConnectorConnectionsConnectionIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -684,12 +684,12 @@ pub async fn delete_mcp_connections_connection_id(
         let content = resp.text().await?;
         let entity: Option<DeleteMcpConnectionsConnectionIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -751,12 +751,12 @@ pub async fn get_application_accounts_account_id(
         let content = resp.text().await?;
         let entity: Option<GetApplicationAccountsAccountIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -829,12 +829,12 @@ pub async fn get_application_accounts_account_id_targets(
         let content = resp.text().await?;
         let entity: Option<GetApplicationAccountsAccountIdTargetsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -902,12 +902,12 @@ pub async fn get_application_accounts_account_id_targets_target_id(
         let content = resp.text().await?;
         let entity: Option<GetApplicationAccountsAccountIdTargetsTargetIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -970,12 +970,12 @@ pub async fn get_connector_connections_connection_id(
         let content = resp.text().await?;
         let entity: Option<GetConnectorConnectionsConnectionIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1034,12 +1034,12 @@ pub async fn get_connector_provider_types(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetConnectorProviderTypesError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1102,12 +1102,12 @@ pub async fn get_connector_providers_connector_provider_id(
         let content = resp.text().await?;
         let entity: Option<GetConnectorProvidersConnectorProviderIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1176,12 +1176,12 @@ pub async fn get_connector_providers_connector_provider_id_connectors_connector_
         let entity: Option<
             GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyToolsError,
         > = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1243,12 +1243,12 @@ pub async fn get_mcp_connections_connection_id(
         let content = resp.text().await?;
         let entity: Option<GetMcpConnectionsConnectionIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1312,12 +1312,12 @@ pub async fn get_oauth_mcp_callback(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetOauthMcpCallbackError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1371,12 +1371,12 @@ pub async fn get_oauth_mcp_client_metadata_json(
         let content = resp.text().await?;
         let entity: Option<GetOauthMcpClientMetadataJsonError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1451,12 +1451,12 @@ pub async fn get_organizations_organization_connector_providers(
         let content = resp.text().await?;
         let entity: Option<GetOrganizationsOrganizationConnectorProvidersError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1521,12 +1521,12 @@ pub async fn get_workspaces_workspace_application_account_provider_types(
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceApplicationAccountProviderTypesError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1601,12 +1601,12 @@ pub async fn get_workspaces_workspace_application_accounts(
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceApplicationAccountsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1681,12 +1681,12 @@ pub async fn get_workspaces_workspace_connector_connections(
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceConnectorConnectionsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1761,12 +1761,12 @@ pub async fn get_workspaces_workspace_connector_providers(
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceConnectorProvidersError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1841,12 +1841,12 @@ pub async fn get_workspaces_workspace_mcp_connections(
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceMcpConnectionsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1913,12 +1913,12 @@ pub async fn patch_application_accounts_account_id(
         let content = resp.text().await?;
         let entity: Option<PatchApplicationAccountsAccountIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1986,12 +1986,12 @@ pub async fn patch_connector_connections_connection_id(
         let content = resp.text().await?;
         let entity: Option<PatchConnectorConnectionsConnectionIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2061,12 +2061,12 @@ pub async fn patch_connector_providers_connector_provider_id(
         let content = resp.text().await?;
         let entity: Option<PatchConnectorProvidersConnectorProviderIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2133,12 +2133,12 @@ pub async fn patch_mcp_connections_connection_id(
         let content = resp.text().await?;
         let entity: Option<PatchMcpConnectionsConnectionIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2211,12 +2211,12 @@ pub async fn post_application_accounts_account_id_action(
         let content = resp.text().await?;
         let entity: Option<PostApplicationAccountsAccountIdActionError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2286,12 +2286,12 @@ pub async fn post_application_accounts_account_id_targets(
         let content = resp.text().await?;
         let entity: Option<PostApplicationAccountsAccountIdTargetsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2367,12 +2367,12 @@ pub async fn post_connector_connections_connection_id_action(
         let content = resp.text().await?;
         let entity: Option<PostConnectorConnectionsConnectionIdActionError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2445,12 +2445,12 @@ pub async fn post_connector_connections_connection_id_reconnect(
         let content = resp.text().await?;
         let entity: Option<PostConnectorConnectionsConnectionIdReconnectError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2523,12 +2523,12 @@ pub async fn post_connector_connections_connection_id_revoke(
         let content = resp.text().await?;
         let entity: Option<PostConnectorConnectionsConnectionIdRevokeError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2601,12 +2601,12 @@ pub async fn post_connector_connections_connection_id_setup(
         let content = resp.text().await?;
         let entity: Option<PostConnectorConnectionsConnectionIdSetupError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2682,12 +2682,12 @@ pub async fn post_connector_providers_connector_provider_id_action(
         let content = resp.text().await?;
         let entity: Option<PostConnectorProvidersConnectorProviderIdActionError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2761,12 +2761,12 @@ pub async fn post_connector_providers_connector_provider_id_credentials(
         let content = resp.text().await?;
         let entity: Option<PostConnectorProvidersConnectorProviderIdCredentialsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2833,12 +2833,12 @@ pub async fn post_connector_providers_connector_provider_id_discover_connectors(
         let content = resp.text().await?;
         let entity: Option<PostConnectorProvidersConnectorProviderIdDiscoverConnectorsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2911,12 +2911,12 @@ pub async fn post_connector_providers_connector_provider_id_test(
         let content = resp.text().await?;
         let entity: Option<PostConnectorProvidersConnectorProviderIdTestError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2979,12 +2979,12 @@ pub async fn post_connector_setup_complete(
     } else {
         let content = resp.text().await?;
         let entity: Option<PostConnectorSetupCompleteError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -3057,12 +3057,12 @@ pub async fn post_mcp_connections_connection_id_action(
         let content = resp.text().await?;
         let entity: Option<PostMcpConnectionsConnectionIdActionError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -3135,12 +3135,12 @@ pub async fn post_mcp_connections_connection_id_authorize(
         let content = resp.text().await?;
         let entity: Option<PostMcpConnectionsConnectionIdAuthorizeError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -3211,12 +3211,12 @@ pub async fn post_mcp_connections_connection_id_credentials(
         let content = resp.text().await?;
         let entity: Option<PostMcpConnectionsConnectionIdCredentialsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -3284,12 +3284,12 @@ pub async fn post_mcp_connections_connection_id_discover(
         let content = resp.text().await?;
         let entity: Option<PostMcpConnectionsConnectionIdDiscoverError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -3359,12 +3359,12 @@ pub async fn post_mcp_connections_connection_id_reconnect(
         let content = resp.text().await?;
         let entity: Option<PostMcpConnectionsConnectionIdReconnectError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -3437,12 +3437,12 @@ pub async fn post_organizations_organization_connector_providers(
         let content = resp.text().await?;
         let entity: Option<PostOrganizationsOrganizationConnectorProvidersError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -3512,12 +3512,12 @@ pub async fn post_workspaces_workspace_application_accounts(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceApplicationAccountsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -3590,12 +3590,12 @@ pub async fn post_workspaces_workspace_connector_connections(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceConnectorConnectionsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -3668,12 +3668,12 @@ pub async fn post_workspaces_workspace_connector_providers(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceConnectorProvidersError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -3743,12 +3743,12 @@ pub async fn post_workspaces_workspace_mcp_connections(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceMcpConnectionsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -3816,12 +3816,12 @@ pub async fn put_application_accounts_account_id_credentials(
         let content = resp.text().await?;
         let entity: Option<PutApplicationAccountsAccountIdCredentialsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -3892,11 +3892,11 @@ pub async fn put_application_accounts_account_id_targets_target_id(
         let content = resp.text().await?;
         let entity: Option<PutApplicationAccountsAccountIdTargetsTargetIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }

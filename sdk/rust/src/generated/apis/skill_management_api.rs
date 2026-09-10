@@ -170,12 +170,12 @@ pub async fn delete_skill_uploads_upload_id(
     } else {
         let content = resp.text().await?;
         let entity: Option<DeleteSkillUploadsUploadIdError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -220,12 +220,12 @@ pub async fn delete_skills_skill_id(
     } else {
         let content = resp.text().await?;
         let entity: Option<DeleteSkillsSkillIdError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -287,12 +287,12 @@ pub async fn get_skill_revisions_skill_revision_id(
         let content = resp.text().await?;
         let entity: Option<GetSkillRevisionsSkillRevisionIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -354,12 +354,12 @@ pub async fn get_skill_revisions_skill_revision_id_content(
         let content = resp.text().await?;
         let entity: Option<GetSkillRevisionsSkillRevisionIdContentError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -420,12 +420,12 @@ pub async fn get_skill_uploads_upload_id(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetSkillUploadsUploadIdError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -486,12 +486,12 @@ pub async fn get_skills_skill_id(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetSkillsSkillIdError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -563,12 +563,12 @@ pub async fn get_skills_skill_id_references(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetSkillsSkillIdReferencesError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -639,12 +639,12 @@ pub async fn get_skills_skill_id_revisions(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetSkillsSkillIdRevisionsError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -715,12 +715,12 @@ pub async fn get_workspaces_workspace_skills(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceSkillsError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -789,12 +789,12 @@ pub async fn patch_skills_skill_id(
     } else {
         let content = resp.text().await?;
         let entity: Option<PatchSkillsSkillIdError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -863,12 +863,12 @@ pub async fn post_skills_skill_id_revisions(
     } else {
         let content = resp.text().await?;
         let entity: Option<PostSkillsSkillIdRevisionsError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -941,12 +941,12 @@ pub async fn post_workspaces_workspace_skill_uploads(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceSkillUploadsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1016,11 +1016,11 @@ pub async fn post_workspaces_workspace_skills(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceSkillsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }

@@ -133,12 +133,12 @@ pub async fn get_workspaces_workspace_traces(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceTracesError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -208,11 +208,11 @@ pub async fn get_workspaces_workspace_traces_trace_id(
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceTracesTraceIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }

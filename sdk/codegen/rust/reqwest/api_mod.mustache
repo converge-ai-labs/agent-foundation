@@ -31,7 +31,7 @@ pub enum Error<T> {
     SerdePathToError(serde_path_to_error::Error<serde_json::Error>),
     {{/useSerdePathToError}}
     Io(std::io::Error),
-    ResponseError(ResponseContent<T>),
+    ResponseError(Box<ResponseContent<T>>),
     {{#withAWSV4Signature}}
     AWSV4SignatureError(aws_sigv4::http_request::Error),
     {{/withAWSV4Signature}}

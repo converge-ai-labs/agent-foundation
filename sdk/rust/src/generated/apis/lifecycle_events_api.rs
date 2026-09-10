@@ -111,12 +111,12 @@ pub async fn get_run_attempts_run_attempt_id_events(
         let content = resp.text().await?;
         let entity: Option<GetRunAttemptsRunAttemptIdEventsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -187,12 +187,12 @@ pub async fn get_runs_run_id_events(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetRunsRunIdEventsError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -263,11 +263,11 @@ pub async fn get_workspaces_workspace_events(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceEventsError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }

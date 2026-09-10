@@ -129,12 +129,12 @@ pub async fn delete_users_me_auth_sessions_session_id(
         let content = resp.text().await?;
         let entity: Option<DeleteUsersMeAuthSessionsSessionIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -187,12 +187,12 @@ pub async fn get_auth_context(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetAuthContextError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -245,12 +245,12 @@ pub async fn get_auth_csrf(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetAuthCsrfError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -303,12 +303,12 @@ pub async fn get_users_me(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetUsersMeError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -373,12 +373,12 @@ pub async fn get_users_me_auth_sessions(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetUsersMeAuthSessionsError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -435,12 +435,12 @@ pub async fn post_auth_login(
     } else {
         let content = resp.text().await?;
         let entity: Option<PostAuthLoginError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -474,12 +474,12 @@ pub async fn post_auth_logout(
     } else {
         let content = resp.text().await?;
         let entity: Option<PostAuthLogoutError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -543,12 +543,12 @@ pub async fn post_invitations_invitation_id_accept(
         let content = resp.text().await?;
         let entity: Option<PostInvitationsInvitationIdAcceptError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -587,11 +587,11 @@ pub async fn post_users_me_password(
     } else {
         let content = resp.text().await?;
         let entity: Option<PostUsersMePasswordError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }

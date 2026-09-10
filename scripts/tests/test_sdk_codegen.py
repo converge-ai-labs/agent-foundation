@@ -65,18 +65,57 @@ def test_all_native_operations_have_bindings_in_each_language() -> None:
         assert operation in typescript
 
 
-def test_shared_inputs_trigger_language_gates_and_nonmutating_check() -> None:
+def test_ci_routes_contract_inputs_and_sdk_changes_without_fanout() -> None:
     import yaml
 
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci-sdks.yml").read_text())
-    filters = yaml.safe_load(workflow["jobs"]["changes"]["steps"][1]["with"]["filters"])
-    for language in ["go", "python", "rust", "typescript"]:
-        assert "sdk/openapi.json" in filters[language]
-        assert "sdk/codegen/**" in filters[language]
-        assert "packages/**" in filters[language]
-    runs = [step.get("run", "") for step in workflow["jobs"]["generated"]["steps"]]
+    jobs = workflow["jobs"]
+    filters = yaml.safe_load(jobs["changes"]["steps"][1]["with"]["filters"])
+    cases = {
+        "packages/a13n-service/a13n_service/search/router.py": {"generated"},
+        "packages/a13n-harness/a13n_harness/types.py": {"generated"},
+        "uv.lock": {"generated"},
+        "sdk/openapi.json": {"generated"},
+        "sdk/codegen/rust/model.mustache": {"generated"},
+        "scripts/tests/test_sdk_codegen.py": {"generated"},
+        "sdk/python/a13n/client.py": {"python"},
+        "sdk/python/a13n/generated/models/agent.py": {"generated", "python"},
+        "sdk/go/generated/client.gen.go": {"generated", "go"},
+        "sdk/rust/src/generated/apis/mod.rs": {"generated", "rust", "a13n_service_cli"},
+        "sdk/rust/tests/generated.rs": {"rust"},
+        "sdk/rust/a13n-service-cli/src/main.rs": {"a13n_service_cli"},
+        "sdk/typescript/src/schema.ts": {"generated", "typescript"},
+        "sdk/typescript/src/client.ts": {"typescript"},
+        "sdk/fixtures/wire.json": {"python", "go", "rust", "typescript"},
+        "Makefile": set(filters),
+        ".github/workflows/ci-sdks.yml": set(filters),
+        "Cargo.toml": set(),
+        "docs/a13n-service/sdks.md": set(),
+    }
+    # These filters deliberately use only positive path globs. In paths-filter,
+    # a separate negated pattern is an alternative, not a directory exclusion.
+    assert all(not pattern.startswith("!") for patterns in filters.values() for pattern in patterns)
+    events = workflow[True]  # PyYAML's YAML 1.1 loader reads `on` as True.
+    for path, expected in cases.items():
+        actual = {name for name, patterns in filters.items() if any(Path(path).full_match(p) for p in patterns)}
+        assert actual == expected, path
+        if expected:
+            for event in ["pull_request", "push"]:
+                assert any(Path(path).full_match(p) for p in events[event]["paths"]), (event, path)
+    for output in filters:
+        job = jobs[output.replace("_", "-")]
+        assert job["needs"] == "changes"
+        assert job["if"] == f"github.event_name == 'workflow_dispatch' || needs.changes.outputs.{output} == 'true'"
+        assert jobs["changes"]["outputs"][output] == "${{ steps.filter.outputs." + output + " }}"
+    runs = [step.get("run", "") for step in jobs["generated"]["steps"]]
     assert runs.count("make sdk-generated-check") == 1
     assert "make sdk-generate" not in runs
+    assert not any("setup-uv" in step.get("uses", "") for step in jobs["typescript"]["steps"])
+    makefile = (ROOT / "Makefile").read_text()
+    assert "sdk-check-all: sdk-generated-check " in makefile
+    for target in ["sdk-typescript-check", "sdk-typescript-check-all"]:
+        prerequisites = re.search(rf"^{target}: (.+)$", makefile, re.MULTILINE)
+        assert prerequisites and "sdk-typescript-contract-check" not in prerequisites[1]
 
 
 def test_default_response_and_property_named_default_are_not_annotations() -> None:

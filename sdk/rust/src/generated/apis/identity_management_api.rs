@@ -323,12 +323,12 @@ pub async fn delete_role_bindings_binding_id(
     } else {
         let content = resp.text().await?;
         let entity: Option<DeleteRoleBindingsBindingIdError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -374,12 +374,12 @@ pub async fn delete_service_accounts_account_id(
         let content = resp.text().await?;
         let entity: Option<DeleteServiceAccountsAccountIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -424,12 +424,12 @@ pub async fn delete_workspaces_workspace(
     } else {
         let content = resp.text().await?;
         let entity: Option<DeleteWorkspacesWorkspaceError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -490,12 +490,12 @@ pub async fn get_api_keys_key_id(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetApiKeysKeyIdError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -548,12 +548,12 @@ pub async fn get_organizations(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetOrganizationsError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -625,12 +625,12 @@ pub async fn get_organizations_organization_invitations(
         let content = resp.text().await?;
         let entity: Option<GetOrganizationsOrganizationInvitationsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -703,12 +703,12 @@ pub async fn get_organizations_organization_role_bindings(
         let content = resp.text().await?;
         let entity: Option<GetOrganizationsOrganizationRoleBindingsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -780,12 +780,12 @@ pub async fn get_organizations_organization_users(
         let content = resp.text().await?;
         let entity: Option<GetOrganizationsOrganizationUsersError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -857,12 +857,12 @@ pub async fn get_organizations_organization_workspaces(
         let content = resp.text().await?;
         let entity: Option<GetOrganizationsOrganizationWorkspacesError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -923,12 +923,12 @@ pub async fn get_role_bindings_binding_id(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetRoleBindingsBindingIdError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -989,12 +989,12 @@ pub async fn get_service_accounts_account_id(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetServiceAccountsAccountIdError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1066,12 +1066,12 @@ pub async fn get_service_accounts_account_id_api_keys(
         let content = resp.text().await?;
         let entity: Option<GetServiceAccountsAccountIdApiKeysError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1132,12 +1132,12 @@ pub async fn get_workspaces_workspace(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1209,12 +1209,12 @@ pub async fn get_workspaces_workspace_invitations(
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceInvitationsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1286,12 +1286,12 @@ pub async fn get_workspaces_workspace_personal_api_keys(
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspacePersonalApiKeysError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1363,12 +1363,12 @@ pub async fn get_workspaces_workspace_role_bindings(
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceRoleBindingsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1441,12 +1441,12 @@ pub async fn get_workspaces_workspace_service_accounts(
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceServiceAccountsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1515,12 +1515,12 @@ pub async fn patch_role_bindings_binding_id(
     } else {
         let content = resp.text().await?;
         let entity: Option<PatchRoleBindingsBindingIdError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1587,12 +1587,12 @@ pub async fn patch_service_accounts_account_id(
         let content = resp.text().await?;
         let entity: Option<PatchServiceAccountsAccountIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1661,12 +1661,12 @@ pub async fn patch_workspaces_workspace(
     } else {
         let content = resp.text().await?;
         let entity: Option<PatchWorkspacesWorkspaceError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1729,12 +1729,12 @@ pub async fn post_api_keys_key_id_revoke(
     } else {
         let content = resp.text().await?;
         let entity: Option<PostApiKeysKeyIdRevokeError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1801,12 +1801,12 @@ pub async fn post_invitations_invitation_id_resend(
         let content = resp.text().await?;
         let entity: Option<PostInvitationsInvitationIdResendError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1873,12 +1873,12 @@ pub async fn post_invitations_invitation_id_revoke(
         let content = resp.text().await?;
         let entity: Option<PostInvitationsInvitationIdRevokeError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1948,12 +1948,12 @@ pub async fn post_organizations_organization_invitations(
         let content = resp.text().await?;
         let entity: Option<PostOrganizationsOrganizationInvitationsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2020,12 +2020,12 @@ pub async fn post_organizations_organization_workspaces(
         let content = resp.text().await?;
         let entity: Option<PostOrganizationsOrganizationWorkspacesError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2092,12 +2092,12 @@ pub async fn post_service_accounts_account_id_api_keys(
         let content = resp.text().await?;
         let entity: Option<PostServiceAccountsAccountIdApiKeysError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2164,12 +2164,12 @@ pub async fn post_workspaces_workspace_invitations(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceInvitationsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2236,12 +2236,12 @@ pub async fn post_workspaces_workspace_personal_api_keys(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspacePersonalApiKeysError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2308,12 +2308,12 @@ pub async fn post_workspaces_workspace_role_bindings(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceRoleBindingsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -2380,11 +2380,11 @@ pub async fn post_workspaces_workspace_service_accounts(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceServiceAccountsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }

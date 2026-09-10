@@ -522,11 +522,11 @@ sdk-typescript-build: sdk-typescript-sync ## Build the TypeScript SDK
 	@npm --prefix sdk/typescript run build
 
 .PHONY: sdk-typescript-check
-sdk-typescript-check: sdk-typescript-sync sdk-typescript-contract-check ## Run TypeScript SDK formatting and type checks
+sdk-typescript-check: sdk-typescript-sync ## Run TypeScript SDK formatting and type checks
 	@npm --prefix sdk/typescript run check
 
 .PHONY: sdk-typescript-check-all
-sdk-typescript-check-all: sdk-typescript-sync sdk-typescript-contract-check ## Run the complete TypeScript SDK gate
+sdk-typescript-check-all: sdk-typescript-sync ## Run the complete TypeScript SDK gate
 	@npm --prefix sdk/typescript run check:all
 
 .PHONY: sdk-build

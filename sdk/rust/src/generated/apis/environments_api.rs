@@ -286,12 +286,12 @@ pub async fn get_environment_commands_command_id(
         let content = resp.text().await?;
         let entity: Option<GetEnvironmentCommandsCommandIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -347,12 +347,12 @@ pub async fn get_environment_provider_types(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetEnvironmentProviderTypesError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -417,12 +417,12 @@ pub async fn get_environment_provider_types_provider_type(
         let content = resp.text().await?;
         let entity: Option<GetEnvironmentProviderTypesProviderTypeError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -484,12 +484,12 @@ pub async fn get_environment_providers_resource_id(
         let content = resp.text().await?;
         let entity: Option<GetEnvironmentProvidersResourceIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -554,12 +554,12 @@ pub async fn get_environment_template_revisions_revision_id(
         let content = resp.text().await?;
         let entity: Option<GetEnvironmentTemplateRevisionsRevisionIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -621,12 +621,12 @@ pub async fn get_environment_templates_resource_id(
         let content = resp.text().await?;
         let entity: Option<GetEnvironmentTemplatesResourceIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -701,12 +701,12 @@ pub async fn get_environment_templates_template_id_revisions(
         let content = resp.text().await?;
         let entity: Option<GetEnvironmentTemplatesTemplateIdRevisionsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -767,12 +767,12 @@ pub async fn get_environments_resource_id(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetEnvironmentsResourceIdError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -847,12 +847,12 @@ pub async fn get_organizations_organization_environment_providers(
         let content = resp.text().await?;
         let entity: Option<GetOrganizationsOrganizationEnvironmentProvidersError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -927,12 +927,12 @@ pub async fn get_organizations_organization_environment_templates(
         let content = resp.text().await?;
         let entity: Option<GetOrganizationsOrganizationEnvironmentTemplatesError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1007,12 +1007,12 @@ pub async fn get_workspaces_workspace_environment_providers(
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceEnvironmentProvidersError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1087,12 +1087,12 @@ pub async fn get_workspaces_workspace_environment_templates(
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceEnvironmentTemplatesError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1165,12 +1165,12 @@ pub async fn get_workspaces_workspace_environments(
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceEnvironmentsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1241,12 +1241,12 @@ pub async fn patch_environment_providers_provider_id(
         let content = resp.text().await?;
         let entity: Option<PatchEnvironmentProvidersProviderIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1317,12 +1317,12 @@ pub async fn patch_environment_templates_template_id(
         let content = resp.text().await?;
         let entity: Option<PatchEnvironmentTemplatesTemplateIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1392,12 +1392,12 @@ pub async fn post_environment_templates_template_id_revisions(
         let content = resp.text().await?;
         let entity: Option<PostEnvironmentTemplatesTemplateIdRevisionsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1464,12 +1464,12 @@ pub async fn post_environments_environment_id_delete(
         let content = resp.text().await?;
         let entity: Option<PostEnvironmentsEnvironmentIdDeleteError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1536,12 +1536,12 @@ pub async fn post_environments_environment_id_stop(
         let content = resp.text().await?;
         let entity: Option<PostEnvironmentsEnvironmentIdStopError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1611,12 +1611,12 @@ pub async fn post_organizations_organization_environment_providers(
         let content = resp.text().await?;
         let entity: Option<PostOrganizationsOrganizationEnvironmentProvidersError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1689,12 +1689,12 @@ pub async fn post_organizations_organization_environment_templates(
         let content = resp.text().await?;
         let entity: Option<PostOrganizationsOrganizationEnvironmentTemplatesError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1764,12 +1764,12 @@ pub async fn post_workspaces_workspace_environment_providers(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceEnvironmentProvidersError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1842,12 +1842,12 @@ pub async fn post_workspaces_workspace_environment_templates(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceEnvironmentTemplatesError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1917,12 +1917,12 @@ pub async fn post_workspaces_workspace_environments(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceEnvironmentsError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1993,11 +1993,11 @@ pub async fn put_environment_providers_provider_id_credential(
         let content = resp.text().await?;
         let entity: Option<PutEnvironmentProvidersProviderIdCredentialError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }

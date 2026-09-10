@@ -108,7 +108,13 @@ async fn request_headers(socket: &mut tokio::net::TcpStream) -> String {
 
 #[tokio::test]
 async fn generated_binary_upload_sets_the_declared_content_type() {
-    use a13n::generated::apis::asset_management_api::post_workspaces_workspace_assets;
+    use a13n::generated::apis::{
+        Error,
+        asset_management_api::{
+            PostWorkspacesWorkspaceAssetsError, post_workspaces_workspace_assets,
+        },
+    };
+    assert!(std::mem::size_of::<Error<PostWorkspacesWorkspaceAssetsError>>() <= 128);
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/test-upload.bin");
     std::fs::write(&path, b"binary body").unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -119,7 +125,7 @@ async fn generated_binary_upload_sets_the_declared_content_type() {
         assert!(headers.contains("content-type: application/octet-stream"));
         assert!(headers.contains("idempotency-key: upload-test"));
         let body = json!({"error":{"code":"test_error","message":"test", "details":{},"request_id":"req_upload"}}).to_string();
-        socket.write_all(format!("HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).as_bytes()).await.unwrap();
+        socket.write_all(format!("HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nX-Request-ID: req_upload\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).as_bytes()).await.unwrap();
     });
     let client = Client::new(&base, Secret::new("test-token")).unwrap();
     let result = client
@@ -136,11 +142,15 @@ async fn generated_binary_upload_sets_the_declared_content_type() {
         })
         .await;
     server.await.unwrap();
+    let Err(a13n::CallError::Operation(Error::ResponseError(response))) = result else {
+        panic!("expected a typed HTTP error");
+    };
+    assert_eq!(response.status, reqwest::StatusCode::BAD_REQUEST);
+    assert_eq!(response.headers["x-request-id"], "req_upload");
+    assert!(response.content.contains("test_error"));
     assert!(matches!(
-        result,
-        Err(a13n::CallError::Operation(
-            a13n::generated::apis::Error::ResponseError(_)
-        ))
+        response.entity,
+        Some(PostWorkspacesWorkspaceAssetsError::Status400(_))
     ));
     std::fs::remove_file(path).unwrap();
 }

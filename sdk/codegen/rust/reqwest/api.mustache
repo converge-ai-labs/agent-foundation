@@ -647,7 +647,7 @@ pub {{#supportAsync}}async {{/supportAsync}}fn {{{operationId}}}(configuration: 
     } else {
         let content = resp.text(){{#supportAsync}}.await{{/supportAsync}}?;
         let entity: Option<{{{operationIdCamelCase}}}Error> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent { status, headers, content, entity }))
+        Err(Error::ResponseError(Box::new(ResponseContent { status, headers, content, entity })))
     }
 }
 

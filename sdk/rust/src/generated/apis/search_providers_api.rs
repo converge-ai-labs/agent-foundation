@@ -219,12 +219,12 @@ pub async fn get_organizations_organization_search_providers(
         let content = resp.text().await?;
         let entity: Option<GetOrganizationsOrganizationSearchProvidersError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -292,12 +292,12 @@ pub async fn get_organizations_organization_search_providers_provider_id(
         let content = resp.text().await?;
         let entity: Option<GetOrganizationsOrganizationSearchProvidersProviderIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -375,12 +375,12 @@ pub async fn get_organizations_organization_search_providers_provider_id_referen
         let content = resp.text().await?;
         let entity: Option<GetOrganizationsOrganizationSearchProvidersProviderIdReferencesError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -434,12 +434,12 @@ pub async fn get_search_provider_types(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetSearchProviderTypesError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -504,12 +504,12 @@ pub async fn get_search_provider_types_provider_type(
         let content = resp.text().await?;
         let entity: Option<GetSearchProviderTypesProviderTypeError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -594,12 +594,12 @@ pub async fn get_workspaces_workspace_search_providers(
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceSearchProvidersError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -667,12 +667,12 @@ pub async fn get_workspaces_workspace_search_providers_provider_id(
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceSearchProvidersProviderIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -750,12 +750,12 @@ pub async fn get_workspaces_workspace_search_providers_provider_id_references(
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -831,12 +831,12 @@ pub async fn patch_organizations_organization_search_providers_provider_id(
         let content = resp.text().await?;
         let entity: Option<PatchOrganizationsOrganizationSearchProvidersProviderIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -912,12 +912,12 @@ pub async fn patch_workspaces_workspace_search_providers_provider_id(
         let content = resp.text().await?;
         let entity: Option<PatchWorkspacesWorkspaceSearchProvidersProviderIdError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -987,12 +987,12 @@ pub async fn post_organizations_organization_search_providers(
         let content = resp.text().await?;
         let entity: Option<PostOrganizationsOrganizationSearchProvidersError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1065,12 +1065,12 @@ pub async fn post_organizations_organization_search_providers_provider_id_test(
         let content = resp.text().await?;
         let entity: Option<PostOrganizationsOrganizationSearchProvidersProviderIdTestError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1137,12 +1137,12 @@ pub async fn post_workspaces_workspace_search_providers(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceSearchProvidersError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
 
@@ -1215,11 +1215,11 @@ pub async fn post_workspaces_workspace_search_providers_provider_id_test(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceSearchProvidersProviderIdTestError> =
             serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(ResponseContent {
+        Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
             content,
             entity,
-        }))
+        })))
     }
 }
