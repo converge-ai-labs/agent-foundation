@@ -4,7 +4,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 
-import { ArrowDown, GitFork, RefreshCw, Square } from "lucide-react";
+import {
+  ArrowDownIcon,
+  GitForkIcon,
+  ArrowsClockwiseIcon,
+  SquareIcon,
+} from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -209,7 +214,7 @@ function RunContent({
                 onClick={() => retry.mutate()}
                 type="button"
               >
-                <RefreshCw size={13} />
+                <ArrowsClockwiseIcon size={13} />
                 {t("Retry run")}
               </Button>
             )}
@@ -217,7 +222,7 @@ function RunContent({
             <ModalFrame
               trigger={
                 <Button size="sm" variant="outline" type="button">
-                  {<GitFork size={13} />}
+                  {<GitForkIcon size={13} />}
                   {t("Fork")}
                 </Button>
               }
@@ -365,7 +370,7 @@ function RunContent({
           }}
           type="button"
         >
-          {<ArrowDown size={14} />}
+          {<ArrowDownIcon size={14} />}
           {t("Jump to latest")}
         </Button>
       )}
@@ -402,7 +407,7 @@ function RunContent({
               onClick={() => interrupt.mutate()}
               type="button"
             >
-              <Square size={13} />
+              <SquareIcon size={13} />
               {t("Stop")}
             </Button>
           )}

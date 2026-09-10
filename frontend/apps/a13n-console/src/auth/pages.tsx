@@ -12,7 +12,7 @@ import {
   useParams,
 } from "react-router";
 
-import { ArrowRight, CheckCircle2 } from "lucide-react";
+import { ArrowRightIcon, CheckCircleIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { data } from "../shared/api";
 import { ErrorNotice, Loading } from "../shared/feedback";
@@ -126,7 +126,7 @@ export function AuthPage() {
         <p>{descriptions[mode]}</p>
         {mutation.isSuccess && ["forgot", "reset", "email"].includes(mode) ? (
           <div className={styles.success}>
-            <CheckCircle2 size={30} />
+            <CheckCircleIcon size={30} />
             <h2>
               {t(mode === "forgot" ? "Check your inbox" : "You're all set")}
             </h2>
@@ -233,7 +233,7 @@ export function AuthPage() {
               }
               loading={mutation.isPending}
             >
-              <ArrowRight size={16} />
+              <ArrowRightIcon size={16} />
               {t(
                 mode === "login"
                   ? "Sign in"

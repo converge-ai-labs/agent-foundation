@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, X } from "lucide-react";
+import { PlusIcon, XIcon } from "@phosphor-icons/react";
 import {
   Badge,
   Button,
@@ -33,9 +33,7 @@ export function Controls({ t }: { t: Translate }) {
   return (
     <>
       <div>
-        <h1 className="text-2xl font-semibold">
-          {t("Components", "基础组件")}
-        </h1>
+        <h1 className="text-2xl font-medium">{t("Components", "基础组件")}</h1>
         <p className="mt-2 text-muted-foreground">
           {t(
             "Shared controls, focus behavior, and feedback.",
@@ -44,9 +42,7 @@ export function Controls({ t }: { t: Translate }) {
         </p>
       </div>
       <section className="flex flex-col gap-4">
-        <h2 className="font-semibold">
-          {t("Buttons & feedback", "按钮与反馈")}
-        </h2>
+        <h2 className="font-medium">{t("Buttons & feedback", "按钮与反馈")}</h2>
         <div className="flex flex-wrap gap-2">
           {(
             ["default", "outline", "secondary", "ghost", "destructive"] as const
@@ -66,7 +62,7 @@ export function Controls({ t }: { t: Translate }) {
                 />
               }
             >
-              <Plus />
+              <PlusIcon />
             </TooltipTrigger>
             <TooltipPopup>{t("Add an item", "添加项目")}</TooltipPopup>
           </Tooltip>
@@ -113,7 +109,7 @@ export function Controls({ t }: { t: Translate }) {
         </Label>
       </section>
       <section className="flex flex-col gap-4">
-        <h2 className="font-semibold">{t("Configuration", "配置")}</h2>
+        <h2 className="font-medium">{t("Configuration", "配置")}</h2>
         <div className="rounded-lg bg-muted/50 p-4">
           <FormField
             className="flex flex-row flex-wrap items-center gap-3"
@@ -150,7 +146,7 @@ export function Controls({ t }: { t: Translate }) {
           className="rounded-lg data-open:bg-muted/50 data-open:p-3"
         >
           <CollapsibleTrigger render={<Button variant="secondary" size="sm" />}>
-            {adding ? <X /> : <Plus />}
+            {adding ? <XIcon /> : <PlusIcon />}
             {adding
               ? t("Close selection", "关闭选择")
               : t("Add channel", "添加渠道")}
@@ -164,9 +160,7 @@ export function Controls({ t }: { t: Translate }) {
         </Collapsible>
       </section>
       <section className="flex flex-col gap-4">
-        <h2 className="font-semibold">
-          {t("Dialogs & calendar", "弹窗与日历")}
-        </h2>
+        <h2 className="font-medium">{t("Dialogs & calendar", "弹窗与日历")}</h2>
         <ModalFrame
           trigger={
             <Button variant="outline">{t("Open dialog", "打开弹窗")}</Button>

@@ -24,7 +24,7 @@ Product layouts, navigation, conversation rendering, protocol state, data fetchi
 
 The application frame, content canvas, and elevated surfaces have distinct roles. Related controls form recognizable groups through spacing or a quiet surface. Section headings and explanations sit outside their groups. Section boundaries primarily use whitespace. Fine dividers separate adjacent settings rows within a shared surface, tabular rows, and menu groups when the boundary helps scanning. They use a low-contrast semantic border color, align with the content inset, and leave balanced space on both sides. Dividers do not frame every field, repeat an enclosing border, or replace the space between sections. Extra cards, nested borders, and resting shadows do not accumulate around every section or property.
 
-Page headings stay proportional to interface text. Primary page actions align with the heading. Search and filters form a separate row above the content, with room between controls. Navigation uses compact Sidebar rows, small gaps within groups, and modest separation between groups. Navigation and view selection use neutral surfaces; accent color emphasizes primary actions and active controls. Identity icons may use a restrained color accent.
+Page headings stay proportional to interface text. Primary page actions align with the heading. Search and filters form a separate row above the content, with room between controls. Navigation uses compact Sidebar rows, small gaps within groups, and modest separation between groups. Navigation and view selection use neutral surfaces; accent color emphasizes primary actions and active controls. Identity icons may use a restrained color accent. Interface icons use Phosphor with regular weight for ordinary actions and duotone for active primary navigation.
 
 Settings align short controls beside explanatory copy; long inputs and complex configuration use the available content width. The gap between sections exceeds the spacing within a field or row. Narrow containers stack labels above controls and keep names, explanations, and actions readable without horizontal overflow. Tables use compact rows and align action-column headings with their controls.
 
@@ -63,7 +63,7 @@ SettingsSection supports grouped and plain presentations. Grouped settings use t
 
 ## Identity Images and Save Feedback
 
-Identity image controls compose one preview with adjacent upload/removal actions and concise format guidance. Keep the preview large enough to inspect, use a neutral fallback, and preserve the same image across list and detail surfaces. Supporting labels and file guidance belong to the image control rather than separate competing rows.
+Identity image controls compose one preview with adjacent upload/removal actions and concise format guidance. Keep the preview large enough to inspect, use the product-defined fallback (neutral by default), and preserve the same image across list and detail surfaces. Supporting labels and file guidance belong to the image control rather than separate competing rows.
 
 When automatic and manual saving coexist, identify the automatically saved setting beside that setting using a compact, legible status treatment. Distinguish its idle, saving, saved, and failed states; do not rely on low-contrast descriptive text or color alone. Keep labels short enough for their actual layout.
 

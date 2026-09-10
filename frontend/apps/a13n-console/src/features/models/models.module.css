@@ -6,7 +6,7 @@
 }
 .providerGroup h2 {
   font-size: 13px;
-  font-weight: 550;
+  font-weight: 500;
   margin: 0;
 }
 .providerGroup > header > span {
@@ -47,7 +47,7 @@
 }
 .modelCard h3 {
   font-size: 14px;
-  font-weight: 550;
+  font-weight: 500;
   margin: 0;
   flex: 1;
   overflow-wrap: anywhere;

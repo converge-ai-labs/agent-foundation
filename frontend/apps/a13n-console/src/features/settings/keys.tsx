@@ -5,7 +5,7 @@ import { useState } from "react";
 import { CopyButton, CopyableId } from "../../shared/copy";
 import { PageActions } from "../../shared/page-actions";
 
-import { KeyRound, Plus } from "lucide-react";
+import { KeyIcon, PlusIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -83,7 +83,7 @@ export function ApiKeys({
                 label: t("Name"),
                 render: (item) => (
                   <>
-                    <KeyRound size={13} /> {item.name}
+                    <KeyIcon size={13} /> {item.name}
                     <small>
                       <CopyableId value={item.id} />
                     </small>
@@ -208,7 +208,7 @@ function CreateKey({ accountId }: { accountId?: string }) {
       }}
       trigger={
         <Button variant="default" type="button">
-          {<Plus size={14} />}
+          {<PlusIcon size={14} />}
           {t("Create key")}
         </Button>
       }

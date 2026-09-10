@@ -1,39 +1,39 @@
 import {
-  type LucideIcon,
-  Activity,
-  Bot,
-  Boxes,
-  Cable,
-  File,
-  MessagesSquare,
-  Monitor,
-  Network,
-  Plug,
-  Sparkles,
-  Settings2,
-} from "lucide-react";
+  type Icon,
+  PulseIcon,
+  HeartIcon,
+  CubeIcon,
+  PlugsConnectedIcon,
+  FileIcon,
+  ChatsIcon,
+  MonitorIcon,
+  TreeStructureIcon,
+  PlugIcon,
+  PuzzlePieceIcon,
+  SlidersIcon,
+} from "@phosphor-icons/react";
 export const navigationGroups: {
   label: string;
-  entries: [string, string, LucideIcon, [string, string][]?][];
+  entries: [string, string, Icon, [string, string][]?][];
 }[] = [
   {
     label: "",
     entries: [
-      ["agents", "Agents", Bot],
-      ["sessions", "Sessions", MessagesSquare],
+      ["agents", "Agents", HeartIcon],
+      ["sessions", "Sessions", ChatsIcon],
     ],
   },
   {
     label: "Resources",
     entries: [
-      ["models", "Models", Boxes],
-      ["/providers", "Providers", Settings2],
-      ["skills", "Skills", Sparkles],
-      ["assets", "Assets", File],
+      ["models", "Models", CubeIcon],
+      ["/providers", "Providers", SlidersIcon],
+      ["skills", "Skills", PuzzlePieceIcon],
+      ["assets", "Assets", FileIcon],
       [
         "environments",
         "Environments",
-        Monitor,
+        MonitorIcon,
         [
           ["environments", "Templates"],
           ["environments/instances", "Instances"],
@@ -44,13 +44,13 @@ export const navigationGroups: {
   {
     label: "Integrations",
     entries: [
-      ["application-accounts", "Application accounts", Cable],
-      ["connectors", "Connectors", Plug],
-      ["mcp", "MCP connections", Network],
+      ["application-accounts", "Application accounts", PlugsConnectedIcon],
+      ["connectors", "Connectors", PlugIcon],
+      ["mcp", "MCP connections", TreeStructureIcon],
     ],
   },
   {
     label: "Observe",
-    entries: [["traces", "Traces", Activity]],
+    entries: [["traces", "Traces", PulseIcon]],
   },
 ];

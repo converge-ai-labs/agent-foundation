@@ -28,7 +28,7 @@ export function CollectionDemo({ t }: { t: Translate }) {
   return (
     <>
       <div>
-        <h1 className="text-2xl font-semibold">{t("Resources", "资源")}</h1>
+        <h1 className="text-2xl font-medium">{t("Resources", "资源")}</h1>
         <p className="mt-2 text-muted-foreground">
           {t(
             "Browse the resources in this workspace.",

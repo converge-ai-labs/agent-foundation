@@ -23,12 +23,12 @@ vi.mock("./form", () => ({
     submit,
     pending,
   }: {
-    imagePicker: ReactNode;
+    imagePicker: (name: string) => ReactNode;
     submit: (config: object, name: string, description: string) => void;
     pending: boolean;
   }) => (
     <div>
-      {imagePicker}
+      {imagePicker("New agent")}
       <button
         disabled={pending}
         onClick={() =>

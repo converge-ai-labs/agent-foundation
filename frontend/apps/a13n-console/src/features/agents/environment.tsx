@@ -1,5 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, Check, LoaderCircle } from "lucide-react";
+import {
+  WarningCircleIcon,
+  CheckIcon,
+  CircleNotchIcon,
+} from "@phosphor-icons/react";
 import { ChoiceField } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -77,11 +81,11 @@ export function AgentEnvironment({
           {t("Used for new sessions.")}
           <span className={styles.autoSaveNotice} role="status">
             {save.isPending ? (
-              <LoaderCircle size={13} className="animate-spin" />
+              <CircleNotchIcon size={13} className="animate-spin" />
             ) : save.isError ? (
-              <AlertCircle size={13} />
+              <WarningCircleIcon size={13} />
             ) : (
-              <Check size={13} />
+              <CheckIcon size={13} />
             )}
             {t(
               save.isPending

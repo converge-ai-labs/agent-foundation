@@ -16,7 +16,7 @@ import { SearchPicker } from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { Plus } from "lucide-react";
+import { PlusIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { allPages, data, type Schema } from "../../shared/api";
@@ -57,7 +57,7 @@ export function ModelEditor({
           variant={modelId ? "ghost" : candidate ? "outline" : "default"}
           type="button"
         >
-          {!modelId && <Plus size={14} />}
+          {!modelId && <PlusIcon size={14} />}
           {t(modelId ? "Edit" : "Add model")}
         </Button>
       }

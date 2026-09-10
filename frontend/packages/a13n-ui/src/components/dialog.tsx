@@ -3,7 +3,7 @@
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
-import { XIcon } from "lucide-react";
+import { XIcon } from "@phosphor-icons/react";
 import type React from "react";
 import { cn } from "../lib/utils";
 import { Button } from "./button";
@@ -163,10 +163,7 @@ export function DialogTitle({
 }: DialogPrimitive.Title.Props): React.ReactElement {
   return (
     <DialogPrimitive.Title
-      className={cn(
-        "font-heading font-semibold text-xl leading-none",
-        className,
-      )}
+      className={cn("font-heading font-medium text-xl leading-none", className)}
       data-slot="dialog-title"
       {...props}
     />

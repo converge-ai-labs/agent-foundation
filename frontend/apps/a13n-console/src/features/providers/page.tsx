@@ -1,5 +1,10 @@
 import { ChoiceField, Tabs, TabsList, TabsTab, TabsPanel } from "a13n-ui";
-import { Boxes, Search, Monitor, Plug } from "lucide-react";
+import {
+  CubeIcon,
+  MagnifyingGlassIcon,
+  MonitorIcon,
+  PlugIcon,
+} from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router";
 import { useAccess } from "../../layout/workspace";
@@ -13,28 +18,28 @@ const categories = [
   {
     value: "models",
     label: "Model",
-    icon: Boxes,
+    icon: CubeIcon,
     component: Providers,
     description: "Connect model services and manage their credentials.",
   },
   {
     value: "search",
     label: "Search",
-    icon: Search,
+    icon: MagnifyingGlassIcon,
     component: SearchProviders,
     description: "Connect search services for your agents' web tools.",
   },
   {
     value: "environments",
     label: "Environment",
-    icon: Monitor,
+    icon: MonitorIcon,
     component: EnvironmentProviders,
     description: "Configure where your agents' environments run.",
   },
   {
     value: "connectors",
     label: "Connector",
-    icon: Plug,
+    icon: PlugIcon,
     component: ConnectorProviders,
     description: "Connect integration services for external accounts.",
   },

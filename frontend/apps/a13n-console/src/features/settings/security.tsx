@@ -10,7 +10,7 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useId, useRef, useState } from "react";
 
-import { Info } from "lucide-react";
+import { InfoIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import { useAuth, useClient } from "../../auth/context";
@@ -98,7 +98,7 @@ export function Security() {
         </SettingsRow>
         {config.data?.email_delivery === false && (
           <div className={styles.note}>
-            <Info size={14} aria-hidden="true" />
+            <InfoIcon size={14} aria-hidden="true" />
             <p>
               {t(
                 "Email delivery is not configured. Contact your organization administrator.",

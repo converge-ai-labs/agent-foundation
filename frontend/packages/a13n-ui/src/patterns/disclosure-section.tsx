@@ -1,5 +1,5 @@
 import type { ComponentProps, ReactNode } from "react";
-import { ChevronRight } from "lucide-react";
+import { CaretRightIcon } from "@phosphor-icons/react";
 import { Button } from "../components/button";
 import {
   Collapsible,
@@ -23,7 +23,7 @@ export function DisclosureSection({
           className="group/disclosure-trigger h-auto min-h-9 w-full justify-start gap-2 px-3 py-2 text-left whitespace-normal"
           render={<Button type="button" variant="ghost" />}
         >
-          <ChevronRight
+          <CaretRightIcon
             aria-hidden="true"
             className="size-3.5 text-muted-foreground transition-transform group-aria-expanded/disclosure-trigger:rotate-90"
           />

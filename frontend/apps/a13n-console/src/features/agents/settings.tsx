@@ -8,7 +8,12 @@ import {
   MenuPopup,
   MenuTrigger,
 } from "a13n-ui";
-import { Archive, Copy, Ellipsis, Power } from "lucide-react";
+import {
+  ArchiveIcon,
+  CopyIcon,
+  DotsThreeIcon,
+  PowerIcon,
+} from "@phosphor-icons/react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
@@ -130,8 +135,10 @@ export function AgentDetails({
                 }
               >
                 <AgentAvatar
+                  name={name}
+                  id={agent.id}
                   url={agent.image_url}
-                  className="size-16 rounded-xl [&_svg]:size-7"
+                  className="size-16 rounded-xl text-2xl"
                 />
               </ImagePicker>
             </div>
@@ -215,7 +222,7 @@ export function AgentActions({
           />
         }
       >
-        <Ellipsis size={16} />
+        <DotsThreeIcon size={16} />
       </MenuTrigger>
       <MenuPopup align="end">
         {can("agent.lifecycle") && (
@@ -225,7 +232,7 @@ export function AgentActions({
               description={t("This changes whether new runs can start.")}
               triggerElement={
                 <MenuItem closeOnClick={false}>
-                  <Power size={14} />
+                  <PowerIcon size={14} />
                   {t(agent.enabled ? "Disable" : "Enable")}
                 </MenuItem>
               }
@@ -241,7 +248,7 @@ export function AgentActions({
                   closeOnClick={false}
                   variant={agent.archived_at ? "default" : "destructive"}
                 >
-                  <Archive size={14} />
+                  <ArchiveIcon size={14} />
                   {t(agent.archived_at ? "Unarchive" : "Archive")}
                 </MenuItem>
               }
@@ -256,7 +263,7 @@ export function AgentActions({
             description={t("Create an independent agent from this version.")}
             triggerElement={
               <MenuItem closeOnClick={false}>
-                <Copy size={13} />
+                <CopyIcon size={13} />
                 {t("Duplicate")}
               </MenuItem>
             }

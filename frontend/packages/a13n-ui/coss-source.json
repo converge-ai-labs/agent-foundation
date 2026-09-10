@@ -39,6 +39,7 @@
     "ui/tooltip.tsx"
   ],
   "localChanges": [
+    "Fieldset legends and dialog, sheet, popover, and empty-state titles use medium font weight.",
     "Repository-relative imports and repository formatting.",
     "Sidebar accepts translated title and description for its mobile sheet.",
     "Button exposes busy state and hides the decorative loading spinner from its accessible name.",
@@ -47,7 +48,8 @@
     "Textareas use bounded row-based sizing and internal scrolling. ScrollBar and native controls share scrollbar size, color, and hover tokens.",
     "Sidebar selection preserves the default font weight and size.",
     "Sidebar stays expanded on desktop; collapse controls, state, persistence, shortcuts, and icon-only styling are removed. Navigation spacing is compact while mobile retains its drawer.",
-    "Submenu highlight backgrounds align with the parent menu at the trailing edge."
+    "Submenu highlight backgrounds align with the parent menu at the trailing edge.",
+    "Phosphor icons replace Lucide icons, including disclosure indicators and loading spinners."
   ],
   "themeSource": "apps/ui/registry/registry-styles.ts"
 }

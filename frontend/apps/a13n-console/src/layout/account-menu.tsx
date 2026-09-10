@@ -9,7 +9,11 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "a13n-ui";
-import { ChevronsUpDown, LogOut, Settings } from "lucide-react";
+import {
+  CaretUpDownIcon,
+  SignOutIcon,
+  GearSixIcon,
+} from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import { useAuth } from "../auth/context";
@@ -41,7 +45,7 @@ export function AccountMenu({ onNavigate }: { onNavigate: () => void }) {
         >
           <UserAvatar name={user.name} url={user.image_url} />
           <span className="min-w-0 flex-1 truncate text-left">{user.name}</span>
-          <ChevronsUpDown aria-hidden="true" />
+          <CaretUpDownIcon aria-hidden="true" />
         </MenuTrigger>
         <MenuPopup align="start" className="w-(--anchor-width)">
           <MenuGroup>
@@ -52,7 +56,7 @@ export function AccountMenu({ onNavigate }: { onNavigate: () => void }) {
                 navigate("/settings/profile?section=profile");
               }}
             >
-              <Settings aria-hidden="true" />
+              <GearSixIcon aria-hidden="true" />
               {t("Settings")}
             </MenuItem>
             <MenuSeparator />
@@ -60,7 +64,7 @@ export function AccountMenu({ onNavigate }: { onNavigate: () => void }) {
               disabled={logout.isPending}
               onClick={() => logout.mutate()}
             >
-              <LogOut aria-hidden="true" />
+              <SignOutIcon aria-hidden="true" />
               {t("Sign out")}
             </MenuItem>
           </MenuGroup>

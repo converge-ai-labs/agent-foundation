@@ -7,7 +7,12 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 import { EditorSection } from "./section";
 
-import { ArrowLeft, Check, Circle, Layers } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  CheckIcon,
+  CircleIcon,
+  StackIcon,
+} from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { ErrorNotice } from "../../shared/feedback";
 import { TextAreaField } from "../../shared/form";
@@ -34,6 +39,7 @@ export function AgentForm({
   primaryAction,
   identityAction,
   imageUrl,
+  agentId,
   imagePicker,
   environment,
   metadata,
@@ -58,7 +64,8 @@ export function AgentForm({
   primaryAction?: ReactNode;
   identityAction?: ReactNode;
   imageUrl?: string | null;
-  imagePicker?: ReactNode;
+  agentId?: string;
+  imagePicker?: (name: string) => ReactNode;
   environment?: ReactNode;
   metadata?: ReactNode;
   back: string;
@@ -134,13 +141,18 @@ export function AgentForm({
   return (
     <div className={styles.editorPage}>
       <Link className={styles.back} to={back}>
-        <ArrowLeft size={14} />
+        <ArrowLeftIcon size={14} />
         {t("Agents")}
       </Link>
       <form onSubmit={save} className={styles.editor}>
         <header className={styles.identity}>
           <div className={styles.identityHeading}>
-            <AgentAvatar url={imageUrl} className={styles.agentIcon} />
+            <AgentAvatar
+              name={name}
+              id={agentId}
+              url={imageUrl}
+              className={`${styles.agentIcon} text-base`}
+            />
             <h1>{creating ? t("Create agent") : initialName}</h1>
             {identityAction && (
               <fieldset
@@ -207,7 +219,7 @@ export function AgentForm({
             >
               {creating && (
                 <section className={styles.section}>
-                  {imagePicker}
+                  {imagePicker?.(name)}
                   <FormField className="min-w-0 w-full" label={t("Agent name")}>
                     <Input
                       required={true}
@@ -246,7 +258,7 @@ export function AgentForm({
                         choices.data?.models.map((item) => ({
                           value: item.key,
                           label: item.name,
-                          icon: <Layers size={14} />,
+                          icon: <StackIcon size={14} />,
                           description: [
                             ...new Set([item.key, item.upstream_model]),
                           ]
@@ -348,7 +360,7 @@ export function AgentForm({
         <aside className={styles.saveBar} aria-label={t("Agent actions")}>
           <div className={styles.savePanel}>
             <span className={styles.saveStatus} role="status">
-              {dirty ? <Circle size={12} /> : <Check size={14} />}{" "}
+              {dirty ? <CircleIcon size={12} /> : <CheckIcon size={14} />}{" "}
               {t(dirty ? "Unsaved changes" : "All changes saved")}
             </span>
             {!readonly && dirty && (

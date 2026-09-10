@@ -1,7 +1,7 @@
 "use client";
 
 import { Combobox as ComboboxPrimitive } from "@base-ui/react/combobox";
-import { ChevronsUpDownIcon, XIcon } from "lucide-react";
+import { CaretUpDownIcon, XIcon } from "@phosphor-icons/react";
 import * as React from "react";
 import { cn } from "../lib/utils";
 import { Input } from "./input";
@@ -120,7 +120,7 @@ export function ComboboxInput({
           {...triggerProps}
         >
           <ComboboxPrimitive.Icon data-slot="combobox-icon">
-            <ChevronsUpDownIcon />
+            <CaretUpDownIcon />
           </ComboboxPrimitive.Icon>
         </ComboboxTrigger>
       )}

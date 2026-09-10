@@ -7,7 +7,7 @@ import { useState } from "react";
 import { PageActions } from "../../shared/page-actions";
 
 import { ApiError } from "@converge.ai/a13n";
-import { Plus } from "lucide-react";
+import { PlusIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { UserAvatar as Avatar } from "../../layout/avatar";
@@ -328,7 +328,7 @@ function AddMember({
       onOpenChange={setOpen}
       trigger={
         <Button variant="outline" type="button">
-          {<Plus size={14} />}
+          {<PlusIcon size={14} />}
           {t("Add member")}
         </Button>
       }

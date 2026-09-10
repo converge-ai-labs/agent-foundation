@@ -3,14 +3,14 @@ import { Button, DisclosureSection } from "a13n-ui";
 import { useState } from "react";
 
 import {
-  Bot,
-  Brain,
-  Check,
-  Copy,
-  File,
-  LoaderCircle,
-  Wrench,
-} from "lucide-react";
+  HeartIcon,
+  BrainIcon,
+  CheckIcon,
+  CopyIcon,
+  FileIcon,
+  CircleNotchIcon,
+  WrenchIcon,
+} from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { StateBadge } from "../../shared/feedback";
 import { JsonView } from "../../shared/form";
@@ -41,13 +41,13 @@ export function PresentedItems({
             className={styles.tool}
             title={
               <span className={styles.disclosureTitle}>
-                <Wrench size={14} />
+                <WrenchIcon size={14} />
                 <strong>{item.toolName || t("Tool call")}</strong>
                 <span className={styles.toolState}>
                   {item.state === "completed" ? (
-                    <Check size={13} aria-label={t("Completed")} />
+                    <CheckIcon size={13} aria-label={t("Completed")} />
                   ) : item.state === "streaming" && runState !== "waiting" ? (
-                    <LoaderCircle
+                    <CircleNotchIcon
                       size={13}
                       className={styles.spinning}
                       aria-label={t("Working")}
@@ -81,7 +81,7 @@ export function PresentedItems({
             className={styles.reasoning}
             title={
               <span className={styles.disclosureTitle}>
-                <Brain size={14} />
+                <BrainIcon size={14} />
                 {t("Reasoning summary")}
                 <StateBadge state={item.state} />
               </span>
@@ -109,7 +109,7 @@ export function PresentedItems({
         );
       return (
         <article key={item.id} className={styles.message} data-role={item.role}>
-          <div className={styles.messageAvatar}>{<Bot size={16} />}</div>
+          <div className={styles.messageAvatar}>{<HeartIcon size={16} />}</div>
           <div className={styles.messageBody}>
             <div className={styles.messageHeading}>
               <strong>{agentName ?? t("Agent")}</strong>
@@ -198,7 +198,7 @@ export function InputContent({
                   : String(block.source.path);
           return [
             <span key={index} className={styles.attachment}>
-              <File size={13} />
+              <FileIcon size={13} />
               {label}
             </span>,
           ];
@@ -241,7 +241,7 @@ function CopyMessage({ text }: { text: string }) {
         }}
         size="icon-sm"
       >
-        {status === "copied" ? <Check size={13} /> : <Copy size={13} />}
+        {status === "copied" ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
       </Button>
       <span role="status">
         {status === "copied"

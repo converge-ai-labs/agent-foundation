@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 
-import { ArrowDown, ArrowUp, Play } from "lucide-react";
+import { ArrowDownIcon, ArrowUpIcon, PlayIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useAuth, useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -144,7 +144,7 @@ export function ThreadQueue({
               onClick={() => consume.mutate()}
               type="button"
             >
-              <Play size={13} />
+              <PlayIcon size={13} />
               {t("Run next message")}
             </Button>
           )}
@@ -208,7 +208,7 @@ export function ThreadQueue({
                       size="icon-sm"
                       type="button"
                     >
-                      {<ArrowUp size={13} />}
+                      {<ArrowUpIcon size={13} />}
                     </Button>
                     <Button
                       aria-label={t("Move message down")}
@@ -218,7 +218,7 @@ export function ThreadQueue({
                       size="icon-sm"
                       type="button"
                     >
-                      {<ArrowDown size={13} />}
+                      {<ArrowDownIcon size={13} />}
                     </Button>
                   </>
                 )}

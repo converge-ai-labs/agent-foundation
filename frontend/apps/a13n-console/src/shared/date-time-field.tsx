@@ -10,7 +10,7 @@ import {
   PopoverPopup,
   PopoverTrigger,
 } from "a13n-ui";
-import { CalendarDays } from "lucide-react";
+import { CalendarDotsIcon } from "@phosphor-icons/react";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { formatLocalDateTime, parseLocalDateTime } from "./local-date-time";
@@ -83,7 +83,7 @@ export function DateTimeField({
           }
           aria-label={label}
         >
-          <CalendarDays aria-hidden="true" />
+          <CalendarDotsIcon aria-hidden="true" />
           <span>{display}</span>
         </PopoverTrigger>
         <PopoverPopup

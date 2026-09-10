@@ -3,7 +3,7 @@ import { Button, DisclosureSection, ModalFrame } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router";
 
-import { ExternalLink } from "lucide-react";
+import { ArrowSquareOutIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -70,7 +70,7 @@ export function TraceDetail({ traceId }: { traceId: string }) {
           </Link>
           {source && (
             <a href={source} target="_blank" rel="noopener noreferrer">
-              {t("Open trace backend")} <ExternalLink size={13} />
+              {t("Open trace backend")} <ArrowSquareOutIcon size={13} />
             </a>
           )}
         </>

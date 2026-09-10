@@ -18,7 +18,14 @@ import {
   type SetStateAction,
 } from "react";
 
-import { ArrowUpRight, Network, Plug, Plus, Sparkles, X } from "lucide-react";
+import {
+  ArrowUpRightIcon,
+  TreeStructureIcon,
+  PlugIcon,
+  PlusIcon,
+  PuzzlePieceIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import { useWorkspace } from "../../layout/workspace";
@@ -56,7 +63,7 @@ export function AgentCapabilities({
       <CapabilityGroup
         title={t("Skills")}
         description={t("Reusable knowledge and procedures.")}
-        icon={<Sparkles size={15} />}
+        icon={<PuzzlePieceIcon size={15} />}
         setup={`${base}/skills`}
         loading={choices.isPending}
         choices={availableChoices(
@@ -106,7 +113,7 @@ export function AgentCapabilities({
       <CapabilityGroup
         title={t("MCP connections")}
         description={t("Tools provided by your MCP connections.")}
-        icon={<Network size={15} />}
+        icon={<TreeStructureIcon size={15} />}
         setup={`${base}/mcp`}
         loading={choices.isPending}
         choices={availableChoices(
@@ -150,7 +157,7 @@ export function AgentCapabilities({
       <CapabilityGroup
         title={t("Connectors")}
         description={t("Connected services this agent can use.")}
-        icon={<Plug size={15} />}
+        icon={<PlugIcon size={15} />}
         setup={`${base}/connectors`}
         loading={choices.isPending}
         choices={availableChoices(
@@ -263,7 +270,7 @@ function CapabilityGroup({
           onOpenChange={setAdding}
         >
           <CollapsibleTrigger render={<Button variant="secondary" size="sm" />}>
-            {adding ? <X size={14} /> : <Plus size={14} />}
+            {adding ? <XIcon size={14} /> : <PlusIcon size={14} />}
             {adding ? t("Close selection") : t("Add {{kind}}", { kind: title })}
           </CollapsibleTrigger>
           <CollapsiblePanel>
@@ -328,7 +335,7 @@ function CapabilityGroup({
                 rel="noreferrer"
               >
                 {t("Set up {{kind}}", { kind: title })}
-                <ArrowUpRight size={12} aria-hidden="true" />
+                <ArrowUpRightIcon size={12} aria-hidden="true" />
                 <span className="visually-hidden">
                   {t("Opens in a new tab")}
                 </span>

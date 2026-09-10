@@ -78,7 +78,7 @@ export function CreateAgent() {
       else finish(resource.value);
     },
   });
-  const picker = (
+  const picker = (name: string) => (
     <ImagePicker
       hasImage={!!file}
       editable
@@ -98,8 +98,10 @@ export function CreateAgent() {
       }}
     >
       <AgentAvatar
+        name={name}
+        id={created?.value.id}
         url={preview}
-        className="size-16 rounded-xl [&_svg]:size-7"
+        className="size-16 rounded-xl text-2xl"
       />
     </ImagePicker>
   );
@@ -110,7 +112,7 @@ export function CreateAgent() {
         <p className="my-4 text-muted-foreground">
           {t("Agent created. Finish uploading its avatar.")}
         </p>
-        {picker}
+        {picker(created.value.name)}
         {upload.isPending && (
           <p role="status" className="mt-4">
             {t("Saving…")}

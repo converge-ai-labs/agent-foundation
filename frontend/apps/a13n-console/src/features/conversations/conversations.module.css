@@ -43,7 +43,7 @@
 }
 .sessionSidebar h1 {
   font-size: 18px;
-  font-weight: 600;
+  font-weight: 500;
   margin: 0;
   letter-spacing: -0.5px;
 }
@@ -82,7 +82,7 @@
   flex: 1;
   min-width: 0;
   font-size: 12px;
-  font-weight: 550;
+  font-weight: 500;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -223,7 +223,7 @@
   display: block;
   margin-bottom: 8px;
   font-size: 12px;
-  font-weight: 550;
+  font-weight: 500;
 }
 .message {
   display: flex;
@@ -252,7 +252,7 @@
   font-size: 12px;
 }
 .messageHeading strong {
-  font-weight: 600;
+  font-weight: 500;
 }
 .messageActions {
   display: flex;
@@ -679,7 +679,7 @@
 }
 .sessionIdentity h1 {
   font-size: 14px;
-  font-weight: 550;
+  font-weight: 500;
   line-height: 1.5;
   margin: 0;
   overflow: hidden;

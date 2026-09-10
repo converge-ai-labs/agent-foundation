@@ -1,6 +1,6 @@
 import { Button, FormField, Input } from "a13n-ui";
 
-import { ArrowLeft, Building2, ChevronDown, Layers } from "lucide-react";
+import { ArrowLeftIcon, CaretDownIcon } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
@@ -71,7 +71,7 @@ export function SettingsLayout({
             type="button"
           >
             {t("Settings")}
-            <ChevronDown size={14} />
+            <CaretDownIcon size={14} />
           </Button>
           <span>{t(selected.label)}</span>
         </div>
@@ -81,7 +81,7 @@ export function SettingsLayout({
           data-open={navigationOpen}
         >
           <Link className={styles.back} to="/">
-            <ArrowLeft size={14} />
+            <ArrowLeftIcon size={14} />
             {t("Back to workspace")}
           </Link>
           <div className={styles.settingsSearch}>
@@ -107,14 +107,9 @@ export function SettingsLayout({
               >
                 <h2 className={styles.scopeLabel}>{t(group.label)}</h2>
                 {group.name && (
-                  <div className={styles.scopeName}>
-                    {group.scope === "organization" ? (
-                      <Building2 size={14} />
-                    ) : (
-                      <Layers size={14} />
-                    )}
-                    <span>{group.name}</span>
-                  </div>
+                  <p className={styles.scopeName} title={group.name}>
+                    {group.name}
+                  </p>
                 )}
                 <div className={styles.sectionLinks}>
                   {group.sections.map((item) => (

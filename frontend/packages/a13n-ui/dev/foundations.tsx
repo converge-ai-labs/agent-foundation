@@ -13,9 +13,9 @@ const colors = [
 export function Foundations({ t }: { t: Translate }) {
   return (
     <>
-      <h1 className="text-2xl font-semibold">{t("Foundations", "基础规范")}</h1>
+      <h1 className="text-2xl font-medium">{t("Foundations", "基础规范")}</h1>
       <section className="flex flex-col gap-4">
-        <h2 className="font-semibold">{t("Brand", "品牌")}</h2>
+        <h2 className="font-medium">{t("Brand", "品牌")}</h2>
         <div className="flex items-center gap-4 text-5xl">
           <Logo alt="" width={48} height={48} />
           <Wordmark />
@@ -23,7 +23,7 @@ export function Foundations({ t }: { t: Translate }) {
         <p className="text-sm text-muted-foreground">Space Grotesk Bold</p>
       </section>
       <section className="flex flex-col gap-4">
-        <h2 className="font-semibold">{t("Semantic colors", "语义颜色")}</h2>
+        <h2 className="font-medium">{t("Semantic colors", "语义颜色")}</h2>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           {colors.map((color) => (
             <div key={color} className="flex flex-col gap-2">
@@ -37,8 +37,8 @@ export function Foundations({ t }: { t: Translate }) {
         </div>
       </section>
       <section className="flex flex-col gap-4">
-        <h2 className="font-semibold">{t("Typography", "字体")}</h2>
-        <p className="text-3xl font-semibold">
+        <h2 className="font-medium">{t("Typography", "字体")}</h2>
+        <p className="text-3xl font-medium">
           {t("A clear place to begin", "从清晰的起点开始")}
         </p>
         <p>

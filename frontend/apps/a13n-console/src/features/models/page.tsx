@@ -2,7 +2,7 @@ import { ManageProvidersLink } from "../providers/manage-link";
 import { Badge, FormField, Input } from "a13n-ui";
 
 import { useQuery } from "@tanstack/react-query";
-import { Layers } from "lucide-react";
+import { StackIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 import { PageActions } from "../../shared/page-actions";
 
@@ -99,7 +99,7 @@ export function Models({ scope }: { scope: ModelScope }) {
               <section className={modelStyles.providerGroup} key={providerId}>
                 <header>
                   <span className={modelStyles.providerIcon}>
-                    <Layers size={14} />
+                    <StackIcon size={14} />
                   </span>
                   <h2>
                     {provider?.name ??
@@ -126,7 +126,7 @@ export function Models({ scope }: { scope: ModelScope }) {
                     return (
                       <article className={modelStyles.modelCard} key={item.id}>
                         <header>
-                          <Layers size={16} strokeWidth={1.5} />
+                          <StackIcon size={16} weight="light" />
                           <h3>{item.name}</h3>
                           <StateBadge
                             state={item.enabled ? "enabled" : "disabled"}

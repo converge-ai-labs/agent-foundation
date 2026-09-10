@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { PageActions } from "../../shared/page-actions";
 
-import { Plus } from "lucide-react";
+import { PlusIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { data, type Schema } from "../../shared/api";
@@ -205,7 +205,7 @@ function InvitationEditor({
           size={invitation ? "sm" : "default"}
           type="button"
         >
-          {!invitation && <Plus size={14} />}
+          {!invitation && <PlusIcon size={14} />}
           {t(invitation ? "Resend" : "Invite member")}
         </Button>
       }

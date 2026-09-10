@@ -1,5 +1,5 @@
 import { Button, Input } from "a13n-ui";
-import { Camera, Trash2 } from "lucide-react";
+import { CameraIcon, TrashIcon } from "@phosphor-icons/react";
 import { useRef, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -38,7 +38,7 @@ export function ImagePicker({
             className="absolute inset-0 flex items-center justify-center bg-black/40 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
             aria-hidden="true"
           >
-            <Camera size={16} />
+            <CameraIcon size={16} />
           </span>
         </Button>
       ) : (
@@ -82,7 +82,7 @@ export function ImagePicker({
                   aria-label={t("Remove image")}
                   onClick={() => onChange(null)}
                 >
-                  <Trash2 size={14} />
+                  <TrashIcon size={14} />
                 </Button>
               )}
             </div>

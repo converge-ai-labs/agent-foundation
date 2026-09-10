@@ -25,7 +25,7 @@
   color: var(--a13n-text);
 }
 .settingsSearch {
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 .settingsSearch > div {
   min-height: 30px;
@@ -37,7 +37,7 @@
 }
 .outline nav {
   display: grid;
-  gap: 24px;
+  gap: 20px;
 }
 .scopeLabel {
   font-size: 11px;
@@ -47,26 +47,16 @@
   margin: 0 8px 6px;
 }
 .scopeName {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 8px;
-  margin-bottom: 4px;
-  font-size: 13px;
-  font-weight: 550;
-  line-height: 18px;
-  color: var(--a13n-text);
-  overflow-wrap: anywhere;
-}
-.scopeName svg {
-  flex: none;
+  margin: -2px 8px 8px;
+  font-size: 11px;
+  line-height: 16px;
   color: var(--a13n-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .sectionLinks {
   display: grid;
-}
-.scopeGroup:not([data-scope="personal"]) .sectionLinks {
-  margin-left: 16px;
 }
 .outline nav a {
   display: flex;
@@ -128,7 +118,7 @@
   font-size: 24px;
   line-height: 32px;
   letter-spacing: -0.6px;
-  font-weight: 580;
+  font-weight: 500;
   margin: 0;
 }
 .heading p {

@@ -4,7 +4,7 @@ import { FileUpload } from "../../shared/file-upload";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { Download, Upload } from "lucide-react";
+import { DownloadSimpleIcon, UploadSimpleIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -93,7 +93,7 @@ export function AssetsPage() {
             }}
             trigger={
               <Button variant="default" type="button">
-                {<Upload size={15} />}
+                {<UploadSimpleIcon size={15} />}
                 {t("Upload asset")}
               </Button>
             }
@@ -196,7 +196,7 @@ export function AssetsPage() {
                       download.variables?.id === item.id ? (
                         <Spinner />
                       ) : (
-                        <Download size={14} />
+                        <DownloadSimpleIcon size={14} />
                       )}
                       {t("Download")}
                     </Button>

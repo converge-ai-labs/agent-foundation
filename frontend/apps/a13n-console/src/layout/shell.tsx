@@ -18,7 +18,7 @@ import {
   useSidebar,
   Wordmark,
 } from "a13n-ui";
-import { ChevronDown, Menu, X } from "lucide-react";
+import { CaretDownIcon, ListIcon, XIcon } from "@phosphor-icons/react";
 import { Suspense, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { NavLink, Outlet, useLocation } from "react-router";
@@ -92,7 +92,7 @@ function WorkspaceNavigation() {
               aria-label={t("Close navigation")}
               onClick={close}
             >
-              <X />
+              <XIcon />
             </Button>
           </div>
           <WorkspaceMenu onNavigate={close} />
@@ -124,10 +124,10 @@ function WorkspaceNavigation() {
                             />
                           }
                         >
-                          <Icon />
+                          <Icon weight={active ? "duotone" : "regular"} />
                           <span>{t(label)}</span>
                           {children && (
-                            <ChevronDown className="ml-auto size-3" />
+                            <CaretDownIcon className="ml-auto size-3" />
                           )}
                         </SidebarMenuButton>
                         {children && active && (
@@ -171,7 +171,7 @@ function WorkspaceNavigation() {
             aria-label={t("Open navigation")}
             onClick={() => setOpenMobile(true)}
           >
-            <Menu />
+            <ListIcon />
           </Button>
           <strong className="font-medium">
             {t(current?.[1] ?? "Settings")}

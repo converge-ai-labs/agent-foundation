@@ -3,7 +3,7 @@ import { Button } from "a13n-ui";
 import { useMutation } from "@tanstack/react-query";
 import { useEffect } from "react";
 
-import { Check, Copy } from "lucide-react";
+import { CheckIcon, CopyIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import styles from "./copy.module.css";
 
@@ -36,9 +36,9 @@ export function CopyButton({
         type="button"
       >
         {copy.isSuccess ? (
-          <Check className="size-3" />
+          <CheckIcon className="size-3" />
         ) : (
-          <Copy className="size-3" />
+          <CopyIcon className="size-3" />
         )}
         {iconOnly ? undefined : label}
       </Button>

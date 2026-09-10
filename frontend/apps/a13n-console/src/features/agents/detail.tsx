@@ -1,6 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
-import { History, Pencil, Play } from "lucide-react";
+import {
+  ClockCounterClockwiseIcon,
+  PencilSimpleIcon,
+  PlayIcon,
+} from "@phosphor-icons/react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router";
@@ -107,6 +111,7 @@ export function AgentDetail() {
       key={`${agent.id}:${agent.key}:${generation}`}
       back={`${basePath}/agents`}
       name={agent.name}
+      agentId={agent.id}
       imageUrl={agent.image_url}
       description={agent.description ?? ""}
       environment={
@@ -128,7 +133,7 @@ export function AgentDetail() {
                 aria-label={t("Edit agent details")}
                 title={t("Edit agent details")}
               >
-                <Pencil size={14} />
+                <PencilSimpleIcon size={14} />
               </Button>
             }
             title={t("Edit agent details")}
@@ -155,7 +160,7 @@ export function AgentDetail() {
             }
             type="button"
           >
-            {<Play size={14} />}
+            {<PlayIcon size={14} />}
             {t("Try agent")}
           </Button>
         )
@@ -185,7 +190,7 @@ export function AgentDetail() {
           <ModalFrame
             trigger={
               <Button variant="ghost" type="button">
-                {<History size={14} />}
+                {<ClockCounterClockwiseIcon size={14} />}
                 {t("Version history")}
               </Button>
             }

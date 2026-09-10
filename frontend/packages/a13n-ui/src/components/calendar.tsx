@@ -2,10 +2,10 @@
 
 import { DayPicker } from "@daypicker/react";
 import {
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  ChevronsUpDownIcon,
-} from "lucide-react";
+  CaretLeftIcon,
+  CaretRightIcon,
+  CaretUpDownIcon,
+} from "@phosphor-icons/react";
 import type * as React from "react";
 import { cn } from "../lib/utils";
 
@@ -81,7 +81,7 @@ export function Calendar({
     }): React.ReactElement => {
       if (orientation === "left") {
         return (
-          <ChevronLeftIcon
+          <CaretLeftIcon
             className={cn(className, "rtl:rotate-180")}
             {...props}
             aria-hidden="true"
@@ -91,7 +91,7 @@ export function Calendar({
 
       if (orientation === "right") {
         return (
-          <ChevronRightIcon
+          <CaretRightIcon
             className={cn(className, "rtl:rotate-180")}
             {...props}
             aria-hidden="true"
@@ -100,11 +100,7 @@ export function Calendar({
       }
 
       return (
-        <ChevronsUpDownIcon
-          className={className}
-          {...props}
-          aria-hidden="true"
-        />
+        <CaretUpDownIcon className={className} {...props} aria-hidden="true" />
       );
     },
   };

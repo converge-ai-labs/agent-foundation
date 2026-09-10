@@ -9,12 +9,12 @@ export function ResourceIdentity({
 }: {
   name: string;
   description?: ReactNode;
-  icon: ReactNode;
+  icon?: ReactNode;
   to?: string;
 }) {
   const content = (
     <>
-      <span className={styles.resourceIcon}>{icon}</span>
+      {icon && <span className={styles.resourceIcon}>{icon}</span>}
       <span className={styles.resourceCopy}>
         <strong>{name}</strong>
         {description && <small>{description}</small>}

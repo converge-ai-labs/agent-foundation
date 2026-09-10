@@ -11,7 +11,7 @@ import {
   MenuSubTrigger,
   MenuTrigger,
 } from "a13n-ui";
-import { Check, ChevronDown, Settings } from "lucide-react";
+import { CheckIcon, CaretDownIcon, GearSixIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import { UserAvatar } from "./avatar";
@@ -40,7 +40,7 @@ export function WorkspaceMenu({ onNavigate }: { onNavigate: () => void }) {
         <span className="min-w-0 flex-1 truncate text-left">
           {context.workspace.name}
         </span>
-        <ChevronDown aria-hidden="true" />
+        <CaretDownIcon aria-hidden="true" />
       </MenuTrigger>
       <MenuPopup align="start" className="w-(--anchor-width)">
         <MenuGroup>
@@ -50,7 +50,7 @@ export function WorkspaceMenu({ onNavigate }: { onNavigate: () => void }) {
               navigate(`${context.basePath}/settings?section=profile`);
             }}
           >
-            <Settings aria-hidden="true" />
+            <GearSixIcon aria-hidden="true" />
             {t("Settings")}
           </MenuItem>
           <MenuSeparator />
@@ -78,7 +78,7 @@ export function WorkspaceMenu({ onNavigate }: { onNavigate: () => void }) {
                   >
                     {item.name}
                     {item.id === context.workspace.id && (
-                      <Check aria-hidden="true" className="ms-auto" />
+                      <CheckIcon aria-hidden="true" className="ms-auto" />
                     )}
                   </MenuItem>
                 ))}

@@ -1,4 +1,4 @@
-import { ExternalLink } from "lucide-react";
+import { ArrowSquareOutIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { Timestamp } from "./feedback";
 import styles from "./shared.module.css";
@@ -36,7 +36,7 @@ export function AuthorizationLink({
           target={sameTab ? "_self" : "_blank"}
           rel="noopener noreferrer"
         >
-          {t("Continue authorization")} <ExternalLink size={14} />
+          {t("Continue authorization")} <ArrowSquareOutIcon size={14} />
         </a>
       ) : (
         <p>

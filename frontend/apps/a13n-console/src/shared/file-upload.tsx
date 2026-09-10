@@ -1,5 +1,5 @@
 import { Button, Input } from "a13n-ui";
-import { FileUp, X } from "lucide-react";
+import { FileArrowUpIcon, XIcon } from "@phosphor-icons/react";
 import { useRef } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -47,7 +47,7 @@ export function FileUpload({
           disabled={disabled}
           onClick={() => input.current?.click()}
         >
-          <FileUp aria-hidden="true" />
+          <FileArrowUpIcon aria-hidden="true" />
           {t("Choose file")}
         </Button>
         {file && (
@@ -59,7 +59,7 @@ export function FileUpload({
             aria-label={t("Remove file")}
             onClick={() => onSelect(undefined)}
           >
-            <X aria-hidden="true" />
+            <XIcon aria-hidden="true" />
           </Button>
         )}
       </div>

@@ -1,4 +1,4 @@
-import { Sparkles } from "lucide-react";
+import { HeartIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router";
 import { useWorkspace } from "../../layout/workspace";
@@ -22,7 +22,7 @@ export function SessionIdentity() {
       <h1>{title || t("Session")}</h1>
       {agent.data && (
         <Link to={`${basePath}/agents/${agent.data.key}`}>
-          <Sparkles size={12} aria-hidden="true" />
+          <HeartIcon size={12} aria-hidden="true" />
           {agent.data.name}
         </Link>
       )}

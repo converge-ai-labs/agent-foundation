@@ -4,7 +4,7 @@ import { FileUpload } from "../../shared/file-upload";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { ArrowUp, Paperclip, X } from "lucide-react";
+import { ArrowUpIcon, PaperclipIcon, XIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -151,7 +151,7 @@ export function Composer({
           <div className={styles.attachments}>
             {attachments.map((attachment, index) => (
               <span className={styles.attachment} key={index}>
-                <Paperclip size={13} />
+                <PaperclipIcon size={13} />
                 {attachment.filename ||
                   (attachment.source.type === "url"
                     ? attachment.source.url
@@ -169,7 +169,7 @@ export function Composer({
                     changed();
                   }}
                 >
-                  <X size={13} />
+                  <XIcon size={13} />
                 </Button>
               </span>
             ))}
@@ -185,7 +185,7 @@ export function Composer({
                   aria-label={t("Attach content")}
                   size="icon-sm"
                 >
-                  {<Paperclip size={16} />}
+                  {<PaperclipIcon size={16} />}
                 </Button>
               }
               size={"md"}
@@ -266,7 +266,7 @@ export function Composer({
               }
               loading={mutation.isPending}
             >
-              <ArrowUp size={15} />
+              <ArrowUpIcon size={15} />
               {label ?? t("Send")}
             </Button>
           </div>

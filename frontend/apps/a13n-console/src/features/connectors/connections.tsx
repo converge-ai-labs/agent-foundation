@@ -12,7 +12,7 @@ import {
 } from "a13n-ui";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plug } from "lucide-react";
+import { PlugIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 
 import { useTranslation } from "react-i18next";
@@ -81,7 +81,7 @@ export function ConnectorConnections() {
                   <ResourceIdentity
                     name={item.name}
                     description={item.connector_key}
-                    icon={<Plug size={17} />}
+                    icon={<PlugIcon size={17} />}
                   />
                 ),
               },

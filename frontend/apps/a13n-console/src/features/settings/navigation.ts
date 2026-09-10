@@ -1,18 +1,22 @@
 import {
-  Activity,
-  Boxes,
-  KeyRound,
-  Layers,
-  Mail,
-  Monitor,
-  Settings,
-  Settings2,
-  Shield,
-  SlidersHorizontal,
-  User,
-  Users,
-  type LucideIcon,
-} from "lucide-react";
+  PulseIcon,
+  IdentificationBadgeIcon,
+  RobotIcon,
+  ClipboardTextIcon,
+  TerminalWindowIcon,
+  CubeIcon,
+  KeyIcon,
+  StackIcon,
+  EnvelopeIcon,
+  MonitorIcon,
+  GearSixIcon,
+  SlidersIcon,
+  ShieldCheckIcon,
+  SlidersHorizontalIcon,
+  UserIcon,
+  UsersIcon,
+  type Icon,
+} from "@phosphor-icons/react";
 import { workspacePath } from "../../shared/paths";
 import { useAccess } from "../../layout/workspace";
 
@@ -20,70 +24,70 @@ export type SettingsScope = "personal" | "workspace" | "organization";
 type Section = {
   value: string;
   label: string;
-  icon: LucideIcon;
+  icon: Icon;
   permission?: string;
   href?: string;
 };
 const sections: Record<SettingsScope, Section[]> = {
   personal: [
-    { value: "preferences", label: "Preferences", icon: SlidersHorizontal },
-    { value: "profile", label: "Profile", icon: User },
-    { value: "security", label: "Security", icon: Shield },
-    { value: "sessions", label: "Sessions", icon: Monitor },
-    { value: "activity", label: "Activity", icon: Activity },
+    { value: "preferences", label: "Preferences", icon: SlidersHorizontalIcon },
+    { value: "profile", label: "Profile", icon: UserIcon },
+    { value: "security", label: "Security", icon: ShieldCheckIcon },
+    { value: "sessions", label: "Sessions", icon: MonitorIcon },
+    { value: "activity", label: "Activity", icon: PulseIcon },
   ],
   workspace: [
-    { value: "profile", label: "General", icon: Settings },
+    { value: "profile", label: "General", icon: GearSixIcon },
     {
       value: "members",
       label: "Members",
-      icon: Users,
+      icon: UsersIcon,
       permission: "role_binding.manage",
     },
     {
       value: "invitations",
       label: "Invitations",
-      icon: Mail,
+      icon: EnvelopeIcon,
       permission: "invitation.manage",
     },
-    { value: "personal-keys", label: "My API keys", icon: KeyRound },
+    { value: "personal-keys", label: "My API keys", icon: KeyIcon },
     {
       value: "member-keys",
       label: "Member keys",
-      icon: KeyRound,
+      icon: IdentificationBadgeIcon,
       permission: "api_key.manage",
     },
     {
       value: "accounts",
       label: "Service accounts",
-      icon: Shield,
+      icon: RobotIcon,
       permission: "service_account.manage",
     },
     {
       value: "audit",
       label: "Audit",
-      icon: Activity,
+      icon: ClipboardTextIcon,
       permission: "security_audit.read",
     },
   ],
   organization: [
-    { value: "profile", label: "General", icon: Settings },
-    { value: "members", label: "Members", icon: Users },
-    { value: "invitations", label: "Invitations", icon: Mail },
-    { value: "models", label: "Models", icon: Boxes },
+    { value: "profile", label: "General", icon: GearSixIcon },
+    { value: "members", label: "Members", icon: UsersIcon },
+    { value: "invitations", label: "Invitations", icon: EnvelopeIcon },
+    { value: "models", label: "Models", icon: CubeIcon },
     {
       value: "environments",
       label: "Environment templates",
-      icon: Monitor,
+      icon: TerminalWindowIcon,
     },
     {
       value: "providers",
       label: "Providers",
-      icon: Settings2,
+      icon: SlidersIcon,
       href: "/providers?scope=organization",
     },
-    { value: "workspaces", label: "Workspaces", icon: Layers },
-    { value: "audit", label: "Audit", icon: Activity },
+    { value: "workspaces", label: "Workspaces", icon: StackIcon },
+    { value: "audit", label: "Audit", icon: ClipboardTextIcon },
   ],
 };
 export function useSettingsNavigation() {

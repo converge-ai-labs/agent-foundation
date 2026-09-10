@@ -10,7 +10,7 @@ import {
 } from "a13n-ui";
 
 import { useQuery } from "@tanstack/react-query";
-import { SlidersHorizontal } from "lucide-react";
+import { SlidersHorizontalIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 
 import { useTranslation } from "react-i18next";
@@ -220,7 +220,7 @@ export function RunOptions({
       onOpenChange={setOpen}
       trigger={
         <Button type="button" size="sm" variant="ghost">
-          {<SlidersHorizontal size={14} />}
+          {<SlidersHorizontalIcon size={14} />}
           {t("Options")}
         </Button>
       }

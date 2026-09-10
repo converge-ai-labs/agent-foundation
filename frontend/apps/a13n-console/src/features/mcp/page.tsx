@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
-import { Network } from "lucide-react";
+import { TreeStructureIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -79,7 +79,7 @@ export function MCPPage() {
                   <ResourceIdentity
                     name={item.name}
                     description={item.endpoint_url}
-                    icon={<Network size={17} />}
+                    icon={<TreeStructureIcon size={17} />}
                   />
                 ),
               },

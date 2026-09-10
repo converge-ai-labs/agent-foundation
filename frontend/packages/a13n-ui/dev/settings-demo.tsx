@@ -24,9 +24,7 @@ export function SettingsDemo({
   return (
     <>
       <div>
-        <h1 className="text-2xl font-semibold">
-          {t("Preferences", "偏好设置")}
-        </h1>
+        <h1 className="text-2xl font-medium">{t("Preferences", "偏好设置")}</h1>
         <p className="mt-2 text-muted-foreground">
           {t("Make this space your own.", "让工作空间更合心意。")}
         </p>

@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 
-import { Layers, Plus } from "lucide-react";
+import { StackIcon, PlusIcon } from "@phosphor-icons/react";
 import { AgentAvatar } from "./avatar";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -54,7 +54,7 @@ export function Agents() {
   });
   const create = can("agent.create") ? (
     <Button variant="default" onClick={() => navigate("new")} type="button">
-      {<Plus size={15} />}
+      {<PlusIcon size={15} />}
       {t("Create agent")}
     </Button>
   ) : undefined;
@@ -129,6 +129,8 @@ export function Agents() {
                     description={agent.description || undefined}
                     icon={
                       <AgentAvatar
+                        name={agent.name}
+                        id={agent.id}
                         url={agent.image_url}
                         className="size-8 rounded-lg"
                       />
@@ -194,7 +196,7 @@ function AgentModel({ revisionId }: { revisionId: string }) {
   });
   return (
     <span className={styles.modelName}>
-      <Layers size={13} aria-hidden="true" />
+      <StackIcon size={13} aria-hidden="true" />
       {revision.isPending
         ? "…"
         : (revision.data?.config.model.model_key ?? t("Unavailable"))}

@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 
-import { Plus } from "lucide-react";
+import { PlusIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { workspacePath } from "../../shared/paths";
@@ -52,7 +52,7 @@ export function CreateWorkspace({
       }}
       trigger={
         <Button variant="default" type="button">
-          {<Plus size={14} />}
+          {<PlusIcon size={14} />}
           {t("Create workspace")}
         </Button>
       }

@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router";
 
-import { Info } from "lucide-react";
+import { InfoIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -29,7 +29,7 @@ export function RunInspector({ run }: { run: Schema["RunResource"] }) {
       onOpenChange={setOpen}
       trigger={
         <Button size="sm" variant="outline" type="button">
-          {<Info size={13} />}
+          {<InfoIcon size={13} />}
           {t("Details")}
         </Button>
       }

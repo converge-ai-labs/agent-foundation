@@ -12,7 +12,7 @@ import {
   useSearchParams,
 } from "react-router";
 
-import { ArrowLeft, MessageSquare, Plus } from "lucide-react";
+import { ArrowLeftIcon, ChatIcon, PlusIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -45,7 +45,7 @@ export function ConversationsPage() {
     <div className={styles.sessionsLayout} data-detail={nested}>
       <aside className={styles.sessionSidebar}>
         <Link className={styles.workspaceBack} to={`${basePath}/agents`}>
-          <ArrowLeft size={14} />
+          <ArrowLeftIcon size={14} />
           {t("Back to workspace")}
         </Link>
         <header>
@@ -58,7 +58,7 @@ export function ConversationsPage() {
               size="icon-sm"
               type="button"
             >
-              {<Plus size={16} />}
+              {<PlusIcon size={16} />}
             </Button>
           )}
         </header>
@@ -161,7 +161,7 @@ export function NewConversation() {
     <div className={styles.startPage}>
       <div className={styles.newConversation}>
         <div className={styles.welcome}>
-          <MessageSquare size={32} strokeWidth={1.4} />
+          <ChatIcon size={32} weight="light" />
           <h2>{t("What would you like to work on?")}</h2>
           <p>
             {t("Choose an agent, share an idea, and start making progress.")}
@@ -252,7 +252,7 @@ export function SessionLayout() {
               aria-label={t("New thread")}
               to={`${basePath}/sessions/new?session=${sessionId}`}
             >
-              <Plus size={14} />
+              <PlusIcon size={14} />
               <span>{t("New thread")}</span>
             </Link>
           )}

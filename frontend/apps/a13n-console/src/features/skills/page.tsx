@@ -11,7 +11,6 @@ import {
 } from "a13n-ui";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Sparkles } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 
@@ -86,7 +85,6 @@ export function SkillsPage() {
                     to={item.id}
                     name={item.name}
                     description={item.key}
-                    icon={<Sparkles size={17} />}
                   />
                 ),
               },

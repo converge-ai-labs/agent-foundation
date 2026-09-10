@@ -12,7 +12,7 @@
 }
 .pageHeader h1 {
   font-size: 22px;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: -0.6px;
   line-height: 1.35;
   margin: 0;
@@ -149,7 +149,7 @@
   min-width: 0;
 }
 .resourceCopy strong {
-  font-weight: 550;
+  font-weight: 500;
   font-size: 13px;
 }
 .resourceCopy small {
@@ -192,7 +192,7 @@
 
 .form > h3 {
   font-size: 13px;
-  font-weight: 550;
+  font-weight: 500;
   margin: 8px 0 0;
   padding-top: 16px;
 }

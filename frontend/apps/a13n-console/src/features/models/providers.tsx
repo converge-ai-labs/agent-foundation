@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Badge, Button, ModalFrame } from "a13n-ui";
-import { PlugZap, Plus } from "lucide-react";
+import { PlugChargingIcon, PlusIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -47,7 +47,7 @@ export function Providers({ scope }: { scope: ModelScope }) {
                 label: t("Provider"),
                 render: (item) => (
                   <>
-                    <PlugZap size={14} /> {item.name}
+                    <PlugChargingIcon size={14} /> {item.name}
                     <small>{item.type}</small>
                   </>
                 ),
@@ -144,7 +144,7 @@ export function ProviderEditor({
           variant={providerId ? "outline" : "default"}
           type="button"
         >
-          {!providerId && <Plus size={14} />}
+          {!providerId && <PlusIcon size={14} />}
           {t(providerId ? "Edit" : "Add provider")}
         </Button>
       }

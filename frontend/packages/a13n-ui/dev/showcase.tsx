@@ -1,7 +1,7 @@
 import { TooltipProvider } from "../src";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Moon, Sun } from "lucide-react";
+import { MoonIcon, SunIcon } from "@phosphor-icons/react";
 import { Button, ChoiceField, Logo, Wordmark, cn } from "../src";
 import { Foundations } from "./foundations";
 import { Controls } from "./controls";
@@ -62,7 +62,7 @@ function Showcase() {
             aria-label={t("Toggle theme", "切换主题")}
             onClick={() => setDark(!dark)}
           >
-            {dark ? <Sun /> : <Moon />}
+            {dark ? <SunIcon /> : <MoonIcon />}
           </Button>
         </div>
       </header>
