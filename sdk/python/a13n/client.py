@@ -2,13 +2,17 @@
 
 import asyncio
 import json
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import quote, urlsplit
 
 import httpx2
 from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
 
+from .generated.client import AuthenticatedClient
+from .generated.types import Response
 from .models import (
     CreateSearchProviderRequest,
     Page,
@@ -97,13 +101,55 @@ class Client:
         self._tasks: set[asyncio.Task] = set()
         self._closed = False
         self._http = httpx2.AsyncClient(
-            base_url=base_url.rstrip("/") + "/api/v1/",
+            base_url=base_url.rstrip("/") + "/",
             headers={"Authorization": f"Bearer {token}"},
             timeout=timeout,
             follow_redirects=False,
             trust_env=False,
             transport=transport,
         )
+
+        # Generated operations and the stable Search facade share one pool.
+        self._api = AuthenticatedClient(base_url=base_url, token="").set_async_httpx_client(self._http)
+
+    async def execute[T](self, operation: Callable[[AuthenticatedClient], Awaitable[Response[T]]]) -> Response[T]:
+        """Execute a generated asyncio_detailed operation with this client's lifetime.
+
+        The result retains response headers and the typed success/error union.
+        Use stream() with the generated build_request() for binary responses.
+        """
+        if self._closed:
+            raise TransportError("Client is closed")
+        task = asyncio.current_task()
+        if task:
+            self._tasks.add(task)
+        try:
+            async with asyncio.timeout(self._timeout):
+                return await operation(self._api)
+        except (httpx2.HTTPError, TimeoutError):
+            raise TransportError("Service transport failed; mutation outcome may be unknown") from None
+        finally:
+            if task:
+                self._tasks.discard(task)
+
+    @asynccontextmanager
+    async def stream(self, request: dict[str, Any]) -> AsyncIterator[httpx2.Response]:
+        """Send a generated build_request() without buffering the response body.
+
+        For upload, content can be an async byte iterator. The caller owns HTTP
+        status handling and consumption inside this context manager.
+        """
+        if self._closed:
+            raise TransportError("Client is closed")
+        task = asyncio.current_task()
+        if task:
+            self._tasks.add(task)
+        try:
+            async with self._http.stream(**request) as response:
+                yield response
+        finally:
+            if task:
+                self._tasks.discard(task)
 
     async def __aenter__(self):
         return self
@@ -144,7 +190,11 @@ class Client:
         try:
             async with asyncio.timeout(self._timeout):
                 async with self._http.stream(
-                    method, path.lstrip("/"), json=payload, headers={"If-Match": etag} if etag else None, params=params
+                    method,
+                    "api/v1/" + path.lstrip("/"),
+                    json=payload,
+                    headers={"If-Match": etag} if etag else None,
+                    params=params,
                 ) as response:
                     raw = bytearray()
                     async for chunk in response.aiter_bytes():

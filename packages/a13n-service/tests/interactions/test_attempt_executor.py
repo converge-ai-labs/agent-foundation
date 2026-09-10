@@ -356,6 +356,7 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
     reject_preparation: bool,
     preflight_code: str | None,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     trace: list[str] = []
     envelope = initial_state()
@@ -433,6 +434,11 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
         expected = preflight_code if preflight_code != "untrusted_provider_code" else "attempt_execution_failed"
         assert failure.code == expected
         assert failure.message == "The RunAttempt could not complete execution."
+        record = next(record for record in caplog.records if record.msg == "run_attempt_execution_failed")
+        assert record.run_id == RUN_ID and record.attempt_number == context.attempt_number
+        assert record.exception_chain[0]["type"] == "a13n_harness.errors.RunError"
+        assert record.exception_chain[0]["frames"] and record.exc_info is None
+        assert "private diagnostic" not in str(record.exception_chain)
         assert "attempt:enter" not in trace
         assert not projector.events
         assert capacity.releases == 1

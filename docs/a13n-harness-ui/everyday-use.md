@@ -132,7 +132,7 @@ CodeAct is enabled by default, providing the Harness's restricted Python `run_co
 
 ### Approvals and questions
 
-New starter Agents use `on_flagged: approval_required` and `on_error: skip`: non-timeout review failures alone do not open an approval prompt, but other tool-policy approval requirements still apply. Existing Agent settings are preserved.
+New subscription starter Agents with shell review enabled use `on_flagged: approval_required` and `on_error: skip`: non-timeout review failures alone do not open an approval prompt, but other tool-policy approval requirements still apply. Existing Agent settings are preserved.
 
 Flagged shell commands and non-timeout review failures open a selectable prompt when the Agent's review policy requires approval. The panel puts risk and reason first, followed by the highlighted command and working directory. Detailed policy metadata stays behind **Inspect request details** or `/review request-id`, keeping the decision readable. Review the evidence before choosing **Approve once** or **Deny** in the selector below. No approval is preselected, and ordinary free text cannot approve a shell request. Truncated previews explicitly point to retained details.
 
@@ -182,7 +182,9 @@ Task tools, `ask_user_question`, and native note tools (`note_write`, `note_get`
 
 ### Long pasted text and Thread working files
 
-Text pastes longer than 1000 characters fold into a compact `[Pasted text #N: ... chars]` marker. You can combine several blocks with your own instructions without filling the composer. Alt+E expands them for editing (moving the cursor inside a marker does the same); Backspace immediately after a marker (or Delete before it) removes the whole block. Enter sends the full text, never the placeholder. Text paste does not inspect your clipboard for images and does not submit by itself.
+Text pastes longer than 1000 characters fold into a compact `[Pasted text #N: ... chars]` marker. You can combine several blocks with your own instructions without filling the composer. Alt+E expands them for editing (moving the cursor inside a marker does the same); Backspace immediately after a marker (or Delete before it) removes the whole block. Enter submits the full authored text to the App, never the placeholder. Text paste does not inspect your clipboard for images and does not submit by itself.
+
+Paste folding is display-only. Separately, authored text blocks strictly longer than `input.long_text_threshold_chars` (8000 Unicode characters by default) can be delivered to the model as retained text-file references. Enter restores the full authored text for App submission; it does not guarantee inline model delivery. See [long-text input policy](configuration.md#long-text-inputs) for disabling conversion, file-read prerequisites, fallback notices, failures, and attachment budgets.
 
 The agent has a `thread-files` Environment mount with `tmp/` for disposable downloads, scripts, conversions, and intermediate output. It belongs to the conversation, not an individual Run, and is reused after restarting the CLI. Submitted attachments are retained separately under `attachments/`; resuming a conversation does not depend on a clipboard temp file. Removing a draft chip does not delete a previously submitted file.
 

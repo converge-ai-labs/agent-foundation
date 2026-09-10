@@ -8,7 +8,7 @@ from datetime import datetime
 from a13n_logging import get_logger
 from sqlalchemy import or_, select, update
 
-from a13n_service.storage import short_session, transaction
+from a13n_service.storage import is_database_unavailable, short_session, transaction
 from a13n_service.temporal import assume_utc
 
 from .identity import local_backend_eligible
@@ -119,7 +119,14 @@ class EnvironmentMaintenanceLoop:
     async def run(self) -> None:
         try:
             while not self._draining.is_set():
-                await self.run_once()
+                try:
+                    await self.run_once()
+                except Exception as error:
+                    if not is_database_unavailable(error):
+                        raise
+                    logger.warning(
+                        "environment_maintenance_database_unavailable", extra={"retry_seconds": self.interval_seconds}
+                    )
                 try:
                     await asyncio.wait_for(self._draining.wait(), self.interval_seconds)
                 except TimeoutError:

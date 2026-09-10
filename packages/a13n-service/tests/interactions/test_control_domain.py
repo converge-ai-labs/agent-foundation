@@ -8,12 +8,49 @@ from a13n_service.interactions.control_domain import (
     PendingResolutionOutcome,
     RespondPendingResolution,
     ThreadRunSubmissionIntent,
+    ThreadRunSubmissionRequest,
     normalize_feedback,
     normalize_waiting_continue,
 )
 from a13n_service.interactions.domain import PendingCallKind, PendingCallSummary, RunPendingSummary
 from a13n_service.interactions.input import AcceptedAgentInput, AgentInput, TextContent
 from pydantic import ValidationError
+
+
+@pytest.mark.parametrize(
+    "execution",
+    [
+        {"agent_id": "agent_1111111111111111"},
+        {"agent_revision_id": "arev_1111111111111111"},
+        {"expected_current_revision_id": "arev_1111111111111111"},
+        {"environment": None},
+        {"config_override": {"instructions": "Changed execution"}},
+    ],
+)
+def test_waiting_continue_rejects_execution_selection_but_ordinary_submission_preserves_it(execution) -> None:
+    body = {
+        "expected_thread_version": 1,
+        "input": {"schema_version": "1", "content": [{"type": "text", "text": "Continue"}]},
+        **execution,
+    }
+    ordinary = ThreadRunSubmissionRequest.model_validate(body)
+    assert execution.items() <= ordinary.intent().model_dump(mode="json", exclude_unset=True).items()
+    with pytest.raises(ValidationError, match="Waiting Continue cannot supply execution overrides"):
+        ThreadRunSubmissionRequest.model_validate(
+            {**body, "waiting_resolution": {"mode": "defaults", "sealed_state_digest_sha256": "a" * 64}}
+        )
+
+
+def test_waiting_continue_without_execution_selection_preserves_input_and_hook_omission() -> None:
+    request = ThreadRunSubmissionRequest.model_validate(
+        {
+            "expected_thread_version": 1,
+            "input": {"schema_version": "1", "content": [{"type": "text", "text": "Continue"}]},
+            "waiting_resolution": {"mode": "defaults", "sealed_state_digest_sha256": "a" * 64},
+        }
+    )
+    assert request.input.content == (TextContent(text="Continue"),)
+    assert "environment" not in request.model_fields_set and "hook_subscription" not in request.model_fields_set
 
 
 def test_feedback_normalization_preserves_frozen_order_and_fails_closed() -> None:

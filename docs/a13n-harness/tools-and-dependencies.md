@@ -133,7 +133,7 @@ Build-time Capabilities describe reusable behavior. Run Capabilities supply fres
 
 A name such as `safe_shell` does not make a tool managed. Managed metadata selects the additional policy path. A Python callback can still access its process's ambient authority; tool visibility is not OS isolation.
 
-[Environment tools](environments.md), [MCP tools](mcp.md), and [deferred resume](state-and-resume.md) explain the corresponding paths.
+Use [managed tools and policy](managed-tools.md) for a complete `HarnessTool` example and invocation-policy reference. Use [client-side tools](client-tools.md) when a browser or another external client executes a declared tool. [Environment tools](environments.md), [MCP tools](mcp.md), and [deferred resume](state-and-resume.md) explain the corresponding integration and continuation paths.
 
 ## Errors, retries, and output bounds
 

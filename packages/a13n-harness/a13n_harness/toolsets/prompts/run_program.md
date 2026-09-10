@@ -1,8 +1,3 @@
 Run a reusable CodeAct Python program from the current Environment workspace.
 
-The file must be strict UTF-8, end in .codeact.py, and define exactly
-`async def main(inputs)`. Put execution inside main; module scope is limited to imports,
-function declarations, and side-effect-free constants. Source is read through the current
-Environment FileOperator on every call. Each invocation uses a fresh interpreter, receives
-the inputs mapping (empty when omitted), and returns main's result. It cannot see inline
-Python bindings, but can use the same explicit store/load values when those tools are listed.
+The file must be strict UTF-8, end in .codeact.py, and define exactly `async def main(inputs)`. Put execution inside main; module scope is limited to imports, function declarations, and side-effect-free constants. Source is read through the current Environment FileOperator on every call. Each invocation uses a fresh interpreter, receives the inputs mapping (empty when omitted), and returns main's result. It cannot see inline Python bindings, but can use the same explicit store/load values when those tools are listed.

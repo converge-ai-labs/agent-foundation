@@ -26,6 +26,8 @@ from a13n_envd_client.errors import (
     EIPProtocolError,
     EIPRequestTimeoutError,
     EIPSessionStateError,
+    EIPTransferError,
+    EIPTransferTransportError,
     EIPTransportClosedError,
     EIPTransportError,
 )
@@ -389,6 +391,9 @@ class RequestCoordinator(EIPRequester):
             await self._transport.send(frame)
         except asyncio.CancelledError:
             raise
+        except EIPTransferError as error:
+            channel.fail(error)
+            raise
         except Exception as error:
             transport_error = (
                 error if isinstance(error, EIPClientError) else EIPTransportError("failed to send EIP data frame")
@@ -468,7 +473,13 @@ class RequestCoordinator(EIPRequester):
     async def _reader_loop(self) -> None:
         try:
             while not self._closed:
-                frame = await self._transport.receive()
+                try:
+                    frame = await self._transport.receive()
+                except EIPTransferTransportError as error:
+                    channel = self._transfers.get(error.handle)
+                    if channel is not None:
+                        channel.fail(error)
+                    continue
                 if isinstance(frame, ControlFrame):
                     self._handle_control_frame(frame)
                     continue

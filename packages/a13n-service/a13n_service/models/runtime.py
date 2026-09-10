@@ -99,7 +99,7 @@ class AcceptedModelSelector:
                     visible_workspace(ModelRecord.workspace_id, prepared.workspace_id),
                     ModelRecord.id == prepared.resource.id,
                 )
-                .with_for_update()
+                .with_for_update(read=True)
             )
         ).one_or_none()
         if row is None:

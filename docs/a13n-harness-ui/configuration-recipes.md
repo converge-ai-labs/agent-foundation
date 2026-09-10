@@ -159,7 +159,7 @@ mcp_servers: [mcp-docs]
 
 Creating the server file only registers it; selection enables it. `mcp_servers: null` inherits defaults when the conversation's selections are initialized; `[]` selects none. Existing conversations keep their MCP selections, so use a new conversation when testing changed defaults.
 
-See [MCP configuration](extensions-and-mcp.md#mcp-servers) for command transport, client-style JSON, credential references, and capture behavior.
+See [MCP configuration](mcp.md) for command transport, client-style JSON, credential references, and capture behavior.
 
 ## Enable Skills
 
@@ -171,9 +171,9 @@ capabilities:
     configuration: {}
 ```
 
-Preserve other entries. Automatic sources include project `.agents/skills`, user `~/.agents/skills`, and installed Content Plugin roots through the selected Environment. A Skill directory contains `SKILL.md`. Type `$` in chat to find available Skills.
+Preserve other entries. Automatic sources include Project `.agents/skills`, user `~/.agents/skills`, installed Content Plugins, and the release-owned configuration Skill through the selected Environment. See [source precedence and offline guidance](skills-and-content-plugins.md#automatic-sources-and-precedence). A Skill directory contains `SKILL.md`. Type `$` in chat to find available Skills.
 
-Optional `configuration.roots` adds explicit absolute **Environment paths**, not arbitrary host paths. Sandbox cannot access a host directory merely because you listed it. See [Skill sources](extensions-and-mcp.md#skills).
+Optional `configuration.roots` adds explicit absolute **Environment paths**, not arbitrary host paths. Sandbox cannot access a host directory merely because you listed it. See [Skill sources](skills-and-content-plugins.md).
 
 ## Change display and tool switches
 

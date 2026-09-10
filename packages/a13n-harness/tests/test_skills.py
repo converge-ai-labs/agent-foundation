@@ -972,7 +972,16 @@ def test_skill_selection_requires_immutable_bounded_exact_names() -> None:
         SkillSelectionRunCapability(id="custom", names=frozenset())
 
 
-async def test_ordinary_environment_skill_read_emits_usage_observation(tmp_path: Path) -> None:
+@pytest.mark.parametrize("content", ["none", "standard", "full"])
+async def test_ordinary_environment_skill_read_emits_usage_observation(tmp_path: Path, content: str) -> None:
+    from a13n_harness import HarnessInstrumentation, HarnessTraceContent
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
     path = tmp_path / ".agents" / "skills" / "review"
     path.mkdir(parents=True)
     (path / "SKILL.md").write_text(
@@ -1000,7 +1009,9 @@ async def test_ordinary_environment_skill_read_emits_usage_observation(tmp_path:
         else:
             yield "done"
 
-    executable = HarnessBuilder().build(
+    executable = HarnessBuilder(
+        instrumentation=HarnessInstrumentation(tracer_provider=provider, trace_content=HarnessTraceContent(content))
+    ).build(
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
@@ -1032,6 +1043,35 @@ async def test_ordinary_environment_skill_read_emits_usage_observation(tmp_path:
         and payload.get("source_id") == "workspace"
         for payload in extension_payloads
     )
+
+    spans = exporter.get_finished_spans()
+    root = next(span for span in spans if span.name == "harness.run")
+    assert root.attributes["a13n.skills.available"] == ("review",)
+    assert root.attributes["a13n.skills.accessed"] == ("review",)
+    assert root.attributes["a13n.skills.access_count"] == 1
+    resolution = next(span for span in spans if span.name == "harness.skills.resolve")
+    assert resolution.attributes["a13n.skills.selection"] == "all"
+    assert resolution.attributes["a13n.skills.discovered_count"] == 1
+    assert resolution.attributes["a13n.skills.selected_count"] == 1
+    assert resolution.attributes["langfuse.observation.metadata.skills_excluded_count"] == 0
+    if content == "none":
+        assert "a13n.output" not in resolution.attributes
+    else:
+        assert json.loads(resolution.attributes["a13n.output"]) == {
+            "skills": [{"name": "review", "source_id": "workspace"}],
+            "count": 1,
+            "omitted": 0,
+        }
+    assert (
+        resolution.end_time
+        < next(span for span in spans if span.attributes.get("gen_ai.operation.name") == "chat").start_time
+    )
+    tool = next(span for span in spans if span.attributes.get("gen_ai.operation.name") == "execute_tool")
+    assert tool.attributes["a13n.skill.name"] == "review"
+    assert tool.attributes["a13n.skill.source_id"] == "workspace"
+    if content == "none":
+        assert "a13n.input" not in root.attributes
+    provider.shutdown()
 
 
 async def test_external_capability_can_publish_skill_paths_for_relaxed_markdown_view(tmp_path: Path) -> None:
@@ -1467,3 +1507,62 @@ async def test_agent_line_width_above_skill_default_reaches_provider(
         view_arguments={"max_line_length": requested_width},
         on_view=inspect_spill,
     )
+
+
+@pytest.mark.parametrize("selection", [None, frozenset(), frozenset({"skill-00"}), frozenset({"missing"})])
+@pytest.mark.parametrize("content", ["none", "standard"])
+async def test_resolution_phase_records_selection_and_bounded_results(tmp_path, selection, content):
+    from a13n_harness import HarnessInstrumentation, HarnessTraceContent
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+    from opentelemetry.trace import StatusCode
+
+    for index in range(20):
+        path = tmp_path / "skills" / f"skill-{index:02}"
+        path.mkdir(parents=True)
+        (path / "SKILL.md").write_text(
+            f"---\nname: skill-{index:02}\ndescription: Private instruction.\n---\nPrivate skill body."
+        )
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    executable = HarnessBuilder(
+        instrumentation=HarnessInstrumentation(tracer_provider=provider, trace_content=HarnessTraceContent(content))
+    ).build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=lambda messages, info: _text("done")),
+        capabilities=(SkillsCapability(SkillManager((FileSkillSource("workspace", ("/workspace/skills",)),))),),
+    )
+    bindings = RunBindings.embedded(
+        environment=_binding(tmp_path),
+        capabilities=() if selection is None else (SkillSelectionRunCapability(names=selection),),
+    )
+    try:
+        if selection == frozenset({"missing"}):
+            with pytest.raises(DefinitionError, match="absent"):
+                await executable.run("hello", bindings=bindings)
+        else:
+            await executable.run("hello", bindings=bindings)
+        span = next(span for span in exporter.get_finished_spans() if span.name == "harness.skills.resolve")
+        assert span.attributes["a13n.skills.selection"] == ("all" if selection is None else "explicit")
+        assert span.attributes["a13n.skills.discovered_count"] == 20
+        assert "Private" not in str(span.attributes)
+        assert "/workspace" not in str(span.attributes)
+        if selection == frozenset({"missing"}):
+            assert span.status.status_code is StatusCode.ERROR
+            assert span.attributes["a13n.phase.status"] == "failed"
+            assert span.attributes["a13n.skills.unknown_count"] == 1
+        else:
+            count = 20 if selection is None else len(selection)
+            assert span.attributes["a13n.skills.selected_count"] == count
+            if content != "none":
+                output = json.loads(span.attributes["a13n.output"])
+                assert output["count"] == count
+                assert len(output["skills"]) == min(count, 16)
+                assert output["omitted"] == max(0, count - 16)
+        if content == "none":
+            assert "a13n.output" not in span.attributes
+    finally:
+        provider.shutdown()

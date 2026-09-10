@@ -1,0 +1,157 @@
+from http import HTTPStatus
+from typing import Any
+from urllib.parse import quote
+
+import httpx2 as httpx
+
+from ...client import AuthenticatedClient, Client
+from ...models.error_response import ErrorResponse
+from ...models.mcp_connection import MCPConnection
+from ...types import Response
+
+
+def build_request(
+    connection_id: str,
+) -> dict[str, Any]:
+
+    _kwargs: dict[str, Any] = {
+        "method": "get",
+        "url": "/api/v1/mcp-connections/{connection_id}".format(
+            connection_id=quote(str(connection_id), safe=""),
+        ),
+    }
+
+    return _kwargs
+
+
+def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> ErrorResponse | MCPConnection:
+    if response.status_code == 200:
+        response_200 = MCPConnection.from_dict(response.json())
+
+        return response_200
+
+    if response.status_code == 400:
+        response_400 = ErrorResponse.from_dict(response.json())
+
+        return response_400
+
+    response_default = ErrorResponse.from_dict(response.json())
+
+    return response_default
+
+
+def _build_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> Response[ErrorResponse | MCPConnection]:
+    return Response(
+        status_code=HTTPStatus(response.status_code),
+        content=response.content,
+        headers=response.headers,
+        parsed=_parse_response(client=client, response=response),
+    )
+
+
+def sync_detailed(
+    connection_id: str,
+    *,
+    client: AuthenticatedClient,
+) -> Response[ErrorResponse | MCPConnection]:
+    """Get Mcp Connection
+
+    Args:
+        connection_id (str):
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        Response[ErrorResponse | MCPConnection]
+    """
+
+    kwargs = build_request(
+        connection_id=connection_id,
+    )
+
+    response = client.get_httpx_client().request(
+        **kwargs,
+    )
+
+    return _build_response(client=client, response=response)
+
+
+def sync(
+    connection_id: str,
+    *,
+    client: AuthenticatedClient,
+) -> ErrorResponse | MCPConnection | None:
+    """Get Mcp Connection
+
+    Args:
+        connection_id (str):
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        ErrorResponse | MCPConnection
+    """
+
+    return sync_detailed(
+        connection_id=connection_id,
+        client=client,
+    ).parsed
+
+
+async def asyncio_detailed(
+    connection_id: str,
+    *,
+    client: AuthenticatedClient,
+) -> Response[ErrorResponse | MCPConnection]:
+    """Get Mcp Connection
+
+    Args:
+        connection_id (str):
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        Response[ErrorResponse | MCPConnection]
+    """
+
+    kwargs = build_request(
+        connection_id=connection_id,
+    )
+
+    response = await client.get_async_httpx_client().request(**kwargs)
+
+    return _build_response(client=client, response=response)
+
+
+async def asyncio(
+    connection_id: str,
+    *,
+    client: AuthenticatedClient,
+) -> ErrorResponse | MCPConnection | None:
+    """Get Mcp Connection
+
+    Args:
+        connection_id (str):
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        ErrorResponse | MCPConnection
+    """
+
+    return (
+        await asyncio_detailed(
+            connection_id=connection_id,
+            client=client,
+        )
+    ).parsed

@@ -33,6 +33,7 @@ def test_setup_is_repeatable_preserves_state_and_never_resets(tmp_path, monkeypa
     retained = environment.state / "retained.txt"
     retained.write_text("preserve data")
     events = []
+    monkeypatch.setattr(commands, "ensure_docker", lambda: events.append("docker"))
     monkeypatch.setattr(Environment, "compose", lambda self, *args: events.append(args))
     monkeypatch.setattr(Langfuse, "start", lambda self: events.append("langfuse"))
     monkeypatch.setattr(
@@ -41,7 +42,7 @@ def test_setup_is_repeatable_preserves_state_and_never_resets(tmp_path, monkeypa
     monkeypatch.setattr(commands, "reset", lambda *args: pytest.fail("setup must never reset or seed"))
     for _ in range(2):
         commands.setup(environment, Langfuse(environment), LOCAL_CONFIG)
-    assert events == [("up", "-d", "--wait"), "langfuse", "migrate"] * 2
+    assert events == ["docker", ("up", "-d", "--wait"), "langfuse", "migrate"] * 2
     assert retained.read_text() == "preserve data"
     assert "Service and Console have not been started" in capsys.readouterr().out
 
@@ -50,6 +51,7 @@ def test_setup_refuses_incomplete_reset_before_touching_infrastructure(tmp_path,
     environment = local_environment(tmp_path)
     environment.incomplete.parent.mkdir(parents=True)
     environment.incomplete.write_text("seeded\n")
+    monkeypatch.setattr(commands, "ensure_docker", lambda: pytest.fail("must not start Docker"))
     monkeypatch.setattr(Environment, "compose", lambda *args: pytest.fail("must not start stores"))
     with pytest.raises(ValueError, match="reset did not complete"):
         commands.setup(environment, Langfuse(environment), LOCAL_CONFIG)
@@ -127,5 +129,14 @@ def test_port_check_allows_immediate_restart_after_closed_connection(tmp_path, m
         accepted, _ = server.accept()
         accepted.close()
         assert client.recv(1) == b""
+
+    # Only the Service socket's TIME_WAIT behavior is under test. Give the
+    # scripted-model probe an owned ephemeral port instead of requiring the
+    # developer's fixed model port to be idle.
+    class OwnedModelPortSocket(socket.socket):
+        def bind(self, address):
+            super().bind(("127.0.0.1", 0) if address == ("127.0.0.1", 18080) else address)
+
+    monkeypatch.setattr(commands.socket, "socket", OwnedModelPortSocket)
     environment = local_environment(tmp_path, service={"port": port})
     commands.check_ports(environment)

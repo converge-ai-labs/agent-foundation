@@ -54,7 +54,7 @@ class E2BFiles:
     async def read_bytes_stream(self, path: str, *, chunk_size: int = 65536) -> AsyncIterator[bytes]:
         if chunk_size <= 0 or chunk_size > 1024 * 1024:
             raise EnvironmentError("Invalid E2B chunk size.", code="environment_request_invalid")
-        native = await self._native(path, regular_file=True)
+        native = await self._resolve_native_path(path, regular_file=True)
         total = 0
         with sdk_errors():
             reader = await self.commands.sandbox.files.read(
@@ -71,8 +71,14 @@ class E2BFiles:
                     for offset in range(0, len(chunk), chunk_size):
                         yield chunk[offset : offset + chunk_size]
 
-    async def _native(self, path: str, *, regular_file: bool = False) -> str:
+    async def _resolve_native_path(self, path: str, *, regular_file: bool = False) -> str:
         value = (await self.commands.files("resolve", {"path": path, "regular_file": regular_file})).get("path")
+        if not isinstance(value, str):
+            raise EnvironmentError("E2B path resolution failed.", code="environment_provider_failure")
+        return value
+
+    async def _create_upload_stage(self, path: str) -> str:
+        value = (await self.commands.files("stage", {"path": path}, mutation=True)).get("path")
         if not isinstance(value, str):
             raise EnvironmentError("E2B path resolution failed.", code="environment_provider_failure")
         return value
@@ -112,7 +118,7 @@ class E2BFiles:
             raise EnvironmentError("Invalid E2B write mode.", code="environment_request_invalid")
         # Keep local memory bounded even for SDK uploads; publish only a finished transfer.
         staged = str(PurePosixPath(path).parent / f".a13n-write-{secrets.token_hex(12)}")
-        native = await self._native(staged)
+        await self._resolve_native_path(staged)
         size = 0
         maximum = self.commands.configuration.max_file_bytes
         with tempfile.TemporaryFile("w+b") as file:
@@ -134,7 +140,10 @@ class E2BFiles:
                     raise EnvironmentError("File exceeds the configured limit.", code="environment_too_large")
                 await asyncio.to_thread(file.write, chunk)
             await asyncio.to_thread(file.seek, 0)
+            stage_created = False
             try:
+                native = await self._create_upload_stage(staged)
+                stage_created = True
                 with sdk_errors(mutation=True):
                     await self.commands.sandbox.files.write(
                         native,
@@ -148,6 +157,19 @@ class E2BFiles:
                     mutation=True,
                 )
             except BaseException as error:
+                if (
+                    not stage_created
+                    and isinstance(error, EnvironmentError)
+                    and error.code
+                    in {
+                        "environment_conflict",
+                        "environment_denied",
+                        "environment_not_found",
+                        "environment_request_invalid",
+                    }
+                ):
+                    # A rejected exclusive creation does not authorize deleting that entry.
+                    raise
                 try:
                     await asyncio.shield(
                         self.commands.files("remove", {"path": staged, "recursive": False}, mutation=True)

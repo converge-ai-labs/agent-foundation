@@ -8,6 +8,7 @@ from collections.abc import Awaitable
 from datetime import datetime
 from typing import Never
 
+from a13n_envd_client import EIPSession
 from a13n_envd_client.eip import v1 as eip
 from a13n_envd_client.errors import (
     EIPMethodError,
@@ -25,6 +26,14 @@ from ..models import (
 )
 
 _UINT64_MAX = 2**64 - 1
+
+
+def session_client(session: EIPSession) -> eip.EIPClient:
+    """Normalize synchronous session access before an async operation is built."""
+    try:
+        return session.client
+    except EIPSessionStateError as error:
+        raise_converted(error)
 
 
 def new_context(*, timeout_seconds: float = DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS) -> eip.EIPCallContext:

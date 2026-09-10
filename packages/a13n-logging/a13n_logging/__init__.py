@@ -9,6 +9,7 @@ from a13n_logging.config import (
     configure_logging,
     get_logger,
 )
+from a13n_logging.diagnostics import exception_details
 
 __all__ = [
     "ContextFilter",
@@ -17,5 +18,6 @@ __all__ = [
     "PrettyFormatter",
     "build_logging_config",
     "configure_logging",
+    "exception_details",
     "get_logger",
 ]

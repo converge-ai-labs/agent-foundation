@@ -708,7 +708,11 @@ fn classify_connect_error(error: &WebSocketError) -> ConnectionFailure {
 
 fn classify_session_error(error: &WebSocketError) -> ConnectionFailure {
     match error {
-        WebSocketError::ConnectionClosed | WebSocketError::Io(_) => ConnectionFailure::Transient,
+        WebSocketError::ConnectionClosed
+        | WebSocketError::Io(_)
+        | WebSocketError::Protocol(
+            tokio_tungstenite::tungstenite::error::ProtocolError::ResetWithoutClosingHandshake,
+        ) => ConnectionFailure::Transient,
         WebSocketError::Tls(_) => ConnectionFailure::Fatal("reverse WebSocket TLS session failed"),
         WebSocketError::Capacity(_)
         | WebSocketError::Protocol(_)
@@ -754,8 +758,22 @@ async fn shutdown_signal() -> io::Result<()> {
 mod tests {
     use std::time::Duration;
 
-    use super::{RECONNECT_CAP, classify_connect_error, full_jitter};
-    use tokio_tungstenite::tungstenite::{Error, http::Response};
+    use super::{RECONNECT_CAP, classify_connect_error, classify_session_error, full_jitter};
+    use tokio_tungstenite::tungstenite::{Error, error::ProtocolError, http::Response};
+
+    #[test]
+    fn abrupt_disconnect_reconnects_but_invalid_frames_remain_fatal() {
+        assert!(matches!(
+            classify_session_error(&Error::Protocol(
+                ProtocolError::ResetWithoutClosingHandshake
+            )),
+            super::ConnectionFailure::Transient
+        ));
+        assert!(matches!(
+            classify_session_error(&Error::Protocol(ProtocolError::UnmaskedFrameFromClient)),
+            super::ConnectionFailure::Fatal(_)
+        ));
+    }
 
     #[test]
     fn unauthorized_upgrade_is_fatal() {

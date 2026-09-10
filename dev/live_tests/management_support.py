@@ -69,7 +69,7 @@ class ManagementJourney:
         return sorted(runs, key=lambda run: run["id"])
 
     async def environment_template(
-        self, *, preparation="on_run", access="full", name=None, provider_type="a13n.direct-local"
+        self, *, preparation="on_run", access="full", name=None, provider_type="a13n.direct-local", retention=None
     ):
         name = name or uuid4().hex
         root = self.lab.root / ("environment-" + name)
@@ -86,7 +86,7 @@ class ManagementJourney:
             "provider_id": provider["id"],
             "access": access,
             "preparation": preparation,
-            "retention": {"idle": {"stop_after": None, "delete_after": None}},
+            "retention": retention or {"idle": {"stop_after": None, "delete_after": None}},
             "configuration": {
                 "root": {"path": str(root)},
                 "shell_profiles": [{"profile_id": "default", "executable": "/bin/sh"}],

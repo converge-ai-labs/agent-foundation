@@ -1,0 +1,20 @@
+from enum import StrEnum
+
+class {{ enum.class_info.name }}(StrEnum):
+    {% for key, value in enum.values|dictsort(true) %}
+    {{ key }} = "{{ value }}"
+    {% endfor %}
+
+    def __str__(self) -> str:
+        return str(self.value)
+{% if enum.class_info.name == "RunStatus" %}
+
+    @classmethod
+    def _missing_(cls, value: object) -> "RunStatus | None":
+        if not isinstance(value, str):
+            return None
+        member = str.__new__(cls, value)
+        member._name_ = value
+        member._value_ = value
+        return member
+{% endif %}

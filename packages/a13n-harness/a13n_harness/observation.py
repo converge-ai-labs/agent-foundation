@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from asyncio import CancelledError
 from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
@@ -18,15 +19,17 @@ from opentelemetry import context as otel_context
 from opentelemetry import metrics, trace
 from opentelemetry.context import Context
 from opentelemetry.metrics import MeterProvider, NoOpMeterProvider
-from opentelemetry.trace import NoOpTracerProvider, Status, StatusCode, TracerProvider
+from opentelemetry.trace import INVALID_SPAN, NoOpTracerProvider, Span, Status, StatusCode, TracerProvider
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, Instrumentation
 from pydantic_ai.models.instrumented import InstrumentationSettings
 
+from a13n_harness._trace import _EnrichedTracer
+from a13n_harness._trace_details import SkillObservation, record_content, record_span_metadata
 from a13n_harness.errors import DefinitionError
 
 if TYPE_CHECKING:
     from opentelemetry.metrics import Histogram, UpDownCounter
-    from opentelemetry.trace import Span, Tracer
+    from opentelemetry.trace import Tracer
     from pydantic_ai.capabilities import WrapModelRequestHandler, WrapRunHandler
     from pydantic_ai.messages import ModelResponse
     from pydantic_ai.models import ModelRequestContext
@@ -57,7 +60,7 @@ RunOutcome = Literal["completed", "suspended", "failed", "cancelled"]
 
 
 class HarnessTraceContent(StrEnum):
-    """Pydantic AI execution-content capture policy."""
+    """Execution-content capture policy for native spans and bounded root I/O."""
 
     NONE = "none"
     STANDARD = "standard"
@@ -201,6 +204,67 @@ class HarnessInstrumentation:
                 code="instrumentation_policy_invalid",
                 details={"field": "trace_content"},
             )
+
+    def get_tracer(self, scope: str) -> Tracer:
+        """Return an enriched OTel tracer for Host operation scopes, or a no-op tracer.
+
+        The selected provider remains unchanged and Host-owned. Use current-span
+        scopes to propagate bounded correlation to nested Harness execution.
+        """
+        provider = self.tracer_provider or NoOpTracerProvider()
+        return _EnrichedTracer(provider.get_tracer(scope))
+
+    def record_input(self, span: Span, value: object, *, kind: str = "prompt") -> None:
+        """Project only this invocation's input, subject to the selected content policy."""
+        record_content(
+            span,
+            "input",
+            value,
+            include_content=self.trace_content is not HarnessTraceContent.NONE,
+            kind=kind,
+        )
+
+    def record_output(self, span: Span, value: object, *, status: str) -> None:
+        """Project a final result, never infer it from the last model response."""
+        record_content(
+            span,
+            "output",
+            value,
+            include_content=self.trace_content is not HarnessTraceContent.NONE,
+            kind=status,
+        )
+
+    @contextmanager
+    def phase(self, scope: str, name: str) -> Generator[Span]:
+        """A best-effort span around an existing execution boundary; no new lifecycle."""
+        span = INVALID_SPAN
+        token = None
+        try:
+            tracer = _EnrichedTracer((self.tracer_provider or NoOpTracerProvider()).get_tracer(scope))
+            span, context = tracer.start_span_with_context(name, record_exception=False, set_status_on_exception=False)
+            token = otel_context.attach(context)
+        except Exception:
+            pass
+        try:
+            yield span
+        except BaseException as exc:
+            try:
+                if isinstance(exc, CancelledError):
+                    record_span_metadata(span, {"phase.status": "cancelled"})
+                else:
+                    record_span_metadata(span, {"phase.status": "failed"})
+                    span.set_attribute("error.type", type(exc).__name__)
+                    span.set_status(StatusCode.ERROR)
+            except Exception:
+                pass
+            raise
+        finally:
+            if token is not None:
+                otel_context.detach(token)
+            try:
+                span.end()
+            except Exception:
+                pass
 
     @classmethod
     def from_environment(
@@ -394,6 +458,13 @@ def _set_current_model_span_attributes(attributes: Mapping[str, str | float]) ->
         return
     try:
         span.set_attributes(attributes)
+        span.set_attributes(
+            {
+                f"langfuse.observation.metadata.{key.removeprefix('a13n.').replace('.', '_')}": value
+                for key, value in attributes.items()
+                if key.startswith("a13n.usage.")
+            }
+        )
     except Exception:
         pass
 
@@ -409,7 +480,7 @@ class _ObservationRuntime:
 
     def __init__(self, configuration: HarnessInstrumentation | None) -> None:
         self.configuration = configuration
-        self._tracer: Tracer | None = None
+        self._tracer: _EnrichedTracer | None = None
         self._run_duration: Histogram | None = None
         self._run_active: UpDownCounter | None = None
         self._run_model_attempts: Histogram | None = None
@@ -422,7 +493,7 @@ class _ObservationRuntime:
             return
 
         if configuration.tracer_provider is not None:
-            self._tracer = configuration.tracer_provider.get_tracer(_INSTRUMENTATION_SCOPE)
+            self._tracer = _EnrichedTracer(configuration.tracer_provider.get_tracer(_INSTRUMENTATION_SCOPE))
         if configuration.meter_provider is not None:
             meter = configuration.meter_provider.get_meter(_INSTRUMENTATION_SCOPE)
             self._run_duration = meter.create_histogram(
@@ -459,6 +530,8 @@ class _ObservationRuntime:
                 include_model_request_parameters=configuration.trace_content is HarnessTraceContent.FULL,
                 version=_PYDANTIC_INSTRUMENTATION_VERSION,
             )
+            if pydantic_tracing:
+                settings.tracer = _EnrichedTracer(settings.tracer)
             self.pydantic_instrumentation = Instrumentation(settings=settings)
             self.pydantic_capabilities = (
                 _InstrumentationOwnershipCapability(expected_settings=settings),
@@ -477,6 +550,38 @@ class _ObservationRuntime:
     ) -> _LogicalRunObservation | None:
         if self.configuration is None:
             return None
+        span = None
+        span_context = None
+        if self._tracer is not None:
+            try:
+                # Preserve the existing neutral attributes as Host sampler inputs.
+                # Only the additional aliases/propagation wait for is_recording().
+                span, span_context = self._tracer.start_span_with_context(
+                    "harness.run",
+                    attributes=self._run_attributes(thread_id, run_id, instance, observation_context),
+                )
+            except Exception:
+                pass
+        observation = _LogicalRunObservation(
+            runtime=self,
+            span=span,
+            span_context=span_context,
+        )
+        if self._run_active is not None:
+            try:
+                self._run_active.add(1)
+                observation._active_recorded = True
+            except Exception:
+                pass
+        return observation
+
+    @staticmethod
+    def _run_attributes(
+        thread_id: str,
+        run_id: str,
+        instance: AgentInstanceContext,
+        observation_context: HarnessObservationContext | None,
+    ) -> dict[str, Any]:
         attributes: dict[str, Any] = {
             "a13n.thread.id": thread_id,
             "a13n.run.id": run_id,
@@ -492,29 +597,23 @@ class _ObservationRuntime:
             attributes.update(
                 {f"a13n.observation.metadata.{key}": value for key, value in observation_context.metadata.items()}
             )
-        span = None
-        if self._tracer is not None:
-            try:
-                span = self._tracer.start_span("harness.run", attributes=attributes)
-            except Exception:
-                pass
-        observation = _LogicalRunObservation(runtime=self, span=span)
-        if self._run_active is not None:
-            try:
-                self._run_active.add(1)
-                observation._active_recorded = True
-            except Exception:
-                pass
-        return observation
+        return attributes
 
 
 class _LogicalRunObservation:
     """One logical run span and its exactly-once metric lifecycle."""
 
-    def __init__(self, *, runtime: _ObservationRuntime, span: Span | None) -> None:
+    def __init__(
+        self,
+        *,
+        runtime: _ObservationRuntime,
+        span: Span | None,
+        span_context: Context | None,
+    ) -> None:
         self._runtime = runtime
         self._span = span
-        self._span_context = trace.set_span_in_context(span) if span is not None else None
+        self._span_context = span_context
+        self.skills = SkillObservation(span or INVALID_SPAN)
         self._started_at = monotonic()
         self._model_attempts = 0
         self._finished = False
@@ -527,10 +626,25 @@ class _LogicalRunObservation:
         )
 
     @staticmethod
+    def suppress() -> _ObservationActivation:
+        """Mask an enclosing Run without changing independent Host OTel context."""
+        return _ObservationActivation(otel_token=None, run_token=_current_run_observation.set(None))
+
+    @staticmethod
     def deactivate(activation: _ObservationActivation) -> None:
         _current_run_observation.reset(activation.run_token)
         if activation.otel_token is not None:
             otel_context.detach(activation.otel_token)
+
+    def record_input(self, value: object, *, kind: str) -> None:
+        configuration = self._runtime.configuration
+        if configuration is not None and self._span is not None:
+            configuration.record_input(self._span, value, kind=kind)
+
+    def record_output(self, value: object, *, status: str) -> None:
+        configuration = self._runtime.configuration
+        if configuration is not None and self._span is not None:
+            configuration.record_output(self._span, value, status=status)
 
     def record_model_attempt(self) -> Token[_AttemptCorrelation | None]:
         index = self._model_attempts
@@ -556,6 +670,7 @@ class _LogicalRunObservation:
         if self._span is not None:
             try:
                 self._span.set_attribute("a13n.run.outcome", outcome)
+                self._span.set_attribute("langfuse.observation.metadata.run_outcome", outcome)
                 if failure_code is not None:
                     self._span.set_attribute("a13n.run.failure.code", failure_code)
                 if error:
@@ -586,7 +701,7 @@ class _LogicalRunObservation:
         *,
         capability_id: str | None = None,
         operation_id: str | None = None,
-    ) -> Generator[None]:
+    ) -> Generator[Span]:
         started_at = monotonic()
         attributes: dict[str, str] = {"a13n.operation.kind": kind}
         if capability_id is not None:
@@ -595,16 +710,34 @@ class _LogicalRunObservation:
             attributes["a13n.operation.id"] = operation_id
         span = None
         configuration = self._runtime.configuration
+        span_context = None
         if self._runtime._tracer is not None and configuration is not None:
             try:
-                span = self._runtime._tracer.start_span("harness.operation", attributes=attributes)
+                span, span_context = self._runtime._tracer.start_span_with_context(
+                    "harness.operation", attributes=attributes
+                )
             except Exception:
                 pass
         activation = None
-        if span is not None:
-            activation = otel_context.attach(trace.set_span_in_context(span))
+        if span_context is not None:
+            activation = otel_context.attach(span_context)
+        observed_span = span or INVALID_SPAN
+        record_span_metadata(observed_span, {"operation.kind": kind})
         try:
-            yield
+            yield observed_span
+        except BaseException as exc:
+            record_span_metadata(
+                observed_span, {"operation.status": "cancelled" if isinstance(exc, CancelledError) else "failed"}
+            )
+            if not isinstance(exc, CancelledError):
+                try:
+                    observed_span.set_attribute("error.type", type(exc).__name__)
+                    observed_span.set_status(StatusCode.ERROR)
+                except Exception:
+                    pass
+            raise
+        else:
+            record_span_metadata(observed_span, {"operation.status": "completed"})
         finally:
             if activation is not None:
                 otel_context.detach(activation)
@@ -629,18 +762,59 @@ def observe_operation(
     *,
     capability_id: str | None = None,
     operation_id: str | None = None,
-) -> Generator[None]:
+) -> Generator[Span]:
     """Observe a bounded Harness operation when an active run selected it."""
     observation = _current_run_observation.get()
     if observation is None:
-        yield
+        yield INVALID_SPAN
         return
     with observation.operation(
         kind,
         capability_id=capability_id,
         operation_id=operation_id,
-    ):
-        yield
+    ) as span:
+        yield span
+
+
+@contextmanager
+def observe_phase(kind: Literal["prepare", "finalize", "skills.resolve"]) -> Generator[Span]:
+    observation = _current_run_observation.get()
+    configuration = observation._runtime.configuration if observation is not None else None
+    if configuration is None or configuration.tracer_provider is None:
+        yield INVALID_SPAN
+        return
+    with configuration.phase(_INSTRUMENTATION_SCOPE, f"harness.{kind}") as span:
+        yield span
+
+
+def observe_output(span: Span, value: object, *, status: str) -> None:
+    """Record an operation-local result using the active Run's content policy."""
+    observation = _current_run_observation.get()
+    configuration = observation._runtime.configuration if observation is not None else None
+    if configuration is not None:
+        configuration.record_output(span, value, status=status)
+
+
+def observe_skill_catalog(names: Sequence[str], *, count: int | None = None) -> None:
+    observation = _current_run_observation.get()
+    if observation is not None:
+        observation.skills.catalog(names, count=count)
+
+
+def observe_skill_access(name: str, *, source_id: str, tool_id: str) -> None:
+    observation = _current_run_observation.get()
+    if observation is None or observation._span is None or not observation._span.is_recording():
+        return
+    observation.skills.access(name)
+    span = trace.get_current_span()
+    if span.get_span_context().trace_id != observation._span.get_span_context().trace_id:
+        return
+    try:
+        span.set_attributes(
+            {"a13n.skill.name": name[:256], "a13n.skill.source_id": source_id[:256], "a13n.skill.tool_id": tool_id}
+        )
+    except Exception:
+        pass
 
 
 def _compile_observation(configuration: HarnessInstrumentation | None) -> _ObservationRuntime:
@@ -659,4 +833,6 @@ __all__ = [
     "HarnessInstrumentation",
     "HarnessObservationContext",
     "HarnessTraceContent",
+    "SkillObservation",
+    "record_span_metadata",
 ]

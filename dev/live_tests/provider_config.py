@@ -59,10 +59,22 @@ class ModelSettings(Settings):
         return self
 
 
+class SearchSettings(Settings):
+    provider: Literal["exa"]
+    api_key: SecretStr = Field(min_length=1)
+
+
+class BraveSearchSettings(Settings):
+    provider: Literal["brave"]
+    api_key: SecretStr = Field(min_length=1)
+
+
 class ProviderSettings(Settings):
     environment: EnvironmentSettings | None = None
     connector: ComposioSettings | OpenConnectorSettings | None = Field(default=None, discriminator="provider")
     model: ModelSettings | None = None
+    search: SearchSettings | None = None
+    brave_search: BraveSearchSettings | None = None
 
 
 def load_provider_settings(path: Path | None = None) -> ProviderSettings:
@@ -88,7 +100,7 @@ def load_provider_settings(path: Path | None = None) -> ProviderSettings:
         # Never include TOML source, validation input, or upstream exception chains.
         detail = "cannot read or parse TOML"
         if isinstance(error, ValidationError):
-            known = {"environment", "connector", "model"}
+            known = {"environment", "connector", "model", "search", "brave_search"}
             sections = sorted({str(item["loc"][0]) for item in error.errors() if item["loc"]} & known)
             detail = "invalid settings" + (" in " + ", ".join(sections) if sections else "")
         raise ValueError(

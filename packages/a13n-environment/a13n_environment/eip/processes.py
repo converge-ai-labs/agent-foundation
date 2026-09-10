@@ -46,6 +46,7 @@ from ._common import (
     parse_timestamp,
     raise_converted,
     seconds_to_milliseconds,
+    session_client,
 )
 from .files import EIPFileOperator
 from .output import EIPOutputRegistry
@@ -262,7 +263,7 @@ class _ProcessConversions:
             record.cleanup_owned = True
             if kill_first and not record.kill_completed and not record.remote_released:
                 killed = await invoke(
-                    self._session.client.process_kill(
+                    session_client(self._session).process_kill(
                         eip.ProcessKillParams(context=new_context(), handle=record.handle)
                     )
                 )
@@ -271,7 +272,7 @@ class _ProcessConversions:
                 record.kill_completed = True
             if not record.remote_released:
                 result = await invoke(
-                    self._session.client.process_release(
+                    session_client(self._session).process_release(
                         eip.ProcessReleaseParams(context=new_context(), handle=record.handle)
                     )
                 )
@@ -322,7 +323,7 @@ class EIPShellOperations:
 
     async def exec(self, request: CommandRequest) -> ShellExecResult:
         try:
-            result = await self._conversions._session.client.shell_exec(
+            result = await session_client(self._conversions._session).shell_exec(
                 eip.ShellExecParams(
                     context=new_context(),
                     request=convert_command_request(request, files=self._conversions._files),
@@ -375,7 +376,7 @@ class EIPProcessOperations:
 
     async def start(self, request: CommandRequest) -> ProcessStartResult:
         try:
-            result = await self._conversions._session.client.process_start(
+            result = await session_client(self._conversions._session).process_start(
                 eip.ProcessStartParams(
                     context=new_context(),
                     request=convert_command_request(request, files=self._conversions._files),
@@ -408,7 +409,7 @@ class EIPProcessOperations:
             raise EnvironmentError("Process identity belongs to another Environment.", code="environment_stale_mount")
         raw_handle = eip.ProcessHandle(root=identity.process_id)
         result = await invoke(
-            self._conversions._session.client.process_inspect(
+            session_client(self._conversions._session).process_inspect(
                 eip.ProcessInspectParams(context=new_context(), handle=raw_handle)
             )
         )
@@ -419,7 +420,7 @@ class EIPProcessOperations:
     async def inspect(self, handle: BoundProcessHandle) -> ProcessInfo:
         _, record = self._conversions.resolve(handle)
         result = await invoke(
-            self._conversions._session.client.process_inspect(
+            session_client(self._conversions._session).process_inspect(
                 eip.ProcessInspectParams(context=new_context(), handle=record.handle)
             )
         )
@@ -438,7 +439,7 @@ class EIPProcessOperations:
     ) -> ProcessReadOutputResult:
         _, record = self._conversions.resolve(handle)
         result = await invoke(
-            self._conversions._session.client.process_inspect(
+            session_client(self._conversions._session).process_inspect(
                 eip.ProcessInspectParams(context=new_context(), handle=record.handle)
             )
         )
@@ -504,7 +505,7 @@ class EIPProcessOperations:
     ) -> ProcessWriteStdinResult:
         _, record = self._conversions.resolve(handle)
         result = await invoke(
-            self._conversions._session.client.process_write_stdin(
+            session_client(self._conversions._session).process_write_stdin(
                 eip.ProcessWriteStdinParams(
                     context=new_context(),
                     handle=record.handle,
@@ -522,7 +523,7 @@ class EIPProcessOperations:
     async def close_stdin(self, handle: BoundProcessHandle) -> EnvironmentOperationReceipt:
         _, record = self._conversions.resolve(handle)
         result = await invoke(
-            self._conversions._session.client.process_close_stdin(
+            session_client(self._conversions._session).process_close_stdin(
                 eip.ProcessCloseStdinParams(context=new_context(), handle=record.handle)
             )
         )
@@ -535,7 +536,7 @@ class EIPProcessOperations:
     ) -> ProcessSignalResult:
         _, record = self._conversions.resolve(handle)
         result = await invoke(
-            self._conversions._session.client.process_signal(
+            session_client(self._conversions._session).process_signal(
                 eip.ProcessSignalParams(
                     context=new_context(),
                     handle=record.handle,
@@ -559,7 +560,7 @@ class EIPProcessOperations:
     ) -> ProcessInfo:
         _, record = self._conversions.resolve(handle)
         result = await invoke(
-            self._conversions._session.client.process_wait(
+            session_client(self._conversions._session).process_wait(
                 eip.ProcessWaitParams(
                     context=new_context(timeout_seconds=timeout_seconds),
                     handle=record.handle,
@@ -572,7 +573,7 @@ class EIPProcessOperations:
     async def kill(self, handle: BoundProcessHandle) -> ProcessControlResult:
         _, record = self._conversions.resolve(handle)
         result = await invoke(
-            self._conversions._session.client.process_kill(
+            session_client(self._conversions._session).process_kill(
                 eip.ProcessKillParams(context=new_context(), handle=record.handle)
             )
         )
@@ -606,7 +607,7 @@ class EIPPortOperations:
 
     async def inspect(self, target: PortTarget) -> PortObservation:
         result = await invoke(
-            self._conversions._session.client.port_inspect(
+            session_client(self._conversions._session).port_inspect(
                 eip.PortInspectParams(context=new_context(), target=self._target(target))
             )
         )
@@ -620,7 +621,7 @@ class EIPPortOperations:
         timeout_seconds: float,
     ) -> PortObservation:
         result = await invoke(
-            self._conversions._session.client.port_wait(
+            session_client(self._conversions._session).port_wait(
                 eip.PortWaitParams(
                     context=new_context(timeout_seconds=timeout_seconds),
                     target=self._target(target),

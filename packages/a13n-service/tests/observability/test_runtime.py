@@ -394,3 +394,135 @@ async def test_run_attempt_rejects_unregistered_link_attributes() -> None:
         ):
             pytest.fail("invalid link unexpectedly admitted")
     await observation.aclose()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("outcome", ["succeeded", "failed", "cancelled"])
+async def test_phase_observation_preserves_context_and_reports_only_safe_outcomes(outcome) -> None:
+    import asyncio
+
+    from a13n_service.observability import observe_phase
+    from opentelemetry import trace
+
+    exporter = InMemorySpanExporter()
+    observation = runtime(exporter)
+    try:
+        with observe_phase("a13n.service.persist") as absent:
+            assert absent is None
+        with observation.run_attempt(correlation()) as attempt:
+            root_context = trace.get_current_span().get_span_context()
+            try:
+                with observe_phase("a13n.service.persist"):
+                    if outcome == "cancelled":
+                        raise asyncio.CancelledError("private cancellation")
+                    if outcome == "failed":
+                        raise OSError("private exception contents")
+            except (OSError, asyncio.CancelledError):
+                pass
+            assert trace.get_current_span().get_span_context() == root_context
+            attempt.set_outcome("succeeded")
+        with observe_phase("a13n.service.persist") as absent:
+            assert absent is None
+        assert observation.tracer_provider.force_flush()
+        phases = [span for span in exporter.get_finished_spans() if span.name == "a13n.service.persist"]
+        assert len(phases) == 1
+        phase = phases[0]
+        assert phase.attributes["a13n.service.phase.outcome"] == outcome
+        assert (phase.status.status_code is StatusCode.ERROR) == (outcome == "failed")
+        assert phase.attributes.get("error.type") == ("OSError" if outcome == "failed" else None)
+        assert not phase.events
+        assert "private" not in str(phase.attributes)
+    finally:
+        await observation.aclose()
+
+
+@pytest.mark.anyio
+async def test_phase_start_failure_does_not_skip_work(monkeypatch) -> None:
+    from a13n_service.observability import observe_phase
+
+    exporter = InMemorySpanExporter()
+    observation = runtime(exporter)
+    try:
+        with observation.run_attempt(correlation()) as attempt:
+
+            def unavailable(*args, **kwargs):
+                raise RuntimeError("private exporter details")
+
+            monkeypatch.setattr(attempt._tracer, "start_span", unavailable)
+            with observe_phase("a13n.service.persist") as span:
+                assert span is None
+                attempt.set_outcome("succeeded")
+        assert observation.tracer_provider.force_flush()
+        (root,) = exporter.get_finished_spans()
+        assert root.attributes["a13n.run_attempt.outcome"] == "succeeded"
+    finally:
+        await observation.aclose()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("content", list(TraceContent))
+@pytest.mark.parametrize("value", [None, "", "plain text", {"answer": [42, None, "你好"]}])
+async def test_root_content_preserves_text_json_and_null(content, value):
+    import json
+
+    from a13n_service.observability import observe_input
+
+    exporter = InMemorySpanExporter()
+    observation = runtime(exporter, content=content)
+    try:
+        with observation.run_attempt(correlation(), input_external=True) as attempt:
+            observe_input(value)
+            attempt.set_outcome("succeeded", output_value=value)
+        assert observation.tracer_provider.force_flush()
+        attributes = exporter.get_finished_spans()[0].attributes
+        for prefix in ("input", "output"):
+            if content is TraceContent.none:
+                assert f"{prefix}.value" not in attributes
+                assert f"{prefix}.mime_type" not in attributes
+                assert attributes[f"a13n.run_attempt.{prefix}.capture"] == "content_disabled"
+            else:
+                assert attributes[f"a13n.run_attempt.{prefix}.capture"] == "captured"
+                if isinstance(value, str):
+                    assert attributes[f"{prefix}.value"] == value
+                    assert attributes[f"{prefix}.mime_type"] == "text/plain"
+                else:
+                    assert json.loads(attributes[f"{prefix}.value"]) == value
+                    assert attributes[f"{prefix}.mime_type"] == "application/json"
+    finally:
+        await observation.aclose()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "scenario", ["committed", "different_object", "recovered", "failed", "cancelled", "yielded", "waiting"]
+)
+async def test_external_output_requires_matching_committed_object_and_attempt(scenario):
+    from a13n_service.observability import remember_output
+
+    exporter = InMemorySpanExporter()
+    observation = runtime(exporter)
+    try:
+        with observation.run_attempt(correlation(), input_external=True) as attempt:
+            if scenario != "recovered":
+                remember_output("candidate-digest", {"answer": 42})
+            if scenario in {"committed", "different_object", "recovered"}:
+                attempt.set_outcome(
+                    "succeeded",
+                    output_object_digest="other-digest" if scenario == "different_object" else "candidate-digest",
+                )
+            else:
+                attempt.set_outcome("succeeded" if scenario == "waiting" else scenario)
+        assert observation.tracer_provider.force_flush()
+        root = exporter.get_finished_spans()[0]
+        assert "input.value" not in root.attributes
+        assert root.attributes["a13n.run_attempt.input.capture"] == "external_payload"
+        if scenario == "committed":
+            assert root.attributes["output.value"] == '{"answer":42}'
+            assert root.attributes["a13n.run_attempt.output.capture"] == "captured"
+        else:
+            assert "output.value" not in root.attributes
+            assert root.attributes["a13n.run_attempt.output.capture"] == (
+                "external_payload" if scenario in {"different_object", "recovered"} else "not_committed"
+            )
+    finally:
+        await observation.aclose()

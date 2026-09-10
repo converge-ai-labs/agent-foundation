@@ -25,6 +25,7 @@ from pydantic_ai.tools import DeferredToolRequests
 from pydantic_graph import End
 
 from a13n_service.agents.domain import EffectiveAgentConfig, PreparedAgentPlugins
+from a13n_service.observability import observe_phase, observe_phase_result
 from a13n_service.storage import ObjectStoreUnavailable
 
 from .attempts import (
@@ -589,7 +590,14 @@ class RunAttemptControl:
                     entry = entries[0]
                     self._gate.offered[entry.receipt.inbox_entry_id] = entry
                     return entry.tagged_input(self._context.run_id)
-                receipt = await self._commit_outcome(committer)
+                with observe_phase("a13n.service.persist", operation="continuation_decision") as span:
+                    receipt = await self._commit_outcome(committer)
+                    observe_phase_result(
+                        span,
+                        disposition=receipt.disposition.value,
+                        run_version=receipt.run_version,
+                        attempt_version=receipt.attempt_version,
+                    )
                 if receipt.disposition is not AttemptDisposition.continuing:
                     self._pre_execution_outcome = receipt
                     break

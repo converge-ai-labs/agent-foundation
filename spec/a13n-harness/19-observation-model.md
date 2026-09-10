@@ -4,22 +4,22 @@
 
 Harness Observation is the process-local OpenTelemetry trace and metric projection of one logical Harness Run and its causal descendants. The Host owns the OpenTelemetry SDK, resource, sampling, readers/processors, exporters, propagation, flush, and shutdown. The Harness remains inert unless bounded Harness environment policy selects a signal from Host-configured global providers or the Host supplies at least one explicit instrumentation provider.
 
-Pydantic AI instrumentation is the sole owner of Agent-attempt, model-request, tool-execution, native usage, streaming, and cancellation spans and its native model metrics. The Harness owns one outer logical-run span, optional child spans for independently meaningful Harness operations, and a small low-cardinality metric registry. Langfuse v4 and Logfire are optional Host profiles over the same providers and telemetry hierarchy, not separate Harness pipelines.
+Pydantic AI instrumentation is the sole owner of Agent-attempt, model-request, tool-execution, native usage, streaming, and cancellation spans and its native model metrics. The Harness owns one outer logical-run span, optional child spans for independently meaningful Harness operations, and a small low-cardinality metric registry. Langfuse v4 and Logfire consume the same providers and telemetry hierarchy, not separate Harness pipelines. Harness-selected spans automatically carry bounded correlation and a small documented set of presentation aliases regardless of the export destination.
 
 An Observation is never execution, continuation, side-effect, result, checkpoint, event-delivery, usage-settlement, billing, or authorization authority. [Events and Usage](12-events-observability-and-usage.md) owns the ordered event stream, usage attribution, reporting, and accounting boundary; this document owns only telemetry Observation semantics.
 
 ## Boundaries
 
-| Concern                                                                                                     | Owner                         | Contract                                                                                                               |
-| ----------------------------------------------------------------------------------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| OpenTelemetry SDK, `Resource`, sampler, readers/processors, exporters, batching, retry, flush, and shutdown | Host                          | The Harness receives explicit providers or selects Host-configured globals and configures no process-global telemetry. |
-| logical Harness Run                                                                                         | Harness                       | One outer span and low-cardinality metrics cover the complete process-local lifecycle when their signals are enabled.  |
-| Agent attempt, model request, tool execution, native usage, streaming, and cancellation                     | Pydantic AI                   | One Harness-selected `Instrumentation` Capability owns enabled native spans and model metrics.                         |
-| Provider SDK or HTTP request                                                                                | Provider or OTel instrumentor | Ordinary current-context propagation may create descendants; the Harness does not synthesize them.                     |
-| Harness recovery, inline-delegation binding, handoff persistence, compaction, and Mem0 recall operations    | Owning Harness component      | A child span exists whenever tracing is enabled; bounded operation metrics remain independently selectable.            |
-| Process-local events and usage records                                                                      | Event and usage owners        | They remain independent observations and do not become spans or metrics automatically.                                 |
-| Durable lifecycle, audit, delivery, accounting, and billing                                                 | Host                          | A telemetry backend never commits these facts.                                                                         |
-| Vendor grouping, filtering, and enrichment                                                                  | Host profile                  | Existing telemetry is selected or enriched without replacing its owner or creating duplicates.                         |
+| Concern                                                                                                     | Owner                          | Contract                                                                                                               |
+| ----------------------------------------------------------------------------------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| OpenTelemetry SDK, `Resource`, sampler, readers/processors, exporters, batching, retry, flush, and shutdown | Host                           | The Harness receives explicit providers or selects Host-configured globals and configures no process-global telemetry. |
+| logical Harness Run                                                                                         | Harness                        | One outer span and low-cardinality metrics cover the complete process-local lifecycle when their signals are enabled.  |
+| Agent attempt, model request, tool execution, native usage, streaming, and cancellation                     | Pydantic AI                    | One Harness-selected `Instrumentation` Capability owns enabled native spans and model metrics.                         |
+| Provider SDK or HTTP request                                                                                | Provider or OTel instrumentor  | Ordinary current-context propagation may create descendants; the Harness does not synthesize them.                     |
+| Harness recovery, inline-delegation binding, handoff persistence, compaction, and Mem0 recall operations    | Owning Harness component       | A child span exists whenever tracing is enabled; bounded operation metrics remain independently selectable.            |
+| Process-local events and usage records                                                                      | Event and usage owners         | They remain independent observations and do not become spans or metrics automatically.                                 |
+| Durable lifecycle, audit, delivery, accounting, and billing                                                 | Host                           | A telemetry backend never commits these facts.                                                                         |
+| Bounded correlation and vendor aliases                                                                      | Harness; Host for other scopes | Existing Harness-selected telemetry is enriched without replacing its owner or creating duplicates.                    |
 
 A Harness component owns a span only when its operation remains independently meaningful after Pydantic model and tool execution are removed. Otherwise it enriches the current owning span or retains the existing event.
 
@@ -48,7 +48,7 @@ class HarnessInstrumentation:
 
 The Host may supply this value to `HarnessBuilder`; the builder applies it consistently to the root executable and every recursively built child. At least one provider must be present. A missing tracer provider disables Harness-selected traces, and a missing meter provider disables both Harness and Pydantic metrics. Explicit `None` disables all Harness Observation regardless of environment. The default builder selection resolves the bounded Harness environment convention once and obtains the corresponding Host-configured global providers. Disabled Pydantic signals preserve execution, event, usage, state, cancellation, result, and cleanup behavior and receive explicit no-op providers rather than falling back to unrelated globals.
 
-A supplied tracer provider always enables the complete Harness-selected structural trace: `harness.run`, native Pydantic Agent/model/tool spans, and material `harness.operation` spans. Trace content defaults to `standard`. When tracing is disabled, the content value is a dormant policy and does not make metrics-only instrumentation invalid. The content policies map to supported Pydantic settings as follows:
+A supplied tracer provider always enables the complete Harness-selected structural trace: `harness.run`, preparation/finalization and skill-resolution phases, native Pydantic Agent/model/tool spans, and material `harness.operation` spans. Trace content defaults to `standard`. When tracing is disabled, the content value is a dormant policy and does not make metrics-only instrumentation invalid. The content policies map to supported Pydantic settings as follows:
 
 | Trace content | `include_content` | `include_binary_content` | `include_model_request_parameters` | Meaning                                                                                                              |
 | ------------- | ----------------- | ------------------------ | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
@@ -56,7 +56,7 @@ A supplied tracer provider always enables the complete Harness-selected structur
 | `standard`    | `True`            | `False`                  | `False`                            | Enable ordinary upstream content capture while leaving the dedicated binary and request-parameter switches disabled. |
 | `full`        | `True`            | `True`                   | `True`                             | Opt into every upstream content switch; this is the highest-exposure profile.                                        |
 
-These switches control Pydantic-owned capture only and never broaden the Harness-owned span or metric registries.
+These switches control Pydantic-owned capture and the bounded logical-run input/output projection below. `none` omits Harness input/output bodies; `standard` and `full` permit them with the same 8 KiB-per-direction limit. Harness never copies binary content into its root projection. Content policy does not change structural spans or metric registries.
 
 `HarnessInstrumentation` contains no exporter, endpoint, credential, API key, resource builder, sampler, processor, reader, batch setting, retry policy, timeout, flush, shutdown, vendor SDK type, arbitrary telemetry name, or unrestricted metadata map.
 
@@ -163,6 +163,31 @@ A plugin short-circuit still has one logical-run Observation even when no Pydant
 
 The span is current during all causal run execution, including Harness, Pydantic, provider, tool, Environment, and inline-child work. The Harness detaches its context before every public stream yield, including non-terminal events, and restores it only when iteration resumes. The span remains open while the single consumer applies backpressure because the logical Run and its resources remain active, so that wait contributes to end-to-end span duration without making Host consumer work a descendant.
 
+### Preparation, Finalization, and Skills
+
+`harness.prepare` covers Environment entry, optional input-factory execution, semantic input normalization, context construction and run-plugin binding. `harness.finalize` covers response closure, state export and resource cleanup. These are direct children of the logical Run; no extra execution span duplicates the native Agent attempts. They retain a bounded `a13n.phase.step` identifying the last entered step. Exceptions set an error class without an exception message; cancellation is not automatically an error. Captured cleanup failures mark finalization as failed even when cleanup returns normally to terminal classification. Long-lived Environment tasks retain Run-level parentage rather than inheriting an already-ended preparation span.
+
+`harness.skills.resolve` covers actual catalog scanning, selection and revision validation at Capability binding, not an artificial preparation stage. It starts only when resolution executes. These three structural spans add no new metrics.
+
+The owning Run exposes bounded `a13n.skills.available` and `a13n.skills.accessed` name lists, at most 16 entries each, with available count/omitted count, total access count and accessed-list truncation. `access_count` counts successful recognized reads, including repeated or partial reads; it is not a unique-skill count. A successful ordinary `SKILL.md` read marks its native tool span with `a13n.skill.name`, `a13n.skill.source_id` and `a13n.skill.tool_id`. Catalog discovery is not document access. Access is not proof of a full read, model compliance, or use from earlier history; shell or unrecognized readers are not inferred. These summaries never aggregate another logical Run or propagate to descendants. Observation metadata aliases expose the available/accessed lists for filtering. Existing skill events remain independent process-local observations.
+
+### Phase-Local Data
+
+Owned phases and operations carry meaningful local decisions, not timing alone. Bounded structural scalars are recorded as `a13n.*` attributes and filterable `langfuse.observation.metadata.*` aliases (dots in the suffix become underscores). Each projection accepts at most 16 entries, keys of at most 64 ASCII alphanumeric/dot/underscore characters, and scalar strings of at most 256 UTF-8 bytes. These fields remain available with `trace_content=none`; they contain no prompts, document bodies, native paths, queries, filters or credentials. They are local to the owning span, not inherited correlation.
+
+| Owner                    | Structural facts and local result                                                                                                          |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `harness.prepare`        | Input-factory and deferred-resume selection, definition Capability/plugin counts, successful Environment/context preparation               |
+| `harness.finalize`       | Cleanup-error count, state-export failure, state availability and cancellation; cleanup success is distinct from Run success               |
+| `harness.skills.resolve` | All/explicit selection, root/requested/discovered/selected/excluded/unknown counts; selected name/source pairs or rejected unknown names   |
+| recovery                 | Backoff versus retry-input preparation, next/max attempt, selected delay or history count; cancellation requested or retry input available |
+| delegation               | Child identity, role and continuation selection; returned child status and state availability, not a copy of the child's answer            |
+| handoff                  | Summary byte size and file count; successful process-local state replacement, not a durable Host save claim                                |
+| compaction               | Message counts before/after and summary byte size, not copied model messages or the native summary body                                    |
+| Mem0 recall              | Limit, required/optional selection, scope count and result count; whether context is available, never memory/query/filter content          |
+
+`standard` and `full` additionally expose these local results as bounded observation output through the same 8 KiB projection as Run output. `none` omits every such output body. Skill result lists contain at most 16 entries with total and omitted counts. A rejected unknown-name selection can have a rejection output; scan or revision failure never fabricates a selected catalog. Phases set `a13n.phase.status` and operations set `a13n.operation.status` to `completed`, `failed`, or `cancelled` at their own boundary. Operation completion means the local operation returned normally, not that its child or enclosing Run succeeded. Escaping failures record only exception class and ERROR status; cancellation alone is not ERROR. No generic placeholder output is synthesized for work without a local result.
+
 ### Harness Operation Observations
 
 When tracing is enabled, a focused Harness child span uses the stable name `harness.operation` and one bounded `a13n.operation.kind`. The initial kinds are `recovery`, `delegation`, `handoff`, `compaction`, and `memory_recall`. Delegation covers only the independently authorized child-binding phase; the nested child `harness.run` remains the execution owner. `memory_recall` covers the one prompt-dependent Mem0 search owned by `Mem0Capability.for_run()` and not later model-invoked memory Tool calls.
@@ -207,19 +232,19 @@ The Host places process and deployment facts on the OpenTelemetry `Resource`, in
 | ------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | `a13n.thread.id`                | logical run and correlation-relevant Harness descendants    | Stable independently advancing history correlation from `HarnessState.thread_id`. |
 | `a13n.run.id`                   | logical run and selected Harness descendants                | One process-local logical Harness Run.                                            |
-| `a13n.agent.identity.issuer`    | logical run and Pydantic Agent-attempt enrichment           | Trusted `AgentIdentityRef.issuer`.                                                |
-| `a13n.agent.identity.subject`   | logical run and Pydantic Agent-attempt enrichment           | Trusted `AgentIdentityRef.subject`.                                               |
-| `a13n.agent.id`                 | logical run and Pydantic Agent-attempt enrichment           | Conventional `agent_id` identity claim, when present.                             |
-| `a13n.user.id`                  | logical run and Pydantic Agent-attempt enrichment           | Conventional `user_id` identity claim, when present.                              |
-| `a13n.agent.instance.id`        | logical run and Pydantic Agent-attempt enrichment           | Trusted compact Agent-instance correlation.                                       |
-| `a13n.agent.parent_instance.id` | child logical run and Agent-attempt enrichment              | Parent Agent-instance correlation, when present.                                  |
-| `a13n.delegation.id`            | logical run and Pydantic Agent-attempt enrichment           | Trusted inline-delegation correlation, when present.                              |
-| `a13n.actor`                    | logical run and Pydantic Agent-attempt enrichment           | Trusted Host-selected execution actor, when present.                              |
+| `a13n.agent.identity.issuer`    | logical run and selected descendants                        | Trusted `AgentIdentityRef.issuer`.                                                |
+| `a13n.agent.identity.subject`   | logical run and selected descendants                        | Trusted `AgentIdentityRef.subject`.                                               |
+| `a13n.agent.id`                 | logical run and selected descendants                        | Conventional `agent_id` identity claim, when present.                             |
+| `a13n.user.id`                  | logical run and selected descendants                        | Conventional `user_id` identity claim, when present.                              |
+| `a13n.agent.instance.id`        | logical run and selected descendants                        | Trusted compact Agent-instance correlation.                                       |
+| `a13n.agent.parent_instance.id` | child logical run and selected descendants                  | Parent Agent-instance correlation, when present.                                  |
+| `a13n.delegation.id`            | logical run and selected descendants                        | Trusted inline-delegation correlation, when present.                              |
+| `a13n.actor`                    | logical run and selected descendants                        | Trusted Host-selected execution actor, when present.                              |
 | `a13n.model_attempt.index`      | Pydantic Agent-attempt enrichment                           | Zero-based bounded attempt ordinal.                                               |
-| `a13n.observation.name`         | logical run, when supplied                                  | Host-selected stable work-unit display and grouping name.                         |
-| `a13n.observation.session.id`   | logical run, when supplied                                  | Host-selected product-session correlation.                                        |
-| `a13n.observation.labels`       | logical run, when supplied                                  | Bounded Host-selected filtering labels.                                           |
-| `a13n.observation.metadata.*`   | logical run, when supplied                                  | Bounded scalar Host metadata under validated keys.                                |
+| `a13n.observation.name`         | logical run and selected descendants, when supplied         | Host-selected stable work-unit display and grouping name.                         |
+| `a13n.observation.session.id`   | logical run and selected descendants, when supplied         | Host-selected product-session correlation.                                        |
+| `a13n.observation.labels`       | logical run and selected descendants, when supplied         | Bounded Host-selected filtering labels.                                           |
+| `a13n.observation.metadata.*`   | logical run and selected descendants, when supplied         | Bounded scalar Host metadata under validated keys.                                |
 | `a13n.capability.id`            | Harness operation span, when one Capability owns it         | Stable Capability correlation.                                                    |
 | `a13n.operation.id`             | Harness operation span, when the subsystem already owns one | Existing concise operation correlation.                                           |
 | `a13n.operation.kind`           | Harness operation span                                      | Bounded operation category from this contract.                                    |
@@ -228,7 +253,24 @@ The Host places process and deployment facts on the OpenTelemetry `Resource`, in
 
 These identifiers grant no authority, durability, provider access, or lifecycle truth. Only the conventional `agent_id` and `user_id` claims are projected from `AgentIdentityRef.claims`; arbitrary claims and `AgentInstanceContext.host_refs` are never flattened into telemetry. Each projected identity or lineage value must contain no NUL, be UTF-8 encodable, and encode to at most 1024 bytes. An unsafe or over-limit value is omitted rather than truncated, so Observation cannot create a false correlation collision or change execution. The Harness never projects arbitrary `RunBindings.metadata`, credentials, grants, provider-native state, prompt-cache selectors, opaque handles, native paths, raw URLs, content, or unbounded values into `a13n.*` attributes.
 
-`HarnessObservationContext` is a separate fresh run input rather than an alias for `RunBindings.metadata`. Its optional name and session ID are non-empty UTF-8 strings of at most 256 bytes. It accepts at most 16 unique non-empty labels of at most 64 UTF-8 bytes and at most 16 metadata entries. Metadata keys match `[a-z][a-z0-9_.-]*` and contain at most 64 characters; values are finite OpenTelemetry scalar strings, booleans, signed 64-bit integers, or finite floats, and strings contain no NUL and encode to at most 256 bytes. Invalid context fails before execution. The logical-run span alone receives this vendor-neutral projection; the context is not continuation state, model context, event data, usage, or authority.
+`HarnessObservationContext` is a separate fresh run input rather than an alias for `RunBindings.metadata`. Its optional name and session ID are non-empty UTF-8 strings of at most 256 bytes. It accepts at most 16 unique non-empty labels of at most 64 UTF-8 bytes and at most 16 metadata entries. Metadata keys match `[a-z][a-z0-9_.-]*` and contain at most 64 characters; values are finite OpenTelemetry scalar strings, booleans, signed 64-bit integers, or finite floats, and strings contain no NUL and encode to at most 256 bytes. Invalid context fails before execution. The logical-run span and Harness-selected descendants receive this vendor-neutral projection; the context is not continuation state, model context, event data, usage, or authority.
+
+### Automatic Correlation and Presentation
+
+Enrichment applies to logical Runs, material Harness operations, and native Pydantic spans, including tool validation and output processing. It works with explicit providers, environment-selected providers, and Service-owned Harness instrumentation without adding processors to those providers. Providers, resources, samplers, exporters, and lifecycle remain Host-owned. Hosts can use `HarnessInstrumentation.get_tracer(scope)` and its ordinary `start_as_current_span()` scopes to propagate the same bounded attributes from a Host operation. Disabled tracer selection returns a no-op tracer. Arbitrary third-party spans are not taken over or retroactively rewritten.
+
+Propagation is process-local and trace-identity guarded, not network baggage or a persistent span registry. Explicit span-local values win; a bounded child metadata map has priority over inherited entries. A new logical Run replaces instance identity, including omitting absent claims rather than inheriting them from a caller. A different Thread defaults to its own session and does not inherit another Thread's subagent role. A detached trace receives only its explicitly supplied context, not its linked parent's attributes. Status, observation type, usage, cost, payloads, and exception data are never inherited.
+
+The automatic aliases are:
+
+- observation name, session and labels map to `langfuse.trace.name`, `langfuse.session.id`, and `langfuse.trace.tags`; absent an explicit session, a Run defaults to its actual Thread;
+- a trusted conventional user claim maps to `langfuse.user.id`; no identity subject or generated user value substitutes for it;
+- bounded Thread, Run, instance, delegation and UI operation identifiers map to filterable `langfuse.observation.metadata.*` fields;
+- validated Host metadata maps to both `langfuse.observation.metadata.*` and `langfuse.trace.metadata.*`; scalar aliases are deterministic strings while neutral fields retain scalar types;
+- native Agent, model and tool operations receive `agent`, `generation` and `tool` observation types; a span's explicit type takes precedence;
+- terminal Run outcome and request-local pricing provenance receive observation metadata aliases only on their owning spans.
+
+The Harness does not detect backend URLs, select a vendor profile engine, invent user or prompt-management IDs, enable public traces, duplicate content, or repeat usage/cost on ancestors. Existing neutral attributes remain available to Host samplers at span creation; additional alias and propagation work is skipped for non-recording spans. A non-recording boundary clears inherited enrichment rather than letting selectively recorded descendants use an ancestor's identity. Metadata or export failure never replaces execution results. Existing native GenAI and Logfire model, token and timing fields remain upstream-owned.
 
 ### Pydantic AI Fields
 
@@ -239,7 +281,7 @@ Each `ModelAttempt` supplies:
 - the unique model-attempt ID as Pydantic AI `run_id`;
 - the stable `AgentContext.thread_id` as Pydantic AI `conversation_id`.
 
-Pydantic's native Agent call field carries the supplied model-attempt ID. The Harness enriches the active Pydantic Agent-attempt span only with the bounded attempt index and trusted identity and lineage values in this registry. It does not add an `a13n.*` synonym for the attempt ID or recreate model, tool, message, usage, or exception fields. Pydantic `conversation_id` is telemetry correlation only; the provider model-session and prompt-cache affinity contract remains owned by [Thread Affinity](16-input-model-and-output.md#thread-affinity).
+Pydantic's native Agent call field carries the supplied model-attempt ID. The Harness enriches the active Pydantic Agent-attempt span with the bounded attempt index in addition to the automatically propagated correlation registry. It does not add an `a13n.*` synonym for the attempt ID or recreate model, tool, message, usage, or exception fields. Pydantic `conversation_id` is telemetry correlation only; the provider model-session and prompt-cache affinity contract remains owned by [Thread Affinity](16-input-model-and-output.md#thread-affinity).
 
 Pydantic's model-request span remains the sole span owner for per-request token and cost data. Its native response projection owns `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, first-class cache counters, bounded `gen_ai.usage.details.*` counters including audio and reasoning categories, and provider or `genai-prices` cost fields. The Usage Capability applies a selected Harness model-cost quote inside the active Pydantic model-request wrapper before native response finalization. When a response has a cost, it adds `gen_ai.usage.cost` for documented GenAI backend mapping and the following bounded provenance fields to that same span:
 
@@ -251,6 +293,8 @@ Pydantic's model-request span remains the sole span owner for per-request token 
 | `a13n.usage.pricing.rule.id`  | Selected bounded pricing rule, when one quote was applied.     |
 
 This enrichment is gated by an explicit process-local marker established inside the Harness-selected Pydantic model-request wrapper and matched to that exact current span. Disabled Observation and metrics-only instrumentation through a no-op tracer have no eligible recording model span and receive no cost or pricing attributes on a Host root or another current span. The marker grants no authority and is cleared when the wrapper exits.
+
+Pricing provenance also maps to request-local `langfuse.observation.metadata.usage_*` fields. The existing quote and usage interfaces carry a total, so enrichment does not invent an input/output monetary split or derive one proportionally from tokens. Native upstream cost estimates and cost metrics retain their own pricing behavior; the Harness does not patch private Pydantic finalization to make those estimates equal its quote.
 
 This enrichment creates no model, generation, usage, or metric duplicate. It does not copy the usage ledger, create token synonyms, calculate provider usage receipts, or make the span an accounting authority. `gen_ai.usage.cost` is a numeric USD projection because the Harness model-cost contract quotes USD; currency and full component attribution remain in the authoritative usage model rather than being inferred from this span.
 
@@ -301,7 +345,11 @@ Pydantic AI independently owns the selected release's native token-usage, operat
 
 ### Harness-Owned Observations
 
-Harness-owned span names, attributes, status descriptions, and span events are content-safe by default. They contain only the bounded registry and safe classifications defined here. They exclude:
+Harness-owned span names, status descriptions, phase diagnostics and span events contain no execution payloads. At `trace_content=none`, logical-run attributes also omit input/output bodies. With `standard` or `full`, `harness.run` records the prepared semantic input and final middleware-owned output, not the last model response or complete message history. Each direction is a bounded JSON string (at most 8 KiB) in `a13n.input` / `a13n.output` and `langfuse.observation.input` / `langfuse.observation.output`; deprecated trace-level input/output aliases are not emitted. Hosts can use `HarnessInstrumentation.record_input()` and `record_output()` for their own roots with the same policy. Langfuse v4 uses its root observation for trace input/output.
+
+The projection preserves bounded text, JSON values and public Pydantic model fields without invoking arbitrary serializers or repr. Unsupported values are explicitly omitted; native media parts expose type/media-type descriptions only. Recursive depth and item budgets bound structured projection; oversized values become valid JSON previews. `a13n.input.kind`, `a13n.output.kind`, type, native input part/attachment counts, capture disposition (`content_disabled`, `no_value`, `captured`, `truncated`) and truncation flags explain missing or partial bodies. Output presence is not proof of successful cleanup, durable saving or delivery: the terminal Run outcome remains separate. No body is propagated to child spans. Disabled/non-recording spans skip projection.
+
+Outside these explicitly opted-in input/output fields, Harness diagnostics exclude:
 
 - prompts, model output, tool arguments, and tool results;
 - binary, document, and file content;
@@ -309,7 +357,7 @@ Harness-owned span names, attributes, status descriptions, and span events are c
 - credentials, grants, authorization values, raw headers, and provider response bodies;
 - arbitrary Agent metadata, `RunBindings.metadata`, raw exceptions, and stack traces.
 
-Enabling Pydantic content capture does not expand this Harness-owned registry.
+The root input/output projection is the only content-policy expansion of this Harness-owned registry. It never scans history, opens files, fetches media or introduces replay/persistence authority.
 
 ### Upstream Pydantic Fields
 
@@ -342,13 +390,13 @@ A Host-owned outer span that is intended to appear in Langfuse is retained throu
 
 For a Langfuse-first Host, `start_as_current_observation()` may own the outer Host span because it establishes the active OpenTelemetry context. The Langfuse client uses the same tracer provider supplied for Harness traces; `harness.run` and its selected Pydantic descendants then inherit that current observation. The Host does not pass the Langfuse observation object into the Harness.
 
-The Host may use Langfuse's documented propagation context or an allowlisted SpanProcessor to map the root `HarnessObservationContext` and copy approved trace fields to every descendant span. The v4 OTLP profile maps only these documented fields: `langfuse.trace.name`, `langfuse.user.id`, `langfuse.session.id`, `langfuse.trace.tags`, `langfuse.trace.metadata.*`, `langfuse.version`, `langfuse.release`, and `langfuse.environment`. The Host may source `langfuse.user.id` from the conventional trusted `user_id` claim and maps observation context name, session, labels, and metadata to their corresponding trace fields, but it does not reinterpret issuer/subject, arbitrary claims, or `RunBindings.metadata`. Because Langfuse defines each flattened `langfuse.trace.metadata.*` OTLP attribute as a string, the profile deterministically string-encodes non-string Harness scalar metadata while retaining the original scalar type on `a13n.observation.metadata.*`. Release selection follows the selected Langfuse version's documented propagation or process configuration. Enrichment updates existing spans and never creates duplicate Harness, model, or tool observations.
+The automatic correlation mapping above requires neither a Langfuse SDK nor an installed enrichment processor. Hosts may separately use documented Langfuse propagation or a processor for independently instrumented scopes and deployment facts such as version, release, and environment. That policy does not reinterpret arbitrary identity claims or `RunBindings.metadata`. All paths enrich existing spans rather than create duplicate Harness, model, or tool observations.
 
-`langfuse.session.id` is product-level observability grouping. A Host may intentionally map it from the Harness Thread or a broader product conversation, but that mapping is explicit profile policy. It never changes the State-owned Thread, Pydantic conversation correlation, provider model session, or prompt-cache affinity.
+`langfuse.session.id` defaults to the actual Harness Thread. A Host may explicitly select a broader product conversation through `HarnessObservationContext.session_id`. It never changes the State-owned Thread, Pydantic conversation correlation, provider model session, or prompt-cache affinity.
 
 Langfuse v4 derives trace input and output from the root observation. A Host that intentionally needs trace-level input/output creates a meaningful bounded Host root and uses `langfuse.observation.input` and `langfuse.observation.output` JSON strings; it does not use deprecated trace input/output attributes or dump all bindings, state, events, or usage records. When `harness.run` is the root, the trace remains content-safe and carries only the bounded observation context, not prompt or output. Pydantic-owned model and tool input/output follow `HarnessTraceContent`; internal compaction, multimodal-understanding, and inline-child executions retain their ordinary causal parentage and do not receive duplicate Host observations solely to improve vendor presentation.
 
-Pydantic model requests use Langfuse's supported GenAI generation mapping. Rich `agent` or `tool` presentation for externally created spans is used only through documented public mapping supported by the selected Langfuse SDK. When that mapping is unavailable, the existing span remains a generic Langfuse span; the Host does not add a duplicate SDK-created observation or private wrapper.
+Pydantic model requests use Langfuse's supported GenAI generation mapping. The automatic `langfuse.observation.type` alias supplies Agent/tool presentation on existing spans, not duplicate SDK-created observations. Independently created spans remain their instrumentor's responsibility.
 
 Pydantic usage uses inclusive parent/child buckets: input includes cache and input-audio tokens, output includes output-audio tokens, and provider reasoning counters may also overlap output. Langfuse v4 currently splits first-class cache counters correctly but treats arbitrary `gen_ai.usage.details.*` values as additive when deriving its displayed `usageDetails.total`. Consequently, a Langfuse total that includes audio or reasoning detail can exceed Pydantic `input_tokens + output_tokens`. The profile preserves the documented detail fields for inspection but does not claim that backend-derived total as Harness usage or accounting truth. A future profile normalization must use public processor/exporter APIs and must not mutate Pydantic's vendor-neutral owner fields globally.
 

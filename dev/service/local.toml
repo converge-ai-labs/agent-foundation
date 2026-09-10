@@ -7,15 +7,24 @@
 role = "all"
 host = "127.0.0.1"
 port = 8000
+# Exported as deployment.environment.name; trace backends show Env: local.
+# This is independent of the Run's execution Environment/provider.
 deployment_environment_name = "local"
+
+[worker]
+concurrency = 8
 
 [database]
 backend = "postgresql"
 url = "postgresql+psycopg://a13n_service_dev:local-only-password@127.0.0.1:15432/a13n_service_dev"
+pool_size = 60
+max_overflow = 20
 
 [redis]
 backend = "redis"
 url = "redis://127.0.0.1:16379/0"
+# Run publication, seed polling, and background tasks share this pool.
+max_connections = 256
 
 [objects]
 backend = "local"

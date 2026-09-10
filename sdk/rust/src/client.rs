@@ -39,6 +39,22 @@ impl fmt::Display for Error {
 }
 impl std::error::Error for Error {}
 
+/// A generated call failed, or its owning client was closed.
+#[derive(Debug)]
+pub enum CallError<E> {
+    Closed,
+    Operation(E),
+}
+impl<E: fmt::Display> fmt::Display for CallError<E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Closed => f.write_str("Client is closed"),
+            Self::Operation(error) => error.fmt(f),
+        }
+    }
+}
+impl<E: std::error::Error + 'static> std::error::Error for CallError<E> {}
+
 /// Owns a bounded bearer transport. Drop a request future to cancel that request;
 /// close() cancels all local requests and releases the pool without changing Runs.
 pub struct Client {
@@ -79,6 +95,41 @@ impl Client {
             shutdown: CancellationToken::new(),
         })
     }
+    /// Execute generated operations with the same pool, authentication and
+    /// cancellation as the Search facade. For binary responses, consume the
+    /// body inside the async closure so close() also cancels stream delivery.
+    pub async fn execute<T, E>(
+        &self,
+        operation: impl AsyncFnOnce(
+            &crate::generated::apis::configuration::Configuration,
+        ) -> Result<T, E>,
+    ) -> Result<T, CallError<E>> {
+        let http = self
+            .http
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone()
+            .ok_or(CallError::Closed)?;
+        let configuration = crate::generated::apis::configuration::Configuration {
+            base_path: self
+                .base_url
+                .as_str()
+                .trim_end_matches("/api/v1/")
+                .to_owned(),
+            client: http,
+            user_agent: None,
+            basic_auth: None,
+            oauth_access_token: None,
+            bearer_access_token: None,
+            api_key: None,
+        };
+        tokio::select! {
+            biased;
+            _ = self.shutdown.cancelled() => Err(CallError::Closed),
+            result = operation(&configuration) => result.map_err(CallError::Operation),
+        }
+    }
+
     pub fn close(&self) {
         self.shutdown.cancel();
         self.http

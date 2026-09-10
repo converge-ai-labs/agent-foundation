@@ -15,7 +15,7 @@ from .object_store import (
     ObjectStoreUnavailable,
     ObjectSummary,
 )
-from .relational import is_unique_conflict, short_session, transaction
+from .relational import is_database_unavailable, is_unique_conflict, short_session, transaction
 from .runtime import StorageResources, StorageStartupError, open_storage
 
 __all__ = [
@@ -34,6 +34,7 @@ __all__ = [
     "StorageResources",
     "StorageSettings",
     "StorageStartupError",
+    "is_database_unavailable",
     "is_unique_conflict",
     "open_storage",
     "short_session",

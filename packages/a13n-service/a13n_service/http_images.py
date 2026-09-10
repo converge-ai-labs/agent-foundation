@@ -13,6 +13,10 @@ IMAGE_UPLOAD = {
     }
 }
 
+IMAGE_DOWNLOAD: dict[int | str, dict[str, object]] = {
+    200: {"content": {"image/webp": {"schema": {"type": "string", "format": "binary"}}}}
+}
+
 
 async def image_body(request: Request) -> bytes:
     content = bytearray()

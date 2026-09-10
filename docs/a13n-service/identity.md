@@ -18,7 +18,7 @@ The command invalidates the old link. It cannot reopen completed initialization.
 
 ## Browser sessions
 
-Open `/api/v1/auth/login` to sign in. Applications may POST `{ "email": "...", "password": "..." }` to that URL. Successful login and invitation acceptance set an `HttpOnly`, `Secure`, `SameSite=Lax` cookie and return safe User/session metadata plus `csrf_token`. Session expiry defaults to seven days and is configured by `A13N_SERVICE_IAM_SESSION_DAYS`.
+Open [Console](console.md) at its `/login` page to sign in. `/api/v1/auth/login` is a JSON endpoint, not a browser page. Applications may POST `{ "email": "...", "password": "..." }` to that URL. Successful login and invitation acceptance set an `HttpOnly`, `Secure`, `SameSite=Lax` cookie and return safe User/session metadata plus `csrf_token`. Session expiry defaults to seven days and is configured by `A13N_SERVICE_IAM_SESSION_DAYS`.
 
 Browser mutations require an `Origin` matching the configured public origin. Authenticated mutations also require `X-A13N-CSRF-Token`; retrieve it from the login response or `GET /api/v1/auth/csrf`. Send cookies with same-origin requests. Never send a bearer credential together with a session cookie.
 
@@ -55,7 +55,7 @@ Manage existing membership through the Organization or Workspace `role-bindings`
 
 Composio returns to the Console page `/connector-setup/callback`. The page removes the upstream session from the address bar and posts it with the exact attempt and browser proof to `/api/v1/connector-setup/complete`, using the normal Origin, session cookie, and CSRF token. Follow the [Composio setup guide](external-tools.md#connector-providers-composio-and-openconnector) to configure the verifier and shared origin.
 
-The MCP OAuth GET callback still requires the same CSRF proof as mutations when using a local browser session. A provider redirect alone cannot complete that route. Its interactive completion flow remains tracked in [Issue #203](https://github.com/converge-ai-labs/agent-foundation/issues/203).
+The MCP OAuth GET callback still requires the same CSRF proof as mutations when using a local browser session. A provider redirect alone cannot complete that route. Do not treat an ordinary provider redirect as a working session-authenticated completion flow.
 
 ## Create application keys
 

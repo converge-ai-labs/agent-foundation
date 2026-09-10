@@ -8,12 +8,12 @@ from datetime import timedelta
 from typing import Protocol
 
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
-from anyio import CancelScope, Event, Semaphore, create_task_group, current_time, move_on_after
+from anyio import CancelScope, Event, Semaphore, create_task_group, current_time, move_on_after, sleep
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.ids import new_object_id
-from a13n_service.storage import short_session
+from a13n_service.storage import is_database_unavailable, short_session
 
 from .attempts import AttemptContext
 from .domain import RunAttemptYieldReason, RunStatus
@@ -126,35 +126,47 @@ class WorkerExecutionLoop:
             async with create_task_group() as roots:
                 roots.start_soon(self._request_handoffs_on_drain)
                 while not self.is_draining():
-                    with CancelScope(deadline=self._drain_deadline) as admission:
-                        self._admission_scope = admission
-                        for organization_id in await self._organizations():
-                            if self.is_draining() or self._capacity.value == 0:
-                                break
-                            claim = WorkerClaim(
-                                organization_id=organization_id,
-                                worker_id=self._worker_id,
-                                worker_build_id=self._build_id,
-                                lease_duration=self._lease,
-                                handoff_preference_window=self._lease,
-                            )
-                            candidates = await self._scheduler.scan(claim, queue_name=self._queue_name)
-                            if not candidates:
-                                continue
-                            for run_id in candidates:
+                    productive = False
+                    try:
+                        with CancelScope(deadline=self._drain_deadline) as admission:
+                            self._admission_scope = admission
+                            for organization_id in await self._organizations():
                                 if self.is_draining() or self._capacity.value == 0:
                                     break
-                                self._capacity.acquire_nowait()
-                                slot = WorkerCapacitySlot(self._capacity)
-                                try:
-                                    result = await self._scheduler.claim(run_id, claim)
-                                    if isinstance(result, ClaimedAttempt):
-                                        roots.start_soon(self._execute, self._context(result, claim), slot)
-                                        slot = None
-                                finally:
-                                    if slot is not None:
-                                        slot.release()
-                    self._admission_scope = None
+                                claim = WorkerClaim(
+                                    organization_id=organization_id,
+                                    worker_id=self._worker_id,
+                                    worker_build_id=self._build_id,
+                                    lease_duration=self._lease,
+                                    handoff_preference_window=self._lease,
+                                )
+                                candidates = await self._scheduler.scan(claim, queue_name=self._queue_name)
+                                if not candidates:
+                                    continue
+                                for run_id in candidates:
+                                    if self.is_draining() or self._capacity.value == 0:
+                                        break
+                                    self._capacity.acquire_nowait()
+                                    slot = WorkerCapacitySlot(self._capacity)
+                                    try:
+                                        result = await self._scheduler.claim(run_id, claim)
+                                        productive = productive or result is not None
+                                        if isinstance(result, ClaimedAttempt):
+                                            roots.start_soon(self._execute, self._context(result, claim), slot)
+                                            slot = None
+                                    finally:
+                                        if slot is not None:
+                                            slot.release()
+                    except Exception as error:
+                        if not is_database_unavailable(error):
+                            raise
+                        productive = False
+                        logger.warning("worker_database_unavailable", extra={"retry_seconds": self._poll_seconds})
+                    finally:
+                        self._admission_scope = None
+                    if productive and self._capacity.value > 0:
+                        await sleep(0)
+                        continue
                     with move_on_after(self._poll_seconds):
                         await self._draining.wait()
         finally:

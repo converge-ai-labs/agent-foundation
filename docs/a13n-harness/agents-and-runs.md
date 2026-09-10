@@ -242,7 +242,7 @@ result = await executable.run(
 )
 ```
 
-Or produce semantic input after the Environment is entered and previous portable Environment state is restored:
+Or produce semantic input after the current Environment aggregate enters, before model execution. The Host supplies authoritative Provider state when constructing fresh adapters; Harness does not restore a Provider from portable observations after entry, and target preparation may still be lazy:
 
 ```python
 async def make_input(preparation):

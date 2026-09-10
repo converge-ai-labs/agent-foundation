@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+from contextlib import AsyncExitStack
+from types import SimpleNamespace
 
 import httpx2
 import pytest
@@ -9,6 +11,97 @@ from botocore.exceptions import ClientError
 
 from .client import LiveClient
 from .local_storage import wait_ready
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failed_attempts", [0, 1, 3])
+async def test_owned_storage_replaces_only_missing_mappings_and_cleans_every_attempt(
+    monkeypatch, caplog, failed_attempts
+):
+    from testcontainers.core import container as containers
+
+    from . import local_storage
+
+    events = []
+    created = []
+
+    class Container:
+        def __init__(self, image):
+            self.number = len(created) + 1
+            created.append(self)
+            self.native = SimpleNamespace(
+                id=f"owned-{self.number}", status="running", attrs={"NetworkSettings": {"Ports": {"9000/tcp": []}}}
+            )
+            self.native.reload = self.reload
+
+        def with_env(self, *args):
+            return self
+
+        def with_command(self, *args):
+            return self
+
+        def with_bind_ports(self, *args):
+            assert args == (9000, ("127.0.0.1", 0))
+            return self
+
+        def start(self):
+            events.append(("start", self.number))
+
+        def stop(self):
+            events.append(("stop", self.number))
+
+        def get_wrapped_container(self):
+            return self.native
+
+        def reload(self):
+            if self.number > failed_attempts:
+                self.native.attrs["NetworkSettings"]["Ports"]["9000/tcp"] = [
+                    {"HostIp": "127.0.0.1", "HostPort": "55020"}
+                ]
+
+    monkeypatch.setattr(containers, "DockerContainer", Container)
+    monkeypatch.setattr(local_storage, "PORT_MAPPING_TIMEOUT_SECONDS", 0.02)
+    async with AsyncExitStack() as stack:
+        if failed_attempts == 3:
+            with pytest.raises(RuntimeError, match="bounded startup retries"):
+                await local_storage.start_rustfs(stack, "private-access", "private-secret")
+        else:
+            assert (
+                await local_storage.start_rustfs(stack, "private-access", "private-secret") == "http://127.0.0.1:55020"
+            )
+            assert events[-1] == ("start", failed_attempts + 1)
+    count = min(failed_attempts + 1, 3)
+    assert events == [event for number in range(1, count + 1) for event in [("start", number), ("stop", number)]]
+    assert len(created) == count
+    assert "private-access" not in caplog.text and "private-secret" not in caplog.text
+
+
+@pytest.mark.anyio
+async def test_published_port_waits_for_delayed_mapping_without_restarting(monkeypatch):
+    from . import local_storage
+
+    native = SimpleNamespace(id="owned", status="running", attrs={}, calls=0)
+
+    def reload():
+        native.calls += 1
+        if native.calls == 2:
+            native.attrs = {"NetworkSettings": {"Ports": {"9000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "55021"}]}}}
+
+    native.reload = reload
+    container = SimpleNamespace(get_wrapped_container=lambda: native)
+    monkeypatch.setattr(local_storage, "PORT_MAPPING_TIMEOUT_SECONDS", 1)
+    assert await local_storage.wait_published_port(container) == 55021
+    assert native.calls == 2
+
+
+@pytest.mark.anyio
+async def test_exited_storage_is_not_treated_as_a_retryable_mapping_collision():
+    from .local_storage import PortMappingUnavailable, wait_published_port
+
+    native = SimpleNamespace(id="owned", status="exited", attrs={}, reload=lambda: None)
+    with pytest.raises(RuntimeError, match="exited before publishing") as caught:
+        await wait_published_port(SimpleNamespace(get_wrapped_container=lambda: native))
+    assert not isinstance(caught.value, PortMappingUnavailable)
 
 
 @pytest.mark.anyio

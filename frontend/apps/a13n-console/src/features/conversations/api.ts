@@ -1,4 +1,4 @@
-import type { Client, operations } from "@converge.ai/a13n";
+import type { Client, paths } from "@converge.ai/a13n";
 import { ApiError } from "@converge.ai/a13n";
 import { queryOptions, type QueryClient } from "@tanstack/react-query";
 import {
@@ -10,7 +10,7 @@ import {
 
 export type SessionFilters = Omit<
   NonNullable<
-    operations["list_sessions_api_v1_workspaces__workspace__sessions_get"]["parameters"]["query"]
+    paths["/api/v1/workspaces/{workspace}/sessions"]["get"]["parameters"]["query"]
   >,
   "limit" | "cursor"
 >;

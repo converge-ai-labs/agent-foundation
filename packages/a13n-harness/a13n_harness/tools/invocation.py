@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import uuid4
 
+from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai import RunContext, TextContent, ToolReturn
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
@@ -68,6 +69,7 @@ from a13n_harness.tools.policy import (
 from a13n_harness.usage import ProviderUsage
 
 TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID = "a13n.tool-execution-boundary"
+logger = get_logger(__name__)
 MAX_ARGUMENT_BYTES = 64 * 1024
 _UNMANAGED_OUTPUT_POLICY = ToolOutputPolicy(
     max_inline_bytes=256 * 1024,
@@ -954,6 +956,15 @@ async def _prepare_invocation(
         except EnvironmentError:
             raise
         except Exception as exc:
+            logger.warning(
+                "managed_tool_resource_resolution_failed",
+                extra={
+                    "run_id": ctx.deps.run_id,
+                    "tool_call_id": ctx.tool_call_id,
+                    "tool_name": tool_name,
+                    "exception_chain": exception_details(exc),
+                },
+            )
             raise ToolFailed("Managed tool resources could not be resolved.") from exc
         if not isinstance(resolved, tuple) or not all(isinstance(item, CanonicalResource) for item in resolved):
             raise DefinitionError(

@@ -1,5 +1,6 @@
 """Retained conversations produced by real local Service execution."""
 
+from collections.abc import Awaitable, Callable
 from uuid import uuid4
 
 import anyio
@@ -17,6 +18,7 @@ async def run(
     environment_id: str | None = None,
     asset_id: str | list[str] | None = None,
     expected: str | None = None,
+    wait_for_run: Callable[[str, str], Awaitable[dict]] | None = None,
 ) -> dict:
     body = {"agent_id": agent, "input": {"schema_version": "2", "content": [{"type": "text", "text": prompt}]}}
     if environment_id:
@@ -33,7 +35,10 @@ async def run(
         path = f"/api/v1/runs/{previous['id']}/continue"
         body = {"input": body["input"], "expected_thread_version": thread["version"]}
     receipt = await client.request("POST", path, expected=202, json=body)
-    return await finish(client, receipt["run_id"], expected or ("failed" if "[fail]" in prompt else "completed"))
+    expected = expected or ("failed" if "[fail]" in prompt else "completed")
+    if wait_for_run is not None:
+        return await wait_for_run(receipt["run_id"], expected)
+    return await finish(client, receipt["run_id"], expected)
 
 
 async def finish(client: Client, run_id: str, expected: str = "completed") -> dict:

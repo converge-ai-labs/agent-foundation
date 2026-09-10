@@ -154,7 +154,7 @@ capabilities:
 
 Supported adapters are Responses, Anthropic and xAI. The **provider** connects to the remote server; a local stdio server or a localhost URL on your machine is not reachable that way. The wizard configures public servers only. Review the server and its tool permissions: these are provider-executed tools, not Host tool calls, and the Responses adapter sends `require_approval: never`.
 
-Upstream `authorization_token` and `headers` are ordinary strings; `${TOKEN}` or `{env: TOKEN}` in a native-tool specification is **not** resolved by Harness UI. Do not place secrets in Agent capabilities, which are captured in Run compositions. For authenticated native MCP, a trusted Host capability must load credentials at runtime and construct the upstream tool. Alternatively, use Harness UI's [Host MCP integration](extensions-and-mcp.md#mcp-servers), which already owns environment/header credential resolution. That integration uses Agent `mcp_servers` and is distinct from provider-hosted `MCPServerTool`.
+Upstream `authorization_token` and `headers` are ordinary strings; `${TOKEN}` or `{env: TOKEN}` in a native-tool specification is **not** resolved by Harness UI. Do not place secrets in Agent capabilities, which are captured in Run compositions. For authenticated native MCP, a trusted Host capability must load credentials at runtime and construct the upstream tool. Alternatively, use Harness UI's [Host MCP integration](mcp.md), which already owns environment/header credential resolution. That integration uses Agent `mcp_servers` and is distinct from provider-hosted `MCPServerTool`.
 
 ### Advisor
 
@@ -172,6 +172,36 @@ Use an Anthropic advisor model ID, or an OpenRouter model slug such as `anthropi
 ### Memory: a Host integration prerequisite
 
 `NativeTool` can deserialize `kind: memory`, but **that alone is not an implementation**. Anthropic requires an executable function tool named exactly `memory` implementing its memory commands. Harness UI's ordinary state/task/history features are not that handler. Therefore Memory is explained but not selectable in the stock wizard. A trusted Host integration must provide storage and the handler, then compose `NativeTool(MemoryTool())` with it. Follow the [upstream Memory example and command contract](https://pydantic.dev/docs/ai/tools-toolsets/native-tools/#memory-tool); no parallel memory subsystem is introduced here.
+
+## Native search and image generation
+
+Agent capabilities compose independently. For a compatible Model, add the following entries to its `capabilities` list:
+
+```yaml
+capabilities:
+  - capability: NativeTool
+    configuration:
+      kind: web_search
+      external_web_access: true
+  - capability: native_image_generation
+    configuration:
+      quality: auto
+      output_format: png
+  - capability: web
+    configuration:
+      search:
+        mode: off
+```
+
+`NativeTool` accepts the upstream native tool specification, including the explicit `tool: {kind: web_search}` form. Multiple entries can select different native tools. The example enables live search, matching the Codex setup default; set `external_web_access: false` to explicitly request cached search on compatible providers. Options and availability depend on the actual Model/provider, not merely its brand or API compatibility label.
+
+`native_image_generation` wraps the Model's native `ImageGenerationTool` and saves the returned images before reporting their paths. It does not call a separate image API or fall back to another Model. Harness UI supplies its saver automatically: files land at `tmp/image-<id>.<extension>` under the **current Thread's** file area. Replies, transcripts, and resumed history carry readable file paths rather than image bytes. The Agent can use `view` to inspect a saved image later; a file reference does not automatically send its pixels to a later Model. Saving failures fail the Run instead of silently losing the image.
+
+These images survive Run completion and application restart, but are subject to ordinary Thread scratch cleanup. Ask the Agent to copy an important image into your Project or another retained destination. Generated images are not submitted attachments.
+
+The `web` entry above keeps fetch, scrape, and download available without registering a second search tool. Set its `search.mode` to `host` to expose the independent keyless DuckDuckGo search implementation, even alongside native search. Native search uses the selected Model provider's account and billing; Host search uses the UI's Web transport. Neither is implied merely by installing a Capability.
+
+Setup writes reviewed starter choices into **new Agent resources**: Codex uses live native search plus native image generation; Grok subscription uses native search. Compatible API templates use native tools where reviewed, otherwise Host search. Custom endpoints and older incompatible tool combinations are not assumed to support native tools. Existing resources and Agents are not migrated, and changing Models does not rewrite their tool selections. Edit the Agent YAML and run `a13n-harness-ui config validate` to change them.
 
 ## Host Web Capability: every built-in provider
 

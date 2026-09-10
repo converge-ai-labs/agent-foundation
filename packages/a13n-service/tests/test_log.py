@@ -12,6 +12,8 @@ def test_log_config_injects_service_context() -> None:
     assert config["handlers"]["default"]["formatter"] == "json"
     assert config["handlers"]["default"]["filters"] == ["context"]
     assert config["loggers"]["alembic"]["handlers"] == ["default"]
+    assert config["loggers"]["a13n_harness"]["handlers"] == ["default"]
+    assert config["loggers"]["a13n_harness"]["propagate"] is False
     assert config["filters"]["context"]["fields"] == {
         "service": "a13n-service",
         "role": "control",

@@ -2728,7 +2728,7 @@ async def test_terminal_waits_for_delayed_environment_change_adapter_drain(
     assert items[-1].result.output_or_raise() == "done"
 
 
-async def test_direct_local_move_replaces_a_nonempty_directory_portably(tmp_path: Path) -> None:
+async def test_direct_local_move_preserves_nonempty_directory_on_rejected_replace(tmp_path: Path) -> None:
     source = tmp_path / "source"
     destination = tmp_path / "destination"
     source.mkdir()
@@ -2743,11 +2743,12 @@ async def test_direct_local_move_replaces_a_nonempty_directory_portably(tmp_path
         generation="generation-1",
     )
 
-    await files.move("/source", "/destination", replace=True)
+    with pytest.raises(EnvironmentError):
+        await files.move("/source", "/destination", replace=True)
 
-    assert not source.exists()
-    assert (destination / "new.txt").read_text() == "new"
-    assert not (destination / "old.txt").exists()
+    assert (source / "new.txt").read_text() == "new"
+    assert (destination / "old.txt").read_text() == "old"
+    assert not (destination / "new.txt").exists()
     assert not tuple(tmp_path.glob(".destination.a13n-replaced-*"))
 
 

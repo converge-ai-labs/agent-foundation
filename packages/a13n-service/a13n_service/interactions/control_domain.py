@@ -86,6 +86,19 @@ class ThreadRunSubmissionRequest(StrictModel):
     hook_subscription: InlineHookSubscriptionInput | None = None
     waiting_resolution: WaitingResolutionDefaults | None = None
 
+    @model_validator(mode="after")
+    def preserve_waiting_execution(self):
+        execution_fields = {
+            "agent_id",
+            "agent_revision_id",
+            "expected_current_revision_id",
+            "environment",
+            "config_override",
+        }
+        if self.waiting_resolution is not None and self.model_fields_set & execution_fields:
+            raise ValueError("Waiting Continue cannot supply execution overrides.")
+        return self
+
     @model_serializer(mode="wrap")
     def preserve_environment_selection(self, handler: SerializerFunctionWrapHandler):
         payload = handler(self)

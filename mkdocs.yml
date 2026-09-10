@@ -35,9 +35,17 @@ nav:
           - Agents and subagents: a13n-harness-ui/agents-and-subagents.md
           - Environments and Projects: a13n-harness-ui/environments-and-projects.md
       - Add tools:
-          - MCP, Skills, and extensions: a13n-harness-ui/extensions-and-mcp.md
+          - Tools and extension types: a13n-harness-ui/extensions-and-mcp.md
+          - MCP servers: a13n-harness-ui/mcp.md
+          - Skills and Content Plugins: a13n-harness-ui/skills-and-content-plugins.md
           - Native tools and Web providers: a13n-harness-ui/native-and-web-tools.md
-      - Automation and troubleshooting: a13n-harness-ui/automation-and-troubleshooting.md
+      - Operate and reference:
+          - Command reference: a13n-harness-ui/command-reference.md
+          - Browser server: a13n-harness-ui/webui.md
+          - Embed the Python App: a13n-harness-ui/embedding.md
+          - HTTP API: a13n-harness-ui/http-api.md
+          - Automation and troubleshooting: a13n-harness-ui/automation-and-troubleshooting.md
+          - Tracing: a13n-harness-ui/observation.md
   - Harness:
       - Overview: a13n-harness/index.md
       - Get started:
@@ -45,8 +53,11 @@ nav:
           - Testing: a13n-harness/testing.md
       - Build an Agent:
           - Agents and Runs: a13n-harness/agents-and-runs.md
-          - Models and authentication: a13n-harness/models.md
+          - Models: a13n-harness/models.md
+          - Authentication and HTTP clients: a13n-harness/model-authentication.md
           - Tools and dependencies: a13n-harness/tools-and-dependencies.md
+          - Client-side tools: a13n-harness/client-tools.md
+          - Managed tools and policy: a13n-harness/managed-tools.md
           - Inputs and outputs: a13n-harness/inputs-and-outputs.md
           - Capabilities: a13n-harness/capabilities.md
       - Add behavior:
@@ -64,29 +75,55 @@ nav:
           - Plugins and Extensions: a13n-harness/plugins.md
   - Environment:
       - Overview: a13n-environment/index.md
-      - Getting started: a13n-environment/getting-started.md
-      - Choose a backend: environments/index.md
-      - Lifecycle and state: a13n-environment/lifecycle.md
-      - Providers and runtime: a13n-environment/providers.md
-      - Operations and limits: a13n-environment/operations.md
-      - Built-in examples: a13n-environment/examples.md
-      - Remote Envd: a13n-environment/remote-envd.md
+      - Get started:
+          - Getting started: a13n-environment/getting-started.md
+          - Choose a backend: environments/index.md
+          - Built-in examples: a13n-environment/examples.md
+      - Use operations:
+          - Files, paths, and limits: a13n-environment/operations.md
+          - Commands and processes: a13n-environment/commands.md
+          - Lifecycle and state: a13n-environment/lifecycle.md
+      - Configure and extend:
+          - Configure Providers: a13n-environment/configuration.md
+          - Provider configuration reference: a13n-environment/configuration-reference.md
+          - Providers and runtime: a13n-environment/providers.md
+          - Remote Envd: a13n-environment/remote-envd.md
   - Envd:
       - Overview: a13n-envd/index.md
       - Installation: a13n-envd/installation.md
       - Configuration and transports: a13n-envd/configuration.md
+      - Sessions and output: a13n-envd/operations.md
+      - Python EIP client: a13n-envd/python-client.md
       - Isolation and troubleshooting: a13n-envd/isolation.md
-  - a13n Service:
-      - Identity and Access: a13n-service/identity.md
-      - External Tools: a13n-service/external-tools.md
-      - Configure Models: a13n-service/models.md
-      - Configure Web Search: a13n-service/search.md
-      - Background Tasks: a13n-service/background-tasks.md
+  - Service:
+      - Overview: a13n-service/index.md
+      - Get started:
+          - Use Console: a13n-service/console.md
+          - Identity and access: a13n-service/identity.md
+          - Agents, Threads, and Runs: a13n-service/agents-and-runs.md
+      - Configure resources:
+          - Resource lifecycles: a13n-service/resources.md
+          - Models: a13n-service/models.md
+          - External tools: a13n-service/external-tools.md
+          - Web search: a13n-service/search.md
+      - Integrate:
+          - Language SDKs: a13n-service/sdks.md
+          - HTTP contracts: a13n-service/http-contracts.md
+          - Streams, events, and gateways: a13n-service/streams-and-events.md
+          - Native API reference: a13n-service/api-reference.md
+      - Operate:
+          - Configure Service: a13n-service/configuration.md
+          - Configuration reference: a13n-service/configuration-reference.md
+          - Background tasks: a13n-service/background-tasks.md
   - Stream Protocol:
       - Overview: a13n-stream-protocol/index.md
       - Getting started: a13n-stream-protocol/getting-started.md
       - Events and processors: a13n-stream-protocol/events.md
       - Replay and recovery: a13n-stream-protocol/replay.md
+      - API and payload reference: a13n-stream-protocol/api-reference.md
+  - Reference:
+      - Package catalog: packages.md
+      - Logging: a13n-logging/index.md
 
 theme:
   name: material

@@ -20,11 +20,11 @@ Windows supports **Full Control only** for the built-in local modes. Setup and t
 
 Model, Agent, extension, MCP, and Project resources live in sibling YAML directories. A Project contains an ordered list of directories; the first is its default working directory. Launching the CLI in that first directory uses the same Project and all its roots. For example, a Project with roots `[code, notes]` is entered from `code`; adding `notes` later does not create a new Project or hide existing CLI sessions.
 
-The first prompt creates a single-root Project only when no Project's first directory matches. It never adopts a parent Project, treats a secondary root as another entry point, or rewrites an existing Project. Multiple matching Projects require resuming a specific session or editing their roots. To resume a conversation, launch the CLI in its Project's first directory. `--resume` cannot be combined with Agent, Environment, or title overrides; resume first, then use an explicit slash command.
+The first prompt creates a single-root Project only when no Project's first directory matches. It never adopts a parent Project, treats a secondary root as another entry point, or rewrites an existing Project. Multiple matching Projects require resuming a specific session or editing their roots. To retain a conversation's workspace, launch the CLI in its Project's first directory. An explicit resume from another directory reassigns the Thread to the launch directory's Project for future turns while preserving its history and other selections. `--resume` cannot be combined with Agent, Environment, or title overrides; resume first, then use an explicit slash command.
 
-Setup publishes resources first and root defaults last. Multi-file publication is not a transaction: failures report completed paths. Review those paths and preview again. An interrupted replacement may retain an original in `.a13n-harness-ui-setup-recovery-*`; inspect and restore or move it before retrying. Do not delete a competing save to force publication.
+Configuration publication failures belong to [setup recovery](setup.md#cancel-or-recover-setup), not Project selection. Review completed paths and retained recovery files before retrying setup.
 
-Process loss discards active receipts and incomplete input/output. Resume continues only a previously selected complete checkpoint; it does not replay interrupted side effects. Best-effort live output can be incomplete; if events are lost, the terminal labels recovery and prints the authoritative final answer.
+Process loss discards active receipts and incomplete input/output. Resume continues the last saved checkpoint (which can contain safely retained partial progress); it does not replay interrupted side effects. Best-effort live output can be incomplete; if events are lost, the terminal labels recovery and prints the authoritative final answer.
 
 ## Select an Environment
 

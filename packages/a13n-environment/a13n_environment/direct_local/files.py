@@ -16,7 +16,6 @@ from collections.abc import AsyncGenerator, AsyncIterable, AsyncIterator, Iterat
 from contextlib import asynccontextmanager
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
-from uuid import uuid4
 
 from pathspec.gitignore import GitIgnoreSpec
 
@@ -206,6 +205,14 @@ class LocalFileOperator:
         self._mount_id = mount_id
         self._generation = generation
         self._operations = itertools.count(1)
+        self._closed = False
+
+    def close(self) -> None:
+        self._closed = True
+
+    def _require_open(self) -> None:
+        if self._closed:
+            raise EnvironmentError("Direct Local file scope is closed.", code="environment_stale_mount")
 
     def bind_mount(self, mount_id: str) -> None:
         self._mount_id = mount_id
@@ -232,6 +239,7 @@ class LocalFileOperator:
         return tuple(part for part in pure.parts if part != "/")
 
     def _resolve(self, path: str, *, follow_final: bool = True, require_exists: bool = True) -> Path:
+        self._require_open()
         parts = self._lexical(path)
         candidate = self._root.joinpath(*parts)
         try:
@@ -279,6 +287,7 @@ class LocalFileOperator:
         return native
 
     def _require_writable(self, path: Path) -> None:
+        self._require_open()
         if self._read_only:
             raise EnvironmentError("Direct Local root is read-only.", code="environment_denied")
         if path == self._root:
@@ -710,6 +719,7 @@ class LocalFileOperator:
         )
         self._require_writable(source_native)
         self._require_writable(destination_native)
+        source_metadata = source_native.lstat()
         if source_native == destination_native:
             return
         if destination_native.exists() and not replace:
@@ -719,22 +729,17 @@ class LocalFileOperator:
         if not replace:
             _rename_no_replace(source_native, destination_native)
             return
-        if not destination_native.exists():
-            os.replace(source_native, destination_native)
-            return
-
-        backup = destination_native.with_name(f".{destination_native.name}.a13n-replaced-{uuid4().hex}")
-        os.rename(destination_native, backup)
         try:
-            os.replace(source_native, destination_native)
-        except BaseException:
-            if destination_native.exists():
-                _remove_native_path(backup)
-            else:
-                os.replace(backup, destination_native)
-            raise
-        else:
-            _remove_native_path(backup)
+            destination_metadata = destination_native.lstat()
+        except FileNotFoundError:
+            destination_metadata = None
+        if destination_metadata is not None and stat_module.S_ISDIR(source_metadata.st_mode) != stat_module.S_ISDIR(
+            destination_metadata.st_mode
+        ):
+            raise EnvironmentError("Move source and destination kinds differ.", code="environment_request_invalid")
+        # One native replacement preserves directory shape and non-empty-directory
+        # preconditions. Moving the destination aside first would bypass both.
+        os.replace(source_native, destination_native)
 
     async def remove(
         self,
@@ -751,9 +756,10 @@ class LocalFileOperator:
     def _remove_native(self, path: str, recursive: bool) -> None:
         native = self._resolve(path, follow_final=False)
         self._require_writable(native)
-        if native.is_symlink() or native.is_file():
+        metadata = native.lstat()
+        if stat_module.S_ISLNK(metadata.st_mode) or stat_module.S_ISREG(metadata.st_mode):
             native.unlink()
-        elif native.is_dir():
+        elif stat_module.S_ISDIR(metadata.st_mode):
             if recursive:
                 shutil.rmtree(native)
             else:
@@ -929,13 +935,6 @@ def _rename_no_replace(source: Path, destination: Path) -> None:
         if number in {errno.ENOSYS, errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV}:
             raise EnvironmentError("Atomic no-replace move is unavailable.", code="environment_unsupported")
         raise OSError(number, os.strerror(number))
-
-
-def _remove_native_path(path: Path) -> None:
-    if path.is_symlink() or path.is_file():
-        path.unlink()
-    else:
-        shutil.rmtree(path)
 
 
 def _environment_error_from_os(exc: OSError, *, action: str) -> EnvironmentError:

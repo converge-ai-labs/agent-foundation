@@ -41,6 +41,14 @@ def test_override_and_independent_sections_keep_secrets_private(tmp_path, monkey
         '[connector]\nprovider="composio"\napi_key="key"\nproject_api_key="sample-secret"',
         '[connector]\nprovider="unknown"\napi_key="sample-secret"',
         '[model]\nprovider="openrouter"\napi_key="sample-secret"',
+        '[search]\nprovider="exa"',
+        '[search]\napi_key="sample-secret"',
+        '[search]\nprovider="unknown"\napi_key="sample-secret"',
+        '[search]\nprovider="exa"\napi_key="sample-secret"\nbase_url="https://example.com"',
+        '[brave_search]\nprovider="brave"',
+        '[brave_search]\napi_key="sample-secret"',
+        '[brave_search]\nprovider="exa"\napi_key="sample-secret"',
+        '[brave_search]\nprovider="brave"\napi_key="sample-secret"\nbase_url="https://example.com"',
         '[model]\nprovider="openai_compatible"\napi_key="sample-secret"\nmodel="model"',
         '[model]\nprovider="openai_compatible"\napi_key="sample-secret"\nmodel="model"\nbase_url="https://sample-secret@example.com"',
         '[environment]\napi_key="sample-secret',
@@ -89,8 +97,31 @@ def test_openconnector_configuration_uses_two_private_keys(tmp_path):
         assert secret not in repr(config) + config.model_dump_json()
 
 
+@pytest.mark.parametrize("section,provider", [("search", "exa"), ("brave_search", "brave")])
+def test_search_configuration_is_independent_and_redacted(tmp_path, section, provider):
+    path = tmp_path / "settings.toml"
+    path.write_text(f'[{section}]\nprovider="{provider}"\napi_key="search-secret"\n')
+    config = load_provider_settings(path)
+    selected = getattr(config, section)
+    assert selected.provider == provider
+    assert selected.api_key.get_secret_value() == "search-secret"
+    assert getattr(config, "brave_search" if section == "search" else "search") is None
+    assert config.environment is None and config.connector is None and config.model is None
+    assert "search-secret" not in repr(config) + config.model_dump_json()
+
+
 @pytest.mark.anyio
-@pytest.mark.parametrize("section,flag", [("model", ""), ("slack", ""), ("model", "--live-slack")])
+@pytest.mark.parametrize(
+    "section,flag",
+    [
+        ("model", ""),
+        ("search", ""),
+        ("brave_search", ""),
+        ("slack", ""),
+        ("model", "--live-slack"),
+        (("model", "openai/gpt-4.1-nano"), ""),
+    ],
+)
 async def test_offline_fixture_does_not_read_private_configuration(monkeypatch, section, flag):
     from .conftest import configured_provider
 
@@ -102,6 +133,60 @@ async def test_offline_fixture_does_not_read_private_configuration(monkeypatch, 
     fixture = configured_provider.__wrapped__(request)
     with pytest.raises(pytest.skip.Exception):
         await anext(fixture)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("section", ["search", "brave_search"])
+async def test_unconfigured_search_skips_before_starting_lab(monkeypatch, section):
+    from . import real_providers
+    from .conftest import configured_provider
+
+    monkeypatch.setattr(provider_config, "load_provider_settings", ProviderSettings)
+
+    def unexpected_lab(*args):
+        raise AssertionError("Unconfigured search started live infrastructure")
+
+    monkeypatch.setattr(real_providers, "configured_provider_lab", unexpected_lab)
+    request = SimpleNamespace(
+        config=SimpleNamespace(getoption=lambda option: option == "--live-providers"), param=section
+    )
+    with pytest.raises(pytest.skip.Exception, match=f"Optional {section} Provider is not configured"):
+        await anext(configured_provider.__wrapped__(request))
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("section,provider", [("search", "exa"), ("brave_search", "brave")])
+async def test_search_fixture_routes_each_configured_account_to_its_own_provider(
+    tmp_path, monkeypatch, section, provider
+):
+    from . import real_providers
+    from .conftest import configured_provider
+
+    path = tmp_path / "settings.toml"
+    path.write_text(
+        '[search]\nprovider="exa"\napi_key="exa-secret"\n[brave_search]\nprovider="brave"\napi_key="brave-secret"\n'
+    )
+    settings = load_provider_settings(path)
+    assert "exa-secret" not in settings.model_dump_json() and "brave-secret" not in repr(settings)
+    monkeypatch.setattr(provider_config, "load_provider_settings", lambda: settings)
+
+    @asynccontextmanager
+    async def lab(kind, selected):
+        assert kind == "search"
+        assert selected is getattr(settings, section)
+        assert selected.provider == provider
+        assert selected.api_key.get_secret_value() == provider + "-secret"
+        yield "search journey"
+
+    monkeypatch.setattr(real_providers, "configured_provider_lab", lab)
+    request = SimpleNamespace(
+        config=SimpleNamespace(getoption=lambda option: option == "--live-providers"), param=section
+    )
+    fixture = configured_provider.__wrapped__(request)
+    try:
+        assert await anext(fixture) == "search journey"
+    finally:
+        await fixture.aclose()
 
 
 @pytest.mark.anyio
@@ -120,14 +205,65 @@ async def test_provider_opt_in_does_not_start_interactive_slack(monkeypatch):
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("provider", ["openrouter", "openai_compatible"])
+async def test_model_matrix_uses_openrouter_credentials_without_changing_config(monkeypatch, provider):
+    from . import real_providers
+    from .conftest import configured_provider
+
+    settings = ProviderSettings.model_validate(
+        {
+            "model": {
+                "provider": provider,
+                "api_key": "model-secret",
+                "model": "configured/model",
+                "base_url": "" if provider == "openrouter" else "https://models.example/v1",
+            }
+        }
+    )
+    monkeypatch.setattr(provider_config, "load_provider_settings", lambda: settings)
+    provisioned = []
+
+    @asynccontextmanager
+    async def lab(section, selected):
+        provisioned.append((section, selected))
+        yield "configured"
+
+    monkeypatch.setattr(real_providers, "configured_provider_lab", lab)
+    request = SimpleNamespace(
+        config=SimpleNamespace(getoption=lambda option: option == "--live-providers"),
+        param=("model", "google/gemini-2.5-flash-lite"),
+    )
+    fixture = configured_provider.__wrapped__(request)
+    try:
+        if provider == "openai_compatible":
+            with pytest.raises(pytest.skip.Exception, match=r"requires model\.provider=openrouter"):
+                await anext(fixture)
+            assert provisioned == []
+        else:
+            assert await anext(fixture) == "configured"
+            section, selected = provisioned[0]
+            assert section == "model" and selected.model == "google/gemini-2.5-flash-lite"
+            assert selected.api_key == settings.model.api_key
+            assert settings.model.model == "configured/model"
+            assert "model-secret" not in repr(selected)
+    finally:
+        await fixture.aclose()
+
+
+@pytest.mark.anyio
 async def test_cleanup_attempts_every_owned_environment_even_after_run_failure():
     from .real_providers import cleanup_provider_lab
 
     live = SimpleNamespace(
         cleanup=AsyncMock(side_effect=RuntimeError("Run failure")),
         collection=AsyncMock(
-            return_value=[{"id": "env_first", "status": "running"}, {"id": "env_second", "status": "unprepared"}]
+            return_value=[
+                {"id": "env_first", "status": "running", "provider_id": "ep_remote"},
+                {"id": "env_local", "status": "running", "provider_id": "ep_local"},
+                {"id": "env_second", "status": "unprepared", "provider_id": "ep_remote"},
+            ]
         ),
+        request=AsyncMock(side_effect=[{"type": "a13n.e2b"}, {"type": "a13n.direct-local"}, {"type": "a13n.e2b"}]),
     )
     journey = SimpleNamespace(
         live=live,
@@ -136,6 +272,7 @@ async def test_cleanup_attempts_every_owned_environment_even_after_run_failure()
     )
     with pytest.raises(AssertionError, match="env_first"):
         await cleanup_provider_lab(journey)
+    assert journey.environment_command.await_count == 2, "Direct Local must not receive unsupported delete commands"
     assert journey.environment_command.await_args_list[1].args == ("env_second", "delete")
     live.collection.assert_awaited_once_with(journey.base + "/environments")
 

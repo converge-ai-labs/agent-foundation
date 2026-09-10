@@ -1,1 +1,8 @@
 * text=auto eol=lf
+
+sdk/openapi.json linguist-generated=true
+sdk/python/a13n/generated/** linguist-generated=true
+sdk/go/generated/** linguist-generated=true
+sdk/rust/src/generated/** linguist-generated=true
+sdk/typescript/openapi.json linguist-generated=true
+sdk/typescript/src/schema.ts linguist-generated=true

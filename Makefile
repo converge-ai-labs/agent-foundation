@@ -139,6 +139,10 @@ live-test-local: sync ## Run first-round HTTP journeys with owned Docker depende
 live-test-round-two: sync ## Run isolated HTTP fault/recovery journeys with Docker dependencies
 	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests --live-round-two -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)
 
+.PHONY: live-test-performance
+live-test-performance: sync ## Measure long-session latency with disposable PG, Redis and S3
+	@uv run --locked python -m pytest dev/live_tests/test_36_long_session.py --live-performance -v --tb=short -o log_cli=true -o log_cli_level=INFO --log-disable=httpx2 $(LIVE_TEST_ARGS)
+
 live-test-management: sync ## Run isolated Service/Harness management journeys with Docker dependencies
 	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests --live-management -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)
 
@@ -497,10 +501,16 @@ sdk/typescript/node_modules/.package-lock.json: sdk/typescript/package.json sdk/
 .PHONY: sdk-typescript-sync
 sdk-typescript-sync: sdk/typescript/node_modules/.package-lock.json ## Install locked TypeScript SDK dependencies
 
+.PHONY: sdk-generate
+sdk-generate: sync sdk-typescript-sync ## Regenerate all SDKs from the live Service OpenAPI contract
+	@uv run --locked python sdk/codegen/generate.py
+
+.PHONY: sdk-generated-check
+sdk-generated-check: sync sdk-typescript-sync ## Verify shared OpenAPI and all generated SDK files without changing them
+	@uv run --locked python sdk/codegen/generate.py --check
+
 .PHONY: sdk-typescript-generate
-sdk-typescript-generate: sync sdk-typescript-sync ## Regenerate the Native TypeScript API contract
-	@uv run python scripts/export-a13n-service-openapi.py
-	@node sdk/typescript/generate.mjs
+sdk-typescript-generate: sdk-generate ## Regenerate shared SDK contracts (compatibility alias)
 
 .PHONY: sdk-typescript-contract-check
 sdk-typescript-contract-check: sync sdk-typescript-sync ## Check Native TypeScript contract drift
@@ -512,11 +522,11 @@ sdk-typescript-build: sdk-typescript-sync ## Build the TypeScript SDK
 	@npm --prefix sdk/typescript run build
 
 .PHONY: sdk-typescript-check
-sdk-typescript-check: sdk-typescript-sync sdk-typescript-contract-check ## Run TypeScript SDK formatting and type checks
+sdk-typescript-check: sdk-typescript-sync ## Run TypeScript SDK formatting and type checks
 	@npm --prefix sdk/typescript run check
 
 .PHONY: sdk-typescript-check-all
-sdk-typescript-check-all: sdk-typescript-sync sdk-typescript-contract-check ## Run the complete TypeScript SDK gate
+sdk-typescript-check-all: sdk-typescript-sync ## Run the complete TypeScript SDK gate
 	@npm --prefix sdk/typescript run check:all
 
 .PHONY: sdk-build
@@ -526,7 +536,7 @@ sdk-build: sdk-python-build sdk-go-build sdk-rust-build sdk-typescript-build ## 
 sdk-check: sdk-python-check sdk-go-check sdk-rust-check sdk-typescript-check ## Run all standalone SDK lint and type checks
 
 .PHONY: sdk-check-all
-sdk-check-all: sdk-python-check-all sdk-go-check-all sdk-rust-check-all sdk-typescript-check-all ## Run all complete standalone SDK gates
+sdk-check-all: sdk-generated-check sdk-python-check-all sdk-go-check-all sdk-rust-check-all sdk-typescript-check-all ## Run all complete standalone SDK gates
 
 .PHONY: build
 build: frontend-build python-build rust-build sdk-build a13n-service-cli-build ## Build all workspace, application, SDK, and CLI artifacts

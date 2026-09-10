@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping
@@ -621,7 +622,7 @@ def _inspection(attributes: Mapping[str, Any]) -> DockerContainerInspection:
     mounts = tuple(
         DockerEngineMount(
             type="volume" if mount.get("Type") == "volume" else "bind",
-            source=str(mount.get("Name") or mount.get("Source") or ""),
+            source=_mount_source(mount),
             target=str(mount.get("Destination") or ""),
             read_only=not bool(mount.get("RW", True)),
         )
@@ -648,6 +649,17 @@ def _inspection(attributes: Mapping[str, Any]) -> DockerContainerInspection:
         memory_bytes=memory,
         pids_limit=pids,
     )
+
+
+def _mount_source(mount: Mapping[str, Any]) -> str:
+    if mount.get("Type") == "volume":
+        return str(mount.get("Name") or "")
+    source = str(mount.get("Source") or "")
+    # Docker Desktop may expose its VM's bind path when a container also has
+    # named volumes. Compare the same Host path used by the local configuration.
+    if sys.platform == "darwin" and source.startswith("/host_mnt/"):
+        return source.removeprefix("/host_mnt")
+    return source
 
 
 def _is_not_found(error: Exception) -> bool:

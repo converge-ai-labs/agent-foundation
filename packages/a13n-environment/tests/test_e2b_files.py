@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import sys
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
+from a13n_environment import E2BProviderConfiguration, EnvironmentError
+from a13n_environment.e2b.files import E2BFiles
 from a13n_environment.e2b.guest import files
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Guest filesystem helpers execute on POSIX sandboxes")
@@ -88,3 +92,82 @@ def test_search_reports_context_truncation_and_page(tmp_path, filesystem):
     assert result["matches"][0]["text"] == "MATCH"
     assert result["matches"][0]["text_truncated"]
     assert result["matches"][0]["context_start_line"] == 1
+
+
+@pytest.mark.parametrize("action", ["read", "resolve", "publish"])
+@pytest.mark.parametrize("kind", ["missing", "directory", "dangling-link"])
+def test_regular_file_operations_distinguish_missing_targets_from_wrong_types(tmp_path, filesystem, action, kind):
+    if kind == "directory":
+        (tmp_path / "target").mkdir()
+    elif kind == "dangling-link":
+        (tmp_path / "target").symlink_to(tmp_path / "missing")
+    (tmp_path / "stage").write_text("candidate")
+    arguments = {
+        "read": {"offset": 0, "length": 10},
+        "resolve": {"regular_file": True},
+        "publish": {"staged": "/stage", "mode": "replace"},
+    }
+    with pytest.raises(ValueError if kind == "directory" else FileNotFoundError):
+        filesystem(action, path="/target", **arguments[action])
+    assert (tmp_path / "stage").read_text() == "candidate"
+    if kind == "directory":
+        assert (tmp_path / "target").is_dir()
+    elif kind == "dangling-link":
+        assert (tmp_path / "target").is_symlink() and not (tmp_path / "missing").exists()
+    else:
+        assert not (tmp_path / "target").exists()
+
+
+def test_stream_resolution_authorizes_read_before_returning_native_path(tmp_path, filesystem, monkeypatch):
+    from pathlib import Path
+
+    target = tmp_path / "private"
+    target.write_text("PRIVATE")
+    original_open = Path.open
+
+    def denied(path, *args, **kwargs):
+        if path == target:
+            raise PermissionError("private OS diagnostic")
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", denied)
+    with pytest.raises(PermissionError):
+        filesystem("resolve", path="/private", regular_file=True)
+
+
+def test_upload_stage_creation_is_exclusive_and_honors_read_only(tmp_path, filesystem):
+    result = filesystem("stage", path="/stage")
+    assert result == {"path": str(tmp_path / "stage")}
+    assert (tmp_path / "stage").read_bytes() == b""
+    (tmp_path / "stage").write_text("EXISTING")
+    with pytest.raises(FileExistsError):
+        filesystem("stage", path="/stage")
+    assert (tmp_path / "stage").read_text() == "EXISTING"
+    with pytest.raises(PermissionError):
+        files.execute(
+            {
+                "configuration": {"root": str(tmp_path), "read_only": True},
+                "action": "stage",
+                "arguments": {"path": "/new"},
+            }
+        )
+    assert not (tmp_path / "new").exists()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "code", ["environment_conflict", "environment_denied", "environment_not_found", "environment_request_invalid"]
+)
+async def test_rejected_stage_creation_never_uploads_or_deletes_an_unowned_entry(tmp_path, code):
+    upload = AsyncMock()
+    operations = AsyncMock(side_effect=[{"path": str(tmp_path / "stage")}, EnvironmentError("Rejected", code=code)])
+    commands = SimpleNamespace(
+        configuration=E2BProviderConfiguration(),
+        files=operations,
+        sandbox=SimpleNamespace(files=SimpleNamespace(write=upload)),
+    )
+    with pytest.raises(EnvironmentError) as caught:
+        await E2BFiles(commands).write_text("/target", "CHANGED", mode="replace")
+    assert caught.value.code == code
+    assert [call.args[0] for call in operations.await_args_list] == ["resolve", "stage"]
+    upload.assert_not_awaited()

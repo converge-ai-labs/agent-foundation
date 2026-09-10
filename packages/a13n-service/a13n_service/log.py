@@ -12,6 +12,7 @@ from a13n_service.settings import Settings
 _LOGGER_NAMES = (
     "alembic",
     "a13n_service",
+    "a13n_harness",
     "uvicorn",
     "uvicorn.error",
     "uvicorn.access",

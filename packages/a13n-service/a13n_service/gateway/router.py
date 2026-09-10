@@ -594,7 +594,11 @@ async def get_run_lineage(request: Request, actor: Actor, run_id: str) -> RunLin
     return await _queries(request).lineage(actor=actor, run_id=run_id)
 
 
-@router.get("/api/v1/runs/{run_id}/stream", response_class=StreamingResponse)
+@router.get(
+    "/api/v1/runs/{run_id}/stream",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"text/event-stream": {"schema": {"type": "string"}}}}},
+)
 async def stream_run(
     request: Request,
     actor: Actor,
