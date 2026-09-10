@@ -92,6 +92,55 @@ Responses:
 - **200** — Successful Response (`application/json: Agent`).
 - **422** — Validation Error (`application/json: HTTPValidationError`).
 
+### `DELETE /api/v1/workspaces/{workspace}/agents/{agent}/avatar`
+
+Delete Agent Avatar.
+
+| Parameter   | Location | Required | Type / schema | Constraints and default    |
+| ----------- | -------- | -------- | ------------- | -------------------------- |
+| `workspace` | path     | true     | string        | —                          |
+| `agent`     | path     | true     | string        | —                          |
+| `If-Match`  | header   | true     | string        | minLength=1; maxLength=256 |
+
+Responses:
+
+- **200** — Successful Response (`application/json: Agent`).
+- **422** — Validation Error (`application/json: HTTPValidationError`).
+
+### `PUT /api/v1/workspaces/{workspace}/agents/{agent}/avatar`
+
+Put Agent Avatar.
+
+| Parameter   | Location | Required | Type / schema | Constraints and default    |
+| ----------- | -------- | -------- | ------------- | -------------------------- |
+| `workspace` | path     | true     | string        | —                          |
+| `agent`     | path     | true     | string        | —                          |
+| `If-Match`  | header   | true     | string        | minLength=1; maxLength=256 |
+
+Request body: required.
+
+- `application/octet-stream`: `string`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: Agent`).
+- **422** — Validation Error (`application/json: HTTPValidationError`).
+
+### `GET /api/v1/workspaces/{workspace}/agents/{agent}/avatar/{image_id}`
+
+Get Agent Avatar.
+
+| Parameter   | Location | Required | Type / schema | Constraints and default |
+| ----------- | -------- | -------- | ------------- | ----------------------- |
+| `image_id`  | path     | true     | string        | —                       |
+| `workspace` | path     | true     | string        | —                       |
+| `agent`     | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: schema-defined value`).
+- **422** — Validation Error (`application/json: HTTPValidationError`).
+
 ### `POST /api/v1/workspaces/{workspace}/agents/{agent}/duplicate`
 
 Duplicate Agent.

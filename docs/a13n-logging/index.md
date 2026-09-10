@@ -92,17 +92,20 @@ For the initial example, this record uses `role="control"`; other records contin
 
 Use `logger.exception(...)` inside an exception handler to include traceback information. JSON records add `exception`; Rich renders the exception in its terminal format. The logging package does not remove tokens, personal data, model content, or sensitive exception strings. Redact at the owner before emitting the record.
 
+Use `exception_details(error)` when a structured diagnostic needs exception types and stack locations without copying exception messages or execution payloads. It returns at most 32 entries, follows causes or contexts (including suppressed context) and exception-group children, and keeps the last 64 traceback frames per entry. Each entry contains `type`, a `parent` entry index (or `None` for the root), and `frames` with `file`, `line`, and `function`; integer `status_code` and `errno` values are included when available. Messages, notes, source lines, locals, requests, and response bodies are omitted. File paths and function names remain visible.
+
 ## Public API and ownership
 
-| Export                      | Role                                                      |
-| --------------------------- | --------------------------------------------------------- |
-| `LogFormat`                 | Enum containing `pretty` and `json`                       |
-| `get_logger(name)`          | Return the standard-library logger without configuring it |
-| `build_logging_config(...)` | Return a `dictConfig` dictionary without applying it      |
-| `configure_logging(...)`    | Apply that configuration to the current process           |
-| `ContextFilter`             | Add non-overwriting process defaults                      |
-| `JsonFormatter`             | Produce structured JSON records                           |
-| `PrettyFormatter`           | Produce event-style text for Rich                         |
+| Export                      | Role                                                            |
+| --------------------------- | --------------------------------------------------------------- |
+| `LogFormat`                 | Enum containing `pretty` and `json`                             |
+| `get_logger(name)`          | Return the standard-library logger without configuring it       |
+| `build_logging_config(...)` | Return a `dictConfig` dictionary without applying it            |
+| `configure_logging(...)`    | Apply that configuration to the current process                 |
+| `ContextFilter`             | Add non-overwriting process defaults                            |
+| `JsonFormatter`             | Produce structured JSON records                                 |
+| `PrettyFormatter`           | Produce event-style text for Rich                               |
+| `exception_details(error)`  | Return bounded exception structure without messages or payloads |
 
 For Harness traces, metrics, and semantic events, see [Observation](../a13n-harness/observation.md). Logging neither creates OpenTelemetry spans nor persists `HarnessState`.
 
