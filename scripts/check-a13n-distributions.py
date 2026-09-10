@@ -23,6 +23,7 @@ INTERNAL_REQUIREMENTS = {
 }
 LOCAL_INSTALL_DEPENDENCIES = {
     "a13n-envd-client": "a13n_envd_client",
+    "a13n-logging": "a13n_logging",
 }
 
 
