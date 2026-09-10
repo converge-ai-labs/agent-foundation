@@ -110,6 +110,56 @@ async def test_drain_bounds_unfinished_scan_without_claiming(monkeypatch):
     runner.run.assert_not_awaited()
 
 
+async def test_productive_worker_rescans_without_waiting_for_poll_interval(
+    interaction_sessions, interaction_object_store, monkeypatch
+):
+    _, run, _ = await acceptance._accept_root(interaction_sessions, interaction_object_store)
+    owned = await AttemptScheduler(interaction_sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer()).claim(
+        run.id, acceptance._worker()
+    )
+    assert isinstance(owned, ClaimedAttempt)
+    scheduler = Mock(spec=AttemptScheduler)
+    runner = Mock()
+    started, rescanned, handed_off = Event(), Event(), Event()
+    control = Mock(spec=RunAttemptControl)
+    control.request_handoff = AsyncMock(side_effect=lambda reason: handed_off.set())
+    loop = WorkerExecutionLoop(
+        interaction_sessions,
+        scheduler,
+        HarnessPluginFactoryCatalog(()),
+        runner,
+        build_id="test",
+        queue_name="default",
+        concurrency=2,
+        poll_seconds=60,
+    )
+    monkeypatch.setattr(loop, "_organizations", AsyncMock(return_value=(ORGANIZATION_ID,)))
+
+    async def scan(*args, **kwargs):
+        if scheduler.claim.await_count == 0:
+            return (run.id,)
+        rescanned.set()
+        return ()
+
+    async def execute(context, catalog, slot, register):
+        await register(control)
+        started.set()
+        await handed_off.wait()
+
+    scheduler.scan = AsyncMock(side_effect=scan)
+    scheduler.claim = AsyncMock(return_value=owned)
+    runner.run = AsyncMock(side_effect=execute)
+    with fail_after(2):
+        async with create_task_group() as tasks:
+            tasks.start_soon(loop.run)
+            await started.wait()
+            await rescanned.wait()
+            await loop.drain()
+            await loop.wait_stopped()
+    assert loop._capacity.value == 2
+    scheduler.claim.assert_awaited_once()
+
+
 async def test_restarted_worker_gets_new_identity_and_cannot_inherit_authority(
     interaction_sessions, interaction_object_store
 ):

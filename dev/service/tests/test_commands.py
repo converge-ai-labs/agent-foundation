@@ -128,4 +128,11 @@ def test_port_check_allows_immediate_restart_after_closed_connection(tmp_path, m
         accepted.close()
         assert client.recv(1) == b""
     environment = local_environment(tmp_path, service={"port": port})
+
+    class IsolatedModelSocket(socket.socket):
+        def bind(self, address):
+            # This test exercises Service TIME_WAIT, independently of a running dev model.
+            super().bind(("127.0.0.1", 0) if address == ("127.0.0.1", 18080) else address)
+
+    monkeypatch.setattr(socket, "socket", IsolatedModelSocket)
     commands.check_ports(environment)

@@ -8,7 +8,7 @@ from datetime import timedelta
 from typing import Protocol
 
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
-from anyio import CancelScope, Event, Semaphore, create_task_group, current_time, move_on_after
+from anyio import CancelScope, Event, Semaphore, create_task_group, current_time, move_on_after, sleep
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -126,6 +126,7 @@ class WorkerExecutionLoop:
             async with create_task_group() as roots:
                 roots.start_soon(self._request_handoffs_on_drain)
                 while not self.is_draining():
+                    productive = False
                     with CancelScope(deadline=self._drain_deadline) as admission:
                         self._admission_scope = admission
                         for organization_id in await self._organizations():
@@ -148,6 +149,7 @@ class WorkerExecutionLoop:
                                 slot = WorkerCapacitySlot(self._capacity)
                                 try:
                                     result = await self._scheduler.claim(run_id, claim)
+                                    productive = productive or result is not None
                                     if isinstance(result, ClaimedAttempt):
                                         roots.start_soon(self._execute, self._context(result, claim), slot)
                                         slot = None
@@ -155,6 +157,9 @@ class WorkerExecutionLoop:
                                     if slot is not None:
                                         slot.release()
                     self._admission_scope = None
+                    if productive and self._capacity.value > 0:
+                        await sleep(0)
+                        continue
                     with move_on_after(self._poll_seconds):
                         await self._draining.wait()
         finally:

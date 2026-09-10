@@ -15,6 +15,7 @@ from .seed_identity import PASSWORD, members, profiles
 from .seed_journeys import journeys, run
 from .seed_lifecycle import resource_history
 from .seed_resources import resources
+from .seed_sessions import bulk_sessions
 from .seed_verify import report, verify
 
 
@@ -57,31 +58,11 @@ async def seed(settings: Settings, *, session_count: int = 120, model_port: int 
                 identity_scenarios = await members(client, base, app, origin)
                 catalog = await resources(client, base, model_url, settings)
                 assets, skills, agents = catalog["assets"], catalog["skills"], catalog["agents"]
-                environment_id = catalog["environment_id"]
                 print(
                     f"Prepared {len(agents)} Agents, {len(skills)} Skills and {len(assets)} Assets; creating Sessions...",
                     flush=True,
                 )
-                runs = []
-                # One shared local filesystem Environment: seed its journeys in order.
-                for index in range(session_count):
-                    prompt = ("[fail] " if index % 20 == 19 else "[long] " if index % 12 == 0 else "") + (
-                        f"Review fictional release brief {index + 1}. 请检查导航、历史消息和附件的交互体验。"
-                    )
-                    runs.append(
-                        await run(
-                            client,
-                            base,
-                            agents[index % len(agents)],
-                            prompt,
-                            environment_id=environment_id,
-                            asset_id=[assets[(index + offset) % len(assets)] for offset in (0, 1, 3)]
-                            if index % 12 == 0
-                            else None,
-                        )
-                    )
-                    if (index + 1) % 20 == 0:
-                        print(f"Created {index + 1}/{session_count} Sessions", flush=True)
+                runs, bulk_environments = await bulk_sessions(client, base, catalog, settings, session_count)
                 # One genuine continued conversation for scroll and history review.
                 previous = next(run for run in runs if run["status"] == "completed")
                 for index in range(12):
@@ -107,6 +88,7 @@ async def seed(settings: Settings, *, session_count: int = 120, model_port: int 
                     "skill_ids": skills,
                     "session_count": len(sessions),
                     "bulk_session_count": session_count,
+                    "bulk_environments": bulk_environments,
                     "long_thread_id": previous["thread_id"],
                     "model_url": model_url,
                     "asset_checks": catalog["asset_checks"],

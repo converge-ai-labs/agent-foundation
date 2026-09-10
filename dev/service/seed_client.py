@@ -1,6 +1,7 @@
 """Authenticated API client shared by local seed journeys."""
 
 import re
+from collections.abc import AsyncIterator
 from contextlib import contextmanager
 from typing import Any
 from uuid import uuid4
@@ -31,13 +32,18 @@ class Client:
 
     async def collection(self, path: str, *, params: dict | None = None) -> list[dict]:
         result = []
+        async for page in self.pages(path, params=params):
+            result.extend(page["items"])
+        return result
+
+    async def pages(self, path: str, *, params: dict | None = None) -> AsyncIterator[dict]:
         cursor = None
         for _ in range(100):
             page = await self.request("GET", path, params={**(params or {}), **({"cursor": cursor} if cursor else {})})
-            result.extend(page["items"])
+            yield page
             cursor = page.get("next_cursor")
             if cursor is None:
-                return result
+                return
         raise RuntimeError("Seed collection exceeded its pagination bound")
 
     async def etag(self, path: str) -> dict[str, str]:

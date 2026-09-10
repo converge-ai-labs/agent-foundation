@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import timedelta
 
 import pytest
@@ -7,7 +8,11 @@ from a13n_harness import SafeFailure
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.interactions.acceptance import RunAcceptanceService
-from a13n_service.interactions.attempts import AttemptExecutionService, AttemptPreparationAccepted
+from a13n_service.interactions.attempts import (
+    AttemptAuthorityError,
+    AttemptExecutionService,
+    AttemptPreparationAccepted,
+)
 from a13n_service.interactions.control_domain import (
     ThreadInboxStatus,
     normalize_feedback,
@@ -29,7 +34,7 @@ from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttemp
 from a13n_service.interactions.state import HostContinuationState, RunCheckpoint
 from a13n_service.storage import ObjectStore, short_session
 from fakeredis.aioredis import FakeRedis
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.lifecycle_support import test_lifecycle_writer
@@ -43,6 +48,47 @@ pytestmark = pytest.mark.anyio
 
 def _input(text: str) -> AcceptedAgentInput:
     return AcceptedAgentInput(schema_version="1", content=(TextContent(text=text),))
+
+
+async def test_idle_control_reads_are_narrow_unlocked_and_still_fenced(
+    postgres_interaction_sessions, interaction_object_store
+):
+    sessions = postgres_interaction_sessions
+    _, run, _ = await _accept_root(sessions, interaction_object_store)
+    claimed = await AttemptScheduler(sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer()).claim(
+        run.id, _worker()
+    )
+    assert isinstance(claimed, ClaimedAttempt)
+    authority = _authority(claimed)
+    execution = AttemptExecutionService(sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer())
+    inbox = DatabaseThreadInboxReconciler(
+        sessions, lambda entry, config: _materialized(entry.payload), clock=lambda: NOW
+    )
+    queries = []
+
+    def observed(conn, cursor, statement, parameters, context, executemany):
+        queries.append(statement)
+
+    engine = sessions.kw["bind"].sync_engine
+    event.listen(engine, "before_cursor_execute", observed)
+    try:
+        receipt = await execution.validate(authority)
+        assert receipt.run_version == claimed.run_version
+        assert len(queries) == 1
+        assert "input_json" not in queries[0] and "usage_json" not in queries[0]
+        queries.clear()
+        assert await inbox.read_eligible(authority, effective_agent_config()) == ()
+        assert len(queries) == 2
+        assert all("FOR UPDATE" not in query for query in queries)
+        with pytest.raises(AttemptAuthorityError):
+            await inbox.read_eligible(replace(authority, lease_token="stale-token"), effective_agent_config())
+    finally:
+        event.remove(engine, "before_cursor_execute", observed)
+    await ThreadInboxStore(sessions, clock=lambda: NOW).append_steer(
+        organization_id=ORGANIZATION_ID, run_id=run.id, input=_input("new delivery"), entry_id="inb_1111111111111111"
+    )
+    entries = await inbox.read_eligible(authority, effective_agent_config())
+    assert len(entries) == 1 and entries[0].input == "new delivery"
 
 
 async def test_steer_accepts_before_or_after_claim_without_advancing_thread(

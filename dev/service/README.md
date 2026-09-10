@@ -67,6 +67,23 @@ protected startup logs. `seeded` provisions more than 60 Agents, Skills and Asse
 It checks the resulting data before reporting success and writes exact counts and
 a scenario-to-resource index to `var/service/seed-report.md` and `seed.json`.
 
+The local profile sets `[worker].concurrency = 8`. Bulk Session creation uses
+that same limit (or the number of Sessions, if smaller). Each execution slot has
+its own Environment and directory under `var/service/files/bulk/slot-NN`; only
+successive Runs in the same slot reuse a directory. The slot assignments are
+recorded in `seed.json`. Long conversations and dependent retry/feedback journeys
+remain sequential. Override the limit with `A13N_SERVICE_WORKER_CONCURRENCY` when
+running on a smaller machine; it applies to both seeding and the local Service.
+The local database pool keeps up to 60 connections with 20 overflow connections;
+Redis permits up to 256 connections, including the blocking control-signal reads
+for active Runs. One observer polls the Workspace Run collection for all bulk
+slots, sizing each page to the slot count and stopping after finding all pending
+Run identities. It waits 100 ms between scans. A slot starts its next
+Run only after the previous Run is sealed with the expected outcome. Verification
+uses the same Run collection and reads independent Thread collections and complete
+transcripts with at most eight concurrent requests, retaining pagination and
+relationship checks.
+
 ## Local traces
 
 `local.toml` enables tracing with standard input/output content and selects the
@@ -151,7 +168,8 @@ no discovery or OAuth request is made for their pending connections.
 Records get normal creation times and fresh identifiers on every reset. Expired
 API-key coverage waits for a short-lived key to expire naturally. The baseline is
 reproducible in content and relationships, not a byte-identical database image.
-Runs execute in sequence when sharing a local filesystem Environment. Waiting
+Bulk Sessions execute concurrently in isolated local workspaces. Runs execute in
+sequence when sharing a local filesystem Environment. Waiting
 client-tool requests and queued input remain available for interaction after startup;
 no Run is left accepted or running when reset completes.
 
