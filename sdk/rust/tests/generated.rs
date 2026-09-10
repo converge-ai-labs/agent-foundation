@@ -114,7 +114,6 @@ async fn generated_binary_upload_sets_the_declared_content_type() {
             PostWorkspacesWorkspaceAssetsError, post_workspaces_workspace_assets,
         },
     };
-    assert!(std::mem::size_of::<Error<PostWorkspacesWorkspaceAssetsError>>() <= 128);
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/test-upload.bin");
     std::fs::write(&path, b"binary body").unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

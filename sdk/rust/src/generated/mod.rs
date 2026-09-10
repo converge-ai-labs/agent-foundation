@@ -1,12 +1,7 @@
 #![allow(unused_imports)]
-// Upstream template style only; compiler and correctness lints remain enabled.
-#![allow(
-    clippy::too_many_arguments,
-    clippy::needless_return,
-    clippy::derivable_impls,
-    clippy::empty_docs,
-    clippy::manual_map
-)]
+// Generated bindings need not follow handwritten style or optimization advice.
+// Compiler diagnostics and correctness/suspicious lints remain enabled.
+#![allow(clippy::style, clippy::complexity, clippy::perf, clippy::empty_docs)]
 
 extern crate reqwest;
 extern crate serde;
