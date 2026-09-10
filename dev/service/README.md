@@ -20,6 +20,13 @@ at `http://127.0.0.1:8000` with a scripted local model at
 `make dev` is the optional outer launcher for Service plus Console. Console's
 separate Vite command remains documented in its README.
 
+`make setup`, also used by `make dev` and `make service-dev`, checks Docker before
+starting the containers. If the selected daemon is already ready, it proceeds
+immediately. On macOS, an unavailable local Docker Desktop daemon triggers an
+attempt to open Docker Desktop and wait up to 120 seconds for readiness. Docker
+must already be installed. On Linux or with another Docker endpoint, start the
+selected daemon yourself; the tools preserve your Docker context and `DOCKER_HOST`.
+
 For Console, sign in as `admin@example.com` with the public test password
 `local-public-password-123`. `builder@example.com`, `runner@example.com`, and
 `viewer@example.com` use the same public test password with different Workspace

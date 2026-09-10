@@ -8,7 +8,7 @@ from typing import Protocol
 
 from a13n_harness import SafeFailure
 from a13n_harness.errors import RunError
-from a13n_logging import get_logger
+from a13n_logging import exception_details, get_logger
 from anyio import TASK_STATUS_IGNORED, CancelScope, create_task_group, fail_after, sleep
 from anyio.abc import TaskStatus
 
@@ -166,6 +166,7 @@ class RunAttemptExecutor[OutputT]:
                             "run_id": self._context.run_id,
                             "attempt_number": self._context.attempt_number,
                             "error_type": type(error).__name__,
+                            "exception_chain": exception_details(error),
                         },
                     )
                     if isinstance(error, SkillRuntimeError):

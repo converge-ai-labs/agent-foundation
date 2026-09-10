@@ -136,6 +136,7 @@ class DirectLocalEnvironment(Environment):
         self._descriptor = _descriptor(configuration, "unprepared")
         self._availability = EnvironmentAvailability(status="preparing")
         self._operations = EnvironmentOperations()
+        self._files: LocalFileOperator | None = None
         self._processes: LocalProcessManager | None = None
         self._retention: LocalRetentionStore | None = None
         self._retention_root: Path | None = None
@@ -189,6 +190,7 @@ class DirectLocalEnvironment(Environment):
             mount_id=mount_id,
             generation=generation,
         )
+        self._files = files
         process_enabled = bool(self._configuration.allowed_executables or self._configuration.shell_profiles)
         processes: LocalProcessManager | None = None
         retention: LocalRetentionStore | None = None
@@ -258,6 +260,8 @@ class DirectLocalEnvironment(Environment):
 
     async def _close(self) -> None:
         self._availability = EnvironmentAvailability(status="unavailable")
+        if self._files is not None:
+            self._files.close()
         try:
             if self._processes is not None:
                 await self._processes.close()

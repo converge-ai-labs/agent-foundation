@@ -408,11 +408,13 @@ async def test_interrupt_is_atomic_and_replays_exact_stable_receipt(
     tmp_path,
 ) -> None:
     interaction_object_store = await LocalObjectStore.create(tmp_path / "objects")
+    clock_values = (NOW + timedelta(microseconds=index) for index in range(100))
     commands = _commands(
         lifecycle_interaction_sessions,
         interaction_object_store,
         _Preparation(),
         _Freezing([_frozen()]),
+        clock=lambda: next(clock_values),
     )
     await seed_hook_actor_access(lifecycle_interaction_sessions)
     accepted = await commands.runs.start(
@@ -449,6 +451,7 @@ async def test_interrupt_is_atomic_and_replays_exact_stable_receipt(
             ).all()
         )
     assert run is not None and run.status == "cancelled" and run.version == 2
+    assert first.interrupted_at == run.to_resource().sealed_at
     assert thread is not None and thread.version == 2
     assert len(evidence) == 1
 

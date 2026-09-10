@@ -836,6 +836,11 @@ impl TransferRegistry {
         frame: DataFrame,
     ) -> Result<(), TransferError> {
         let mut writer = record.lock().await;
+        if writer.phase == WriterPhase::Aborted {
+            // A failed upload is already terminal. Chunks queued before the
+            // peer observes RESET must not produce a second RESET or revive it.
+            return Ok(());
+        }
         let operation_owned = matches!(
             writer.phase,
             WriterPhase::Committing | WriterPhase::Committed | WriterPhase::UnknownOutcome
@@ -1996,6 +2001,27 @@ mod tests {
             })
             .await;
         assert_eq!(protocol_error, Err(TransferError::Protocol));
+        for kind in [
+            DataFrameKind::Chunk,
+            DataFrameKind::End,
+            DataFrameKind::Reset,
+        ] {
+            transfers
+                .handle_frame(DataFrame {
+                    kind,
+                    handle: reset.writer.0.clone(),
+                    offset: 0,
+                    payload: Vec::new(),
+                    reset_status: (kind == DataFrameKind::Reset)
+                        .then_some(crate::eip::DataResetStatus::Cancelled),
+                })
+                .await
+                .expect("late upload frames cannot produce another reset");
+        }
+        assert!(
+            outbound.try_recv().is_err(),
+            "aborted transfer emitted another frame"
+        );
         assert_eq!(
             transfers
                 .abort_writer(&reset.writer)

@@ -1,11 +1,53 @@
-"""Case 12: two independently running, one-slot Workers compete for slow Runs."""
+"""Case 12: independent Workers compete for one Run and respect slot capacity."""
+
+import logging
+import signal
 
 import pytest
 
-pytestmark = pytest.mark.anyio
+pytestmark = [
+    pytest.mark.anyio,
+    pytest.mark.parametrize("race_round", range(1, 101), ids=lambda value: f"round-{value:03d}"),
+]
+logger = logging.getLogger(__name__)
 
 
-async def test_two_workers_respect_capacity_and_each_run_has_one_owner(round_two):
+async def test_four_workers_race_for_one_run(round_two, race_round):
+    lab, live = round_two, round_two.client
+    for _ in range(3):
+        await lab.start_worker()
+    for worker in lab.workers:
+        lab.send(worker, signal.SIGSTOP)
+    try:
+        case = await live.case("checkpoint")
+        receipt = await live.start(case)
+        assert await lab.attempts(receipt["run_id"]) == []
+    finally:
+        for worker in lab.workers:
+            lab.send(worker, signal.SIGCONT)
+    await lab.wait_evidence(case, "checkpoint_ready", run_id=receipt["run_id"])
+
+    async def owners():
+        return [item["id"] for item in await lab.attempts(receipt["run_id"])]
+
+    assert len(await owners()) == 1
+    await live.assert_stable(owners, await owners(), seconds=2)
+    await live.release(case)
+    await live.finish(receipt["run_id"])
+    attempts = await lab.attempts(receipt["run_id"])
+    assert len(attempts) == 1 and attempts[0]["status"] == "succeeded"
+    assert attempts[0]["attempt_number"] == 1
+    evidence = await live.evidence(case)
+    assert evidence["effects"] == 1 and evidence["model_requests"] == 2
+    logger.info(
+        "Four-worker claim: round=%s/100 run=%s winner=%s attempts=1 effects=1",
+        race_round,
+        receipt["run_id"],
+        attempts[0]["id"],
+    )
+
+
+async def test_two_workers_respect_capacity_and_each_run_has_one_owner(round_two, race_round):
     lab, live = round_two, round_two.client
     cases = [await live.case("gate") for _ in range(4)]
     receipts = [await live.start(case) for case in cases]
@@ -34,3 +76,8 @@ async def test_two_workers_respect_capacity_and_each_run_has_one_owner(round_two
     assert len({items[0]["harness_run_id"] for items in groups}) == 4
     for case in cases:
         assert (await live.evidence(case))["model_requests"] == 1
+    logger.info(
+        "Two-worker capacity: round=%s/100 runs=%s attempts_per_run=1",
+        race_round,
+        [receipt["run_id"] for receipt in receipts],
+    )

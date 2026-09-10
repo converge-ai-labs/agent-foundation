@@ -28,6 +28,12 @@ def resolve(root: Path, value: str, *, follow: bool = True) -> Path:
     return candidate
 
 
+def require_regular_file(path: Path) -> None:
+    # stat preserves missing/denied errors that is_file() can collapse into False.
+    if not stat.S_ISREG(path.stat().st_mode):
+        raise ValueError("not a regular file")
+
+
 def metadata(root: Path, path: Path, read_only: bool) -> dict:
     mode = path.lstat()
     kind = "other"
@@ -191,6 +197,7 @@ def execute(request: dict) -> dict:
     arguments = request["arguments"]
     path = resolve(root, arguments.get("path", "/"), follow=action not in {"stat", "remove", "move"})
     mutations = {
+        "stage",
         "publish",
         "mkdir",
         "remove",
@@ -199,14 +206,21 @@ def execute(request: dict) -> dict:
     if action in mutations and (config["read_only"] or path == root):
         raise PermissionError()
     if action == "resolve":
-        if arguments.get("regular_file") and not path.is_file():
-            raise ValueError("not a regular file")
+        if arguments.get("regular_file"):
+            require_regular_file(path)
+            # SDK transfers can use privileged file I/O even with a user option.
+            with path.open("rb"):
+                pass
+        return {"path": str(path)}
+    if action == "stage":
+        # Authorize creation as the configured guest user before SDK upload.
+        with path.open("xb"):
+            pass
         return {"path": str(path)}
     if action == "stat":
         return metadata(root, path, config["read_only"])
     if action == "read":
-        if not path.is_file():
-            raise ValueError("not a regular file")
+        require_regular_file(path)
         with path.open("rb") as file:
             file.seek(arguments["offset"])
             return {"data": base64.b64encode(file.read(arguments["length"])).decode()}
@@ -216,9 +230,9 @@ def execute(request: dict) -> dict:
         if mode == "create":
             os.link(staged, path)
             staged.unlink()
-        elif mode == "replace" and not path.is_file():
-            raise FileNotFoundError()
         else:
+            if mode == "replace":
+                require_regular_file(path)
             os.replace(staged, path)
         return {}
     if action == "mkdir":

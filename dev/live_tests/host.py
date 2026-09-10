@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import secrets
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -40,6 +41,7 @@ def settings_for(config: dict, role: str) -> Settings:
             },
             "models": {"private_endpoint_cidrs": ("127.0.0.1/32",)},
             "filesystem": {"root": Path(config["workspace_root"]).parent / role},
+            "worker": config.get("run_faults", {}).get("worker", {}),
         }
     )
 
@@ -76,12 +78,26 @@ def authenticated_control(config: dict):
     )
     authenticate = bearer_authenticator(config)
     app = create_app(settings, components=Components(request_authenticator=authenticate))
-    app.include_router(fixture_router(Path(config["workspace_root"]), authenticate))
+    app.include_router(
+        fixture_router(Path(config["workspace_root"]), authenticate, long_session=config.get("long_session"))
+    )
     app.include_router(inbox_router(config, authenticate))
     return settings, app
 
 
 def local_app(config: dict, role: str):
+    if config.get("environment_workers"):
+        from .environment_worker_host import install
+
+        install(config, role)
+    if "run_faults" in config:
+        from .run_fault_host import install
+
+        install(config, role)
+    if "long_session" in config and role == "worker":
+        from .long_session_host import install_compaction
+
+        install_compaction()
     settings = settings_for(config, role)
     if settings.objects.backend is not ObjectBackend.s3:
         raise RuntimeError(
@@ -90,14 +106,26 @@ def local_app(config: dict, role: str):
         )
     authenticate = bearer_authenticator(config)
     catalog = None
+    if "run_faults" in config:
+        from .run_fault_identity import fault_authenticator
+
+        authenticate = fault_authenticator(config, authenticate)
     environment_catalog = None
     reverse_envd = None
-    if "reverse_envd" in config and role == "worker":
+    if config.get("e2b_lifecycle") and role == "worker":
+        from .e2b_host import environment_catalog as e2b_catalog
+
+        environment_catalog = e2b_catalog(config, settings.environments.provider_builtins)
+    elif config.get("docker_lifecycle") and role == "worker":
+        from .docker_lifecycle_host import environment_catalog as docker_catalog
+
+        environment_catalog = docker_catalog(config, settings.environments.provider_builtins)
+    elif "reverse_envd" in config and role == "worker" and not os.environ.get("LIVE_TEST_NO_REVERSE_ENVD"):
         from .environment_host import ReverseEnvdHost
 
         reverse_envd = ReverseEnvdHost(config["reverse_envd"], settings.environments.provider_builtins)
         environment_catalog = reverse_envd.catalog
-    elif role == "control" and config.get("websocket_envd"):
+    elif config.get("websocket_envd") and (role == "control" or os.environ.get("LIVE_TEST_NO_REVERSE_ENVD")):
         from a13n_environment import build_environment_provider_catalog
 
         environment_catalog = build_environment_provider_catalog(
@@ -109,7 +137,12 @@ def local_app(config: dict, role: str):
         from .approval_plugin import Factory as ApprovalFactory
         from .resilience_plugin import Factory as ResilienceFactory
 
-        catalog = build_harness_plugin_factory_catalog(explicit_factories=(ApprovalFactory(), ResilienceFactory()))
+        factories = [ApprovalFactory(), ResilienceFactory()]
+        if "run_faults" in config and not config["run_faults"].get("omit_plugin"):
+            from .run_fault_plugin import Factory as RunFaultFactory
+
+            factories.append(RunFaultFactory(config["run_faults"].get("plugin_state_version")))
+        catalog = build_harness_plugin_factory_catalog(explicit_factories=tuple(factories))
         logger.info("Live-test Worker installed plugin factories: %s", ", ".join(catalog))
     app = create_app(
         settings,
@@ -122,7 +155,23 @@ def local_app(config: dict, role: str):
     if reverse_envd is not None:
         reverse_envd.install(app)
     if role == "control":
-        app.include_router(fixture_router(Path(config["workspace_root"]), authenticate))
+        if "run_faults" in config:
+            from .run_fault_evidence import evidence_router
+            from .run_fault_identity import secret_router
+
+            app.include_router(evidence_router(config, authenticate))
+            app.include_router(secret_router(config, authenticate))
+        if "long_session" in config:
+            from .long_session_host import measurements_router
+
+            app.include_router(measurements_router(config, authenticate))
+        if config.get("e2b_lifecycle") or config.get("docker_lifecycle") or config.get("environment_workers"):
+            from .lifecycle_host import lifecycle_router
+
+            app.include_router(lifecycle_router(config, authenticate))
+        app.include_router(
+            fixture_router(Path(config["workspace_root"]), authenticate, long_session=config.get("long_session"))
+        )
         app.include_router(inbox_router(config, authenticate))
         from .fixture_connectivity import connectivity_router
         from .fixture_telemetry import telemetry_router

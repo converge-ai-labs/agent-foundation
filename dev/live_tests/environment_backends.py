@@ -6,7 +6,7 @@ import asyncio
 import logging
 import os
 import secrets
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -15,6 +15,7 @@ import anyio
 
 from .management_support import ManagementJourney
 from .round_two_lab import free_origin, private_json
+from .tcp_proxy import TCPProxy
 
 logger = logging.getLogger(__name__)
 BACKENDS = ("local-envd", "docker", "e2b", "http-envd", "websocket-envd")
@@ -25,6 +26,8 @@ RETENTION = {"idle": {"stop_after": None, "delete_after": None}}
 def recipe_configuration(kind, root, settings=None):
     root.mkdir(mode=0o700)
     shell = [{"profile_id": "default", "executable": "/bin/sh", "fixed_arguments": ["-c"]}]
+    if kind == "direct-local":
+        return {"root": {"path": str(root)}, "shell_profiles": shell}
     if kind == "local-envd":
         return {"workspace": {"path": str(root)}, "shell_profiles": shell}
     if kind == "docker":
@@ -50,6 +53,11 @@ class BackendTarget:
     root: Path
     state: dict | None
     process: asyncio.subprocess.Process | None
+    proxy: TCPProxy | None = None
+
+    async def restart_daemon(self):
+        await self.backend.lab.stop(self.process)
+        self.process = await self.backend.launch_daemon(self.root.parent)
 
     async def template(self, **overrides):
         return await self.backend.journey.post(
@@ -68,9 +76,11 @@ class BackendTarget:
 
 
 class EnvironmentBackend:
-    def __init__(self, lab, kind, binary=None, settings=None):
+    def __init__(self, lab, kind, binary=None, settings=None, *, network_faults=False):
         self.lab, self.kind, self.binary, self.settings = lab, kind, binary, settings
         self.journey = ManagementJourney(lab)
+        self.network_faults = network_faults
+        self.daemon_launches = {}
 
     async def restart_worker(self):
         await self.lab.stop(self.lab.workers[-1])
@@ -84,19 +94,31 @@ class EnvironmentBackend:
         root = directory / "workspace"
         configuration = recipe_configuration(self.kind, root, self.settings)
         provider_body = {"name": "Backend matrix " + native_id, "type": "a13n." + self.kind, "configuration": {}}
-        state, process = None, None
+        state, process, proxy, target = None, None, None, None
+        stack = AsyncExitStack()
         try:
             if self.kind == "e2b":
                 provider_body["credential"] = {"api_key": self.settings.api_key.get_secret_value()}
             elif self.kind in REMOTE:
                 origin, token = free_origin(), secrets.token_urlsafe(32)
+                daemon_origin = origin
+                if self.network_faults:
+                    proxy = await stack.enter_async_context(
+                        TCPProxy("127.0.0.1", int(origin.rsplit(":", 1)[1])).listen()
+                    )
                 if self.kind == "http-envd":
-                    provider_body.update(configuration={"endpoint": origin}, credential={"token": token})
+                    endpoint = f"http://127.0.0.1:{proxy.local_port}" if proxy else origin
+                    provider_body.update(
+                        configuration={"endpoint": endpoint, **({"request_timeout": 5} if proxy else {})},
+                        credential={"token": token},
+                    )
                 else:
                     self.lab.config["reverse_envd"] = {"origin": origin, "token": token, "native_id": native_id}
                     private_json(self.lab.root / "config.json", self.lab.config)
                     await self.restart_worker()
-                process = await self.start_daemon(directory, root, native_id, origin, token)
+                    if proxy:
+                        daemon_origin = f"http://127.0.0.1:{proxy.local_port}"
+                process = await self.start_daemon(directory, root, native_id, daemon_origin, token)
                 state = {
                     "provider_key": "a13n." + self.kind,
                     "state_version": "1",
@@ -112,11 +134,15 @@ class EnvironmentBackend:
             }
             logger.info("Environment matrix backend=%s provider=%s", self.kind, provider["id"])
             try:
-                yield BackendTarget(self, provider, recipe, root, state, process)
+                target = BackendTarget(self, provider, recipe, root, state, process, proxy)
+                yield target
             finally:
                 with anyio.CancelScope(shield=True), anyio.fail_after(180):
                     await self.cleanup(provider["id"])
         finally:
+            if target is not None:
+                process = target.process
+            await stack.aclose()
             if process is not None and process.returncode is None:
                 with anyio.CancelScope(shield=True):
                     await self.lab.stop(process)
@@ -207,6 +233,11 @@ class EnvironmentBackend:
                 A13N_ENVD_REVERSE_WS_URL=origin.replace("http:", "ws:") + "/envd",
                 A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE=str(token_path),
             )
+        self.daemon_launches[directory] = (configuration, environment, origin)
+        return await self.launch_daemon(directory)
+
+    async def launch_daemon(self, directory):
+        configuration, environment, origin = self.daemon_launches[directory]
         with (directory / "daemon.log").open("ab") as output:
             process = await asyncio.create_subprocess_exec(
                 str(self.binary),

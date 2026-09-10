@@ -20,3 +20,11 @@ provider = "" # openrouter or openai_compatible
 api_key = ""
 model = "" # Required when enabled: an upstream Chat Completions model ID.
 base_url = "" # Required only for openai_compatible; leave blank for openrouter.
+
+[search]
+provider = "" # exa
+api_key = ""
+
+[brave_search]
+provider = "" # brave
+api_key = "" # Brave API key with Web Search access.

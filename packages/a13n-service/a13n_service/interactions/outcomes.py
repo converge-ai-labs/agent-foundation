@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from a13n_harness import SafeFailure
 from sqlalchemy import select
@@ -47,6 +48,7 @@ class RunOutcomeReceipt:
     run_version: int
     attempt_version: int | None
     thread_version: int
+    sealed_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,7 +176,7 @@ class RunOutcomeService:
                 actor_type="worker",
                 actor_id=attempt.worker_id,
             )
-            return RunOutcomeReceipt(status, run.version, attempt.version, thread.version)
+            return RunOutcomeReceipt(status, run.version, attempt.version, thread.version, sealed_at=now)
 
     async def cancel(
         self,
@@ -272,6 +274,7 @@ class RunOutcomeService:
                 run.version,
                 None if attempt is None else attempt.version,
                 thread.version,
+                sealed_at=now,
             )
             if transaction_hook is not None:
                 await transaction_hook(database)

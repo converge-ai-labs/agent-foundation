@@ -140,8 +140,42 @@ async def test_stale_lifecycle_publication_cannot_change_target(
         assert row.status == "running" and row.operation_id == operation.operation_id
 
 
+@pytest.mark.parametrize("action", ["stop", "delete"])
+@pytest.mark.parametrize("authority", ["replaced", "expired"])
+async def test_suspended_owner_cannot_dispatch_a_new_destructive_effect(
+    environment_service, environment_sessions, provider_catalog, protector, tmp_path, monkeypatch, action, authority
+):
+    environment = await fixture_environment(environment_service)
+    now = datetime(2026, 9, 5, tzinfo=UTC)
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: now)
+    events = []
+
+    async def construct(operation):
+        # Suspension can also occur during runtime construction, after acquire.
+        async with transaction(environment_sessions) as session:
+            row = await session.get(EnvironmentRecord, environment.id)
+            if authority == "replaced":
+                row.operation_generation += 1
+            else:
+                row.operation_expires_at = now
+        return Target(operation.state, events)
+
+    monkeypatch.setattr(lifecycle, "construct", construct)
+    async with transaction(environment_sessions) as session:
+        row = await session.get(EnvironmentRecord, environment.id)
+        row.status = "running" if action == "stop" else "stopped"
+        row.condition_since = now - timedelta(seconds=120 if action == "delete" else 60)
+    operation = await lifecycle.acquire(environment.id, action)
+    with pytest.raises(RuntimeError, match=r"authority (changed|expired)"):
+        await lifecycle.execute(operation)
+    assert events == ["close"], "An obsolete owner dispatched stop/delete before its publication was fenced"
+    async with short_session(environment_sessions) as session:
+        row = await session.get(EnvironmentRecord, environment.id)
+        assert row.status == ("running" if action == "stop" else "stopped")
+
+
 async def test_known_stop_failure_releases_operation_and_records_failed_command(
-    environment_service, environment_sessions, provider_catalog, protector, tmp_path, monkeypatch
+    environment_service, environment_sessions, provider_catalog, protector, tmp_path, monkeypatch, caplog
 ):
     from a13n_environment.docker._errors import missing_failure
     from a13n_service.environments.domain import EnvironmentCommandRequest
@@ -173,6 +207,11 @@ async def test_known_stop_failure_releases_operation_and_records_failed_command(
     )
     with pytest.raises(Exception, match="Docker target is missing"):
         await lifecycle.maintain(environment.id)
+    record = next(record for record in caplog.records if record.msg == "environment_lifecycle_failed")
+    assert record.environment_id == environment.id and record.operation_id == command.id
+    assert record.action == "stop" and record.provider_type == "a13n.docker"
+    assert record.exception_chain[0]["type"] == "a13n_environment.errors.EnvironmentProviderError"
+    assert record.exception_chain[0]["frames"] and record.exc_info is None
     async with short_session(environment_sessions) as session:
         row = await session.get(EnvironmentRecord, environment.id)
         receipt = await session.get(EnvironmentCommandRecord, command.id)

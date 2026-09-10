@@ -1,6 +1,7 @@
 """Compatible loopback S3 storage with fixture-owned credentials and cleanup."""
 
 import asyncio
+import logging
 import secrets
 from contextlib import AsyncExitStack, asynccontextmanager
 from uuid import uuid4
@@ -16,6 +17,67 @@ from .config import local_origin
 
 # This image passes the Service's conditional delete and concurrent create-only probes.
 RUSTFS_IMAGE = "rustfs/rustfs@sha256:b7014e0ce2bc703c1316b3ef760e29dfae61fe4a50d1a66fa89638e0f8ea211f"
+PORT_MAPPING_TIMEOUT_SECONDS = 10
+RUSTFS_START_ATTEMPTS = 3
+logger = logging.getLogger(__name__)
+
+
+class PortMappingUnavailable(RuntimeError):
+    """A started container has no usable loopback forward."""
+
+
+async def wait_published_port(container):
+    # Testcontainers' get_exposed_port waits 120 seconds on the same broken
+    # mapping. Inspect only the public binding, off the event loop, instead.
+    native = container.get_wrapped_container()
+    bindings = None
+    try:
+        async with asyncio.timeout(PORT_MAPPING_TIMEOUT_SECONDS):
+            while True:
+                await anyio.to_thread.run_sync(native.reload)
+                if native.status in {"exited", "dead"}:
+                    raise RuntimeError(f"Owned RustFS container {native.id} exited before publishing its port")
+                bindings = native.attrs.get("NetworkSettings", {}).get("Ports", {}).get("9000/tcp")
+                for binding in bindings or ():
+                    if binding.get("HostIp") == "127.0.0.1" and binding.get("HostPort"):
+                        return int(binding["HostPort"])
+                await anyio.sleep(0.1)
+    except TimeoutError as error:
+        raise PortMappingUnavailable(
+            f"container={native.id} status={native.status} port_bindings={bindings}"
+        ) from error
+
+
+async def start_rustfs(stack, access, secret):
+    from testcontainers.core.container import DockerContainer
+
+    for attempt in range(1, RUSTFS_START_ATTEMPTS + 1):
+        async with AsyncExitStack() as startup:
+            container = (
+                DockerContainer(RUSTFS_IMAGE)
+                .with_env("RUSTFS_ACCESS_KEY", access)
+                .with_env("RUSTFS_SECRET_KEY", secret)
+                .with_env("RUSTFS_CONSOLE_ENABLE", "false")
+                .with_command("/data")
+                .with_bind_ports(9000, ("127.0.0.1", 0))
+            )
+            startup.push_async_callback(anyio.to_thread.run_sync, container.stop)
+            await anyio.to_thread.run_sync(container.start)
+            try:
+                port = await wait_published_port(container)
+            except PortMappingUnavailable as error:
+                logger.warning(
+                    "rustfs_port_mapping_unavailable attempt=%s/%s %s", attempt, RUSTFS_START_ATTEMPTS, error
+                )
+                if attempt == RUSTFS_START_ATTEMPTS:
+                    raise RuntimeError(
+                        "Owned RustFS could not publish its port after bounded startup retries"
+                    ) from error
+                # Exit this scope to remove the failed owned container before retrying.
+                continue
+            stack.push_async_callback(startup.pop_all().aclose)
+            logger.info("rustfs_port_published attempt=%s port=%s", attempt, port)
+            return f"http://127.0.0.1:{port}"
 
 
 async def wait_ready(client):
@@ -40,21 +102,9 @@ async def open_object_storage(*, endpoint_url=None, region="us-east-1"):
         if endpoint_url:
             endpoint = local_origin(endpoint_url)
         else:
-            from testcontainers.core.container import DockerContainer
-
             access, secret = uuid4().hex.upper(), secrets.token_urlsafe(32)
-            container = (
-                DockerContainer(RUSTFS_IMAGE)
-                .with_env("RUSTFS_ACCESS_KEY", access)
-                .with_env("RUSTFS_SECRET_KEY", secret)
-                .with_env("RUSTFS_CONSOLE_ENABLE", "false")
-                .with_command("/data")
-                .with_bind_ports(9000, ("127.0.0.1", 0))
-            )
-            stack.push_async_callback(anyio.to_thread.run_sync, container.stop)
             print("Starting owned RustFS; Docker downloads the pinned image on first use.", flush=True)
-            await anyio.to_thread.run_sync(container.start)
-            endpoint = f"http://127.0.0.1:{container.get_exposed_port(9000)}"
+            endpoint = await start_rustfs(stack, access, secret)
             region = "us-east-1"
             credentials = {"aws_access_key_id": access, "aws_secret_access_key": secret, "aws_session_token": ""}
             environment = {"AWS_ACCESS_KEY_ID": access, "AWS_SECRET_ACCESS_KEY": secret}
@@ -79,7 +129,10 @@ async def open_object_storage(*, endpoint_url=None, region="us-east-1"):
         bucket = "a13n-live-" + uuid4().hex
         options = {} if region == "us-east-1" else {"CreateBucketConfiguration": {"LocationConstraint": region}}
         await s3.create_bucket(Bucket=bucket, **options)
-        stack.push_async_callback(delete_bucket, s3, bucket)
+        if endpoint_url:
+            stack.push_async_callback(delete_bucket, s3, bucket)
+        # Owned RustFS data is removed with its container and anonymous volumes.
+        # Listing/deleting every object first is redundant and can time out after large workloads.
         await S3ObjectStore(s3, bucket).check_compatibility()
         print("S3 readiness and storage compatibility checks passed.", flush=True)
         yield {

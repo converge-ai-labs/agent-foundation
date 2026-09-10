@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import management_model, round_two_model
+from . import management_model, round_two_model, run_fault_model
 
 CASE_ID = r"^[a-f0-9]{32}$"
 SCENARIOS = (
@@ -35,6 +35,7 @@ SCENARIOS = (
     }
     | round_two_model.SCENARIOS
     | management_model.SCENARIOS
+    | run_fault_model.SCENARIOS
 )
 
 
@@ -45,7 +46,7 @@ class Case(BaseModel):
     token: str = Field(pattern=CASE_ID)
 
 
-def fixture_router(root: Path, authenticate) -> APIRouter:
+def fixture_router(root: Path, authenticate, *, long_session=None) -> APIRouter:
     router = APIRouter(prefix="/__live__", dependencies=[Depends(authenticate)])
 
     def case_path(case_id: str) -> Path:
@@ -119,7 +120,13 @@ def fixture_router(root: Path, authenticate) -> APIRouter:
             raise HTTPException(400, "Scenario does not match its test-owned case")
         async with await anyio.open_file(path / "model_requests", "a") as output:
             await output.write("request\n")
+        if long_session is not None:
+            from .long_session_model import completion
+
+            return await completion(case, path, body, long_session)
         tool_messages = [message for message in body["messages"] if message.get("role") == "tool"]
+        if case.scenario in run_fault_model.SCENARIOS:
+            return await run_fault_model.completion(case, path, body)
         if case.scenario in management_model.SCENARIOS:
             return await management_model.completion(case, path, body, request)
         if case.scenario in round_two_model.SCENARIOS:

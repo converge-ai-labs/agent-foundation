@@ -9,6 +9,7 @@ from a13n_service.configuration.sources import load_settings
 from a13n_service.database import DatabaseMigrator
 from a13n_service.log import configure_logging
 
+from .docker import ensure_docker
 from .environment import LOCAL_CONFIG, Environment
 from .reset import reset
 
@@ -34,6 +35,8 @@ def main() -> None:
             with environment.lock():
                 if args.command == "stop":
                     environment.require_stopped()
+                else:
+                    ensure_docker()
                 environment.compose(*(["up", "-d", "--wait"] if args.command == "setup" else ["stop"]))
         elif args.command == "model":
             from .model import serve_model

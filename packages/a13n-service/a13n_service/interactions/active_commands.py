@@ -125,7 +125,7 @@ class ActiveRunCommands:
                 )
 
         try:
-            await self._outcomes.cancel(
+            outcome = await self._outcomes.cancel(
                 organization_id=source.organization_id,
                 run_id=run_id,
                 expected_run_version=request.expected_run_version,
@@ -162,7 +162,8 @@ class ActiveRunCommands:
                 "The Run can no longer be interrupted.",
                 category=ErrorCategory.conflict,
             ) from error
-        return InterruptReceipt(run_id=run_id, interrupted_at=now)
+        assert outcome.sealed_at is not None
+        return InterruptReceipt(run_id=run_id, interrupted_at=outcome.sealed_at)
 
     async def steer(
         self,

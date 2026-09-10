@@ -134,3 +134,55 @@ async def test_restarted_worker_gets_new_identity_and_cannot_inherit_authority(
     with pytest.raises(AttemptAuthorityError):
         await execution.validate(replace(context, worker_id=restarted._worker_id))
     assert claim.attempt.worker_id == first._worker_id
+
+
+@pytest.mark.parametrize("boundary", ["organizations", "scan", "claim"])
+async def test_database_disconnect_retries_admission_without_losing_capacity(monkeypatch, caplog, boundary):
+    import psycopg
+    from anyio import current_time
+    from sqlalchemy.exc import OperationalError
+
+    scheduler = Mock(spec=AttemptScheduler)
+    scheduler.scan = AsyncMock(return_value=("candidate",))
+    scheduler.claim = AsyncMock(return_value=None)
+    loop = WorkerExecutionLoop(
+        Mock(),
+        scheduler,
+        HarnessPluginFactoryCatalog(()),
+        Mock(),
+        build_id="test",
+        queue_name="default",
+        concurrency=1,
+        poll_seconds=0.02,
+    )
+    organizations = AsyncMock(return_value=(ORGANIZATION_ID,))
+    monkeypatch.setattr(loop, "_organizations", organizations)
+    operation = {"organizations": organizations, "scan": scheduler.scan, "claim": scheduler.claim}[boundary]
+    calls = []
+
+    async def disconnected_then_recovered(*args, **kwargs):
+        calls.append(current_time())
+        if len(calls) == 1:
+            raise OperationalError(None, None, psycopg.OperationalError("connection refused"))
+        loop.begin_drain()
+        return None if boundary == "claim" else ()
+
+    operation.side_effect = disconnected_then_recovered
+    with fail_after(2):
+        await loop.run()
+    assert len(calls) == 2 and calls[1] - calls[0] >= 0.02
+    assert loop._capacity.value == 1
+    assert loop._admission_scope is None
+    assert "worker_database_unavailable" in caplog.text
+
+
+async def test_worker_does_not_retry_programming_failure(monkeypatch):
+    loop = WorkerExecutionLoop(
+        Mock(), Mock(), HarnessPluginFactoryCatalog(()), Mock(), build_id="test", queue_name="default"
+    )
+    organizations = AsyncMock(side_effect=RuntimeError("invalid scheduler"))
+    monkeypatch.setattr(loop, "_organizations", organizations)
+    with pytest.raises(ExceptionGroup, match="TaskGroup") as caught:
+        await loop.run()
+    assert isinstance(caught.value.exceptions[0], RuntimeError)
+    organizations.assert_awaited_once()

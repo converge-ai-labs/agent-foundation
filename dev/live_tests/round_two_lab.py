@@ -166,7 +166,16 @@ class RoundTwoLab:
 
 
 @asynccontextmanager
-async def open_lab(*, suite="round-two", websocket_envd=False):
+async def open_lab(
+    *,
+    suite="round-two",
+    websocket_envd=False,
+    e2b_lifecycle=False,
+    docker_lifecycle=False,
+    environment_workers=False,
+    long_session=None,
+    run_faults=None,
+):
     if suite not in {"core", "round-two", "management"}:
         raise ValueError(f"Unknown live-test suite: {suite}")
     management = suite == "management"
@@ -212,6 +221,16 @@ async def open_lab(*, suite="round-two", websocket_envd=False):
         }
         if websocket_envd:
             config["websocket_envd"] = True
+        if e2b_lifecycle:
+            config["e2b_lifecycle"] = True
+        if docker_lifecycle:
+            config["docker_lifecycle"] = True
+        if environment_workers:
+            config["environment_workers"] = True
+        if long_session is not None:
+            config["long_session"] = long_session
+        if run_faults is not None:
+            config["run_faults"] = run_faults
         from .fixture_peer import certificate_context, create_certificate
 
         if management:
@@ -245,7 +264,7 @@ async def open_lab(*, suite="round-two", websocket_envd=False):
                 "A13N_SERVICE_REDIS_URL": redis_url,
                 **object_environment,
                 "A13N_SERVICE_WORKER_CONCURRENCY": "1",
-                "A13N_SERVICE_WORKER_LEASE_SECONDS": "12",
+                "A13N_SERVICE_WORKER_LEASE_SECONDS": "30" if long_session is not None else "12",
                 "A13N_SERVICE_WORKER_DRAIN_SECONDS": "5",
                 "A13N_SERVICE_WORKER_CLEANUP_SECONDS": "3",
                 "A13N_SERVICE_WORKER_POLL_INTERVAL_SECONDS": "0.2",
@@ -290,6 +309,7 @@ async def open_lab(*, suite="round-two", websocket_envd=False):
                 "dev.live_tests.manage", "init", environment={**environment, "LIVE_TEST_CONFIG": str(other_path)}
             )
         control = await lab.spawn("dev.live_tests.manage", "control")
+        lab.control = control
         await lab.ready(control, config["control_url"])
         http = await stack.enter_async_context(
             httpx2.AsyncClient(

@@ -91,6 +91,35 @@ async def _run(tool, policy: InvocationPolicyCapability):
     return await executable.run("go", bindings=RunBindings.embedded(capabilities=(policy,)))
 
 
+async def test_failed_resolver_logs_suppressed_root_without_leaking_tool_content(caplog):
+    from a13n_environment.e2b.errors import sdk_errors
+
+    async def resolve(arguments, *, context):
+        with sdk_errors():
+            try:
+                raise ConnectionError("secret provider response")
+            except ConnectionError:
+                raise RuntimeError("secret tool payload") from None
+
+    def read(value: int) -> int:
+        raise AssertionError("resource failure must prevent dispatch")
+
+    result = await _run(
+        HarnessTool(read, harness_metadata=_metadata(resolver=resolve)),
+        InvocationPolicyCapability(evaluator=_Allow([])),
+    )
+    assert result.status == "completed"
+    record = next(record for record in caplog.records if record.msg == "managed_tool_resource_resolution_failed")
+    assert record.run_id and record.tool_call_id == "call-1" and record.tool_name == "read"
+    assert [item["type"] for item in record.exception_chain] == [
+        "a13n_environment.errors.EnvironmentProviderError",
+        "builtins.RuntimeError",
+        "builtins.ConnectionError",
+    ]
+    assert "secret" not in json.dumps(record.exception_chain)
+    assert record.exc_info is None
+
+
 async def test_resource_resolution_precedes_policy_and_uses_typed_arguments() -> None:
     order: list[Any] = []
 
