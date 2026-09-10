@@ -1621,6 +1621,7 @@ async def open_harness_ui_app(
                 subscription_sources=subscription_sources,
                 live_hub=live_hub,
                 cleanup_timeout_seconds=cleanup_timeout,
+                thread_files=thread_files,
             )
             root_runs = RootRunCoordinator(root_executor, summary_hub=summary_hub)
             projections = ThreadProjectionService(

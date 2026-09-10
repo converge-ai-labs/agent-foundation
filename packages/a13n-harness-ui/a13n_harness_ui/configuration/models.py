@@ -129,11 +129,18 @@ class SubagentsConfiguration(StrictModel):
         return value
 
 
+class InputConfiguration(StrictModel):
+    """User-text delivery policy captured for each root Run."""
+
+    long_text_threshold_chars: int | None = Field(default=8000, ge=1)
+
+
 class HarnessUiDocument(StrictModel):
     """Root ``a13n-harness-ui.yaml`` document."""
 
     schema_version: Literal["1"] = "1"
     process: ProcessConfiguration = Field(default_factory=ProcessConfiguration)
+    input: InputConfiguration = Field(default_factory=InputConfiguration)
     defaults: GlobalDefaults = Field(default_factory=GlobalDefaults)
     display: TerminalDisplayConfiguration = Field(default_factory=TerminalDisplayConfiguration)
     tools: ToolsConfiguration = Field(default_factory=ToolsConfiguration)
@@ -629,6 +636,7 @@ __all__ = [
     "GrokSubscriptionAuthentication",
     "HarnessPluginResource",
     "HarnessUiDocument",
+    "InputConfiguration",
     "LoadedHarnessUiConfiguration",
     "McpCommandTransport",
     "McpRemoteTransport",

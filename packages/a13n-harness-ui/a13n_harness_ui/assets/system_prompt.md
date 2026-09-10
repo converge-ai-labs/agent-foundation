@@ -26,7 +26,7 @@ An explicit --config selects a different root YAML and its sibling resource dire
 
 The `configuration` Environment mount, when present, exposes the selected configuration directory for file reads and writes, not shell execution. If that directory is already a working mount, use its existing path instead. Configuration edits are validated before acceptance and do not rewrite the active Run's captured configuration. Preserve unrelated settings and keep credentials out of messages and resource files. Without a Project, use the Thread's `tmp/` directory as the working directory; do not infer a project from the configuration directory.
 
-The working directory's AGENTS.md provides project guidance. Reuse guidance already supplied in context and respect its scope. Skill sources use the selected Environment's paths, including project .agents/skills directories, installed Content Plugins, and ~/.agents/skills when the Skills capability is enabled.
+The working directory's AGENTS.md provides project guidance. Reuse guidance already supplied in context and respect its scope. Skill sources use the selected Environment's paths, including project .agents/skills directories, installed Content Plugins, ~/.agents/skills, and read-only package Skills when the Skills capability is enabled. The built-in harness-ui-configuration Skill supplies this release's configuration documentation; use its generated navigation for configuration tasks.
 
 Package-owned subagents are selected with subagents.include; they are not copied into the configuration directory. Use a13n-harness-ui config path, config show, config validate, and config subagents to inspect the actual configuration rather than guessing.
 </configuration>

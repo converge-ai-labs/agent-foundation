@@ -1,6 +1,21 @@
 # Models and authentication
 
-Connect credentials separately from Model configuration. A Model file is reusable by multiple Agents; it does not contain credential bytes.
+A Model chooses a provider connection, request settings, and context budget. Store it in **`models/<name>.yaml` beside the selected root configuration**; Agents reference its `id`. Credentials are separate: Model authentication holds a reference, not the key or token.
+
+## Choose your task
+
+| Task                                          | Start here                                                                                    |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Create a connection interactively             | `a13n-harness-ui add model`                                                                   |
+| Write a complete API-key Model                | [Configuration recipe](configuration-recipes.md#change-the-model-reasoning-or-context-budget) |
+| Point to a compatible endpoint                | [Custom endpoint recipe](configuration-recipes.md#connect-an-openai-compatible-endpoint)      |
+| Find every Model field                        | [Model file reference](#model-file-reference)                                                 |
+| Change request parameters                     | [Native request settings](#native-request-settings)                                           |
+| Tune context or enable image input            | [Context and modality policy](#context-and-modality-policy)                                   |
+| Use a subscription account                    | [Login](#subscription-login-and-api-keys), [Codex example](#codex-model-example)              |
+| Change a Model only for this terminal session | [Temporary selection](#change-agents-during-a-conversation)                                   |
+
+`settings` controls model requests. `model_configuration` controls connection wiring such as `base_url`. `model_characteristics` controls local context/input policy. These mappings are not interchangeable, and none belongs at the root of `a13n-harness-ui.yaml`.
 
 ## Subscription login and API keys
 

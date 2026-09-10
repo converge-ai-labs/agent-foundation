@@ -87,8 +87,10 @@ Put global options before the subcommand. Use `--help` at each level for exact a
 | `a13n-harness-ui`                                        | Interactive launch; `--config`, `--data-root`, `--resume`, `--agent`, `--environment-mode`, `--environment-profile`, `--display`, `--no-update-check`, `--help`, `--version` |
 | `run PROMPT`                                             | One-shot; `--resume`, `--agent`, `--environment-mode`, `--environment-profile`, `--title`, `--format text\|json`                                                             |
 | `update`                                                 | Immediately upgrade the running uv-tool installation; no startup check or second confirmation                                                                                |
-| `setup`                                                  | Guided configuration outside chat; no in-chat `/setup`                                                                                                                       |
-| `config path\|show\|validate\|subagents`                 | Read-only inspection; `--format text\|json`                                                                                                                                  |
+| `setup [--advanced]`                                     | Guided first connection and permissions; no in-chat `/setup`                                                                                                                 |
+| `add model [--advanced]`                                 | Add a reusable Model without changing defaults                                                                                                                               |
+| `add agent [--advanced]`                                 | Add an Agent using an existing or new Model                                                                                                                                  |
+| `config path\|show\|validate\|subagents`                 | Inspect/validate configuration without editing desired resource files; `--format text\|json`                                                                                 |
 | `environment list`, `doctor`                             | Inspection/readiness diagnostics; `--format text\|json`                                                                                                                      |
 | `auth status [PROVIDER]`                                 | Inspect all or one of `codex`, `grok`; `--format`                                                                                                                            |
 | `login PROVIDER`                                         | `--device-code` (default) or `--browser`, `--allow-account-switch`, `--format`                                                                                               |
@@ -100,6 +102,8 @@ Put global options before the subcommand. Use `--help` at each level for exact a
 | `webui`                                                  | `--host`, `--port`, `--apikey`, `--dangerous-skip-permissions`; foreground server                                                                                            |
 
 `--resume` cannot combine with Agent, Environment, or title overrides. Environment mode and profile options cannot combine. There is no detached execution, merge/deploy command, or hidden background continuation after the foreground App closes.
+
+Configuration commands open the local application and may write accepted configuration indexes or initialize data storage. They can also start the pricing updater when enabled; `--no-update-check` only disables the terminal package-update check. They are not a strictly offline, side-effect-free YAML parser. Validation does not make a model request or prove provider/MCP credentials work.
 
 ## Diagnose without losing your draft
 

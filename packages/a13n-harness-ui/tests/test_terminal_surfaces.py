@@ -182,7 +182,7 @@ async def test_skill_reference_validation_rejects_stale_catalog(
         configuration_path=configuration,
     ) as app:
         catalog = await app.skill_catalog()
-        item = catalog.items[0]
+        item = next(item for item in catalog.items if item.name == "review")
         reference = SkillReference(
             catalog_id=catalog.catalog_id,
             item_id=item.item_id,

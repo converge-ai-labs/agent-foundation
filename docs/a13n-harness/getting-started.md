@@ -7,7 +7,7 @@ This guide builds the smallest useful Agent Harness application, explains its ow
 - Python 3.13 or later
 - [uv](https://docs.astral.sh/uv/)
 
-These guides track `main` and target the next Harness release. Until that release is published, clone the repository and synchronize the locked Harness package:
+These guides track the source API on `main`. To reproduce them with matching dependencies, clone the repository and synchronize the locked Harness package:
 
 ```bash
 git clone https://github.com/converge-ai-labs/agent-foundation.git

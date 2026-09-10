@@ -1,6 +1,24 @@
 # Configuration reference
 
-Harness UI uses ordinary YAML and Markdown files. Start with `a13n-harness-ui setup`, add more agents with `a13n-harness-ui add agent`, then edit the resulting files when you need more control. There is no generated configuration database to edit and no generic CLI resource-creation command.
+Harness UI uses ordinary YAML and Markdown files. **The root file controls application defaults; Model and Agent files control agent behavior.** Start with `a13n-harness-ui setup`, then edit those files when you need more control. Do not edit the local database to change configuration.
+
+For task-oriented examples, start with [common configuration recipes](configuration-recipes.md). This page is the root-file and loading reference.
+
+## Find the right setting
+
+| I want to configure…                                      | Open…                               | Reference                                                                        |
+| --------------------------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------- |
+| Startup checks and logging                                | `a13n-harness-ui.yaml` → `process`  | [Process settings](#process-settings)                                            |
+| Default Agent, Environment, plugins, or MCP               | `a13n-harness-ui.yaml` → `defaults` | [Default selections](#default-resource-selections)                               |
+| Theme and output detail                                   | `a13n-harness-ui.yaml` → `display`  | [Display settings](#display-settings)                                            |
+| Questions, CodeAct, built-in children                     | Root `tools` and `subagents`        | [Built-in tools](#built-in-tools-and-subagents)                                  |
+| Provider, API key reference, endpoint, reasoning, context | `models/*.yaml`                     | [Model fields](models-and-authentication.md#model-file-reference)                |
+| Instructions, Capabilities, visible tools, children       | `agents/*.yaml`                     | [Agent fields](agents-and-subagents.md#agent-file-reference)                     |
+| Extra workspace roots                                     | `projects/*.yaml`                   | [Project fields](environments-and-projects.md#project-file-reference)            |
+| External tools                                            | `mcp/*.yaml` or `mcp/*.json`        | [MCP fields](extensions-and-mcp.md#mcp-field-reference)                          |
+| Installed integrations                                    | `extensions/*.yaml`                 | [Extension fields](extensions-and-mcp.md#harness-plugin-and-run-extension-files) |
+
+Resource references use their **`id`**, not a filename or display name. For example, `defaults.agent: agent-coder` selects the Agent whose YAML says `id: agent-coder`.
 
 ## Locate and validate your files
 
@@ -47,6 +65,8 @@ process:
   terminal_update_check: true
   log_level: INFO
   log_format: pretty
+input:
+  long_text_threshold_chars: 8000
 defaults:
   project: null
   agent: null
@@ -80,6 +100,21 @@ These settings take effect when the application starts; restart after changing t
 | `process.log_format`            | `pretty` | Noninteractive logging: `pretty` or `json`; interactive diagnostics use files            |
 
 Use `--no-update-check` for a one-invocation override. See [updates and logs](automation-and-troubleshooting.md#logs-updates-and-exit).
+
+### Long-text inputs
+
+`input.long_text_threshold_chars` defaults to `8000`. A user-text block longer than that many characters is automatically saved as a retained UTF-8 file. The model receives its file path and a reading instruction, **not an inline preview or summary**. Short text is unchanged. Use a positive integer to change the threshold, or `null` to keep all text inline:
+
+```yaml
+input:
+  long_text_threshold_chars: null
+```
+
+The policy applies to normal root messages and messages added while a root Run is active. Each Run captures its configuration; changes affect later Runs. Terminal paste folding is independent and still expands the authored text before submission.
+
+The selected Agent must have the built-in `view` tool enabled and a readable `thread-files` mount. Without that access, the original text stays inline with a notice; no tools are enabled automatically. A file-save failure fails the submission's execution or rejects the added message. Generated input files count toward the existing eight attachments, 10 MiB per file, and 20 MiB per input limits; HTTP request limits still apply.
+
+Original text remains available through the Thread attachment handle after restart and scratch cleanup. Model history keeps the reference, not an automatic expansion of the file. Reading content through a tool still consumes context, especially for tasks requiring the whole document. Existing history and images are not converted by this setting.
 
 ### Default resource selections
 

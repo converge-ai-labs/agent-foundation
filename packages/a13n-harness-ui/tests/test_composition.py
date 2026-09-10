@@ -20,7 +20,7 @@ from a13n_harness_ui.composition import (
     ThreadCompositionSelection,
 )
 from a13n_harness_ui.configuration import load_harness_ui_configuration
-from a13n_harness_ui.environment_paths import EnvironmentPathLayout
+from a13n_harness_ui.environment_paths import BUILTIN_SKILLS_PATH, EnvironmentPathLayout
 from a13n_harness_ui.environment_profiles import SANDBOX_PROFILE_ID
 from a13n_harness_ui.environment_runtime import EnvironmentSnapshotReconstructor
 from a13n_harness_ui.errors import CompositionError
@@ -636,6 +636,7 @@ async def test_reconstruction_propagates_all_project_mounts_to_skills(tmp_path: 
         if isinstance(capability, SkillsCapability)
     )
     assert skills.manager.roots == (
+        BUILTIN_SKILLS_PATH,
         user_skills.as_posix(),
         f"{workspace_3.as_posix()}/.agents/skills",
         f"{workspace_2.as_posix()}/.agents/skills",
@@ -684,6 +685,7 @@ def test_skills_capability_builds_deterministic_multi_mount_sources() -> None:
 
     assert isinstance(selected.capability, SkillsCapability)
     assert selected.capability.manager.roots == (
+        BUILTIN_SKILLS_PATH,
         "/environment/user-skills",
         "/environment/content-plugin-1",
         "/environment/content-plugin-2",
@@ -707,6 +709,7 @@ def test_skills_capability_accepts_windows_native_mount_paths() -> None:
 
     assert isinstance(selected.capability, SkillsCapability)
     assert selected.capability.manager.roots == (
+        BUILTIN_SKILLS_PATH,
         "C:/Users/example/.agents/skills",
         "//server/share/shared/.agents/skills",
         "D:/work/project/.agents/skills",

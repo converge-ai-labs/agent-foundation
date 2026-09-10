@@ -54,11 +54,11 @@ test = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "pyyaml>=6,<7", "markdown-it-py>=3,<5"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build]
-artifacts = ["a13n_harness_ui/static/**"]
+artifacts = ["a13n_harness_ui/static/**", "a13n_harness_ui/assets/builtin_skills/**"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["a13n_harness_ui"]
@@ -67,6 +67,7 @@ packages = ["a13n_harness_ui"]
 include = [
     "a13n_harness_ui",
     "hatch_build.py",
+    "build_skills.py",
     "LICENSE",
     "README.md",
     "pyproject.toml",

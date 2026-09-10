@@ -23,7 +23,7 @@ from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError
 from a13n_harness_ui.live import HarnessUiSummaryHub
 from a13n_harness_ui.root_execution import RootRunExecutor, RootRunOutcome
-from a13n_harness_ui.root_input import detach_input
+from a13n_harness_ui.root_input import RootInputFiles, detach_input
 from a13n_harness_ui.storage import ThreadConfigurationMutation
 from a13n_harness_ui.surfaces import (
     ContinuationSelectionView,
@@ -63,6 +63,7 @@ class _RootOperation:
     done: Event
     scope: CancelScope | None = None
     stream: HarnessRunStream[Any] | None = None
+    input_files: RootInputFiles | None = None
     run_id: str | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
@@ -319,10 +320,14 @@ class RootRunCoordinator:
             if operation is None:
                 raise RunCoordinationError("Root receipt does not exist in this App.", code="root_receipt_missing")
             stream = operation.stream if operation.status is RootOperationStatus.running else None
+            input_files = operation.input_files
         if stream is None:
             return RootControlResult(receipt_id=receipt_id, accepted=False)
         try:
-            enqueue_id = await stream.steer(message)
+            prepared = (
+                await input_files.prepare(message, stream.context.environment) if input_files is not None else message
+            )
+            enqueue_id = await stream.steer(prepared)
         except Exception:
             return RootControlResult(receipt_id=receipt_id, accepted=False)
         return RootControlResult(receipt_id=receipt_id, accepted=True, enqueue_id=enqueue_id)
@@ -375,7 +380,9 @@ class RootRunCoordinator:
                         response=response,
                         mutation=mutation,
                         model_overrides=model_overrides,
-                        on_stream=lambda stream: self._running(operation.receipt.receipt_id, stream),
+                        on_stream=lambda stream, input_files=None: self._running(
+                            operation.receipt.receipt_id, stream, input_files
+                        ),
                     )
             if outcome is None:
                 cancelled = True
@@ -428,7 +435,9 @@ class RootRunCoordinator:
                 operation.done.set()
             await self._publish_change(operation)
 
-    async def _running(self, receipt_id: str, stream: HarnessRunStream[Any]) -> None:
+    async def _running(
+        self, receipt_id: str, stream: HarnessRunStream[Any], input_files: RootInputFiles | None = None
+    ) -> None:
         async with self._lock:
             operation = self._operations.get(receipt_id)
             if operation is None or operation.status is not RootOperationStatus.preparing:
@@ -437,6 +446,7 @@ class RootRunCoordinator:
                     code="thread_run_admission_invalid",
                 )
             operation.stream = stream
+            operation.input_files = input_files
             operation.run_id = stream.run_id
             operation.started_at = datetime.now(UTC)
             operation.status = RootOperationStatus.running

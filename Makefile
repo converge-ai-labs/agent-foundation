@@ -193,8 +193,12 @@ langfuse-test: langfuse-up ## Verify Service OTLP write and Trace Query against 
 langfuse-reset: ## Stop local Langfuse and remove all local Langfuse data
 	@$(LANGFUSE_COMPOSE) down --volumes --remove-orphans
 
+.PHONY: a13n-harness-ui-skills
+a13n-harness-ui-skills: sync ## Generate the bundled configuration Skill and documentation navigation
+	@uv run --locked python packages/a13n-harness-ui/build_skills.py
+
 .PHONY: a13n-harness-ui
-a13n-harness-ui: sync ## Run the interactive Harness UI without release update checks
+a13n-harness-ui: a13n-harness-ui-skills ## Run the interactive Harness UI without release update checks
 	@uv run --locked a13n-harness-ui --no-update-check
 
 .PHONY: a13n-harness-ui-db-migrate
@@ -259,7 +263,7 @@ docs-build: sync docs-check ## Build the documentation site in strict mode
 	@uv run --locked mkdocs build --strict
 
 .PHONY: test
-test: sync ## Run Python workspace tests
+test: a13n-harness-ui-skills ## Run Python workspace tests
 	@uv run --locked python -m scripts.run_python_tests $(if $(PYTHON_TEST_WORKERS),--workers $(PYTHON_TEST_WORKERS)) $(PYTHON_TEST_DIRS)
 
 .PHONY: eip-generate
@@ -509,7 +513,7 @@ a13n-harness-ui-webui-build: frontend-sync ## Build Harness UI WebUI production 
 	@pnpm --dir frontend --filter a13n-harness-ui-webui run build
 
 .PHONY: a13n-harness-ui-assets
-a13n-harness-ui-assets: sync a13n-harness-ui-webui-build ## Prepare generated Harness UI WebUI files for Python packaging
+a13n-harness-ui-assets: a13n-harness-ui-skills a13n-harness-ui-webui-build ## Prepare generated Harness UI WebUI files for Python packaging
 	@uv run --locked python scripts/prepare-a13n-harness-ui-assets.py
 
 sdk/typescript/node_modules/.package-lock.json: sdk/typescript/package.json sdk/typescript/package-lock.json
