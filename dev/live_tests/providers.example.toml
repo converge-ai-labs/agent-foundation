@@ -18,7 +18,7 @@ api_key = ""
 [model]
 provider = "" # openrouter or openai_compatible
 api_key = ""
-model = "" # Required when enabled: an upstream Chat Completions model ID.
+model = "" # Required for the configured case; ignored by the fixed OpenRouter matrix.
 base_url = "" # Required only for openai_compatible; leave blank for openrouter.
 
 [search]

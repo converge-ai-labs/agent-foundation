@@ -75,25 +75,25 @@ the default is empty and HTTPS validation remains enabled. Real Provider journey
 allow 90 seconds per Control HTTP request for cloud catalog discovery; local
 deterministic journeys retain their shorter timeout.
 
-| Parameter                   | Meaning when enabled                                                   | Empty/default behavior                                                                                             |
-| --------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `environment.type`          | `a13n.e2b`, the native E2B Environment implementation                  | No additional cloud Environment test; existing direct-local and explicit Docker cases keep their current providers |
-| `environment.api_key`       | E2B account API key; required with `type`                              | No credentials required by the existing local cases                                                                |
-| `environment.template`      | Optional E2B template ID or alias                                      | `base` when E2B is enabled                                                                                         |
-| `connector.provider`        | `composio` or `openconnector`                                          | No additional external Connector test; case 27 keeps its local TLS Composio fixture and local MCP server           |
-| `connector.api_key`         | Composio project API key; required with `provider`                     | Existing connectivity fixtures use a generated lab-only credential                                                 |
-| `connector.toolkits`        | Optional nonempty list of Composio toolkit keys to discover            | `["github"]` when Composio is enabled; leave the example line commented when the section is disabled               |
-| `connector.project_api_key` | OOMOL Project API key; required for `openconnector`                    | No default; create under Console → Projects → your project → API Keys                                              |
-| `connector.catalog_api_key` | OOMOL personal API key for catalog reads; required for `openconnector` | No default; create at <https://console.oomol.com/api-key>                                                          |
-| `connector.services`        | Optional nonempty list of OpenConnector service keys                   | `["slack"]` when OpenConnector is enabled                                                                          |
-| `model.provider`            | `openrouter` or `openai_compatible`                                    | No additional external Model test; existing cases keep their scripted local model                                  |
-| `model.api_key`             | Model provider API key; required with `provider`                       | Existing scripted model uses a generated lab-only credential                                                       |
-| `model.model`               | Required upstream model ID supporting Chat Completions                 | No implicit model selection; choose a model available to your account                                              |
-| `model.base_url`            | Required HTTPS API base URL for `openai_compatible`                    | Leave blank for `openrouter`, which uses the service's built-in endpoint                                           |
-| `search.provider`           | `exa`                                                                  | No external search journey; requires no Model or Connector API key                                                 |
-| `search.api_key`            | Exa API key with Search access                                         | No implicit key lookup; fill together with `search.provider`                                                       |
-| `brave_search.provider`     | `brave`                                                                | No additional Brave search journey; independent of the Exa section                                                 |
-| `brave_search.api_key`      | Brave API key with Web Search access                                   | Fill together with `brave_search.provider`; never reuse the Exa key                                                |
+| Parameter                   | Meaning when enabled                                                     | Empty/default behavior                                                                                             |
+| --------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `environment.type`          | `a13n.e2b`, the native E2B Environment implementation                    | No additional cloud Environment test; existing direct-local and explicit Docker cases keep their current providers |
+| `environment.api_key`       | E2B account API key; required with `type`                                | No credentials required by the existing local cases                                                                |
+| `environment.template`      | Optional E2B template ID or alias                                        | `base` when E2B is enabled                                                                                         |
+| `connector.provider`        | `composio` or `openconnector`                                            | No additional external Connector test; case 27 keeps its local TLS Composio fixture and local MCP server           |
+| `connector.api_key`         | Composio project API key; required with `provider`                       | Existing connectivity fixtures use a generated lab-only credential                                                 |
+| `connector.toolkits`        | Optional nonempty list of Composio toolkit keys to discover              | `["github"]` when Composio is enabled; leave the example line commented when the section is disabled               |
+| `connector.project_api_key` | OOMOL Project API key; required for `openconnector`                      | No default; create under Console → Projects → your project → API Keys                                              |
+| `connector.catalog_api_key` | OOMOL personal API key for catalog reads; required for `openconnector`   | No default; create at <https://console.oomol.com/api-key>                                                          |
+| `connector.services`        | Optional nonempty list of OpenConnector service keys                     | `["slack"]` when OpenConnector is enabled                                                                          |
+| `model.provider`            | `openrouter` or `openai_compatible`                                      | No additional external Model test; existing cases keep their scripted local model                                  |
+| `model.api_key`             | Model provider API key; required with `provider`                         | Existing scripted model uses a generated lab-only credential                                                       |
+| `model.model`               | Upstream model ID supporting Chat Completions; required for `configured` | Fixed OpenRouter matrix cases ignore this field and use their own model IDs                                        |
+| `model.base_url`            | Required HTTPS API base URL for `openai_compatible`                      | Leave blank for `openrouter`, which uses the service's built-in endpoint                                           |
+| `search.provider`           | `exa`                                                                    | No external search journey; requires no Model or Connector API key                                                 |
+| `search.api_key`            | Exa API key with Search access                                           | No implicit key lookup; fill together with `search.provider`                                                       |
+| `brave_search.provider`     | `brave`                                                                  | No additional Brave search journey; independent of the Exa section                                                 |
+| `brave_search.api_key`      | Brave API key with Web Search access                                     | Fill together with `brave_search.provider`; never reuse the Exa key                                                |
 
 OpenRouter uses the native `openrouter` Provider and `openrouter.chat_completions`
 API. Its endpoint is `https://openrouter.ai/api/v1`, as described in the
@@ -221,7 +221,12 @@ an OpenRouter configuration runs three separately reported cases:
 | `openrouter-claude` | `anthropic/claude-haiku-4.5`   |
 
 These cases reuse the configured OpenRouter credential, each in its own lab,
-without changing the local TOML. They skip for `openai_compatible`; the configured
+without changing the local TOML. They ignore `model.model` and apply their fixed
+model IDs before configuration validation, so that field can be omitted or left
+blank when selecting only the matrix. Provider, credential and endpoint validation
+still applies. The `configured` case still requires `model.model`; select only the
+fixed cases with `LIVE_TEST_ARGS='-k "configured_model and openrouter"'` when it is absent.
+They skip for `openai_compatible`; the configured
 model case continues to cover that provider. Logs identify the upstream model,
 Run ID and output length without printing credentials or model output. External
 usage can consume credits.
@@ -550,11 +555,13 @@ to validate Service behavior.
 
 ### Agent control transition matrix
 
-Cases 45–52 add 97 variants for the control boundaries below. They share the
-isolated fault lab and `--live-round-two` opt-in. Run only this matrix with:
+Cases 45–52 provide 97 variants for the control boundaries in the table below;
+the queue suites described afterward add 29, and the Fork independence suites
+add 42. They share the isolated
+fault lab and `--live-round-two` opt-in. Run the control suites with:
 
 ```sh
-uv run --locked python -m pytest dev/live_tests/test_4[56789]_control_*.py dev/live_tests/test_5[012]_control_*.py \
+uv run --locked python -m pytest dev/live_tests/test_4[56789]_control_*.py dev/live_tests/test_5[0123456]_control_*.py \
   --live-round-two -v --tb=short -o log_cli=true -o log_cli_level=INFO
 ```
 
@@ -569,6 +576,70 @@ uv run --locked python -m pytest dev/live_tests/test_4[56789]_control_*.py dev/l
 | `test_51_control_child_results.py` | 5        | Alternating Steer/child-result FIFO reaches real model context; cancelled-origin results arriving before cancellation or after Retry remain suppressed while fresh children deliver; blocked queue takes precedence over automatic child-result continuation; historical Continue supersedes child results and Steer together.                         |
 | `test_52_control_steer_races.py`   | 9        | Both commit orders for Steer versus Feedback/waiting Continue and Interrupt/final failure; consumption commits before Interrupt without losing the consumed status or exact checkpoint receipt.                                                                                                                                                        |
 
+`test_53_control_queue_races.py` adds 18 variants: background recovery and explicit
+consume both publish candidate initial state before either commits; enqueue
+competes with completed/waiting/failed/cancelled sealing in both orders; a new
+submission cannot bypass an existing queue during completed-Thread recovery;
+Interrupt competes with prepared completion handoff; and Retry or historical
+Continue competes with background consumption. Each race checks both winning
+orders, the selected parent, queue and Thread versions, and absence of the losing
+candidate Run. A rejected stale submission is also retried with the current
+Thread version to check immediate acceptance versus queue admission.
+
+`test_54_control_queue_edges.py` adds 11 variants: three observed recovery scans
+leave a waiting head's queue untouched, including after failed/cancelled
+Feedback; a recoverable queue head blocks its tail while another Thread drains,
+then PATCH or DELETE unblocks it; two requests compete for the last queue slot,
+with replay at capacity and reuse after deletion or consumption; and consumed
+entries remain immutable after their Runs fail/cancel and Control restarts,
+while the next entry continues from the preserved completed or null head.
+
+Run the queue additions independently with:
+
+```sh
+make live-test-round-two LIVE_TEST_ARGS='-k "test_53_control_queue_races or test_54_control_queue_edges" --log-disable=httpx2'
+```
+
+The Fork independence suites test both directions: one operation remains at an
+observed barrier while its peer makes independent progress. Assertions
+check that the barrier is still active, including its timeout/cancellation
+marker; accepting both HTTP requests alone does not satisfy the test.
+
+Most variants require the peer to finish execution before release. When a
+checkpoint publication or replacement state read/writer claim is paused,
+Fork must finish HTTP acceptance before release; both Runs must execute
+successfully afterward. These object operations have bounded request or
+Run-local reconciliation deadlines, so those variants measure acceptance
+independence without turning the pause into a dependency-timeout test.
+
+| File                               | Variants | Independent operations and evidence                                                                                                                                                                                                                                                                                            |
+| ---------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `test_54_control_fork_commands.py` | 16       | Fork versus Continue, historical ContinueFrom, Steer, Interrupt, Feedback, waiting Continue and Retry; two distinct Forks sharing an Environment, with inherited and overridden execution settings. Each direction checks lineage, separate Thread identity, unchanged source state and isolated inbox/model context.          |
+| `test_55_control_fork_recovery.py` | 20       | Fork versus model/tool/checkpoint I/O and completed/waiting/failed sealing; replacement Attempt state reads and writer claims before/after publication; planned Worker drain/handoff. Real Worker death must recover with the next writer fence, while drain must yield and hand off once; both retain the actual tool effect. |
+| `test_56_control_fork_queue.py`    | 6        | Fork versus explicit queue consumption and completion handoff, including a shared Environment. Both queued entries must drain in FIFO order with the correct parent, while the Fork retains a separate empty queue and source Thread state remains unchanged while paused.                                                     |
+
+Run these suites independently with:
+
+```sh
+make live-test-round-two LIVE_TEST_ARGS='-k "test_54_control_fork_commands or test_55_control_fork_recovery or test_56_control_fork_queue" --log-disable=httpx2'
+```
+
+Forks use a completed historical source while its Thread advances. Independent
+Workers distinguish operation-level blocking from a busy single Worker. The
+additional hooks pause before Fork initial-state publication, around replacement
+writer claims, before planned yield, and after queue-handoff verification; none
+holds a SQL transaction. The handoff pause is outside the bounded preparation
+and commit calls, so those timeouts cannot silently release the peer. Explicit
+queue-consumer isolation pauses background recovery until the explicit first
+consumption commits, whereas completion-handoff
+cases use the real Worker path. These cases check progress at named boundaries,
+not latency guarantees under arbitrary resource exhaustion.
+
+Queue and planned-yield independence cases start Workers with a 60-second lease
+so a deliberately paused Run-local gate leaves time for peer execution. This
+uses normal Worker settings; the crash-recovery cases retain the short lab lease
+and the production state-admission request bounds.
+
 Each transition uses public HTTP commands and independent real Control/Worker
 processes. Barriers surround first claim, initial state publication, acceptance
 commit, model requests, checkpoints, and queue handoff. Tests observe the
@@ -578,9 +649,13 @@ Thread versions, lineage, Attempt ownership, queue/inbox records, checkpoint
 receipts, captured model inputs, and actual tool effects. Negative cases verify
 that rejected commands leave the owned state unchanged.
 
-Only this lab lowers constructor-owned inbox limits to make exact count/byte
-boundaries practical. No public limit setter or lifecycle-record mutation is
-invented. Child barriers can release each child separately to prove mixed FIFO
+Only this lab lowers constructor-owned inbox and queued-submission limits to
+make exact capacity boundaries practical. Queue scan observations run after
+the real scan returns, including empty scans; waiting and FIFO-blocker assertions
+do not disable recovery. Prepared queue candidates identify their HTTP or
+background consumer through callback-local context, without replacing either
+production path. No public limit setter or lifecycle-record mutation is invented.
+Child barriers can release each child separately to prove mixed FIFO
 order. Offline checks exercise repeated model batch requests, complete feedback
 advancement, and fault isolation; they do not count as live validation.
 
@@ -1164,3 +1239,57 @@ Dependency and authority suites have provider-independent names and should be
 run explicitly when using those filters. Exact owned labels/metadata drive
 Docker/E2B cleanup, including unpublished native targets; no shared infrastructure
 or unrelated target is stopped.
+
+## Native SSE and Hosted AG-UI protocol contracts
+
+`test_04_protocol_streams.py` consumes real Native and Hosted HTTP SSE with the
+scripted OpenAI-compatible model, separate Control/Worker processes, and real
+storage. It covers Unicode/newline text deltas, two tool calls and their results,
+model failure, explicit cancellation, disconnect/reconnect, approval/rejection,
+waiting feedback under a new external Run ID, idempotent replay, and invalid
+input/conflicting reuse without extra accepted Runs.
+
+The consumer oracle in `stream_contract.py` imports the pinned upstream
+`ag_ui.core.Event` schema, never the Service event model, observer, serializer,
+projector, or visibility registry. Its assertions derive from:
+
+- [AG-UI event semantics](https://docs.ag-ui.com/concepts/events) and the
+  upstream schema version pinned by the Harness release group;
+- [Native Streaming](../../spec/a13n-service/21-native-streaming-and-notifications.md):
+  SSE framing, heartbeat checkpoints, and exclusive cursor replay;
+- [Hosted AG-UI](../../spec/a13n-service/22-hosted-ag-ui.md): external identities,
+  durable lifecycle, waiting, recovery, and default visibility;
+- [Lifecycle and Stream Persistence](../../spec/a13n-service/24-lifecycle-and-stream-persistence.md):
+  required versioned envelopes, provenance, and ordered recovery boundaries;
+- [Stream Protocol](../../spec/a13n-stream-protocol/00-overview.md): explicit
+  text/tool lifecycles and model-only input visibility.
+
+`test_stream_contract.py` uses hand-authored wire examples and deliberate
+corruptions to prove that missing fields, unsupported versions, malformed AG-UI
+payloads, broken message/tool order, identity changes, duplicate terminals,
+private execution data, and replay gaps cannot pass the oracle. Additive Native
+fields remain valid; Hosted cursors are opaque and never parsed as Redis IDs.
+
+`test_10_protocol_recovery.py` kills an owned Worker after a real tool checkpoint,
+then verifies the replacement boundary in both protocols, exclusive replay on
+either side, stable source event identity, one external lifecycle, and no repeated
+tool effect. The model is mocked; the process failure and recovery are real.
+
+```bash
+make live-test-local LIVE_TEST_ARGS='-k "event_contracts or hosted"'
+make live-test-round-two LIVE_TEST_ARGS='-k test_hosted_and_native_recovery_boundary --log-disable=httpx2'
+make live-test-check
+```
+
+For an existing manually managed installation, rerun `make live-test-setup` to
+provision the protocol fixture Agent and restart Control/Worker to load the new
+model scenarios. The isolated target provisions these automatically.
+
+These are contracts for the selected Service profile, not a claim of exhaustive
+upstream AG-UI coverage. Optional state, activity, message-snapshot, subagent, and
+reasoning-summary visibility profiles, client-executed tools, and structured
+user-input feedback need their own scenario matrices. Native reasoning fields
+are schema-checked and the mock emits a private reasoning sentinel that must not
+appear in the default Hosted stream. A waiting attachment follows the Service
+custom-event contract rather than assuming every attachment ends in AG-UI
+success/error. EOF alone never establishes a Run outcome.

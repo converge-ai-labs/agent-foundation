@@ -7,7 +7,7 @@ import anyio
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 
-SCENARIOS = {"model_error", "model_timeout", "tool_error", "checkpoint", "gate", "async_children"}
+SCENARIOS = {"model_error", "model_timeout", "tool_error", "checkpoint", "gate", "async_children", "protocol_tools"}
 FLAGS = ("checkpoint_ready", "gate_ready", "child_0_started", "child_1_started", "parent_ready")
 COUNTERS = ("effects", "effect_attempts", "checkpoint_requests", "injected_errors", "model_timeouts")
 
@@ -54,7 +54,11 @@ async def completion(case, path, body: dict, texts: list[str], tool_messages: li
         await count(path, "model_timeouts")
         # Wait before response headers so the configured model read timeout is exercised.
         await anyio.sleep(3)
-    if case.scenario == "tool_error" or (case.scenario == "checkpoint" and not tool_messages):
+    if case.scenario == "protocol_tools" and not tool_messages:
+        tool = [tool_call(body, "live_effect", {"case_id": case.case_id, "token": case.token}) for _ in range(2)]
+        for index, call in enumerate(tool):
+            call["index"] = index
+    elif case.scenario == "tool_error" or (case.scenario == "checkpoint" and not tool_messages):
         tool = tool_call(
             body, "live_effect", {"case_id": case.case_id, "token": case.token, "fail": case.scenario == "tool_error"}
         )

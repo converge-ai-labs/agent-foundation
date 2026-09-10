@@ -5,7 +5,7 @@ import json
 import pytest
 
 from .config import local_origin
-from .stream import Event, assert_stream, parse_events
+from .stream import Event, assert_stream, parse_events, parse_frames
 
 
 async def lines(values):
@@ -24,14 +24,14 @@ async def test_sse_comments_multiline_and_truncated_frame():
         'data: "event_id": "evt_1", "run_id": "run_1"}',
         "",
     ]
-    events = [event async for event in parse_events(lines(frame))]
+    events = [event async for event in parse_frames(lines(frame))]
     assert_stream(events, "run_1")
     with pytest.raises(AssertionError, match="middle"):
-        _ = [event async for event in parse_events(lines(frame[:-1]))]
+        _ = [event async for event in parse_frames(lines(frame[:-1]))]
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("kind,cursor", [("run_stream.replay_gap", "1-0"), ("run.completed", "bad")])
+@pytest.mark.parametrize("kind,cursor", [("a13n.service.replay_gap", "1-0"), ("run.completed", "bad")])
 async def test_sse_rejects_unusable_replay(kind, cursor):
     frame = [f"id: {cursor}", f"event: {kind}", "data: " + json.dumps({"event_type": kind}), ""]
     with pytest.raises(AssertionError):

@@ -77,7 +77,7 @@ class ProviderSettings(Settings):
     brave_search: BraveSearchSettings | None = None
 
 
-def load_provider_settings(path: Path | None = None) -> ProviderSettings:
+def load_provider_settings(path: Path | None = None, *, upstream_model: str | None = None) -> ProviderSettings:
     """Missing default/all-empty sections disable integration; explicit bad paths fail."""
     override = os.environ.get("LIVE_TEST_PROVIDERS_CONFIG")
     selected = path or (Path(override).expanduser() if override else DEFAULT_PATH)
@@ -94,6 +94,14 @@ def load_provider_settings(path: Path | None = None) -> ProviderSettings:
                     if not (isinstance(value, str) and not value.strip())
                 }
                 values = values or None
+                if (
+                    section == "model"
+                    and values
+                    and values.get("provider") == "openrouter"
+                    and upstream_model is not None
+                ):
+                    # Fixed matrix cases own their model ID; validate only the effective selection.
+                    values["model"] = upstream_model
             normalized[section] = values
         return ProviderSettings.model_validate(normalized)
     except (OSError, ValueError) as error:

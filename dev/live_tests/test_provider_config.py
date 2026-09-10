@@ -11,11 +11,15 @@ from . import provider_config
 from .provider_config import ProviderSettings, load_provider_settings
 
 
-def test_missing_default_and_blank_example_preserve_defaults(tmp_path, monkeypatch):
+@pytest.mark.parametrize("upstream_model", [None, "openai/gpt-4.1-nano"])
+def test_missing_default_and_blank_example_preserve_defaults(tmp_path, monkeypatch, upstream_model):
     monkeypatch.delenv("LIVE_TEST_PROVIDERS_CONFIG", raising=False)
     monkeypatch.setattr(provider_config, "DEFAULT_PATH", tmp_path / "missing.toml")
-    assert load_provider_settings() == ProviderSettings()
-    assert load_provider_settings(Path(__file__).with_name("providers.example.toml")) == ProviderSettings()
+    assert load_provider_settings(upstream_model=upstream_model) == ProviderSettings()
+    assert (
+        load_provider_settings(Path(__file__).with_name("providers.example.toml"), upstream_model=upstream_model)
+        == ProviderSettings()
+    )
 
 
 def test_override_and_independent_sections_keep_secrets_private(tmp_path, monkeypatch):
@@ -41,6 +45,7 @@ def test_override_and_independent_sections_keep_secrets_private(tmp_path, monkey
         '[connector]\nprovider="composio"\napi_key="key"\nproject_api_key="sample-secret"',
         '[connector]\nprovider="unknown"\napi_key="sample-secret"',
         '[model]\nprovider="openrouter"\napi_key="sample-secret"',
+        '[model]\nprovider="openrouter"\napi_key="sample-secret"\nmodel=""',
         '[search]\nprovider="exa"',
         '[search]\napi_key="sample-secret"',
         '[search]\nprovider="unknown"\napi_key="sample-secret"',
@@ -205,22 +210,27 @@ async def test_provider_opt_in_does_not_start_interactive_slack(monkeypatch):
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("provider", ["openrouter", "openai_compatible"])
-async def test_model_matrix_uses_openrouter_credentials_without_changing_config(monkeypatch, provider):
+@pytest.mark.parametrize(
+    "provider,model_setting",
+    [
+        ("openrouter", ""),
+        ("openrouter", 'model=""'),
+        ("openrouter", 'model="configured/model"'),
+        ("openrouter", "model=123"),
+        ("openai_compatible", 'model="configured/model"'),
+    ],
+)
+async def test_model_matrix_uses_openrouter_credentials_without_changing_config(
+    tmp_path, monkeypatch, provider, model_setting
+):
     from . import real_providers
     from .conftest import configured_provider
 
-    settings = ProviderSettings.model_validate(
-        {
-            "model": {
-                "provider": provider,
-                "api_key": "model-secret",
-                "model": "configured/model",
-                "base_url": "" if provider == "openrouter" else "https://models.example/v1",
-            }
-        }
-    )
-    monkeypatch.setattr(provider_config, "load_provider_settings", lambda: settings)
+    path = tmp_path / "settings.toml"
+    endpoint = 'base_url="https://models.example/v1"' if provider == "openai_compatible" else ""
+    source = f'[model]\nprovider="{provider}"\napi_key="model-secret"\n{model_setting}\n{endpoint}\n'
+    path.write_text(source)
+    monkeypatch.setenv("LIVE_TEST_PROVIDERS_CONFIG", str(path))
     provisioned = []
 
     @asynccontextmanager
@@ -243,11 +253,28 @@ async def test_model_matrix_uses_openrouter_credentials_without_changing_config(
             assert await anext(fixture) == "configured"
             section, selected = provisioned[0]
             assert section == "model" and selected.model == "google/gemini-2.5-flash-lite"
-            assert selected.api_key == settings.model.api_key
-            assert settings.model.model == "configured/model"
+            assert selected.api_key.get_secret_value() == "model-secret"
             assert "model-secret" not in repr(selected)
+        assert path.read_text() == source
     finally:
         await fixture.aclose()
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        'provider="openrouter"',
+        'provider="openrouter"\napi_key=""',
+        'provider="openrouter"\napi_key="sample-secret"\nbase_url="https://models.example/v1"',
+        'provider="unknown"\napi_key="sample-secret"',
+    ],
+)
+def test_fixed_model_still_validates_provider_credentials_and_endpoint(tmp_path, settings):
+    path = tmp_path / "settings.toml"
+    path.write_text("[model]\n" + settings)
+    with pytest.raises(ValueError, match="Provider configuration") as caught:
+        load_provider_settings(path, upstream_model="openai/gpt-4.1-nano")
+    assert "sample-secret" not in str(caught.value)
 
 
 @pytest.mark.anyio

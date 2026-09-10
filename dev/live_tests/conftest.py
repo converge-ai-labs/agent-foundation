@@ -146,7 +146,12 @@ async def configured_provider(request):
     from .provider_config import OpenConnectorSettings, load_provider_settings
 
     section = "connector" if slack else selection
-    settings = getattr(load_provider_settings(), section)
+    configuration = (
+        load_provider_settings(upstream_model=upstream_model)
+        if upstream_model is not None
+        else load_provider_settings()
+    )
+    settings = getattr(configuration, section)
     if slack and (not isinstance(settings, OpenConnectorSettings) or "slack" not in settings.services):
         pytest.fail("--live-slack requires an openconnector configuration with slack in services")
     if settings is None:
@@ -154,7 +159,6 @@ async def configured_provider(request):
     if upstream_model is not None:
         if settings.provider != "openrouter":
             pytest.skip("The GPT/Gemini/Claude matrix requires model.provider=openrouter")
-        settings = settings.model_copy(update={"model": upstream_model})
     from .real_providers import configured_provider_lab
 
     async with configured_provider_lab("search" if section == "brave_search" else section, settings) as configured:

@@ -10,7 +10,7 @@ from typing import Annotated, Literal
 from ag_ui.core import Event
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, TypeAdapter, model_validator
 
-from a13n_service.storage import ObjectConflict, ObjectInfo, ObjectStore
+from a13n_service.storage import ObjectConflict, ObjectInfo, ObjectStore, ObjectStoreUnavailable
 from a13n_service.storage.codec import DurableObjectCodecError, canonical_model_bytes, decode_canonical_model
 
 HOSTED_AGUI_REPLAY_CONTENT_TYPE = "application/vnd.a13n.hosted-agui-replay+json"
@@ -110,6 +110,10 @@ class HostedAguiReplayStore:
                     "existing Hosted AG-UI replay does not match the complete delivery"
                 ) from error
             return existing
+        except ObjectStoreUnavailable as error:
+            # A competing publisher can hold the object publication lease. The
+            # intact Native stream remains usable while retention is retried.
+            raise HostedAguiReplayUnavailable("Hosted AG-UI replay publication is temporarily unavailable") from error
         _verify_info(info, key=key, body=body, metadata=metadata)
         return snapshot
 

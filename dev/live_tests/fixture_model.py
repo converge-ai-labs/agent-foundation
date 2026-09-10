@@ -25,6 +25,7 @@ CASE_ID = r"^[a-f0-9]{32}$"
 SCENARIOS = (
     {
         "basic",
+        "protocol_text",
         "remember",
         "tools",
         "stream",
@@ -222,6 +223,9 @@ async def _chunks(
         finally:
             with anyio.CancelScope(shield=True):
                 await anyio.Path(path / "model_closed").touch()
+    if case.scenario == "protocol_text":
+        yield frame({"reasoning_content": "PRIVATE_PROTOCOL_REASONING"})
+        answer = "协议🙂\n" + case.token
     if tool is not None:
         yield frame({"tool_calls": tool if isinstance(tool, list) else [tool]})
         yield frame({}, "tool_calls")

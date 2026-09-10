@@ -17,6 +17,7 @@ from ag_ui.core import (
     AssistantMessage,
     BinaryInputContent,
     Event,
+    Message,
     RunAgentInput,
     ToolCall,
     ToolMessage,
@@ -77,6 +78,7 @@ logger = logging.getLogger("a13n_service.gateway.hosted_agui")
 _JSON_OBJECT = TypeAdapter(dict[str, JsonValue])
 _JSON_VALUE = TypeAdapter(JsonValue)
 _EVENT = TypeAdapter(Event)
+_MESSAGE = TypeAdapter(Message)
 _RESOLUTIONS = TypeAdapter(tuple[SubmittedPendingResolution, ...])
 _VISIBLE_EVENTS = frozenset(
     {
@@ -621,11 +623,17 @@ class HostedAguiService:
             retained = await self._sealed_replay(binding)
         except HostedAguiReplayUnavailable as error:
             if cursor is not None:
-                raise HostedAguiError(
-                    "agui_replay_gap",
-                    "The requested Hosted AG-UI delivery history is unavailable.",
-                    category=ErrorCategory.conflict,
-                ) from error
+                # Sealing the Run precedes presentation closure/publication. A
+                # missing immutable snapshot is not a gap while the full live
+                # prefix is still available for the same ordered projection.
+                try:
+                    await self._stream.untrimmed_entries(binding.organization_id, binding.run_id)
+                except RunStreamError:
+                    raise HostedAguiError(
+                        "agui_replay_gap",
+                        "The requested Hosted AG-UI delivery history is unavailable.",
+                        category=ErrorCategory.conflict,
+                    ) from error
             retained = None
         except HostedAguiReplayError as error:
             raise HostedAguiError(
@@ -1380,7 +1388,7 @@ def _message_json(message: BaseModel) -> dict[str, JsonValue]:
 
 def _messages_from_entries(entries: Sequence[RunStreamEntry]) -> tuple[dict[str, JsonValue], ...]:
     messages: list[dict[str, JsonValue]] = []
-    assistants: dict[str, dict[str, Any]] = {}
+    text_messages: dict[str, dict[str, Any]] = {}
     tool_calls: dict[str, dict[str, Any]] = {}
     for entry in entries:
         projected = _project_observation(entry)
@@ -1390,16 +1398,20 @@ def _messages_from_entries(entries: Sequence[RunStreamEntry]) -> tuple[dict[str,
         if event_type == "TEXT_MESSAGE_START":
             message_id = projected.get("messageId")
             if isinstance(message_id, str):
-                assistants[message_id] = {"id": message_id, "role": projected.get("role", "assistant"), "content": ""}
+                text_messages[message_id] = {
+                    "id": message_id,
+                    "role": projected.get("role", "assistant"),
+                    "content": "",
+                }
         elif event_type == "TEXT_MESSAGE_CONTENT":
             message_id = projected.get("messageId")
             delta = projected.get("delta")
-            if isinstance(message_id, str) and isinstance(delta, str) and message_id in assistants:
-                assistants[message_id]["content"] += delta
+            if isinstance(message_id, str) and isinstance(delta, str) and message_id in text_messages:
+                text_messages[message_id]["content"] += delta
         elif event_type == "TEXT_MESSAGE_END":
             message_id = projected.get("messageId")
-            if isinstance(message_id, str) and message_id in assistants:
-                messages.append(_message_json(AssistantMessage.model_validate(assistants.pop(message_id))))
+            if isinstance(message_id, str) and message_id in text_messages:
+                messages.append(_message_json(_MESSAGE.validate_python(text_messages.pop(message_id))))
         elif event_type == "TOOL_CALL_START":
             call_id = projected.get("toolCallId")
             if isinstance(call_id, str):
@@ -1425,11 +1437,19 @@ def _messages_from_entries(entries: Sequence[RunStreamEntry]) -> tuple[dict[str,
                         "function": {"name": call["name"], "arguments": call["arguments"]},
                     }
                 )
-                if isinstance(parent, str) and parent in assistants:
-                    assistants[parent].setdefault("toolCalls", []).append(value.model_dump(mode="json", by_alias=True))
+                if isinstance(parent, str) and parent in text_messages:
+                    text_messages[parent].setdefault("toolCalls", []).append(
+                        value.model_dump(mode="json", by_alias=True)
+                    )
                 else:
                     messages.append(
-                        _message_json(AssistantMessage(id=f"assistant-{call_id}", content=None, tool_calls=[value]))
+                        _message_json(
+                            AssistantMessage(
+                                id=parent if isinstance(parent, str) else f"assistant-{call_id}",
+                                content=None,
+                                tool_calls=[value],
+                            )
+                        )
                     )
         elif event_type == "TOOL_CALL_RESULT":
             call_id = projected.get("toolCallId")
@@ -1462,7 +1482,21 @@ def _project_observation(entry: RunStreamEntry) -> dict[str, Any] | None:
     prefix, separator, name = entry.event.event_type.partition(".")
     if prefix != "agui" or not separator or name not in _VISIBLE_EVENTS:
         return None
-    return _standard_event({"type": name.upper(), **entry.event.payload})
+    metadata = entry.event.payload.get("metadata")
+    if isinstance(metadata, dict) and metadata.get("display") is False:
+        return None
+    event = _standard_event({"type": name.upper(), **entry.event.payload})
+    if name == "tool_call_start" and not event.get("parentMessageId"):
+        # Tool-only assistant messages still need an identity a client can use
+        # in its next compatibility snapshot. Publish that association on wire.
+        event["parentMessageId"] = f"assistant-{event['toolCallId']}"
+    # Observer message identities can contain a private Harness Run ID. Apply the
+    # same stable presentation mapping for live delivery, replay, and snapshots.
+    for field in ("messageId", "parentMessageId"):
+        identity = event.get(field)
+        if isinstance(identity, str):
+            event[field] = "msg_" + hashlib.sha256(identity.encode()).hexdigest()[:32]
+    return event
 
 
 def _terminal_event(binding: HostedAguiBinding, run: RunRecord) -> dict[str, Any] | None:

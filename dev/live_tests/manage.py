@@ -194,6 +194,24 @@ async def provision() -> None:
             "agent_id", base + "/agents", {"name": "Live test agent", "config": agent_config}, response_key="agent"
         )
         await create_once(
+            "protocol_agent_id",
+            base + "/agents",
+            {
+                "name": "Live protocol agent",
+                "config": {
+                    **agent_config,
+                    "plugins": [
+                        {
+                            "instance_name": "effects",
+                            "plugin_key": "live.resilience",
+                            "config": {"root": config["workspace_root"]},
+                        }
+                    ],
+                },
+            },
+            response_key="agent",
+        )
+        await create_once(
             "approval_agent_id",
             base + "/agents",
             {

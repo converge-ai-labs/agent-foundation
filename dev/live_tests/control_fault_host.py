@@ -8,6 +8,7 @@ def install(faults, options):
     from a13n_service.interactions.active_commands import ActiveRunCommands
     from a13n_service.interactions.attempts import AttemptExecutionService
     from a13n_service.interactions.inbox import DatabaseThreadInboxReconciler, ThreadInboxStore
+    from a13n_service.interactions.outcomes import RunOutcomeService
     from a13n_service.interactions.queue_commands import QueuedRunCommands
     from a13n_service.interactions.scheduling import AttemptScheduler
 
@@ -45,6 +46,14 @@ def install(faults, options):
         return await original_recover(self, **kwargs)
 
     QueuedRunCommands.recover_queued = recover
+    original_cancel = RunOutcomeService.cancel
+
+    @wraps(original_cancel)
+    async def cancel(self, **kwargs):
+        await faults.reach("control.interrupt_prepared", run_id=kwargs["run_id"])
+        return await original_cancel(self, **kwargs)
+
+    RunOutcomeService.cancel = cancel
     for method in ("steer", "interrupt"):
         _wrap_active_command(ActiveRunCommands, method, faults)
 
@@ -93,6 +102,12 @@ def install(faults, options):
             return original_init(self, *args, **{**kwargs, **limits})
 
         ThreadInboxStore.__init__ = inbox
+
+    from .fork_fault_host import install as install_fork
+    from .queue_fault_host import install as install_queue
+
+    install_queue(faults, options)
+    install_fork(faults)
 
 
 def acceptance_facts(run):

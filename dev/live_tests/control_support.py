@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from .client import agent_input
@@ -66,6 +67,9 @@ class ControlJourney(RunFaultJourney):
         if operation == "interrupt":
             run = await self.live.run(run_id)
             body["expected_run_version"] = run["version"]
+        if operation == "consume":
+            path = f"/api/v1/threads/{source['thread_id']}/queued-submissions/consume"
+            body["expected_queue_version"] = thread["queue_version"]
         return path, body
 
     async def accept(self, path, body, *, key=None):
@@ -98,13 +102,29 @@ class ControlJourney(RunFaultJourney):
     async def queue_row(self, row):
         return await self.live.request("GET", f"/api/v1/queued-submissions/{row['queued_submission_id']}")
 
-    async def finish_queue(self, row):
+    async def consumed_queue(self, row):
         consumed = await self.live.wait(
             lambda: self.queue_row(row), lambda value: value["state"] != "queued", "queue outcome"
         )
         assert consumed["state"] == "consumed", consumed
-        self.live.runs.append(consumed["consumed_run_id"])
+        if consumed["consumed_run_id"] not in self.live.runs:
+            self.live.runs.append(consumed["consumed_run_id"])
+        return consumed
+
+    async def finish_queue(self, row):
+        consumed = await self.consumed_queue(row)
         return await self.live.finish(consumed["consumed_run_id"])
+
+    @asynccontextmanager
+    async def post_in_flight(self, path, body, *, key=None):
+        task = asyncio.create_task(
+            self.live.http.post(path, json=body, headers={"Idempotency-Key": key or uuid4().hex})
+        )
+        try:
+            yield task
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
     async def race(self, commands, *, point="control.state_published", **match):
         barrier = self.arm("race-" + uuid4().hex, point, role="control", times=len(commands), **match)
