@@ -107,6 +107,8 @@ Connected Account responses are accepted through a safe projection of ID, Worksp
 | Catalog exceeds a count, byte, page, or schema bound                     | Reject discovery explicitly; do not publish a partial or unauthorized tool group                                |
 | Tool write response is lost                                              | Return `outcome_unknown` unless the ConnectorProvider supplies authoritative receipt or reconciliation evidence |
 
+The tool-response row applies when the running adapter can classify the uncertain request and return an outcome. A process crash can prevent that result from being produced or checkpointed. Neither built-in adapter supplies durable Agent tool-operation recovery through its setup records; replacement Attempts follow the [separate Worker recovery boundary](04-agent-facing-tools.md#adapter-retry-and-worker-recovery). The no-automatic-retry rules for both adapters do not suppress a new model-generated call after recovery.
+
 ## Invariants
 
 1. Service never receives or stores a third-party account credential behind a ConnectorConnection.

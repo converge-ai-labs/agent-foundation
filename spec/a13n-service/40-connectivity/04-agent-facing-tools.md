@@ -165,7 +165,15 @@ sequenceDiagram
 
 A native Ingress adapter returns a typed internal receipt when the provider supplies stable message, Discussion, thread, issue, pull-request, or mail references. Before reporting a continuity-establishing success, Service commits the exact `AgentThreadBinding` only when that action's contract establishes a new correlated external target. An ordinary messaging reply retains the inbound Binding; changing reply placement never moves it. Connector and Remote MCP results do not establish Ingress bindings through similarly named fields, and the model never parses an arbitrary result to create binding authority.
 
-If an external effect may have occurred but its response or subsequent correlation commit is unknown, the outcome remains unknown unless the source supports a stable operation identity, idempotency key, outbound echo, task identity, or reconciliation evidence. Service does not automatically repeat non-idempotent actions, fabricate receipts, report rollback, or create a generic per-tool durable execution ledger. Replacement Attempts cannot infer completion from missing local results.
+If an external effect may have occurred but its response or subsequent correlation commit is unknown, the outcome remains unknown unless the source supports a stable operation identity, idempotency key, outbound echo, task identity, or reconciliation evidence. Adapters do not automatically resubmit non-idempotent actions with uncertain outcomes. Service does not fabricate receipts, report rollback, or create a generic per-tool durable execution ledger. Replacement Attempts cannot infer completion or non-execution from missing local results.
+
+### Adapter Retry and Worker Recovery
+
+Adapter retry and durable Worker recovery have different boundaries. The [RunAttempt retry contract](../13-run-attempt-scheduling-and-recovery.md#retry-semantics) permits a replacement Attempt to resume from the previous complete Run state and re-drive model or tool work. A recovered model decision is an ordinary new call; Service does not guarantee reuse of the prior invocation identity or idempotency key. The adapter prohibition above therefore does not provide cross-Attempt duplicate suppression.
+
+If an external action completes before its tool batch reaches the [complete checkpoint boundary](../14-harness-runtime-integration.md#asynchronous-communication), a Worker crash can leave both the call and its result absent from the selected recovery state. The replacement cannot reconstruct them from the account connection, traces, or a missing result. Connector setup-attempt persistence governs account authorization, not Agent tool execution. The current Connector contract supplies no durable per-operation record or automatic reconciliation gate that closes this crash window.
+
+Stronger guarantees require the owning tool or Connector domain to retain operation identity and authoritative result or reconciliation evidence across Worker loss. An idempotency header alone does not establish that the upstream honors the key, that its retention window covers recovery, or that another Attempt will reuse it. [Connectivity Contract Limits](05-contract-limits.md#connector-effects-between-checkpoints) states the resulting execution limit.
 
 ## Invariants
 

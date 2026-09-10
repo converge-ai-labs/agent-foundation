@@ -24,6 +24,14 @@ An accepted Run retains source identity, tool scope, and loading policy under [A
 
 No contract promises that changing ConnectorProvider or MCPConnection preserves tool names, schemas, effects, receipts, or results. Service guarantees only collision-free names and references across the composed Run tool surface; it does not claim that similarly named source tools are interchangeable.
 
+## Connector Effects Between Checkpoints
+
+Connector adapter refusal to retry an uncertain write does not guarantee that one Agent intent causes at most one remote effect across Worker recovery. Under [RunAttempt recovery](../13-run-attempt-scheduling-and-recovery.md#retry-semantics), an uncheckpointed model decision can be made again with a new invocation identity. A missing call or result in the selected checkpoint proves neither non-execution nor completion.
+
+This limit applies to both Composio and OOMOL OpenConnector execution. Their durable authorization/setup records do not identify individual Agent tool operations. Read-only redispatch can consume additional quota; redispatch of an effectful operation can duplicate the effect. Neither behavior establishes a defect in the upstream service or a violation of the generic recovery contract by itself.
+
+Neither a stable local identifier nor a tool annotation provides an upstream idempotency or reconciliation guarantee. A stronger Connector operation protocol must define that guarantee and its evidence at its owning boundary; generic checkpoint recovery supplies none implicitly. [Agent-Facing Tools](04-agent-facing-tools.md#adapter-retry-and-worker-recovery) distinguishes these layers.
+
 ## Management and User Interface
 
 The resource model distinguishes Application Accounts, exact AccountTargets, Connector Providers, ConnectorConnections, and MCPConnections. Reusable or official provider App definitions are deployment or product configuration rather than another Service resource. The contract does not prescribe whether the product displays these concepts on one page, several Console pages, or a separate Bot-facing interface.
