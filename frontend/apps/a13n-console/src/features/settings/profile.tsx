@@ -252,7 +252,7 @@ function ProfileForm({
       <SettingsSection
         title={
           target.kind === "personal"
-            ? undefined
+            ? t("Account")
             : t(target.kind === "workspace" ? "Workspace" : "Organization")
         }
       >
@@ -291,6 +291,7 @@ function ProfileForm({
                   type="file"
                   nativeInput
                   unstyled
+                  className="hidden"
                   accept="image/png,image/jpeg,image/webp"
                   hidden
                   disabled={pending}
@@ -329,11 +330,13 @@ function ProfileForm({
           </div>
         </SettingsRow>
         {"key" in current.value && (
-          <ResourceKeyField
-            value={key}
-            onChange={setKey}
-            disabled={!editable || pending}
-          />
+          <div className={styles.profileKey}>
+            <ResourceKeyField
+              value={key}
+              onChange={setKey}
+              disabled={!editable || pending}
+            />
+          </div>
         )}
         <SettingsRow label={t("ID")}>
           <CopyableId value={current.value.id} />

@@ -346,15 +346,14 @@
   margin-bottom: 8px;
 }
 .composer {
-  border: 1px solid var(--a13n-border);
+  border: 1px solid var(--a13n-input-border);
   border-radius: 14px;
   background: var(--a13n-elevated);
-  box-shadow: 0 2px 8px #00000005;
   padding: 12px;
 }
 .composer:focus-within {
   border-color: var(--a13n-focus);
-  box-shadow: 0 0 0 2px var(--a13n-accent-soft);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--a13n-focus) 16%, transparent);
 }
 .composerFields {
   border: 0;
@@ -367,18 +366,18 @@
 .messageInput {
   display: block;
   width: 100%;
+}
+.messageInput textarea {
   min-height: 76px;
   max-height: 240px;
-  border: 0;
   resize: none;
-  outline: none !important;
   padding: 4px 6px;
   background: transparent;
   color: inherit;
   font-size: 14px;
   line-height: 1.7;
 }
-.messageInput::placeholder {
+.messageInput textarea::placeholder {
   color: var(--a13n-muted);
 }
 .composerOptions {

@@ -3,6 +3,7 @@
 @import "./fonts.css";
 @import "./theme.css";
 @import "./tokens.css";
+@import "./scrollbars.css";
 @import "./base.css";
 @source "../../../../apps/a13n-console/src";
 @source "../../dev";

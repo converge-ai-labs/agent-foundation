@@ -12,7 +12,7 @@
   --foreground: var(--color-neutral-800);
   --info: var(--color-blue-500);
   --info-foreground: var(--color-blue-700);
-  --input: --alpha(var(--color-black) / 10%);
+  --input: --alpha(var(--color-black) / 7%);
   --muted: --alpha(var(--color-black) / 4%);
   --muted-foreground: color-mix(
     in srgb,

@@ -156,21 +156,16 @@
   display: grid;
   gap: 16px;
 }
-.profile > section > div:first-child:has(h3),
-.preferences > section > div:first-child:has(h3) {
-  margin: 0 0 14px;
-}
 .profileImage {
   display: flex;
   gap: 8px;
   align-items: center;
 }
-.profileImage > span,
-.imageButton > span:first-child {
-  width: 36px;
-  height: 36px;
-  flex-basis: 36px;
-  font-size: 12px;
+.profileImage [data-slot="avatar"] {
+  width: 48px;
+  height: 48px;
+  flex-basis: 48px;
+  font-size: 16px;
 }
 .imageButton {
   position: relative;
@@ -181,10 +176,6 @@
   background: transparent;
   color: inherit;
   cursor: pointer;
-}
-.imageButton:focus-visible {
-  outline: 2px solid var(--a13n-focus);
-  outline-offset: 3px;
 }
 .imageButton:disabled {
   opacity: 0.5;
@@ -205,8 +196,11 @@
   opacity: 1;
 }
 .nameControl {
-  width: 200px;
+  width: 240px;
   max-width: 100%;
+}
+.profileKey {
+  padding: 16px 0;
 }
 .saveRow {
   display: flex;
@@ -269,12 +263,6 @@
   .profile input {
     min-height: 40px;
     font-size: 16px;
-  }
-  .imageButton,
-  .imageButton > span:first-child {
-    width: 44px;
-    height: 44px;
-    flex-basis: 44px;
   }
 }
 

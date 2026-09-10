@@ -18,366 +18,341 @@
   color: var(--a13n-secondary);
   font-size: 12px;
 }
+
 .editorPage {
-  max-width: 1180px;
+  max-width: 1080px;
   margin: 0 auto;
-  padding: 28px 32px 56px;
+  padding: 32px 40px 48px;
 }
 .back {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  margin-bottom: 12px;
+  gap: 8px;
+  margin-bottom: 24px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 13px;
   text-decoration: none;
 }
+.back:hover {
+  color: var(--a13n-text);
+}
 .editor {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 196px;
-  column-gap: 40px;
-  row-gap: 24px;
-  align-items: start;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 .identity {
-  grid-column: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px 24px;
+  padding-bottom: 12px;
 }
 .identityHeading {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  min-width: 0;
 }
 .agentIcon {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   flex: none;
-  background: var(--a13n-accent-soft);
-  color: var(--a13n-accent);
-  border-radius: 7px;
+  color: var(--color-violet-500);
+  background: color-mix(
+    in srgb,
+    var(--color-violet-500) 10%,
+    var(--a13n-elevated)
+  );
+  border-radius: 12px;
 }
 .identity h1 {
-  font-size: 24px;
+  font-size: 26px;
   font-weight: 600;
-  letter-spacing: -0.5px;
-  line-height: 1.25;
+  letter-spacing: -0.7px;
+  line-height: 1.3;
   overflow-wrap: anywhere;
   margin: 0;
 }
-.identity p {
-  color: var(--a13n-secondary);
-  font-size: 13px;
-  line-height: 1.7;
-  margin: 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  margin-top: 10px;
-}
-.editor > fieldset {
+.identity > p {
   grid-column: 1;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.headerActions {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 6px;
+}
+.headerActions small {
+  font-size: 11px;
+  color: var(--a13n-secondary);
+}
+.headerDetails {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+.headerMeta {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
+.headerMeta strong {
+  font-weight: 500;
+  color: var(--a13n-text);
+}
+.metadata {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+}
+.metadata dd {
+  margin: 0 12px 0 0;
+}
+.historyActions {
+  grid-column: 1 / -1;
+  align-self: center;
+  justify-self: start;
+}
+.historyActions > fieldset > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.historyActions button {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.editor > fieldset,
+.main {
+  min-width: 0;
+}
+.configurationSections {
+  display: grid;
+  gap: 40px;
   min-width: 0;
 }
 .main {
-  min-width: 0;
   display: grid;
-  gap: 24px;
-  align-content: start;
+  gap: 40px;
+  padding: 24px 0 36px;
 }
+.editorSection {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 40px;
+}
+.editorSection > header h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.editorSection > header p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--a13n-secondary);
+  text-wrap: pretty;
+}
+.sectionContent,
 .section {
   display: grid;
-  gap: 16px;
+  gap: 18px;
+  min-width: 0;
+  align-content: start;
 }
 .modelProperty {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  padding-bottom: 24px;
-  border-bottom: 1px solid var(--a13n-border-soft);
+  display: grid;
+  gap: 8px;
+  min-width: 0;
 }
-.modelProperty h2 {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--a13n-secondary);
-  min-width: 72px;
-  margin: 0;
-}
-.modelProperty > button {
-  max-width: calc(100% - 96px);
+.fieldLabel {
+  font-size: 13px;
+  font-weight: 500;
 }
 .instructions {
   min-width: 0;
-}
-.instructions header,
-.capabilitySection > header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-.instructions h2,
-.capabilitySection h2 {
-  font-size: 14px;
-  font-weight: 550;
-  margin: 0;
-}
-.instructions header > div {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 10px;
-  color: var(--a13n-secondary);
+  padding: 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--a13n-surface) 65%, var(--a13n-elevated));
 }
 .instructions textarea {
   padding: 16px;
-  border-color: var(--a13n-border-soft);
-  border-radius: 10px;
   background: var(--a13n-elevated);
-  font-family: var(--a13n-mono);
-  font-size: 13px;
-  line-height: 1.65;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.75;
   resize: vertical;
-  min-height: 180px;
+  min-height: 210px;
 }
-.instructions textarea:focus {
-  border-color: var(--a13n-border);
-}
-.instructions footer {
-  display: flex;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 6px 16px;
-  margin-top: 8px;
-  font-size: 10px;
-  color: var(--a13n-secondary);
-}
-.advanced {
-  border-top: 1px solid var(--a13n-border-soft);
-  font-size: 12px;
-}
-.advanced summary {
-  cursor: pointer;
-  padding: 20px 0;
-  color: var(--a13n-secondary);
-}
-.advanced > div {
-  display: grid;
-  gap: 20px;
-  padding-bottom: 20px;
+.identityHeading > fieldset {
+  flex: none;
 }
 .saveBar {
-  grid-column: 2;
-  grid-row: 1 / span 2;
   position: sticky;
-  top: 32px;
-  display: grid;
-  gap: 12px;
-  padding-top: 4px;
-}
-.saveBar > button {
-  width: 100%;
+  bottom: 0;
+  z-index: 10;
+  padding: 16px 0;
+  background: var(--a13n-elevated);
 }
 .savePanel {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.savePanel > button {
-  order: -1;
-  width: 100%;
-}
-.savePanel > button:disabled {
-  background: transparent;
-  border-color: var(--a13n-border-soft);
-  color: var(--a13n-secondary);
-  opacity: 0.6;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 .saveStatus {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
+  gap: 8px;
+  margin-right: auto;
+  font-size: 12px;
   color: var(--a13n-secondary);
-  font-size: 10px;
-}
-.savePanel p {
-  display: flex;
-  justify-content: space-between;
-  font-size: 11px;
-  color: var(--a13n-secondary);
-  margin: 20px 0 0;
-  padding-top: 20px;
-  border-top: 1px solid var(--a13n-border-soft);
-}
-.savePanel p strong {
-  color: var(--a13n-text);
-  font-weight: 500;
-}
-.metadata {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 16px;
-  margin: 4px 0 12px;
-  font-size: 11px;
-  color: var(--a13n-secondary);
-}
-.metadata dd {
-  margin: 0;
-  text-align: right;
-  overflow-wrap: anywhere;
-}
-.historyActions {
-  border-top: 1px solid var(--a13n-border-soft);
-  padding-top: 16px;
-}
-.historyActions > div {
-  display: grid;
-  gap: 4px;
-}
-.historyActions button {
-  justify-content: flex-start;
-  font-size: 11px;
-  color: var(--a13n-secondary);
-}
-.editorError {
-  grid-column: 1 / -1;
 }
 .editorError:empty {
   display: none;
 }
-.capabilitySection {
-  border-top: 1px solid var(--a13n-border-soft);
-  padding-top: 24px;
-}
-.capabilitySection h2 > span {
-  font-size: 11px;
-  font-weight: 400;
-  color: var(--a13n-secondary);
-  margin-left: 8px;
-}
-.capabilityEmpty {
-  color: var(--a13n-secondary);
-  font-size: 12px;
-  line-height: 1.7;
-  margin: 0;
-  padding-bottom: 4px;
-}
-.capabilityGroup {
-  display: grid;
-  grid-template-columns: 160px minmax(0, 1fr);
-  gap: 24px;
-  padding: 18px;
-  margin-top: 12px;
-  border: 1px solid var(--a13n-border-soft);
-  border-radius: 10px;
-  background: var(--a13n-elevated);
-  box-shadow: var(--a13n-shadow-subtle);
-}
-.capabilityGroup h3 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 6px;
-  font-size: 12px;
-  font-weight: 500;
-}
-.capabilityGroup h3 > span {
-  display: flex;
-  color: var(--a13n-secondary);
-}
-.capabilityGroup header p {
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.7;
-  color: var(--a13n-secondary);
-}
 .capabilityChoices {
+  display: grid;
+  gap: 12px;
   min-width: 0;
 }
+.selectedCapability {
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--a13n-surface) 65%, var(--a13n-elevated));
+  padding: 12px;
+}
+.selectedCapability > div:not(.choiceHeading) {
+  margin-top: 8px;
+}
+.capabilityIcon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 7px;
+  background: var(--a13n-elevated);
+  color: var(--a13n-secondary);
+}
+.capabilityPicker[data-open] {
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--a13n-surface);
+}
+.addCapabilityPanel {
+  padding: 0 4px 4px;
+}
 .choiceList {
-  max-height: 340px;
+  max-height: 280px;
   overflow-y: auto;
+  margin-top: 12px;
   padding: 2px;
 }
 .choice {
-  padding: 6px 0;
-}
-.choice:first-child {
-  padding-top: 0;
+  padding: 8px 0;
 }
 .choiceHeading {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
+  min-width: 0;
+  font-size: 13px;
+}
+.choiceHeading strong {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.choiceHeading > button {
+  margin-left: auto;
+  flex: none;
 }
 .choiceHeading small {
-  font-size: 10px;
   color: var(--a13n-secondary);
 }
 .choiceSettings {
-  margin: 12px 0 12px 26px;
-  max-width: 340px;
+  max-width: 360px;
 }
-.choiceSettings:has(input[type="number"]) {
-  max-width: 160px;
+.pinnedVersion {
+  display: grid;
+  grid-template-columns: auto 88px;
+  align-items: center;
+  justify-content: start;
+  gap: 12px;
+}
+.pinnedVersion label {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+.capabilityEmpty {
+  font-size: 13px;
+  color: var(--a13n-secondary);
+  padding: 12px 0;
 }
 .setupCapability {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
+  font-size: 12px;
   color: var(--a13n-secondary);
-  font-size: 11px;
-  text-decoration: none;
-  margin-top: 8px;
+  margin-top: 12px;
 }
 .setupCapability:hover {
   color: var(--a13n-text);
-  text-decoration: underline;
 }
-@media (max-width: 600px) {
-  .capabilityGroup {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 12px;
-  }
-}
-@media (max-width: 1100px) {
-  .editor {
-    column-gap: 32px;
-  }
+@media (max-width: 1000px) {
   .editorPage {
     padding-inline: 28px;
+  }
+  .editorSection {
+    grid-template-columns: 160px minmax(0, 1fr);
+    gap: 28px;
   }
 }
 @media (max-width: 760px) {
   .editorPage {
-    padding: 24px 18px 48px;
+    padding: 24px 20px 32px;
   }
-  .editor {
+  .identity {
     grid-template-columns: minmax(0, 1fr);
-    gap: 24px;
   }
-  .saveBar {
+  .identity h1 {
+    font-size: 23px;
+  }
+  .headerActions {
     grid-column: 1;
     grid-row: auto;
-    position: static;
-    border-top: 1px solid var(--a13n-border-soft);
-    padding-top: 20px;
+    align-items: flex-start;
   }
-  .saveBar > button,
-  .savePanel > button {
-    width: auto;
-    align-self: start;
+  .historyActions {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+  .editorSection {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
   }
   .saveStatus {
-    justify-content: flex-start;
-  }
-  .savePanel p {
-    margin-top: 8px;
-  }
-  .instructions footer {
-    line-height: 1.7;
+    width: 100%;
   }
 }

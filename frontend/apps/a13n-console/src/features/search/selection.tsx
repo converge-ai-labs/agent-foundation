@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ChoiceField, FormField, Input } from "a13n-ui";
+import { ChoiceField, DisclosureSection, FormField, Input } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -42,9 +42,13 @@ export function AgentSearchSelection({
     );
   }
   return (
-    <section>
-      <h2>{t("Web search")}</h2>
-      <p>
+    <DisclosureSection
+      title={t("Configure web search")}
+      summary={
+        selected?.name ?? t(value ? "Selected account unavailable" : "Off")
+      }
+    >
+      <p className="mb-4 text-sm text-muted-foreground">
         {t(
           "Choose one saved search account. Web tools require an Environment and include search, fetch, and download. Search can consume provider quota.",
         )}
@@ -134,6 +138,6 @@ export function AgentSearchSelection({
           )}
         </>
       )}
-    </section>
+    </DisclosureSection>
   );
 }

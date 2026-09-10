@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
-import { History, Play, Settings } from "lucide-react";
+import { History, Pencil, Play } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router";
@@ -25,7 +25,8 @@ import styles from "../../shared/shared.module.css";
 import agentStyles from "./agents.module.css";
 import { initialConfig, type AgentConfig } from "./configuration";
 import { AgentForm } from "./form";
-import { AgentSettings } from "./settings";
+import { AgentEnvironment } from "./environment";
+import { AgentActions, AgentDetails } from "./settings";
 import { AgentVersions } from "./versions";
 
 export function CreateAgent() {
@@ -145,6 +146,39 @@ export function AgentDetail() {
       back={`${basePath}/agents`}
       name={agent.name}
       description={agent.description ?? ""}
+      environment={
+        <AgentEnvironment
+          resource={query.data}
+          disabled={save.isPending}
+          onSaved={async () => {
+            await query.refetch();
+          }}
+        />
+      }
+      identityAction={
+        can("agent.update") && (
+          <ModalFrame
+            trigger={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={t("Edit agent details")}
+                title={t("Edit agent details")}
+              >
+                <Pencil size={14} />
+              </Button>
+            }
+            title={t("Edit agent details")}
+            closeLabel={t("Close")}
+          >
+            <AgentDetails
+              key={`${agent.id}:${agent.key}:${generation}`}
+              resource={query.data}
+              reload={() => void reload()}
+            />
+          </ModalFrame>
+        )
+      }
       primaryAction={
         can("agent.invoke") && (
           <Button
@@ -196,24 +230,13 @@ export function AgentDetail() {
           >
             <AgentVersions agent={agent} />
           </ModalFrame>
-          <ModalFrame
-            trigger={
-              <Button variant="ghost" type="button">
-                {<Settings size={14} />}
-                {t("Agent settings")}
-              </Button>
-            }
-            size={"md"}
-            title={t("Agent settings")}
-            description={t("Manage this agent’s identity and availability.")}
-            closeLabel={t("Close")}
-          >
-            <AgentSettings
+          {(can("agent.lifecycle") || can("agent.duplicate")) && (
+            <AgentActions
               key={`${agent.id}:${agent.key}:${generation}`}
               resource={query.data}
               reload={() => void reload()}
             />
-          </ModalFrame>
+          )}
         </div>
       }
       initial={query.data.revision.config}

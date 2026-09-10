@@ -165,6 +165,9 @@ it("selects an inline-created account in the draft without saving the agent", as
   }
   const user = userEvent.setup();
   setup(<Draft />);
+  await user.click(
+    screen.getByRole("button", { name: /Configure web search/ }),
+  );
   await user.click(screen.getByRole("button", { name: "Add search account" }));
   await user.type(
     await screen.findByRole("textbox", { name: "Name" }),

@@ -20,8 +20,8 @@ export function SettingsSection({
       aria-labelledby={title ? id : undefined}
     >
       {title && (
-        <div className="mb-3">
-          <h3 id={id} className="font-medium">
+        <div className="mb-3 px-1">
+          <h3 id={id} className="font-medium text-muted-foreground">
             {title}
           </h3>
           {description && (
@@ -32,8 +32,11 @@ export function SettingsSection({
       <div
         className={cn(
           "[&>form]:py-5",
-          variant === "grouped" ? "rounded-xl border bg-card px-4" : "border-t",
+          variant === "grouped"
+            ? "rounded-xl bg-muted px-5 py-1 [&>*+*]:border-t [&>*+*]:border-border/75"
+            : "",
         )}
+        data-slot="settings-section-content"
       >
         {children}
       </div>
@@ -52,7 +55,7 @@ export function SettingsRow({
   children: ReactNode;
 }) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-6 py-4 not-first:border-t @max-[420px]:flex-col @max-[420px]:items-stretch @max-[420px]:gap-2.5">
+    <div className="flex min-w-0 items-center justify-between gap-6 py-4 @max-[420px]:flex-col @max-[420px]:items-stretch @max-[420px]:gap-2.5">
       <div className="min-w-0 wrap-anywhere">
         {controlId ? (
           <label htmlFor={controlId}>{label}</label>

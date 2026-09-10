@@ -29,9 +29,17 @@ Use the Coss UI component API directly. Button uses `onClick`, `disabled`, `load
 
 FormField associates a label, description, and error with its Input or Textarea. ChoiceField accepts options and controlled `value` / `onValueChange`; use `hideLabel` when another visible label already names the control. For custom composition, use Field and Select parts directly.
 
+Select and SearchPicker choose values; DisclosureSection expands optional configuration. Keep simple fields visible and use a named Button with a plus icon for add actions. See the [control meaning contract](../../../spec/frontend/design-system.md#control-meaning-and-configuration) for layout and interaction rules.
+
 SearchPicker accepts grouped options and controlled `value` / `onValueChange`. It searches labels, descriptions, group names, and keywords. Supply unique option values and group names, translated labels, a placeholder, and an empty message. Selection persists while the search query resets on close. Disabled options cannot activate.
 
 ModalFrame supplies a named dialog, a bounded scroll region, and an optional fixed footer. Use `size="lg"` for complex resource forms. A form-owned footer marked `data-a13n-form-actions` stays reachable while scrolling and preserves native submission.
+
+DisclosureSection accepts a title, optional summary, and Collapsible state props. Keep configuration state in the parent so collapsing preserves the draft. Its shared surface encloses both the trigger and expanded controls.
+
+Textarea respects `rows`, caps resizing, and scrolls long content internally. Use ScrollArea for bounded content regions; set its height through `className`. Native scrolling elements can use `a13n-scrollbar` for the same thumb styling without changing their semantics. Scrollbar colors and size belong to `src/styles/tokens.css`. Use Input or Textarea `unstyled` only when the enclosing composite supplies the control boundary and visible focus treatment.
+
+SettingsSection uses a muted group surface with its title outside and inset dividers between direct children. Each direct child represents one setting or cohesive block. `variant="plain"` omits the surface and automatic dividers. Set spacing between sections in the parent layout.
 
 SettingsRow pairs explanatory copy with a control and stacks them in narrow containers. Its `controlId` associates the visible label and produces a `<controlId>-description` ID for callers to connect with `aria-describedby`.
 

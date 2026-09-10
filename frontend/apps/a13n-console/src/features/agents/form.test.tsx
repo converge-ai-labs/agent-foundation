@@ -60,6 +60,9 @@ function editor(readonly = false) {
       <AgentForm
         back="/agents"
         name="Research"
+        primaryAction={<button type="button">Try agent</button>}
+        identityAction={<button type="button">Edit agent details</button>}
+        context={<button type="button">More agent actions</button>}
         initial={initial}
         version={7}
         pending={false}
@@ -76,11 +79,7 @@ it("edits capabilities inline and preserves pinned versions, hidden configuratio
   const user = userEvent.setup(),
     { submit, initial } = editor();
   expect(screen.queryByRole("dialog")).toBeNull();
-  expect(
-    screen
-      .getByRole("checkbox", { name: "Source verification" })
-      .getAttribute("aria-checked"),
-  ).toBe("true");
+  expect(screen.queryByRole("checkbox", { name: "Web tools" })).toBeNull();
   expect(
     (
       screen.getByRole("spinbutton", {
@@ -88,16 +87,14 @@ it("edits capabilities inline and preserves pinned versions, hidden configuratio
       }) as HTMLInputElement
     ).value,
   ).toBe("3");
+  await user.click(screen.getByRole("button", { name: "Add MCP connections" }));
   await user.click(screen.getByRole("checkbox", { name: "Web tools" }));
   await user.type(
     screen.getByRole("textbox", { name: "Tool names" }),
     "search, read",
   );
+  await user.click(screen.getByRole("button", { name: "Add Connectors" }));
   await user.click(screen.getByRole("checkbox", { name: "Repository" }));
-  await user.click(screen.getByRole("button", { name: "Expand instructions" }));
-  await user.click(
-    screen.getByRole("button", { name: "Collapse instructions" }),
-  );
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   expect(screen.queryByRole("alert")?.textContent).toBeUndefined();
   expect(submit).toHaveBeenCalledWith(
@@ -122,12 +119,41 @@ it("edits capabilities inline and preserves pinned versions, hidden configuratio
 it("keeps inline capability controls inert for readers", async () => {
   const user = userEvent.setup(),
     { submit } = editor(true);
-  await user.click(screen.getByRole("checkbox", { name: "Web tools" }));
+  await user.click(screen.getByRole("button", { name: "Add MCP connections" }));
+  expect(screen.queryByRole("checkbox", { name: "Web tools" })).toBeNull();
   expect(
-    screen
-      .getByRole("checkbox", { name: "Web tools" })
-      .getAttribute("aria-checked"),
-  ).toBe("false");
+    (
+      screen.getByRole("button", {
+        name: "Remove Source verification",
+      }) as HTMLButtonElement
+    ).matches(":disabled"),
+  ).toBe(true);
   expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
   expect(submit).not.toHaveBeenCalled();
+});
+
+it("requires saving the instruction draft before trial or agent management", async () => {
+  const user = userEvent.setup();
+  const { submit } = editor();
+  await user.type(
+    screen.getByRole("textbox", { name: "System instructions" }),
+    " More detail.",
+  );
+  expect(
+    screen.getByRole("button", { name: "Try agent" }).matches(":disabled"),
+  ).toBe(true);
+  for (const name of ["Edit agent details", "More agent actions"]) {
+    expect(screen.getByRole("button", { name }).matches(":disabled")).toBe(
+      true,
+    );
+  }
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(submit).toHaveBeenCalledWith(
+    expect.objectContaining({
+      instructions: "Check the evidence. More detail.",
+    }),
+    "Research",
+    "",
+    7,
+  );
 });

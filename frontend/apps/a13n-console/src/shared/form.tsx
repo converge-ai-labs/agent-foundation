@@ -1,6 +1,6 @@
 import { Button, FormField, ModalFrame, Textarea } from "a13n-ui";
 
-import { useState, type ReactNode } from "react";
+import { useState, type ReactElement, type ReactNode } from "react";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -44,6 +44,7 @@ export function Confirm({
   action,
   onSuccess,
   trigger,
+  triggerElement,
   danger = false,
   children,
 }: {
@@ -51,7 +52,8 @@ export function Confirm({
   description: string;
   action: () => Promise<unknown>;
   onSuccess?: () => void;
-  trigger: ReactNode;
+  trigger?: ReactNode;
+  triggerElement?: ReactElement;
   danger?: boolean;
   children?: ReactNode;
 }) {
@@ -75,13 +77,15 @@ export function Confirm({
         }
       }}
       trigger={
-        <Button
-          variant={danger ? "destructive" : "outline"}
-          size="sm"
-          type="button"
-        >
-          {trigger}
-        </Button>
+        triggerElement ?? (
+          <Button
+            variant={danger ? "destructive" : "outline"}
+            size="sm"
+            type="button"
+          >
+            {trigger}
+          </Button>
+        )
       }
       size={"md"}
       title={title}
