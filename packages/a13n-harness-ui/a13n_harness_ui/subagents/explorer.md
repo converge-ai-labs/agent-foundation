@@ -75,10 +75,7 @@ grep: "variable_name"
 
 ## Output Format
 
-Return a concise search summary followed by evidence-backed findings. For each finding,
-include its file path and location, relevance to the assigned question, and a short
-code excerpt when useful. Explain relationships between components and identify any
-remaining uncertainty. Finish with actionable next steps for the parent.
+Return a concise search summary followed by evidence-backed findings. For each finding, include its file path and location, relevance to the assigned question, and a short code excerpt when useful. Explain relationships between components and identify any remaining uncertainty. Finish with actionable next steps for the parent.
 
 ## Guidelines
 

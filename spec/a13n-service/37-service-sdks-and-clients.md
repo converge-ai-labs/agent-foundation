@@ -18,6 +18,14 @@ The remote `a13n-service-cli` CLI is a first-party client of that public boundar
 
 An SDK does not own service startup, migrations, Worker control, persistence, internal operator routes, direct Redis/object access, or another HTTP contract.
 
+## Generated HTTP Contract
+
+Service owns one OpenAPI 3.1 contract for its public Native HTTP operations. Stable operation identities derive from HTTP method and path, not handler names. The document describes actual authentication choices, validation/error envelopes, response media types, streaming binary bodies, and precondition/correlation headers. Schema export does not start Service resources.
+
+All four language SDKs derive their low-level HTTP operations and structured wire types from that contract. Generated source has explicit ownership and is reproducible; contract or generator changes cannot leave committed bindings stale. Shared fixtures cover unions and omitted/null/value serialization, and language compilation rejects incorrect structured request types. Generator adapters may represent an already-unconstrained JSON schema as a JSON value, but must not erase a structured union to make generation succeed.
+
+Handwritten SDK policy owns transport lifetime, authentication, cancellation, pagination conveniences, and streaming protocol behavior. Generated operations used through a convenience client share its underlying transport rather than maintaining a parallel pool. Binary transfer preserves streaming. SSE/WebSocket recovery remains an explicit handwritten protocol boundary; generating an HTTP endpoint does not implement that protocol's lifecycle. Existing Search facades remain compatible alongside the generated low-level APIs.
+
 ## SDK Parity
 
 The standalone SDK projects under `sdk/{python,go,rust,typescript}` all belong to the Gateway completion boundary. For every public Native operation included in the OSS distribution, each SDK exposes:

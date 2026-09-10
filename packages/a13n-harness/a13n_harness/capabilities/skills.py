@@ -40,7 +40,13 @@ from a13n_harness.environment.models import EnvironmentError, EnvironmentPath
 from a13n_harness.environment.providers import BoundEnvironment, FileScopeSelection
 from a13n_harness.errors import DefinitionError
 from a13n_harness.events import HarnessExtensionEvent
-from a13n_harness.observation import observe_phase, observe_skill_access, observe_skill_catalog
+from a13n_harness.observation import (
+    observe_output,
+    observe_phase,
+    observe_skill_access,
+    observe_skill_catalog,
+    record_span_metadata,
+)
 from a13n_harness.tools.metadata import HARNESS_TOOL_METADATA_KEY, normalize_harness_tool_metadata
 
 SKILLS_CAPABILITY_ID = "a13n.skills"
@@ -688,13 +694,30 @@ class SkillsCapability(AbstractCapability[AgentContext]):
             raise DefinitionError(
                 "SkillsCapability must originate from the Agent definition.", code="capability_scope_invalid"
             )
-        with observe_phase("skills.resolve"):
+        with observe_phase("skills.resolve") as span:
             selected_names = _resolve_skill_selection(ctx)
+            record_span_metadata(
+                span,
+                {
+                    "skills.selection": "all" if selected_names is None else "explicit",
+                    "skills.root_count": len(self.manager.roots),
+                },
+            )
+            if selected_names is not None:
+                record_span_metadata(span, {"skills.requested_count": len(selected_names)})
             catalog = await self.manager.scan_environment(environment=ctx.deps.environment)
+            discovered_count = len(catalog.items)
+            record_span_metadata(span, {"skills.discovered_count": discovered_count})
             if selected_names is not None:
                 discovered_names = frozenset(item.name for item in catalog.items)
                 unknown_names = sorted(selected_names - discovered_names)
                 if unknown_names:
+                    record_span_metadata(span, {"skills.unknown_count": len(unknown_names)})
+                    observe_output(
+                        span,
+                        {"unknown_names": unknown_names[:16], "omitted": max(0, len(unknown_names) - 16)},
+                        status="rejected",
+                    )
                     raise DefinitionError(
                         "The Host skill selection contains names absent from the discovered catalog.",
                         code="skill_selection_unknown",
@@ -705,6 +728,23 @@ class SkillsCapability(AbstractCapability[AgentContext]):
                     )
                 catalog = catalog.select(selected_names)
             catalog.require_current(ctx.deps.environment)
+            record_span_metadata(
+                span,
+                {
+                    "phase.status": "completed",
+                    "skills.selected_count": len(catalog.items),
+                    "skills.excluded_count": discovered_count - len(catalog.items),
+                },
+            )
+            observe_output(
+                span,
+                {
+                    "skills": [{"name": item.name, "source_id": item.source_id} for item in catalog.items[:16]],
+                    "count": len(catalog.items),
+                    "omitted": max(0, len(catalog.items) - 16),
+                },
+                status="resolved",
+            )
         replacement = _SkillsRunCapability(catalog, context=ctx.deps, manager=self.manager)
         ctx.deps._record_run_capability(SKILLS_CAPABILITY_ID, replacement)
         observe_skill_catalog([item.name for item in catalog.items[:16]], count=len(catalog.items))

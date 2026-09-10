@@ -18,6 +18,8 @@ on:
       - "scripts/tests/test_prepare_harness_ui_image.py"
       - "scripts/tests/test_harness_ui_release_workflow.py"
       - "scripts/tests/test_envd_ci_workflow.py"
+      - "scripts/tests/test_sdk_codegen.py"
+      - "sdk/codegen/**"
       - "deploy/containers/**/Dockerfile"
       - "scripts/run_python_tests.py"
       - "conftest.py"
@@ -42,6 +44,8 @@ on:
       - "scripts/tests/test_prepare_harness_ui_image.py"
       - "scripts/tests/test_harness_ui_release_workflow.py"
       - "scripts/tests/test_envd_ci_workflow.py"
+      - "scripts/tests/test_sdk_codegen.py"
+      - "sdk/codegen/**"
       - "deploy/containers/**/Dockerfile"
       - "scripts/run_python_tests.py"
       - "conftest.py"
@@ -109,6 +113,7 @@ jobs:
           scripts/release_version.py
           scripts/run_python_tests.py
           scripts/prepare_harness_ui_image.py
+          sdk/codegen/generate.py
 
       - name: Test release tooling
         run: >-
@@ -121,3 +126,4 @@ jobs:
           scripts/tests/test_prepare_harness_ui_image.py
           scripts/tests/test_harness_ui_release_workflow.py
           scripts/tests/test_envd_ci_workflow.py
+          scripts/tests/test_sdk_codegen.py

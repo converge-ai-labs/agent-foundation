@@ -103,13 +103,7 @@ Arrays are TOML arrays in the file and JSON arrays in environment variables. Sta
 
 ## Trace deployment environment
 
-Set `[service].deployment_environment_name = "local"` for local execution;
-the repository's `dev/service/local.toml` already declares this explicitly.
-Service exports the value as the OpenTelemetry resource attribute
-`deployment.environment.name`, used by Langfuse's environment filter. This label
-is independent of the Run's execution Environment or provider. Restart Service
-after changing it; existing traces retain their original labels. The dev launcher
-also derives `OTEL_RESOURCE_ATTRIBUTES` from this setting for its OTLP profile.
+Set `[service].deployment_environment_name = "local"` for local execution; the repository's `dev/service/local.toml` already declares this explicitly. Service exports the value as the OpenTelemetry resource attribute `deployment.environment.name`, used by Langfuse's environment filter. This label is independent of the Run's execution Environment or provider. Restart Service after changing it; existing traces retain their original labels. The dev launcher also derives `OTEL_RESOURCE_ATTRIBUTES` from this setting for its OTLP profile.
 
 ## Reading execution traces
 

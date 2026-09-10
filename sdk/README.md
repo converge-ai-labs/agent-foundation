@@ -15,13 +15,15 @@ The `a13n-service-cli` remote CLI is a companion to these SDKs, not another SDK 
 
 SDK language versions and implemented coverage are independent:
 
-| Client           | Current coverage                                                                                                      |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------- |
-| TypeScript       | Complete checked Native HTTP API, Workspace binding, Run SSE, and notification WebSocket                              |
-| Python, Go, Rust | Search Provider type catalog, scoped create/list/get/update/test/references, and credential-context Workspace binding |
-| Companion CLI    | Help/version only                                                                                                     |
+| Client           | Current coverage                                                                                          |
+| ---------------- | --------------------------------------------------------------------------------------------------------- |
+| TypeScript       | Complete checked Native HTTP API, Workspace binding, Run SSE, and notification WebSocket                  |
+| Python, Go, Rust | Generated complete Native HTTP bindings, plus the compatible Search Provider facade and Workspace binding |
+| Companion CLI    | Help/version only                                                                                         |
 
-The three Search clients also preserve search-only Agent configuration/Run override fields; they are not complete Agent validators or Run clients. See [Service SDKs](../docs/a13n-service/sdks.md) for examples, constructor options, timeouts, retries, errors, pagination, binary transfer, and shutdown boundaries.
+The three Search facades preserve search-only Agent configuration/Run override fields; their separate generated models cover the full ordinary HTTP contract. SSE and WebSocket recovery remain implemented only by TypeScript. See [Service SDKs](../docs/a13n-service/sdks.md) for examples, constructor options, timeouts, retries, errors, pagination, binary transfer, and shutdown boundaries.
+
+All languages consume `sdk/openapi.json`. `make sdk-generate` exports Service and regenerates the bindings; `make sdk-generated-check` checks the same result without changing committed files. Local pre-commit regeneration and CI consistency are described in [Native SDK generation](codegen/README.md).
 
 Run the fast standalone SDK checks while iterating and the complete release checks before publishing:
 

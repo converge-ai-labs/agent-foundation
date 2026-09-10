@@ -9,6 +9,7 @@ from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.iam.http.resource_dependencies import OrganizationId, WorkspaceId
 from a13n_service.iam.resource_routes import require_organization_boundary
+from a13n_service.openapi import ETAG_HEADERS
 from a13n_service.request_runtime import get_control_runtime
 
 from .adapters import SearchTransport
@@ -87,7 +88,7 @@ async def list_workspace_provider(
     return result
 
 
-@router.post("/workspaces/{workspace}/search-providers", status_code=201)
+@router.post("/workspaces/{workspace}/search-providers", status_code=201, responses={201: {"headers": ETAG_HEADERS}})
 async def create_workspace_provider(
     request: Request, actor: Actor, workspace_id: WorkspaceId, response: Response, body: CreateSearchProviderRequest
 ) -> SearchProvider:
@@ -96,7 +97,7 @@ async def create_workspace_provider(
     return result
 
 
-@router.get("/workspaces/{workspace}/search-providers/{provider_id}")
+@router.get("/workspaces/{workspace}/search-providers/{provider_id}", responses={200: {"headers": ETAG_HEADERS}})
 async def get_workspace_provider(
     request: Request, actor: Actor, workspace_id: WorkspaceId, response: Response, provider_id: str
 ) -> SearchProvider:
@@ -105,7 +106,7 @@ async def get_workspace_provider(
     return result
 
 
-@router.patch("/workspaces/{workspace}/search-providers/{provider_id}")
+@router.patch("/workspaces/{workspace}/search-providers/{provider_id}", responses={200: {"headers": ETAG_HEADERS}})
 async def update_workspace_provider(
     request: Request,
     actor: Actor,
@@ -164,7 +165,9 @@ async def list_organization_provider(
     return result
 
 
-@router.post("/organizations/{organization}/search-providers", status_code=201)
+@router.post(
+    "/organizations/{organization}/search-providers", status_code=201, responses={201: {"headers": ETAG_HEADERS}}
+)
 async def create_organization_provider(
     request: Request,
     actor: Actor,
@@ -178,7 +181,7 @@ async def create_organization_provider(
     return result
 
 
-@router.get("/organizations/{organization}/search-providers/{provider_id}")
+@router.get("/organizations/{organization}/search-providers/{provider_id}", responses={200: {"headers": ETAG_HEADERS}})
 async def get_organization_provider(
     request: Request, actor: Actor, organization_id: OrganizationId, response: Response, provider_id: str
 ) -> SearchProvider:
@@ -188,7 +191,9 @@ async def get_organization_provider(
     return result
 
 
-@router.patch("/organizations/{organization}/search-providers/{provider_id}")
+@router.patch(
+    "/organizations/{organization}/search-providers/{provider_id}", responses={200: {"headers": ETAG_HEADERS}}
+)
 async def update_organization_provider(
     request: Request,
     actor: Actor,

@@ -21,7 +21,8 @@ Get Agent Revision.
 Responses:
 
 - **200** — Successful Response (`application/json: AgentRevision`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/agents`
 
@@ -39,7 +40,8 @@ List Agents.
 Responses:
 
 - **200** — Successful Response (`application/json: AgentCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/agents`
 
@@ -57,7 +59,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: AgentRevisionCreateResult`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/agents/{agent}`
 
@@ -71,7 +74,8 @@ Get Agent.
 Responses:
 
 - **200** — Successful Response (`application/json: Agent`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PATCH /api/v1/workspaces/{workspace}/agents/{agent}`
 
@@ -90,7 +94,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: Agent`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `DELETE /api/v1/workspaces/{workspace}/agents/{agent}/avatar`
 
@@ -105,7 +110,8 @@ Delete Agent Avatar.
 Responses:
 
 - **200** — Successful Response (`application/json: Agent`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PUT /api/v1/workspaces/{workspace}/agents/{agent}/avatar`
 
@@ -124,7 +130,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: Agent`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/agents/{agent}/avatar/{image_id}`
 
@@ -139,7 +146,8 @@ Get Agent Avatar.
 Responses:
 
 - **200** — Successful Response (`application/json: schema-defined value`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/agents/{agent}/duplicate`
 
@@ -158,7 +166,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: Agent`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/agents/{agent}/revisions`
 
@@ -174,7 +183,8 @@ List Agent Revisions.
 Responses:
 
 - **200** — Successful Response (`application/json: AgentRevisionCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/agents/{agent}/revisions`
 
@@ -193,7 +203,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: AgentRevisionCreateResult`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/agents/{agent}/revisions/{revision_id}/restore`
 
@@ -213,7 +224,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: AgentRevisionCreateResult`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/agents/{agent}/{action}`
 
@@ -230,7 +242,8 @@ Change Agent Lifecycle.
 Responses:
 
 - **200** — Successful Response (`application/json: Agent`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ## asset-management
 
@@ -245,7 +258,8 @@ Delete Asset.
 Responses:
 
 - **204** — Successful Response.
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/assets/{asset_id}`
 
@@ -258,7 +272,8 @@ Get Asset.
 Responses:
 
 - **200** — Successful Response (`application/json: Asset`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/assets/{asset_id}/content`
 
@@ -270,8 +285,9 @@ Get Asset Content.
 
 Responses:
 
-- **200** — Successful Response (`application/json: schema-defined value`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **200** — Successful Response (`application/octet-stream: string`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/assets`
 
@@ -288,7 +304,8 @@ List Assets.
 Responses:
 
 - **200** — Successful Response (`application/json: AssetCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/assets`
 
@@ -308,7 +325,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: Asset`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ## connectivity-management
 
@@ -324,7 +342,8 @@ Delete Account.
 Responses:
 
 - **204** — Successful Response.
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/application-accounts/{account_id}`
 
@@ -337,7 +356,8 @@ Get Account.
 Responses:
 
 - **200** — Successful Response (`application/json: Account`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PATCH /api/v1/application-accounts/{account_id}`
 
@@ -354,7 +374,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: Account`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PUT /api/v1/application-accounts/{account_id}/credentials`
 
@@ -372,7 +393,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: Account`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/application-accounts/{account_id}/targets`
 
@@ -387,7 +409,8 @@ List Targets.
 Responses:
 
 - **200** — Successful Response (`application/json: TargetCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/application-accounts/{account_id}/targets`
 
@@ -405,7 +428,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: AccountTarget`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `DELETE /api/v1/application-accounts/{account_id}/targets/{target_id}`
 
@@ -420,7 +444,8 @@ Delete.
 Responses:
 
 - **204** — Successful Response.
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/application-accounts/{account_id}/targets/{target_id}`
 
@@ -434,7 +459,8 @@ Get.
 Responses:
 
 - **200** — Successful Response (`application/json: AccountTarget`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PUT /api/v1/application-accounts/{account_id}/targets/{target_id}`
 
@@ -452,7 +478,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: AccountTarget`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/application-accounts/{account_id}/{action}`
 
@@ -471,7 +498,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: Account`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `DELETE /api/v1/connector-connections/{connection_id}`
 
@@ -486,7 +514,8 @@ Delete Connector Connection.
 Responses:
 
 - **200** — Successful Response (`application/json: ConnectionCleanupReceipt`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/connector-connections/{connection_id}`
 
@@ -499,7 +528,8 @@ Get Connector Connection.
 Responses:
 
 - **200** — Successful Response (`application/json: ConnectorConnection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PATCH /api/v1/connector-connections/{connection_id}`
 
@@ -516,7 +546,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: ConnectorConnection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/connector-connections/{connection_id}/reconnect`
 
@@ -534,7 +565,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: ConnectorSetupLaunch`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/connector-connections/{connection_id}/revoke`
 
@@ -552,7 +584,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: ConnectionCleanupReceipt`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/connector-connections/{connection_id}/setup`
 
@@ -570,7 +603,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: ConnectorSetupLaunch`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/connector-connections/{connection_id}/{action}`
 
@@ -589,7 +623,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: ConnectorConnection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/connector-provider-types`
 
@@ -598,6 +633,7 @@ List Connector Provider Types.
 Responses:
 
 - **200** — Successful Response (`application/json: ConnectorProviderDefinitionCollection`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/connector-providers/{connector_provider_id}`
 
@@ -610,7 +646,8 @@ Get Connector Provider.
 Responses:
 
 - **200** — Successful Response (`application/json: ConnectorProvider`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PATCH /api/v1/connector-providers/{connector_provider_id}`
 
@@ -627,7 +664,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: ConnectorProvider`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/connector-providers/{connector_provider_id}/connectors/{connector_key}/tools`
 
@@ -641,7 +679,8 @@ Preview Connector Tools.
 Responses:
 
 - **200** — Successful Response (`application/json: ConnectorToolPage`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/connector-providers/{connector_provider_id}/credentials`
 
@@ -659,7 +698,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: ConnectorProvider`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/connector-providers/{connector_provider_id}/discover-connectors`
 
@@ -672,7 +712,8 @@ Discover Connectors.
 Responses:
 
 - **200** — Successful Response (`application/json: ConnectorCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/connector-providers/{connector_provider_id}/test`
 
@@ -690,7 +731,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: ConnectorProviderTestResult`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/connector-providers/{connector_provider_id}/{action}`
 
@@ -709,7 +751,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: ConnectorProvider`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/connector-setup/complete`
 
@@ -722,7 +765,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: ConnectorSetupCompletion`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `DELETE /api/v1/mcp-connections/{connection_id}`
 
@@ -737,7 +781,8 @@ Delete Mcp Connection.
 Responses:
 
 - **200** — Successful Response (`application/json: ConnectionCleanupReceipt`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/mcp-connections/{connection_id}`
 
@@ -750,7 +795,8 @@ Get Mcp Connection.
 Responses:
 
 - **200** — Successful Response (`application/json: MCPConnection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PATCH /api/v1/mcp-connections/{connection_id}`
 
@@ -767,7 +813,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: MCPConnection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/mcp-connections/{connection_id}/authorize`
 
@@ -785,7 +832,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: MCPAuthorizationLaunch`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/mcp-connections/{connection_id}/credentials`
 
@@ -803,7 +851,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: MCPConnection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/mcp-connections/{connection_id}/discover`
 
@@ -820,7 +869,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: MCPToolCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/mcp-connections/{connection_id}/reconnect`
 
@@ -838,7 +888,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: MCPConnection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/mcp-connections/{connection_id}/{action}`
 
@@ -857,7 +908,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: MCPConnection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/oauth/mcp/callback`
 
@@ -872,7 +924,8 @@ Mcp Oauth Callback.
 Responses:
 
 - **200** — Successful Response (`application/json: MCPConnection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/oauth/mcp/client-metadata.json`
 
@@ -881,6 +934,7 @@ Mcp Client Metadata.
 Responses:
 
 - **200** — Successful Response (`application/json: MCPClientMetadata`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/organizations/{organization}/connector-providers`
 
@@ -895,7 +949,8 @@ Organization List Connector Providers.
 Responses:
 
 - **200** — Successful Response (`application/json: ConnectorProviderCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/organizations/{organization}/connector-providers`
 
@@ -913,7 +968,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: ConnectorProvider`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/application-account-provider-types`
 
@@ -926,7 +982,8 @@ Account Provider Types.
 Responses:
 
 - **200** — Successful Response (`application/json: AccountProviderDefinitionCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/application-accounts`
 
@@ -941,7 +998,8 @@ List Accounts.
 Responses:
 
 - **200** — Successful Response (`application/json: AccountCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/application-accounts`
 
@@ -959,7 +1017,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: Account`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/connector-connections`
 
@@ -974,7 +1033,8 @@ List Connector Connections.
 Responses:
 
 - **200** — Successful Response (`application/json: ConnectorConnectionCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/connector-connections`
 
@@ -992,7 +1052,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: ConnectorConnection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/connector-providers`
 
@@ -1007,7 +1068,8 @@ List Connector Providers.
 Responses:
 
 - **200** — Successful Response (`application/json: ConnectorProviderCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/connector-providers`
 
@@ -1025,7 +1087,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: ConnectorProvider`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/mcp-connections`
 
@@ -1040,7 +1103,8 @@ List Mcp Connections.
 Responses:
 
 - **200** — Successful Response (`application/json: MCPConnectionCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/mcp-connections`
 
@@ -1058,7 +1122,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: MCPConnection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ## environments
 
@@ -1073,7 +1138,8 @@ Get Command.
 Responses:
 
 - **200** — Successful Response (`application/json: EnvironmentCommand`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/environment-provider-types`
 
@@ -1082,6 +1148,7 @@ Provider Types.
 Responses:
 
 - **200** — Successful Response (`application/json: Collection_dict_`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/environment-provider-types/{provider_type}`
 
@@ -1094,16 +1161,17 @@ Get Provider Type.
 Responses:
 
 - **200** — Successful Response (`application/json: object`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PATCH /api/v1/environment-providers/{provider_id}`
 
 Update Provider.
 
-| Parameter     | Location | Required | Type / schema | Constraints and default |
-| ------------- | -------- | -------- | ------------- | ----------------------- |
-| `provider_id` | path     | true     | string        | —                       |
-| `If-Match`    | header   | true     | string        | maxLength=256           |
+| Parameter     | Location | Required | Type / schema | Constraints and default    |
+| ------------- | -------- | -------- | ------------- | -------------------------- |
+| `provider_id` | path     | true     | string        | —                          |
+| `If-Match`    | header   | true     | string        | minLength=1; maxLength=256 |
 
 Request body: required.
 
@@ -1112,16 +1180,17 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: EnvironmentProvider`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PUT /api/v1/environment-providers/{provider_id}/credential`
 
 Replace Credential.
 
-| Parameter     | Location | Required | Type / schema | Constraints and default |
-| ------------- | -------- | -------- | ------------- | ----------------------- |
-| `provider_id` | path     | true     | string        | —                       |
-| `If-Match`    | header   | true     | string        | maxLength=256           |
+| Parameter     | Location | Required | Type / schema | Constraints and default    |
+| ------------- | -------- | -------- | ------------- | -------------------------- |
+| `provider_id` | path     | true     | string        | —                          |
+| `If-Match`    | header   | true     | string        | minLength=1; maxLength=256 |
 
 Request body: required.
 
@@ -1130,7 +1199,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: EnvironmentProvider`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/environment-providers/{resource_id}`
 
@@ -1143,7 +1213,8 @@ Get Provider.
 Responses:
 
 - **200** — Successful Response (`application/json: EnvironmentProvider`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/environment-template-revisions/{revision_id}`
 
@@ -1156,7 +1227,8 @@ Get Revision.
 Responses:
 
 - **200** — Successful Response (`application/json: EnvironmentTemplateRevision`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/environment-templates/{resource_id}`
 
@@ -1169,16 +1241,17 @@ Get Template.
 Responses:
 
 - **200** — Successful Response (`application/json: EnvironmentTemplate`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PATCH /api/v1/environment-templates/{template_id}`
 
 Update Template.
 
-| Parameter     | Location | Required | Type / schema | Constraints and default |
-| ------------- | -------- | -------- | ------------- | ----------------------- |
-| `template_id` | path     | true     | string        | —                       |
-| `If-Match`    | header   | true     | string        | maxLength=256           |
+| Parameter     | Location | Required | Type / schema | Constraints and default    |
+| ------------- | -------- | -------- | ------------- | -------------------------- |
+| `template_id` | path     | true     | string        | —                          |
+| `If-Match`    | header   | true     | string        | minLength=1; maxLength=256 |
 
 Request body: required.
 
@@ -1187,7 +1260,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: EnvironmentTemplate`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/environment-templates/{template_id}/revisions`
 
@@ -1202,7 +1276,8 @@ List Revisions.
 Responses:
 
 - **200** — Successful Response (`application/json: Collection_EnvironmentTemplateRevision_`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/environment-templates/{template_id}/revisions`
 
@@ -1219,7 +1294,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: EnvironmentTemplateRevision`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/environments/{environment_id}/delete`
 
@@ -1233,7 +1309,8 @@ Delete Environment.
 Responses:
 
 - **202** — Successful Response (`application/json: EnvironmentCommand`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/environments/{environment_id}/stop`
 
@@ -1247,7 +1324,8 @@ Stop Environment.
 Responses:
 
 - **202** — Successful Response (`application/json: EnvironmentCommand`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/environments/{resource_id}`
 
@@ -1260,7 +1338,8 @@ Get Environment.
 Responses:
 
 - **200** — Successful Response (`application/json: Environment`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/organizations/{organization}/environment-providers`
 
@@ -1275,7 +1354,8 @@ Organization List Providers.
 Responses:
 
 - **200** — Successful Response (`application/json: Collection_EnvironmentProvider_`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/organizations/{organization}/environment-providers`
 
@@ -1292,7 +1372,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: EnvironmentProvider`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/organizations/{organization}/environment-templates`
 
@@ -1307,7 +1388,8 @@ Organization List Templates.
 Responses:
 
 - **200** — Successful Response (`application/json: Collection_EnvironmentTemplate_`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/organizations/{organization}/environment-templates`
 
@@ -1325,7 +1407,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: EnvironmentTemplate`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/environment-providers`
 
@@ -1340,7 +1423,8 @@ List Providers.
 Responses:
 
 - **200** — Successful Response (`application/json: Collection_EnvironmentProvider_`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/environment-providers`
 
@@ -1357,7 +1441,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: EnvironmentProvider`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/environment-templates`
 
@@ -1372,7 +1457,8 @@ List Templates.
 Responses:
 
 - **200** — Successful Response (`application/json: Collection_EnvironmentTemplate_`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/environment-templates`
 
@@ -1390,7 +1476,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: EnvironmentTemplate`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/environments`
 
@@ -1405,7 +1492,8 @@ List Environments.
 Responses:
 
 - **200** — Successful Response (`application/json: Collection_Environment_`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/environments`
 
@@ -1423,7 +1511,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: Environment`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ## hook-subscriptions
 
@@ -1439,7 +1528,8 @@ Delete Hook Subscription.
 Responses:
 
 - **204** — Successful Response.
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/hook-subscriptions/{subscription_id}`
 
@@ -1452,7 +1542,8 @@ Get Hook Subscription.
 Responses:
 
 - **200** — Successful Response (`application/json: HookSubscription`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PATCH /api/v1/hook-subscriptions/{subscription_id}`
 
@@ -1470,7 +1561,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: HookSubscription`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PUT /api/v1/hook-subscriptions/{subscription_id}`
 
@@ -1488,7 +1580,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: HookSubscription`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/hook-subscriptions/{subscription_id}/deliveries/{delivery_id}/redrive`
 
@@ -1502,7 +1595,8 @@ Redrive Hook Delivery.
 Responses:
 
 - **204** — Successful Response.
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/hook-subscriptions`
 
@@ -1517,7 +1611,8 @@ List Hook Subscriptions.
 Responses:
 
 - **200** — Successful Response (`application/json: HookSubscriptionCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/hook-subscriptions`
 
@@ -1534,7 +1629,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: HookSubscription`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ## identity
 
@@ -1545,6 +1641,7 @@ Credential Context.
 Responses:
 
 - **200** — Successful Response (`application/json: CredentialContext`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/auth/csrf`
 
@@ -1553,6 +1650,7 @@ Browser Proof.
 Responses:
 
 - **200** — Successful Response (`application/json: object`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/auth/login`
 
@@ -1565,7 +1663,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: LoginResult`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/auth/logout`
 
@@ -1574,6 +1673,7 @@ Logout.
 Responses:
 
 - **204** — Successful Response.
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/invitations/{invitation_id}/accept`
 
@@ -1590,7 +1690,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: LoginResult`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/users/me`
 
@@ -1599,6 +1700,7 @@ Current User.
 Responses:
 
 - **200** — Successful Response (`application/json: User`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/users/me/auth-sessions`
 
@@ -1612,7 +1714,8 @@ Sessions.
 Responses:
 
 - **200** — Successful Response (`application/json: Page_AuthSession_`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `DELETE /api/v1/users/me/auth-sessions/{session_id}`
 
@@ -1625,7 +1728,8 @@ Revoke Session.
 Responses:
 
 - **204** — Successful Response.
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/users/me/password`
 
@@ -1638,7 +1742,8 @@ Request body: required.
 Responses:
 
 - **204** — Successful Response.
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ## identity-images
 
@@ -1654,7 +1759,8 @@ Delete Organization Icon.
 Responses:
 
 - **200** — Successful Response (`application/json: Organization`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PUT /api/v1/organizations/{organization}/icon`
 
@@ -1672,7 +1778,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: Organization`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/organizations/{organization}/icon/{image_id}`
 
@@ -1685,8 +1792,9 @@ Get Organization Icon.
 
 Responses:
 
-- **200** — Successful Response (`application/json: schema-defined value`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **200** — Successful Response (`image/webp: string`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `DELETE /api/v1/users/me/avatar`
 
@@ -1699,7 +1807,8 @@ Delete Avatar.
 Responses:
 
 - **200** — Successful Response (`application/json: User`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PUT /api/v1/users/me/avatar`
 
@@ -1716,7 +1825,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: User`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/users/{user_id}/avatar/{image_id}`
 
@@ -1729,8 +1839,9 @@ Get Avatar.
 
 Responses:
 
-- **200** — Successful Response (`application/json: schema-defined value`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **200** — Successful Response (`image/webp: string`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `DELETE /api/v1/workspaces/{workspace}/icon`
 
@@ -1744,7 +1855,8 @@ Delete Workspace Icon.
 Responses:
 
 - **200** — Successful Response (`application/json: Workspace`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PUT /api/v1/workspaces/{workspace}/icon`
 
@@ -1762,7 +1874,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: Workspace`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/icon/{image_id}`
 
@@ -1775,8 +1888,9 @@ Get Workspace Icon.
 
 Responses:
 
-- **200** — Successful Response (`application/json: schema-defined value`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **200** — Successful Response (`image/webp: string`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ## identity-management
 
@@ -1791,7 +1905,8 @@ Key Metadata.
 Responses:
 
 - **200** — Successful Response (`application/json: ApiKey`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/api-keys/{key_id}/revoke`
 
@@ -1804,7 +1919,8 @@ Revoke Key.
 Responses:
 
 - **200** — Successful Response (`application/json: ApiKey`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/invitations/{invitation_id}/resend`
 
@@ -1821,7 +1937,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: InvitationDelivery`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/invitations/{invitation_id}/revoke`
 
@@ -1838,7 +1955,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: Invitation`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/organizations`
 
@@ -1847,6 +1965,7 @@ Organizations.
 Responses:
 
 - **200** — Successful Response (`application/json: Page_Organization_`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/organizations/{organization}/invitations`
 
@@ -1861,7 +1980,8 @@ Invitations.
 Responses:
 
 - **200** — Successful Response (`application/json: Page_Invitation_`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/organizations/{organization}/invitations`
 
@@ -1878,7 +1998,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: InvitationDelivery`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/organizations/{organization}/role-bindings`
 
@@ -1893,7 +2014,8 @@ Organization Roles.
 Responses:
 
 - **200** — Successful Response (`application/json: Page_RoleBinding_`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/organizations/{organization}/users`
 
@@ -1908,7 +2030,8 @@ Users.
 Responses:
 
 - **200** — Successful Response (`application/json: Page_User_`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/organizations/{organization}/workspaces`
 
@@ -1923,7 +2046,8 @@ Workspaces.
 Responses:
 
 - **200** — Successful Response (`application/json: Page_Workspace_`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/organizations/{organization}/workspaces`
 
@@ -1940,7 +2064,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: Workspace`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `DELETE /api/v1/role-bindings/{binding_id}`
 
@@ -1954,7 +2079,8 @@ Remove Member.
 Responses:
 
 - **204** — Successful Response.
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/role-bindings/{binding_id}`
 
@@ -1967,7 +2093,8 @@ Role Binding.
 Responses:
 
 - **200** — Successful Response (`application/json: RoleBinding`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PATCH /api/v1/role-bindings/{binding_id}`
 
@@ -1985,7 +2112,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: RoleBinding`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `DELETE /api/v1/service-accounts/{account_id}`
 
@@ -2002,7 +2130,8 @@ Request body: required.
 Responses:
 
 - **204** — Successful Response.
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/service-accounts/{account_id}`
 
@@ -2015,7 +2144,8 @@ Account.
 Responses:
 
 - **200** — Successful Response (`application/json: ServiceAccount`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PATCH /api/v1/service-accounts/{account_id}`
 
@@ -2032,7 +2162,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: ServiceAccount`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/service-accounts/{account_id}/api-keys`
 
@@ -2047,7 +2178,8 @@ Account Keys.
 Responses:
 
 - **200** — Successful Response (`application/json: Page_ApiKey_`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/service-accounts/{account_id}/api-keys`
 
@@ -2064,7 +2196,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: CreatedKey`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `DELETE /api/v1/workspaces/{workspace}`
 
@@ -2078,7 +2211,8 @@ Delete Workspace.
 Responses:
 
 - **204** — Successful Response.
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}`
 
@@ -2091,7 +2225,8 @@ Workspace.
 Responses:
 
 - **200** — Successful Response (`application/json: Workspace`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PATCH /api/v1/workspaces/{workspace}`
 
@@ -2109,7 +2244,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: Workspace`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/invitations`
 
@@ -2124,7 +2260,8 @@ Workspace Invitations.
 Responses:
 
 - **200** — Successful Response (`application/json: Page_Invitation_`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/invitations`
 
@@ -2141,7 +2278,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: InvitationDelivery`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/personal-api-keys`
 
@@ -2156,7 +2294,8 @@ Personal Keys.
 Responses:
 
 - **200** — Successful Response (`application/json: Page_ApiKey_`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/personal-api-keys`
 
@@ -2173,7 +2312,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: CreatedKey`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/role-bindings`
 
@@ -2188,7 +2328,8 @@ Workspace Roles.
 Responses:
 
 - **200** — Successful Response (`application/json: Page_RoleBinding_`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/role-bindings`
 
@@ -2205,7 +2346,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: RoleBinding`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/service-accounts`
 
@@ -2220,7 +2362,8 @@ Accounts.
 Responses:
 
 - **200** — Successful Response (`application/json: Page_ServiceAccount_`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/service-accounts`
 
@@ -2237,7 +2380,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: ServiceAccount`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ## identity-recovery
 
@@ -2248,6 +2392,7 @@ Auth Configuration.
 Responses:
 
 - **200** — Successful Response (`application/json: AuthConfiguration`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/auth/password-reset`
 
@@ -2260,7 +2405,8 @@ Request body: required.
 Responses:
 
 - **202** — Successful Response (`application/json: schema-defined value`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/auth/password-reset/complete`
 
@@ -2273,7 +2419,8 @@ Request body: required.
 Responses:
 
 - **204** — Successful Response.
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/users/me/email-change`
 
@@ -2286,7 +2433,8 @@ Request body: required.
 Responses:
 
 - **202** — Successful Response (`application/json: schema-defined value`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/users/me/email-change/complete`
 
@@ -2299,7 +2447,8 @@ Request body: required.
 Responses:
 
 - **204** — Successful Response.
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ## identity-settings
 
@@ -2314,7 +2463,8 @@ Organization.
 Responses:
 
 - **200** — Successful Response (`application/json: Organization`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PATCH /api/v1/organizations/{organization}`
 
@@ -2332,7 +2482,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: Organization`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/organizations/{organization}/permissions`
 
@@ -2345,7 +2496,8 @@ Organization Permissions.
 Responses:
 
 - **200** — Successful Response (`application/json: OrganizationPermissions`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/organizations/{organization}/role-bindings`
 
@@ -2362,7 +2514,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: RoleBinding`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/organizations/{organization}/security-audit-events`
 
@@ -2377,7 +2530,8 @@ Organization Security Events.
 Responses:
 
 - **200** — Successful Response (`application/json: Page_SecurityEvent_`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PATCH /api/v1/users/me`
 
@@ -2394,7 +2548,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: User`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/users/me/security-activity`
 
@@ -2408,7 +2563,8 @@ Personal Security Activity.
 Responses:
 
 - **200** — Successful Response (`application/json: Page_SecurityEvent_`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/api-keys`
 
@@ -2423,7 +2579,8 @@ Workspace Member Keys.
 Responses:
 
 - **200** — Successful Response (`application/json: Page_ApiKey_`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/members`
 
@@ -2438,7 +2595,8 @@ Workspace Members.
 Responses:
 
 - **200** — Successful Response (`application/json: Page_User_`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/permissions`
 
@@ -2451,7 +2609,8 @@ Workspace Permissions.
 Responses:
 
 - **200** — Successful Response (`application/json: Permissions`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/security-audit-events`
 
@@ -2466,7 +2625,8 @@ Workspace Security Events.
 Responses:
 
 - **200** — Successful Response (`application/json: Page_SecurityEvent_`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ## lifecycle-events
 
@@ -2483,7 +2643,8 @@ List Run Attempt Events.
 Responses:
 
 - **200** — Successful Response (`application/json: ResourceLifecycleEventPage`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/runs/{run_id}/events`
 
@@ -2498,7 +2659,8 @@ List Run Events.
 Responses:
 
 - **200** — Successful Response (`application/json: ResourceLifecycleEventPage`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/events`
 
@@ -2513,7 +2675,8 @@ List Workspace Events.
 Responses:
 
 - **200** — Successful Response (`application/json: WorkspaceEventPage`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ## model-management
 
@@ -2524,6 +2687,7 @@ List Model Provider Types.
 Responses:
 
 - **200** — Successful Response (`application/json: ModelProviderDefinitionCollection`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/organizations/{organization}/model-providers`
 
@@ -2541,7 +2705,8 @@ Organization List Model Providers.
 Responses:
 
 - **200** — Successful Response (`application/json: ModelProviderCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/organizations/{organization}/model-providers`
 
@@ -2558,7 +2723,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: ModelProvider`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/organizations/{organization}/model-providers/{provider_id}`
 
@@ -2572,7 +2738,8 @@ Organization Get Model Provider.
 Responses:
 
 - **200** — Successful Response (`application/json: ModelProvider`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PATCH /api/v1/organizations/{organization}/model-providers/{provider_id}`
 
@@ -2591,7 +2758,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: ModelProvider`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/organizations/{organization}/model-providers/{provider_id}/describe-model`
 
@@ -2609,7 +2777,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: ModelDescription`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/organizations/{organization}/model-providers/{provider_id}/discover-models`
 
@@ -2623,7 +2792,8 @@ Organization Discover Provider Models.
 Responses:
 
 - **200** — Successful Response (`application/json: ModelDiscovery`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/organizations/{organization}/model-providers/{provider_id}/test`
 
@@ -2637,7 +2807,8 @@ Organization Test Model Provider.
 Responses:
 
 - **200** — Successful Response (`application/json: ModelConnectionTestResult`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/organizations/{organization}/models`
 
@@ -2655,7 +2826,8 @@ Organization List Models.
 Responses:
 
 - **200** — Successful Response (`application/json: ModelCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/organizations/{organization}/models`
 
@@ -2672,7 +2844,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: Model`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/organizations/{organization}/models/{model_id}`
 
@@ -2686,7 +2859,8 @@ Organization Get Model.
 Responses:
 
 - **200** — Successful Response (`application/json: Model`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PATCH /api/v1/organizations/{organization}/models/{model_id}`
 
@@ -2705,7 +2879,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: Model`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/organizations/{organization}/models/{model_id}/test`
 
@@ -2723,7 +2898,8 @@ Request body: optional.
 Responses:
 
 - **200** — Successful Response (`application/json: ModelConnectionTestResult`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/model-providers`
 
@@ -2741,7 +2917,8 @@ List Model Providers.
 Responses:
 
 - **200** — Successful Response (`application/json: ModelProviderCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/model-providers`
 
@@ -2758,7 +2935,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: ModelProvider`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/model-providers/{provider_id}`
 
@@ -2772,7 +2950,8 @@ Get Model Provider.
 Responses:
 
 - **200** — Successful Response (`application/json: ModelProvider`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PATCH /api/v1/workspaces/{workspace}/model-providers/{provider_id}`
 
@@ -2791,7 +2970,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: ModelProvider`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/model-providers/{provider_id}/describe-model`
 
@@ -2809,7 +2989,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: ModelDescription`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/model-providers/{provider_id}/discover-models`
 
@@ -2823,7 +3004,8 @@ Discover Provider Models.
 Responses:
 
 - **200** — Successful Response (`application/json: ModelDiscovery`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/model-providers/{provider_id}/test`
 
@@ -2837,7 +3019,8 @@ Test Model Provider.
 Responses:
 
 - **200** — Successful Response (`application/json: ModelConnectionTestResult`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/models`
 
@@ -2855,7 +3038,8 @@ List Models.
 Responses:
 
 - **200** — Successful Response (`application/json: ModelCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/models`
 
@@ -2872,7 +3056,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: Model`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/models/{model_id}`
 
@@ -2886,7 +3071,8 @@ Get Model.
 Responses:
 
 - **200** — Successful Response (`application/json: Model`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PATCH /api/v1/workspaces/{workspace}/models/{model_id}`
 
@@ -2905,7 +3091,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: Model`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/models/{model_id}/test`
 
@@ -2923,7 +3110,8 @@ Request body: optional.
 Responses:
 
 - **200** — Successful Response (`application/json: ModelConnectionTestResult`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ## protocol-gateway
 
@@ -2943,7 +3131,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: ThreadQueueMutationReceipt`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/queued-submissions/{queued_submission_id}`
 
@@ -2956,7 +3145,8 @@ Get Queued Submission.
 Responses:
 
 - **200** — Successful Response (`application/json: QueuedSubmission`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PATCH /api/v1/queued-submissions/{queued_submission_id}`
 
@@ -2974,7 +3164,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: QueuedSubmissionMutationReceipt`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/run-attempts/{run_attempt_id}`
 
@@ -2987,7 +3178,8 @@ Get Run Attempt.
 Responses:
 
 - **200** — Successful Response (`application/json: RunAttemptResource`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/runs/{run_id}`
 
@@ -3000,7 +3192,8 @@ Get Run.
 Responses:
 
 - **200** — Successful Response (`application/json: RunResource`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/runs/{run_id}/attempts`
 
@@ -3015,7 +3208,8 @@ List Run Attempts.
 Responses:
 
 - **200** — Successful Response (`application/json: RunAttemptCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/runs/{run_id}/feedback`
 
@@ -3033,7 +3227,8 @@ Request body: required.
 Responses:
 
 - **202** — Successful Response (`application/json: RunAcceptanceReceipt`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/runs/{run_id}/fork`
 
@@ -3051,7 +3246,8 @@ Request body: required.
 Responses:
 
 - **202** — Successful Response (`application/json: RunAcceptanceReceipt`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/runs/{run_id}/interrupt`
 
@@ -3069,7 +3265,8 @@ Request body: required.
 Responses:
 
 - **202** — Successful Response (`application/json: InterruptReceipt`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/runs/{run_id}/items`
 
@@ -3084,7 +3281,8 @@ List Run Items.
 Responses:
 
 - **200** — Successful Response (`application/json: ItemCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/runs/{run_id}/lineage`
 
@@ -3097,7 +3295,8 @@ Get Run Lineage.
 Responses:
 
 - **200** — Successful Response (`application/json: RunLineage`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/runs/{run_id}/pending-actions`
 
@@ -3110,7 +3309,8 @@ List Pending Actions.
 Responses:
 
 - **200** — Successful Response (`application/json: PendingActionCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/runs/{run_id}/retry`
 
@@ -3128,7 +3328,8 @@ Request body: required.
 Responses:
 
 - **202** — Successful Response (`application/json: RunAcceptanceReceipt`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/runs/{run_id}/steer`
 
@@ -3146,7 +3347,8 @@ Request body: required.
 Responses:
 
 - **202** — Successful Response (`application/json: SteerReceipt`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/runs/{run_id}/steers/{steer_id}`
 
@@ -3160,7 +3362,8 @@ Get Run Steer.
 Responses:
 
 - **200** — Successful Response (`application/json: SteerStatus`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/runs/{run_id}/stream`
 
@@ -3174,8 +3377,9 @@ Stream Run.
 
 Responses:
 
-- **200** — Successful Response.
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **200** — Successful Response (`text/event-stream: string`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/runs/{source_run_id}/continue`
 
@@ -3193,7 +3397,8 @@ Request body: required.
 Responses:
 
 - **202** — Successful Response (`application/json: RunAcceptanceReceipt`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/sessions/{session_id}/threads`
 
@@ -3208,7 +3413,8 @@ List Threads.
 Responses:
 
 - **200** — Successful Response (`application/json: ThreadCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/threads/{thread_id}`
 
@@ -3221,7 +3427,8 @@ Get Thread.
 Responses:
 
 - **200** — Successful Response (`application/json: ThreadResource`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/threads/{thread_id}/queued-submissions`
 
@@ -3236,7 +3443,8 @@ List Queued Submissions.
 Responses:
 
 - **200** — Successful Response (`application/json: QueuedSubmissionCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/threads/{thread_id}/queued-submissions/consume`
 
@@ -3254,7 +3462,8 @@ Request body: required.
 Responses:
 
 - **202** — Successful Response (`application/json: QueuedSubmissionConsumptionReceipt`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/threads/{thread_id}/queued-submissions/reorder`
 
@@ -3272,7 +3481,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: ThreadQueueMutationReceipt`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/threads/{thread_id}/runs`
 
@@ -3287,7 +3497,8 @@ List Thread Runs.
 Responses:
 
 - **200** — Successful Response (`application/json: RunCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/threads/{thread_id}/runs`
 
@@ -3305,7 +3516,8 @@ Request body: required.
 Responses:
 
 - **202** — Successful Response (`application/json: ThreadRunSubmissionReceipt`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/runs`
 
@@ -3320,7 +3532,8 @@ List Workspace Runs.
 Responses:
 
 - **200** — Successful Response (`application/json: RunCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/runs`
 
@@ -3338,7 +3551,8 @@ Request body: required.
 Responses:
 
 - **202** — Successful Response (`application/json: RunAcceptanceReceipt`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/sessions`
 
@@ -3353,7 +3567,8 @@ List Sessions.
 Responses:
 
 - **200** — Successful Response (`application/json: SessionCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ## search-providers
 
@@ -3372,7 +3587,8 @@ List Organization Provider.
 Responses:
 
 - **200** — Successful Response (`application/json: SearchProviderCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/organizations/{organization}/search-providers`
 
@@ -3389,7 +3605,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: SearchProvider`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/organizations/{organization}/search-providers/{provider_id}`
 
@@ -3403,17 +3620,18 @@ Get Organization Provider.
 Responses:
 
 - **200** — Successful Response (`application/json: SearchProvider`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PATCH /api/v1/organizations/{organization}/search-providers/{provider_id}`
 
 Update Organization Provider.
 
-| Parameter      | Location | Required | Type / schema  | Constraints and default |
-| -------------- | -------- | -------- | -------------- | ----------------------- |
-| `provider_id`  | path     | true     | string         | —                       |
-| `organization` | path     | true     | string         | —                       |
-| `If-Match`     | header   | false    | string or null | —                       |
+| Parameter      | Location | Required | Type / schema | Constraints and default    |
+| -------------- | -------- | -------- | ------------- | -------------------------- |
+| `provider_id`  | path     | true     | string        | —                          |
+| `organization` | path     | true     | string        | —                          |
+| `If-Match`     | header   | true     | string        | minLength=1; maxLength=256 |
 
 Request body: required.
 
@@ -3422,7 +3640,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: SearchProvider`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/organizations/{organization}/search-providers/{provider_id}/references`
 
@@ -3438,7 +3657,8 @@ References Organization Provider.
 Responses:
 
 - **200** — Successful Response (`application/json: SearchProviderReferenceCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/organizations/{organization}/search-providers/{provider_id}/test`
 
@@ -3456,7 +3676,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: SearchProviderTestResult`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/search-provider-types`
 
@@ -3465,6 +3686,7 @@ List Types.
 Responses:
 
 - **200** — Successful Response (`application/json: SearchProviderDefinitionCollection`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/search-provider-types/{provider_type}`
 
@@ -3477,7 +3699,8 @@ Get Type.
 Responses:
 
 - **200** — Successful Response (`application/json: SearchProviderDefinition`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/search-providers`
 
@@ -3494,7 +3717,8 @@ List Workspace Provider.
 Responses:
 
 - **200** — Successful Response (`application/json: SearchProviderCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/search-providers`
 
@@ -3511,7 +3735,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: SearchProvider`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/search-providers/{provider_id}`
 
@@ -3525,17 +3750,18 @@ Get Workspace Provider.
 Responses:
 
 - **200** — Successful Response (`application/json: SearchProvider`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PATCH /api/v1/workspaces/{workspace}/search-providers/{provider_id}`
 
 Update Workspace Provider.
 
-| Parameter     | Location | Required | Type / schema  | Constraints and default |
-| ------------- | -------- | -------- | -------------- | ----------------------- |
-| `provider_id` | path     | true     | string         | —                       |
-| `workspace`   | path     | true     | string         | —                       |
-| `If-Match`    | header   | false    | string or null | —                       |
+| Parameter     | Location | Required | Type / schema | Constraints and default    |
+| ------------- | -------- | -------- | ------------- | -------------------------- |
+| `provider_id` | path     | true     | string        | —                          |
+| `workspace`   | path     | true     | string        | —                          |
+| `If-Match`    | header   | true     | string        | minLength=1; maxLength=256 |
 
 Request body: required.
 
@@ -3544,7 +3770,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: SearchProvider`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/search-providers/{provider_id}/references`
 
@@ -3560,7 +3787,8 @@ References Workspace Provider.
 Responses:
 
 - **200** — Successful Response (`application/json: SearchProviderReferenceCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/search-providers/{provider_id}/test`
 
@@ -3578,7 +3806,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: SearchProviderTestResult`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ## skill-management
 
@@ -3593,7 +3822,8 @@ Get Skill Revision.
 Responses:
 
 - **200** — Successful Response (`application/json: SkillRevision`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/skill-revisions/{skill_revision_id}/content`
 
@@ -3606,7 +3836,8 @@ Get Skill Revision Content.
 Responses:
 
 - **200** — Successful Response (`application/json: schema-defined value`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `DELETE /api/v1/skill-uploads/{upload_id}`
 
@@ -3619,7 +3850,8 @@ Delete Skill Upload.
 Responses:
 
 - **204** — Successful Response.
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/skill-uploads/{upload_id}`
 
@@ -3632,7 +3864,8 @@ Get Skill Upload.
 Responses:
 
 - **200** — Successful Response (`application/json: SkillUploadReceipt`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `DELETE /api/v1/skills/{skill_id}`
 
@@ -3646,7 +3879,8 @@ Delete Skill.
 Responses:
 
 - **204** — Successful Response.
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/skills/{skill_id}`
 
@@ -3659,7 +3893,8 @@ Get Skill.
 Responses:
 
 - **200** — Successful Response (`application/json: Skill`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `PATCH /api/v1/skills/{skill_id}`
 
@@ -3677,7 +3912,8 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: Skill`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/skills/{skill_id}/references`
 
@@ -3692,7 +3928,8 @@ List Skill References.
 Responses:
 
 - **200** — Successful Response (`application/json: SkillAgentReferenceCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/skills/{skill_id}/revisions`
 
@@ -3707,7 +3944,8 @@ List Skill Revisions.
 Responses:
 
 - **200** — Successful Response (`application/json: SkillRevisionCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/skills/{skill_id}/revisions`
 
@@ -3725,7 +3963,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: SkillPublicationReceipt`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/skill-uploads`
 
@@ -3743,7 +3982,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: SkillUploadReceipt`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/skills`
 
@@ -3758,7 +3998,8 @@ List Skills.
 Responses:
 
 - **200** — Successful Response (`application/json: SkillCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `POST /api/v1/workspaces/{workspace}/skills`
 
@@ -3776,7 +4017,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: SkillPublicationReceipt`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ## threads
 
@@ -3796,7 +4038,8 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: Thread`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ## trace-query
 
@@ -3820,7 +4063,8 @@ List Traces.
 Responses:
 
 - **200** — Successful Response (`application/json: TraceCollection`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/workspaces/{workspace}/traces/{trace_id}`
 
@@ -3835,4 +4079,5 @@ Get Trace.
 Responses:
 
 - **200** — Successful Response (`application/json: TraceDetail`).
-- **422** — Validation Error (`application/json: HTTPValidationError`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).

@@ -2,10 +2,12 @@
 
 import hmac
 import logging
+from typing import Annotated
 
 from anyio import fail_after
-from fastapi import Request
+from fastapi import Depends, Request, Security
 from fastapi.requests import HTTPConnection
+from fastapi.security import APIKeyCookie, HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -136,7 +138,15 @@ class DatabaseAuthenticator:
         )
 
 
-async def authenticate_request(request: Request) -> AuthenticatedActor:
+async def authenticate_request(
+    request: Request,
+    _bearer: Annotated[
+        HTTPAuthorizationCredentials | None, Security(HTTPBearer(scheme_name="BearerAuth", auto_error=False))
+    ] = None,
+    _session: Annotated[
+        str | None, Security(APIKeyCookie(name=SESSION_COOKIE, scheme_name="SessionAuth", auto_error=False))
+    ] = None,
+) -> AuthenticatedActor:
     runtime = get_process_runtime(request)
     authenticator = runtime.request_authenticator if runtime is not None else None
     if authenticator is None:
@@ -153,9 +163,10 @@ async def authenticate_request(request: Request) -> AuthenticatedActor:
     return actor
 
 
-async def authenticate_mutation(request: Request) -> AuthenticatedActor:
+async def authenticate_mutation(
+    request: Request, actor: Annotated[AuthenticatedActor, Depends(authenticate_request)]
+) -> AuthenticatedActor:
     """Require browser proof even for protocol callbacks historically exposed as GET."""
-    actor = await authenticate_request(request)
     if actor.credential_source == "service" and actor.auth_method == "session":
         runtime = get_process_runtime(request)
         assert runtime is not None

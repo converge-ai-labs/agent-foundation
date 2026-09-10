@@ -775,8 +775,8 @@ async def test_recovery_attempts_share_one_run_and_record_attempt_count() -> Non
         model_recovery=ModelRecoveryPolicy(
             enabled=True,
             max_attempts=2,
-            backoff_initial_seconds=0,
-            backoff_max_seconds=0,
+            backoff_initial_seconds=0.001,
+            backoff_max_seconds=0.001,
         ),
     )
 
@@ -796,7 +796,11 @@ async def test_recovery_attempts_share_one_run_and_record_attempt_count() -> Non
         for span in exporter.get_finished_spans()
         if span.name == "harness.operation" and span.attributes["a13n.operation.kind"] == "recovery"
     ]
-    assert recovery_spans
+    assert {span.attributes["a13n.recovery.step"] for span in recovery_spans} == {"backoff", "build_prompt"}
+    for span in recovery_spans:
+        assert span.attributes["a13n.recovery.next_attempt"] == 2
+        assert span.attributes["a13n.operation.status"] == "completed"
+        assert span.attributes["a13n.output.capture"] == "captured"
 
 
 class _ShortCircuitPlugin(AbstractHarnessPlugin):
@@ -1192,8 +1196,24 @@ async def test_run_content_and_phases_follow_policy_and_native_ownership(content
         assert root.attributes["langfuse.observation.output"] == root.attributes["a13n.output"]
     for span in spans:
         if span is not root:
-            assert "a13n.input" not in span.attributes and "a13n.output" not in span.attributes
+            assert "a13n.input" not in span.attributes
             assert "langfuse.trace.output" not in span.attributes
+            if span.name not in {"harness.prepare", "harness.finalize"} or content is HarnessTraceContent.NONE:
+                assert "a13n.output" not in span.attributes
+    assert prepare.attributes["a13n.phase.status"] == "completed"
+    assert finalize.attributes["langfuse.observation.metadata.finalize_cleanup_error_count"] == 0
+    if content is not HarnessTraceContent.NONE:
+        assert json.loads(prepare.attributes["a13n.output"]) == {
+            "environment_bound": True,
+            "context_ready": True,
+            "plugin_count": 0,
+        }
+        assert json.loads(finalize.attributes["a13n.output"]) == {
+            "state_available": True,
+            "cleanup_error_count": 0,
+            "state_export_failed": False,
+            "cancelled": False,
+        }
 
 
 async def test_input_factory_and_plugin_result_are_root_content_authorities():
@@ -1323,3 +1343,49 @@ async def test_disabled_nested_run_masks_parent_phases_and_skill_summary(iterate
     assert root.attributes["a13n.skills.available"] == ("parent-only",)
     assert root.attributes["a13n.skills.accessed"] == ("parent-only",)
     assert root.attributes["a13n.skills.access_count"] == 1
+
+
+@pytest.mark.parametrize("failure", [ValueError, asyncio.CancelledError])
+def test_operation_failure_keeps_safe_local_status_and_no_synthetic_output(failure):
+    from a13n_harness.observation import _compile_observation, observe_operation
+
+    provider, exporter, _, _ = _providers()
+    runtime = _compile_observation(HarnessInstrumentation(tracer_provider=provider))
+    observation = runtime.start_run(
+        thread_id="thread-observed",
+        run_id="run-observed",
+        instance=RunBindings.embedded().instance,
+        observation_context=None,
+    )
+    activation = observation.activate()
+    try:
+        with pytest.raises(failure):
+            with observe_operation("memory_recall"):
+                raise failure("private provider details")
+    finally:
+        observation.deactivate(activation)
+        observation.finish(outcome="cancelled" if failure is asyncio.CancelledError else "failed")
+    span = next(span for span in exporter.get_finished_spans() if span.name == "harness.operation")
+    assert span.attributes["a13n.operation.status"] == ("cancelled" if failure is asyncio.CancelledError else "failed")
+    assert span.status.status_code is (StatusCode.UNSET if failure is asyncio.CancelledError else StatusCode.ERROR)
+    assert "a13n.output" not in span.attributes
+    assert "private provider details" not in str(span.attributes)
+    assert not span.events
+    provider.shutdown()
+
+
+def test_structural_metadata_is_bounded_local_and_best_effort():
+    from a13n_harness.observation import record_span_metadata
+
+    provider, exporter, _, _ = _providers()
+    tracer = HarnessInstrumentation(tracer_provider=provider).get_tracer("test")
+    with tracer.start_as_current_span("owner") as span:
+        record_span_metadata(span, {"phase.label": "界" * 256, "phase.count": 3, "phase.invalid": float("nan")})
+        with tracer.start_as_current_span("child"):
+            pass
+    child, owner = exporter.get_finished_spans()
+    assert len(owner.attributes["a13n.phase.label"].encode("utf-8")) <= 256
+    assert owner.attributes["langfuse.observation.metadata.phase_count"] == 3
+    assert "a13n.phase.invalid" not in owner.attributes
+    assert "a13n.phase.count" not in child.attributes
+    provider.shutdown()

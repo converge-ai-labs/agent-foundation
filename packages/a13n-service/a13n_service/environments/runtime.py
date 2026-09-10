@@ -15,11 +15,12 @@ from a13n_environment import (
     EnvironmentOperations,
     EnvironmentState,
 )
+from a13n_harness.observation import record_span_metadata
 from a13n_logging import get_logger
 from anyio import fail_after
 
 from a13n_service.interactions.models import RunRecord
-from a13n_service.observability import observe_phase
+from a13n_service.observability import observe_phase, observe_phase_result
 from a13n_service.storage import short_session
 
 from .configuration import load_configuration
@@ -93,8 +94,11 @@ class RunEnvironment(Environment):
     ) -> None:
         # This boundary runs for eager preparation, first use, and target recovery.
         with observe_phase("a13n.service.environment.prepare") as span:
+            previous_generation = self.backing_generation
             if span is not None:
-                span.set_attribute("a13n.environment.id", self.environment_id)
+                record_span_metadata(
+                    span, {"environment.id": self.environment_id, "environment.generation_before": previous_generation}
+                )
             await self._prepare_target(
                 thread_id=thread_id,
                 run_id=run_id,
@@ -103,7 +107,13 @@ class RunEnvironment(Environment):
                 host_refs=host_refs,
             )
             if span is not None:
-                span.set_attribute("a13n.environment.generation", self.backing_generation)
+                record_span_metadata(span, {"environment.generation": self.backing_generation})
+            observe_phase_result(
+                span,
+                generation_before=previous_generation,
+                generation_after=self.backing_generation,
+                generation_changed=previous_generation != self.backing_generation,
+            )
 
     async def _prepare_target(
         self, *, thread_id: str, run_id: str, agent_instance_id: str, mount_id: str, host_refs: Mapping[str, str]

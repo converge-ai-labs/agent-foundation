@@ -25,6 +25,7 @@ from a13n_harness.capabilities import AskUserQuestionRequest, SubagentOperator, 
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.dynamic import DynamicEnvironmentCapability
 from a13n_harness.input import RunInputFactory, RunInputValue, RunPreparationContext
+from a13n_harness.observation import record_span_metadata
 from a13n_harness.pricing import get_current_pricing_catalog
 from a13n_logging import get_logger
 from a13n_stream_protocol import HarnessAguiObserver
@@ -49,7 +50,13 @@ from a13n_harness_ui.environment_runtime import EnvironmentFinalization, Environ
 from a13n_harness_ui.errors import RunCoordinationError, ThreadError
 from a13n_harness_ui.live import HarnessUiLiveHub
 from a13n_harness_ui.model_runtime import SubscriptionSource
-from a13n_harness_ui.observation import phase, record_configuration, record_output, record_skill_event
+from a13n_harness_ui.observation import (
+    phase,
+    record_configuration,
+    record_output,
+    record_phase_result,
+    record_skill_event,
+)
 from a13n_harness_ui.root_input import RootInputFiles, detach_input
 from a13n_harness_ui.storage import (
     LocalStore,
@@ -135,6 +142,13 @@ class RootRunExecutor:
         on_stream: Callable[[HarnessRunStream[Any], RootInputFiles | None], Awaitable[None]] | None = None,
     ) -> RootRunOutcome:
         with phase("prepare") as preparation_span:
+            record_span_metadata(
+                preparation_span,
+                {
+                    "prepare.input_kind": "deferred_response" if response is not None else "prompt",
+                    "prepare.configuration_mutation": mutation is not None,
+                },
+            )
             if (prompt is None) == (response is None):
                 raise RunCoordinationError(
                     "A root operation requires exactly one prompt or deferred response.",
@@ -210,6 +224,14 @@ class RootRunExecutor:
                 environment=environment.runtime,
                 model_resolver=reconstructed.model_resolver,
                 capabilities=production_run_capabilities(reconstructed.definition_capability_ids),
+            )
+            record_phase_result(
+                preparation_span,
+                status="completed",
+                continuation_loaded=previous_state is not None,
+                deferred_resume=deferred_resume is not None,
+                capability_count=len(reconstructed.definition_capability_ids),
+                environment_prepared=True,
             )
         result: HarnessRunResult[str] | None = None
         stream: HarnessRunStream[str] | None = None
@@ -321,6 +343,19 @@ class RootRunExecutor:
                             "The latest continuation could not be saved; the previous selection is unchanged."
                         )
             finalization_span.set_attribute("a13n.ui.continuation.status", continuation.status)
+            phase_failed = (
+                finalization_error is not None
+                or continuation.error is not None
+                or bool(finalization is not None and finalization.cleanup_errors)
+            )
+            record_phase_result(
+                finalization_span,
+                status="failed" if phase_failed else "completed",
+                continuation_status=continuation.status,
+                environment_finalized=finalization is not None,
+                cleanup_error_count=len(finalization.cleanup_errors) if finalization is not None else 0,
+                result_status=result.status if result is not None else "unavailable",
+            )
             if (
                 finalization_error is not None
                 or continuation.error is not None

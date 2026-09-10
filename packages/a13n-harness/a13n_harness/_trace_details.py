@@ -129,6 +129,26 @@ def record_content(
         pass
 
 
+def record_span_metadata(span: Span, values: Mapping[str, str | bool | int | float]) -> None:
+    """Project bounded owner-selected structural facts, never execution bodies."""
+    if not span.is_recording():
+        return
+    try:
+        for key, value in islice(values.items(), 16):
+            if len(key) > 64 or not key or not all(char.isascii() and (char.isalnum() or char in "_.") for char in key):
+                continue
+            if isinstance(value, str):
+                value = _clip(value, 256)
+            elif isinstance(value, float) and not isfinite(value):
+                continue
+            elif isinstance(value, int) and not -(2**63) <= value < 2**63:
+                continue
+            span.set_attribute(f"a13n.{key}", value)
+            span.set_attribute(f"langfuse.observation.metadata.{key.replace('.', '_')}", value)
+    except Exception:
+        pass
+
+
 class SkillObservation:
     """One owning span's bounded catalog and observed reads, not proof of skill use."""
 
