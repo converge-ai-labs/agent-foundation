@@ -182,6 +182,7 @@ Run migration graph, clean-upgrade, schema-parity, and relevant PostgreSQL lock/
 
 ## Documentation Changes
 
+- Keep each continuous Markdown paragraph on one source line; preserve semantic line breaks, separate list items, tables, and code blocks. The shared `.mdformat.toml` rule applies through the existing formatting hooks and `make lint`.
 - Keep user-facing documentation in `docs/`.
 - Every source file under `docs/` must be Markdown.
 - Update `mkdocs.yml` when adding, removing, or moving a page.

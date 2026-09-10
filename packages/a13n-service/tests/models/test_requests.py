@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from unittest.mock import AsyncMock, Mock
 
 import anyio
@@ -8,6 +9,7 @@ import httpx2
 import pytest
 from a13n_harness.errors import ModelResolutionError
 from a13n_service.etags import resource_etag
+from a13n_service.models import requests as model_requests
 from a13n_service.models.domain import (
     CreateModelProviderRequest,
     CreateModelRequest,
@@ -240,8 +242,32 @@ async def test_stream_failure_after_handoff_is_not_replayed():
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("streaming", [False, True])
-async def test_request_deadline_includes_retry_wait(streaming):
+async def test_request_deadline_includes_retry_wait(streaming, monkeypatch):
     sent = []
+    active_deadlines = []
+    retry_delays = []
+
+    @contextmanager
+    def capture_deadline(timeout):
+        with anyio.fail_after(timeout) as scope:
+            active_deadlines.append(scope)
+            try:
+                yield scope
+            finally:
+                active_deadlines.pop()
+
+    async def expire_during_retry(delay):
+        retry_delays.append(delay)
+        assert len(sent) == 1
+        assert active_deadlines
+        scope = active_deadlines[-1]
+        assert scope.deadline != float("inf")
+        # Expire the real request deadline only after reaching retry backoff.
+        scope.deadline = anyio.current_time()
+        await anyio.sleep(delay)
+
+    monkeypatch.setattr(model_requests, "fail_after", capture_deadline)
+    monkeypatch.setattr(model_requests, "sleep", expire_during_retry)
 
     def handler(request):
         sent.append(request)
@@ -250,7 +276,8 @@ async def test_request_deadline_includes_retry_wait(streaming):
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
         model = await _live_model(client)
         with pytest.raises(TimeoutError):
-            await _request(model, streaming=streaming, settings={"timeout": 0.05})
+            await _request(model, streaming=streaming, settings={"timeout": 30})
+    assert retry_delays == [1]
     assert len(sent) == 1
 
 

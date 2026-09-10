@@ -110,6 +110,56 @@ async def test_drain_bounds_unfinished_scan_without_claiming(monkeypatch):
     runner.run.assert_not_awaited()
 
 
+async def test_productive_worker_rescans_without_waiting_for_poll_interval(
+    interaction_sessions, interaction_object_store, monkeypatch
+):
+    _, run, _ = await acceptance._accept_root(interaction_sessions, interaction_object_store)
+    owned = await AttemptScheduler(interaction_sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer()).claim(
+        run.id, acceptance._worker()
+    )
+    assert isinstance(owned, ClaimedAttempt)
+    scheduler = Mock(spec=AttemptScheduler)
+    runner = Mock()
+    started, rescanned, handed_off = Event(), Event(), Event()
+    control = Mock(spec=RunAttemptControl)
+    control.request_handoff = AsyncMock(side_effect=lambda reason: handed_off.set())
+    loop = WorkerExecutionLoop(
+        interaction_sessions,
+        scheduler,
+        HarnessPluginFactoryCatalog(()),
+        runner,
+        build_id="test",
+        queue_name="default",
+        concurrency=2,
+        poll_seconds=60,
+    )
+    monkeypatch.setattr(loop, "_organizations", AsyncMock(return_value=(ORGANIZATION_ID,)))
+
+    async def scan(*args, **kwargs):
+        if scheduler.claim.await_count == 0:
+            return (run.id,)
+        rescanned.set()
+        return ()
+
+    async def execute(context, catalog, slot, register):
+        await register(control)
+        started.set()
+        await handed_off.wait()
+
+    scheduler.scan = AsyncMock(side_effect=scan)
+    scheduler.claim = AsyncMock(return_value=owned)
+    runner.run = AsyncMock(side_effect=execute)
+    with fail_after(2):
+        async with create_task_group() as tasks:
+            tasks.start_soon(loop.run)
+            await started.wait()
+            await rescanned.wait()
+            await loop.drain()
+            await loop.wait_stopped()
+    assert loop._capacity.value == 2
+    scheduler.claim.assert_awaited_once()
+
+
 async def test_restarted_worker_gets_new_identity_and_cannot_inherit_authority(
     interaction_sessions, interaction_object_store
 ):
@@ -186,3 +236,33 @@ async def test_worker_does_not_retry_programming_failure(monkeypatch):
         await loop.run()
     assert isinstance(caught.value.exceptions[0], RuntimeError)
     organizations.assert_awaited_once()
+
+
+async def test_database_disconnect_after_productive_claim_still_backs_off(monkeypatch):
+    import psycopg
+    from a13n_service.interactions.scheduling import SealedClaim
+    from anyio import current_time
+    from sqlalchemy.exc import OperationalError
+
+    scheduler = Mock(spec=AttemptScheduler)
+    scheduler.scan = AsyncMock(return_value=("sealed", "pending"))
+    loop = WorkerExecutionLoop(
+        Mock(), scheduler, Mock(), Mock(), build_id="test", queue_name="default", concurrency=1, poll_seconds=0.02
+    )
+    monkeypatch.setattr(loop, "_organizations", AsyncMock(return_value=(ORGANIZATION_ID,)))
+    calls = []
+
+    async def claim(*args):
+        calls.append(current_time())
+        if len(calls) == 1:
+            return Mock(spec=SealedClaim)
+        if len(calls) == 2:
+            raise OperationalError(None, None, psycopg.OperationalError("connection refused"))
+        loop.begin_drain()
+        return None
+
+    scheduler.claim = AsyncMock(side_effect=claim)
+    with fail_after(2):
+        await loop.run()
+    assert len(calls) == 3 and calls[2] - calls[1] >= 0.02
+    assert loop._capacity.value == 1

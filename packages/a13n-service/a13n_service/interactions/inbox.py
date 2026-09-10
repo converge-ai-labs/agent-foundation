@@ -21,6 +21,7 @@ from .attempts import (
     AttemptContext,
     AttemptMutationReceipt,
     lock_attempt_authority,
+    read_attempt_authority,
 )
 from .control_domain import (
     SteerReceipt,
@@ -233,6 +234,21 @@ class DatabaseThreadInboxReconciler:
         config: EffectiveAgentConfig,
     ) -> Sequence[AdaptedThreadInboxEntry]:
         now = assume_utc(self._clock())
+        async with short_session(self._sessions) as database:
+            has_pending = await database.scalar(
+                select(
+                    select(ThreadInboxRecord.id)
+                    .where(
+                        ThreadInboxRecord.organization_id == authority.organization_id,
+                        ThreadInboxRecord.thread_id == authority.thread_id,
+                        ThreadInboxRecord.status == ThreadInboxStatus.pending.value,
+                    )
+                    .exists()
+                )
+            )
+            if not has_pending:
+                await read_attempt_authority(database, authority, now, load_execution_state=False)
+                return ()
         async with transaction(self._sessions) as database:
             run, _, _ = await lock_attempt_authority(database, authority, now, lock_inbox_origins=True)
             counter = await lock_inbox_counter(database, run.organization_id, run.thread_id)

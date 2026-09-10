@@ -177,6 +177,10 @@ async def test_auto_recall_is_once_per_logical_run_and_persists_input_overlays()
     ]
     assert len(operation_spans) == 1
     assert operation_spans[0].attributes["a13n.operation.kind"] == "memory_recall"
+    assert operation_spans[0].attributes["a13n.memory_recall.result_count"] == 1
+    assert operation_spans[0].attributes["langfuse.observation.metadata.memory_recall_limit"] == 5
+    assert operation_spans[0].attributes["a13n.operation.status"] == "completed"
+    assert operation_spans[0].attributes["a13n.output.capture"] == "captured"
     assert "langfuse.session.id" in operation_spans[0].attributes
     assert "The user prefers tea." not in str(operation_spans[0].attributes)
     points = _metric_map(reader)["a13n.harness.operation.duration"].data.data_points

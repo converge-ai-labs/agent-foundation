@@ -1,9 +1,35 @@
 """Environment recipes, access modes, unused instances, and preparation failure."""
 
+from pathlib import Path
+
 from a13n_service.settings import Settings
 
 from .seed_client import Client
 from .seed_journeys import run
+
+
+async def local_workspace(client: Client, base: str, provider_id: str, root: Path, name: str) -> dict:
+    root.mkdir(parents=True, mode=0o700)
+    template = await client.request(
+        "POST",
+        base + "/environment-templates",
+        expected=201,
+        json={
+            "name": name,
+            "provider_id": provider_id,
+            "access": "full",
+            "preparation": "on_run",
+            "retention": {"idle": {"stop_after": None, "delete_after": None}},
+            "configuration": {
+                "root": {"path": str(root)},
+                "shell_profiles": [{"profile_id": "default", "executable": "/bin/sh"}],
+            },
+        },
+    )
+    environment = await client.request(
+        "POST", base + "/environments", expected=201, json={"template_id": template["id"]}
+    )
+    return {"environment_id": environment["id"], "template_id": template["id"], "root": str(root)}
 
 
 async def environments(client: Client, base: str, catalog: dict, settings: Settings) -> dict:

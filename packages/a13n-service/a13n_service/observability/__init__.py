@@ -11,6 +11,7 @@ from .runtime import (
     build_observability_runtime,
     observe_input,
     observe_phase,
+    observe_phase_result,
     remember_output,
     valid_span_link,
 )
@@ -26,6 +27,7 @@ __all__ = [
     "build_observability_runtime",
     "observe_input",
     "observe_phase",
+    "observe_phase_result",
     "remember_output",
     "valid_span_link",
 ]

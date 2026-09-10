@@ -18,7 +18,7 @@ from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.interactions.attempt_executor import RunAttemptExecutor
 from a13n_service.interactions.attempts import AttemptContext, AttemptExecutionService, read_attempt_authority
 from a13n_service.interactions.control_wakeups import AttemptControlWakeups
-from a13n_service.interactions.harness_results import StoredHarnessOutcomeAdapter
+from a13n_service.interactions.harness_results import AttemptOutcome, StoredHarnessOutcomeAdapter
 from a13n_service.interactions.harness_runtime import HarnessDriver
 from a13n_service.interactions.inbox import DatabaseThreadInboxReconciler, RedisThreadControlSignals, ThreadInboxStore
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord, SessionRecord
@@ -225,9 +225,11 @@ class WorkerAttempts:
                 activate_publication=PublicationActivator(sessions, self._stream).activate,
             )
             await register(control)
-            await executor.run()
+            receipt = await executor.run()
 
             if trace is not None:
+                if isinstance(receipt, AttemptOutcome):
+                    trace.set_disposition(receipt.disposition.value)
                 async with short_session(sessions) as session:
                     finished = await session.get(RunAttemptRecord, context.run_attempt_id)
                     finished_attempt = finished.to_resource() if finished is not None else None

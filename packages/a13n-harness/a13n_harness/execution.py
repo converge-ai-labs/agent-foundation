@@ -187,7 +187,9 @@ from a13n_harness.observation import (
     _LogicalRunObservation,
     _ObservationRuntime,
     observe_operation,
+    observe_output,
     observe_phase,
+    record_span_metadata,
 )
 from a13n_harness.output_schema import structured_output_type
 from a13n_harness.plugin_configuration import HarnessBuildContext, HarnessPluginConfiguration
@@ -1367,6 +1369,14 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         )
         try:
             with observe_phase("prepare") as phase:
+                record_span_metadata(
+                    phase,
+                    {
+                        "prepare.input_factory": self._input_factory is not None,
+                        "prepare.deferred_resume": self._deferred_resume is not None,
+                        "prepare.plugin_count": len(self._executable._plugins),
+                    },
+                )
                 phase.set_attribute("a13n.phase.step", "environment")
                 self._environment_ready = asyncio.get_running_loop().create_future()
                 # This task outlives preparation and also owns Environment teardown.
@@ -1458,6 +1468,18 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                     _state_exporter=self.export_state,
                 )
                 self._response = self._build_response(run_plugins, 0, exchange)
+                record_span_metadata(
+                    phase,
+                    {
+                        "phase.status": "completed",
+                        "prepare.capability_count": len(self._executable.definition.capabilities),
+                    },
+                )
+                observe_output(
+                    phase,
+                    {"environment_bound": True, "context_ready": True, "plugin_count": len(run_plugins)},
+                    status="prepared",
+                )
                 return self
         except asyncio.CancelledError as exc:
             await self._close_resources(outcome=None, cancellation=exc)
@@ -2410,11 +2432,21 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 )
             )
             if delay > 0:
-                with observe_operation("recovery"):
+                with observe_operation("recovery") as span:
+                    record_span_metadata(
+                        span,
+                        {
+                            "recovery.step": "backoff",
+                            "recovery.next_attempt": next_attempt_index + 1,
+                            "recovery.max_attempts": max_attempts,
+                            "recovery.delay_seconds": delay,
+                        },
+                    )
                     try:
                         await asyncio.wait_for(self._cancel_event.wait(), timeout=delay)
                     except TimeoutError:
                         pass
+                    observe_output(span, {"cancel_requested": self._cancel_requested}, status="wait_finished")
             if self._cancel_requested:
                 state = await exchange.context.export_state(self._latest_messages) if self._latest_messages else None
                 yield self._record_inner_candidate(
@@ -2430,8 +2462,18 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                     )
                 )
                 return
-            with observe_operation("recovery"):
+            with observe_operation("recovery") as span:
+                record_span_metadata(
+                    span,
+                    {
+                        "recovery.step": "build_prompt",
+                        "recovery.next_attempt": next_attempt_index + 1,
+                        "recovery.max_attempts": max_attempts,
+                        "recovery.history_count": len(self._latest_messages),
+                    },
+                )
                 retry_input = await policy.build_prompt(retry_error, next_attempt_index, self._latest_messages)
+                observe_output(span, {"retry_input_available": retry_input is not None}, status="prepared")
             current_input = normalize_input(retry_input)
             current_history = self._latest_messages
             attempt_index = next_attempt_index
@@ -2659,8 +2701,26 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 await finish_cleanup(_stop_environment_event_task(task))
             self._closed = True
 
-            if causes or self._shutdown_state_error is not None:
-                phase.set_attribute("a13n.phase.status", "failed")
+            phase_status = "failed" if causes or self._shutdown_state_error is not None else "completed"
+            record_span_metadata(
+                phase,
+                {
+                    "phase.status": phase_status,
+                    "finalize.cleanup_error_count": len(causes),
+                    "finalize.state_export_failed": self._shutdown_state_error is not None,
+                },
+            )
+            observe_output(
+                phase,
+                {
+                    "state_available": self._shutdown_state is not None,
+                    "cleanup_error_count": len(causes),
+                    "state_export_failed": self._shutdown_state_error is not None,
+                    "cancelled": cancellation is not None,
+                },
+                status=phase_status,
+            )
+            if phase_status == "failed":
                 phase.set_status(StatusCode.ERROR)
 
         observation = self._observation

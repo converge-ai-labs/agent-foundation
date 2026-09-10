@@ -171,6 +171,23 @@ The span is current during all causal run execution, including Harness, Pydantic
 
 The owning Run exposes bounded `a13n.skills.available` and `a13n.skills.accessed` name lists, at most 16 entries each, with available count/omitted count, total access count and accessed-list truncation. `access_count` counts successful recognized reads, including repeated or partial reads; it is not a unique-skill count. A successful ordinary `SKILL.md` read marks its native tool span with `a13n.skill.name`, `a13n.skill.source_id` and `a13n.skill.tool_id`. Catalog discovery is not document access. Access is not proof of a full read, model compliance, or use from earlier history; shell or unrecognized readers are not inferred. These summaries never aggregate another logical Run or propagate to descendants. Observation metadata aliases expose the available/accessed lists for filtering. Existing skill events remain independent process-local observations.
 
+### Phase-Local Data
+
+Owned phases and operations carry meaningful local decisions, not timing alone. Bounded structural scalars are recorded as `a13n.*` attributes and filterable `langfuse.observation.metadata.*` aliases (dots in the suffix become underscores). Each projection accepts at most 16 entries, keys of at most 64 ASCII alphanumeric/dot/underscore characters, and scalar strings of at most 256 UTF-8 bytes. These fields remain available with `trace_content=none`; they contain no prompts, document bodies, native paths, queries, filters or credentials. They are local to the owning span, not inherited correlation.
+
+| Owner                    | Structural facts and local result                                                                                                          |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `harness.prepare`        | Input-factory and deferred-resume selection, definition Capability/plugin counts, successful Environment/context preparation               |
+| `harness.finalize`       | Cleanup-error count, state-export failure, state availability and cancellation; cleanup success is distinct from Run success               |
+| `harness.skills.resolve` | All/explicit selection, root/requested/discovered/selected/excluded/unknown counts; selected name/source pairs or rejected unknown names   |
+| recovery                 | Backoff versus retry-input preparation, next/max attempt, selected delay or history count; cancellation requested or retry input available |
+| delegation               | Child identity, role and continuation selection; returned child status and state availability, not a copy of the child's answer            |
+| handoff                  | Summary byte size and file count; successful process-local state replacement, not a durable Host save claim                                |
+| compaction               | Message counts before/after and summary byte size, not copied model messages or the native summary body                                    |
+| Mem0 recall              | Limit, required/optional selection, scope count and result count; whether context is available, never memory/query/filter content          |
+
+`standard` and `full` additionally expose these local results as bounded observation output through the same 8 KiB projection as Run output. `none` omits every such output body. Skill result lists contain at most 16 entries with total and omitted counts. A rejected unknown-name selection can have a rejection output; scan or revision failure never fabricates a selected catalog. Phases set `a13n.phase.status` and operations set `a13n.operation.status` to `completed`, `failed`, or `cancelled` at their own boundary. Operation completion means the local operation returned normally, not that its child or enclosing Run succeeded. Escaping failures record only exception class and ERROR status; cancellation alone is not ERROR. No generic placeholder output is synthesized for work without a local result.
+
 ### Harness Operation Observations
 
 When tracing is enabled, a focused Harness child span uses the stable name `harness.operation` and one bounded `a13n.operation.kind`. The initial kinds are `recovery`, `delegation`, `handoff`, `compaction`, and `memory_recall`. Delegation covers only the independently authorized child-binding phase; the nested child `harness.run` remains the execution owner. `memory_recall` covers the one prompt-dependent Mem0 search owned by `Mem0Capability.for_run()` and not later model-invoked memory Tool calls.

@@ -1,11 +1,26 @@
 """Verify retained coverage before a reset can be reported as successful."""
 
 from collections import Counter
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
 
 import anyio
 
 from .seed_client import Client
+
+
+async def _parallel[Item, Result](items: Sequence[Item], action: Callable[[Item], Awaitable[Result]]) -> list[Result]:
+    limiter = anyio.CapacityLimiter(8)
+    results: dict[int, Result] = {}
+
+    async def collect(index: int, item: Item) -> None:
+        async with limiter:
+            results[index] = await action(item)
+
+    async with anyio.create_task_group() as tasks:
+        for index, item in enumerate(items):
+            tasks.start_soon(collect, index, item)
+    return [results[index] for index in range(len(items))]
 
 
 async def verify(client: Client, manifest: dict) -> dict:
@@ -42,13 +57,22 @@ async def verify(client: Client, manifest: dict) -> dict:
     if counts["sessions"] != manifest["session_count"]:
         raise RuntimeError("Session count changed during seed verification")
 
-    all_runs = []
-    all_threads = []
-    for session in sessions:
+    async def session_threads(session: dict) -> list[dict]:
         threads = await client.collection(f"/api/v1/sessions/{session['id']}/threads")
-        all_threads.extend(threads)
-        for thread in threads:
-            all_runs.extend(await client.collection(f"/api/v1/threads/{thread['id']}/runs"))
+        if any(thread["session_id"] != session["id"] for thread in threads):
+            raise RuntimeError("Thread belongs to the wrong Session")
+        return threads
+
+    all_threads = [thread for group in await _parallel(sessions, session_threads) for thread in group]
+    all_runs = await client.collection(base + "/runs", params={"limit": 200})
+    threads_by_id = {thread["id"]: thread for thread in all_threads}
+    if len(threads_by_id) != len(all_threads) or len({run["id"] for run in all_runs}) != len(all_runs):
+        raise RuntimeError("Pagination duplicated Thread or Run entries")
+    if any(
+        run["thread_id"] not in threads_by_id or run["session_id"] != threads_by_id[run["thread_id"]]["session_id"]
+        for run in all_runs
+    ):
+        raise RuntimeError("Run belongs to an unexpected Thread or Session")
     statuses = Counter(item["status"] for item in all_runs)
     if not {"completed", "failed", "waiting", "cancelled"}.issubset(statuses):
         raise RuntimeError("Required persisted Run outcomes are missing")
@@ -57,27 +81,36 @@ async def verify(client: Client, manifest: dict) -> dict:
     long_runs = [item for item in all_runs if item["thread_id"] == manifest["long_thread_id"]]
     if len(long_runs) < 13:
         raise RuntimeError("The long conversation lost its real continuations")
-    item_kinds = Counter()
-    unavailable = []
-    for retained in all_runs:
+
+    async def retained_items(retained: dict) -> list[dict] | None:
         path = f"/api/v1/runs/{retained['id']}/items"
         for attempt in range(100):
             response = await client.http.get(path, params={"limit": 100})
             if response.status_code == 200:
                 page = response.json()
-                item_kinds.update(item["kind"] for item in page["items"])
-                break
+                items = page["items"]
+                if page.get("next_cursor") is not None:
+                    items.extend(await client.collection(path, params={"limit": 100, "cursor": page["next_cursor"]}))
+                return items
             if response.status_code != 409:
                 raise RuntimeError(f"Retained transcript verification failed: HTTP {response.status_code}")
             if retained["status"] not in {"completed", "waiting"}:
-                unavailable.append(retained["id"])
-                break
+                return None
             if attempt == 99:
                 raise RuntimeError(
                     f"Retained transcript missing for {retained['id']} ({retained['status']}); "
                     f"scenarios: {[name for group in manifest['scenarios'].values() for name, value in group.items() if value == retained['id']]}"
                 )
             await anyio.sleep(0.1)
+        raise RuntimeError("Retained transcript verification exhausted its retry bound")
+
+    item_kinds = Counter()
+    unavailable = []
+    for retained, items in zip(all_runs, await _parallel(all_runs, retained_items), strict=True):
+        if items is None:
+            unavailable.append(retained["id"])
+        else:
+            item_kinds.update(item["kind"] for item in items)
     by_id = {item["id"]: item for item in all_runs}
     scenes = manifest["scenarios"]["conversations"]
     expected = {
@@ -136,6 +169,8 @@ def report(manifest: dict) -> str:
         "# Local seed coverage",
         "",
         "All content and identities are fictional. Verification completed through the Service API.",
+        "",
+        f"Bulk Sessions use {len(manifest['bulk_environments'])} isolated execution slots; paths are recorded in seed.json.",
         "",
         "## Retained resources",
         "",

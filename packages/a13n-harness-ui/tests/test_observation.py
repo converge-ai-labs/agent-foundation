@@ -508,6 +508,13 @@ async def test_root_io_and_host_phases_are_local_to_operation(tmp_path, monkeypa
     assert prepare.end_time <= harness.start_time < harness.end_time <= finalize.start_time
     assert finalize.attributes["a13n.ui.continuation.status"] == "selected"
     assert root.attributes["a13n.output.kind"] == "completed"
+    assert prepare.attributes["a13n.phase.status"] == "completed"
+    assert finalize.attributes["langfuse.observation.metadata.phase_continuation_status"] == "selected"
+    for owner in (prepare, finalize):
+        if content is HarnessTraceContent.NONE:
+            assert "a13n.output" not in owner.attributes
+        else:
+            assert isinstance(json.loads(owner.attributes["a13n.output"]), dict)
     if content is HarnessTraceContent.NONE:
         assert "a13n.input" not in root.attributes and "a13n.output" not in root.attributes
     else:
@@ -546,6 +553,8 @@ async def test_root_preserves_answer_but_marks_failed_save(tmp_path, monkeypatch
     assert root.attributes["a13n.output.kind"] == "failed"
     assert finalize.status.status_code is StatusCode.ERROR
     assert finalize.attributes["a13n.ui.continuation.status"] == "failed"
+    assert json.loads(finalize.attributes["a13n.output"])["continuation_status"] == "failed"
+    assert finalize.attributes["langfuse.observation.metadata.phase_status"] == "failed"
     assert "private save detail" not in str(finalize.attributes)
 
 

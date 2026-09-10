@@ -118,6 +118,8 @@ Under `harness.run`, `harness.prepare` measures Environment entry, input prepara
 
 `harness.skills.resolve` measures actual skill catalog resolution. The Run's `a13n.skills.available` and `a13n.skills.accessed` lists distinguish what was offered from what was successfully read through supported file tools. Lists retain at most 16 names with count/truncation diagnostics. `access_count` includes repeated reads, not just distinct names. The native file-tool span identifies the skill and source. A partial read is still an access; shell reads, complete loading, compliance and use from previous history are not inferred. Child Runs retain their own summaries.
 
+Phase metadata answers what was selected or processed; phase output describes the local result, not another copy of the answer. For example, `harness.skills.resolve` reports all/explicit selection and discovered/selected/excluded counts, with up to 16 selected skill name/source pairs in output. Unknown selections are reported as rejection, not an empty successful catalog. Preparation reports its input mode and Capability/plugin counts; finalization reports state availability and cleanup failures. Recovery distinguishes backoff from retry-input preparation, compaction shows before/after message counts, and Mem0 recall shows result count without memory contents. These structural facts have filterable metadata aliases. Phase output follows the same content policy and bounds as Run output, so `none` retains metadata but no output bodies. A completed operation does not imply that its child or enclosing Run succeeded.
+
 ## Deployment environment
 
 For local development, `dev/harness/.env.example` declares:
@@ -361,26 +363,11 @@ A Thread is correlation, not a trace. A later resume normally starts a new trace
 
 ## Automatic grouping and filtering
 
-Selected Harness and Pydantic spans automatically receive bounded correlation
-and Langfuse aliases. This works with any supplied provider, including a
-Service worker's provider; no exporter URL detection or additional processor is
-needed. Native GenAI/Logfire attributes remain available on those same spans.
+Selected Harness and Pydantic spans automatically receive bounded correlation and Langfuse aliases. This works with any supplied provider, including a Service worker's provider; no exporter URL detection or additional processor is needed. Native GenAI/Logfire attributes remain available on those same spans.
 
-Use `RunBindings.embedded(observation=HarnessObservationContext(...))` to select
-a stable name, session, labels and up to 16 scalar metadata entries. Without an
-explicit session, a Run uses its own Thread ID. The aliases include
-`langfuse.trace.name`, `langfuse.session.id`, `langfuse.trace.tags` and filterable
-`langfuse.observation.metadata.*`. Metadata aliases are strings; the neutral
-`a13n.observation.metadata.*` fields retain their original scalar types.
-A conventional trusted user claim supplies `langfuse.user.id` only when present.
-No public-trace setting or prompt-management identity is invented.
+Use `RunBindings.embedded(observation=HarnessObservationContext(...))` to select a stable name, session, labels and up to 16 scalar metadata entries. Without an explicit session, a Run uses its own Thread ID. The aliases include `langfuse.trace.name`, `langfuse.session.id`, `langfuse.trace.tags` and filterable `langfuse.observation.metadata.*`. Metadata aliases are strings; the neutral `a13n.observation.metadata.*` fields retain their original scalar types. A conventional trusted user claim supplies `langfuse.user.id` only when present. No public-trace setting or prompt-management identity is invented.
 
-For an enclosing Host operation, use `instrumentation.get_tracer("agent-host")`
-and `start_as_current_span()` with the same neutral attributes. Its bounded
-correlation propagates locally to selected descendants, not through network
-baggage. Child values take precedence. A new Run never inherits absent identity
-claims from its parent, and a detached trace does not inherit the linked
-parent's metadata. Third-party spans remain their instrumentor's responsibility.
+For an enclosing Host operation, use `instrumentation.get_tracer("agent-host")` and `start_as_current_span()` with the same neutral attributes. Its bounded correlation propagates locally to selected descendants, not through network baggage. Child values take precedence. A new Run never inherits absent identity claims from its parent, and a detached trace does not inherit the linked parent's metadata. Third-party spans remain their instrumentor's responsibility.
 
 ## Identity, lineage, usage, and cost fields
 
@@ -402,13 +389,7 @@ Pydantic owns model-request usage fields, including input/output tokens, first-c
 
 The Harness marks the exact active Pydantic model-request wrapper before applying this enrichment. Disabled Observation and metrics-only instrumentation have no eligible recording model span, so pricing fields never leak onto a Host root. The Harness does not create token aliases, another generation span, another usage metric, or a flattened usage ledger. Spans are telemetry, not billing authority.
 
-Pricing provenance also appears as filterable `usage_cost_source`,
-`usage_pricing_status`, `usage_pricing_revision` and `usage_pricing_rule_id`
-observation metadata when available. The current quote interface supplies a
-monetary total, so no input/output cost split is invented. Native Pydantic
-`operation.cost` estimates and cost metrics can use a different pricing source;
-this integration does not patch upstream finalization to force equality with a
-Harness quote. Inspect provenance when comparing backends.
+Pricing provenance also appears as filterable `usage_cost_source`, `usage_pricing_status`, `usage_pricing_revision` and `usage_pricing_rule_id` observation metadata when available. The current quote interface supplies a monetary total, so no input/output cost split is invented. Native Pydantic `operation.cost` estimates and cost metrics can use a different pricing source; this integration does not patch upstream finalization to force equality with a Harness quote. Inspect provenance when comparing backends.
 
 Pydantic token categories are inclusive: input contains cache and input-audio tokens, output contains output-audio tokens, and reasoning detail may overlap output. Langfuse v4 splits cache counters but currently adds arbitrary audio/reasoning detail counters when deriving its displayed `usageDetails.total`. Preserve and inspect the individual categories, but do not treat that derived total as Pydantic `input_tokens + output_tokens` or as Harness accounting truth.
 

@@ -4,6 +4,8 @@ import hashlib
 import json
 import random
 import socket
+from itertools import pairwise
+from pathlib import Path
 from urllib.parse import urlsplit
 
 import anyio
@@ -45,6 +47,7 @@ def environment(tmp_path):
         overrides={
             # Disposable reset tests never export to or query the developer's Langfuse.
             "observability": {"tracing": False, "query": {"provider": "none"}},
+            "worker": {"concurrency": 2},
             "database": {
                 "url": f"postgresql+psycopg://a13n_service_dev:local-only-password@127.0.0.1:{postgres_port}/a13n_service_dev"
             },
@@ -69,6 +72,13 @@ def test_reset_seeded_then_empty_clears_all_stores_and_invalidates_login(environ
     reset(environment, "seeded")
     manifest = json.loads((environment.state / "seed.json").read_text())
     assert manifest["bulk_session_count"] == 3
+    bulk_environments = manifest["bulk_environments"]
+    assert len(bulk_environments) == 2
+    assert len({value["environment_id"] for value in bulk_environments}) == 2
+    roots = [Path(value["root"]).resolve() for value in bulk_environments]
+    assert len(set(roots)) == 2
+    assert all(root.is_relative_to(environment.settings.filesystem.root / "bulk") for root in roots)
+    assert all(root.is_dir() for root in roots)
     assert manifest["session_count"] >= 15
     assert len(manifest["asset_ids"]) == 65
     assert len(manifest["skill_ids"]) == 64
@@ -98,6 +108,26 @@ def test_reset_seeded_then_empty_clears_all_stores_and_invalidates_login(environ
                     assert content.status_code == 200
                     assert len(content.content) == asset["size"]
                     assert hashlib.sha256(content.content).hexdigest() == asset["sha256"]
+                for workspace in bulk_environments:
+                    instance = await client.get(f"/api/v1/environments/{workspace['environment_id']}")
+                    assert instance.status_code == 200
+                    revision = await client.get(
+                        f"/api/v1/environment-template-revisions/{instance.json()['template_revision_id']}"
+                    )
+                    assert revision.status_code == 200
+                    assert revision.json()["configuration"]["root"]["path"] == workspace["root"]
+                async with short_session(app.state.runtime.shared.storage.sessions) as session:
+                    for workspace in bulk_environments:
+                        runs = (
+                            await session.execute(
+                                text(
+                                    "SELECT created_at, sealed_at FROM runs WHERE environment_id = :environment ORDER BY created_at"
+                                ),
+                                {"environment": workspace["environment_id"]},
+                            )
+                        ).all()
+                        assert runs
+                        assert all(current.created_at >= previous.sealed_at for previous, current in pairwise(runs))
                 sessions = await client.get(f"/api/v1/workspaces/{manifest['workspace_id']}/sessions")
                 assert sessions.status_code == 200
                 assert len(sessions.json()["items"]) == manifest["session_count"]

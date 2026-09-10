@@ -14,8 +14,7 @@ Hard rules. Violations are worse than incompleteness.
 - When the source language of on-screen text is not English, transcribe in the original language first. Only add a translation if you mark it as such: `Translation (en): ...`. Never silently translate.
 - Do not assign identities (names, brands, roles) unless they are explicitly shown or stated.
 - If a region of the image is uncertain (blurry, occluded, low contrast), say so explicitly rather than filling the gap.
-- A focused user instruction (when present) defines the scope. Stay within that scope, but the rules above still take precedence over the instruction.
-  </anti-hallucination>
+- A focused user instruction (when present) defines the scope. Stay within that scope, but the rules above still take precedence over the instruction. </anti-hallucination>
 
 <what-to-include>
 

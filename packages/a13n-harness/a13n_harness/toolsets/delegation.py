@@ -32,7 +32,7 @@ from a13n_harness.events import (
 )
 from a13n_harness.identity import AgentInstanceContext
 from a13n_harness.input import RunInputValue
-from a13n_harness.observation import observe_operation
+from a13n_harness.observation import observe_operation, observe_output, record_span_metadata
 from a13n_harness.result import HarnessRunResult
 from a13n_harness.state import HarnessState
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
@@ -191,7 +191,15 @@ class DelegationToolset:
                     "delegation",
                     capability_id=self._owner.id,
                     operation_id=invocation_id,
-                ):
+                ) as span:
+                    record_span_metadata(
+                        span,
+                        {
+                            "delegation.role": subagent,
+                            "delegation.child_id": reserved_id,
+                            "delegation.continuation": continuation,
+                        },
+                    )
                     bindings = _create_inline_child_bindings(ctx, child, reserved_id)
                     bindings = await _finalize_child_bindings(ctx, child, bindings)
                     result = await self._run_child(
@@ -203,6 +211,18 @@ class DelegationToolset:
                         bindings,
                         selected_state,
                         limits,
+                    )
+                    record_span_metadata(
+                        span,
+                        {
+                            "delegation.result_status": result.status,
+                            "delegation.state_available": result.state is not None,
+                        },
+                    )
+                    observe_output(
+                        span,
+                        {"child_id": reserved_id, "status": result.status, "state_available": result.state is not None},
+                        status="returned",
                     )
             except asyncio.CancelledError:
                 raise

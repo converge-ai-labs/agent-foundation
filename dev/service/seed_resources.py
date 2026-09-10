@@ -9,6 +9,7 @@ from a13n_service.settings import Settings
 
 from .seed_assets import asset_examples
 from .seed_client import Client
+from .seed_environments import local_workspace
 
 FIXTURES = Path(__file__).with_name("fixtures")
 AGENT_NAMES = (
@@ -103,30 +104,11 @@ async def resources(client: Client, base: str, model_url: str, settings: Setting
         json={"type": "a13n.direct-local", "name": "Local development files", "configuration": {}},
     )
     root = settings.filesystem.root / "workspace"
-    root.mkdir(parents=True, mode=0o700)
+    workspace = await local_workspace(client, base, provider["id"], root, "Local review workspace")
     publication_path = root / "published-review.md"
     publication_path.write_bytes((FIXTURES / "brief.md").read_bytes())
-    template = await client.request(
-        "POST",
-        base + "/environment-templates",
-        expected=201,
-        json={
-            "name": "Local review workspace",
-            "provider_id": provider["id"],
-            "access": "full",
-            "preparation": "on_run",
-            "retention": {"idle": {"stop_after": None, "delete_after": None}},
-            "configuration": {
-                "root": {"path": str(root)},
-                "shell_profiles": [{"profile_id": "default", "executable": "/bin/sh"}],
-            },
-        },
-    )
-    environment = await client.request(
-        "POST", base + "/environments", expected=201, json={"template_id": template["id"]}
-    )
-    scenarios["environment_shared"] = environment["id"]
-    scenarios["environment_template"] = template["id"]
+    scenarios["environment_shared"] = workspace["environment_id"]
+    scenarios["environment_template"] = workspace["template_id"]
     assets, skills, agents, skill_keys, asset_checks = [], [], [], [], []
     examples = asset_examples()
     for index in range(64):
@@ -211,7 +193,8 @@ async def resources(client: Client, base: str, model_url: str, settings: Setting
         "assets": assets,
         "skills": skills,
         "agents": agents,
-        "environment_id": environment["id"],
+        "environment_id": workspace["environment_id"],
+        "environment_provider_id": provider["id"],
         "asset_checks": asset_checks,
         "publication_path": str(publication_path),
         "scenarios": scenarios,

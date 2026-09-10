@@ -9,6 +9,4 @@
 | observability                                  | Local trace-backend infrastructure, including Langfuse                        |
 | [observation-demo](observation-demo/README.md) | Runnable observation demonstration                                            |
 
-Keep configuration, source fixtures and tools together under their owning purpose.
-Generated local Service state belongs in the ignored root `var/` directory. The
-root Makefile is the stable developer command interface.
+Keep configuration, source fixtures and tools together under their owning purpose. Generated local Service state belongs in the ignored root `var/` directory. The root Makefile is the stable developer command interface.

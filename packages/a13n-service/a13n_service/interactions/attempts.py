@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from a13n_harness import SafeFailure
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import load_only
 
 from a13n_service.lifecycle import new_mutation_id
 from a13n_service.storage import short_session, transaction
@@ -110,7 +111,7 @@ class AttemptExecutionService:
 
         now = assume_utc(self._clock())
         async with short_session(self._sessions) as session:
-            run, attempt, _ = await read_attempt_authority(session, authority, now)
+            run, attempt, _ = await read_attempt_authority(session, authority, now, load_execution_state=False)
             return _receipt(run, attempt)
 
     async def heartbeat(
@@ -394,10 +395,12 @@ async def read_attempt_authority(
     session: AsyncSession,
     authority: AttemptContext,
     now: datetime,
+    *,
+    load_execution_state: bool = True,
 ) -> tuple[RunRecord, RunAttemptRecord, ThreadRecord]:
-    """Validate read authority without treating a concurrent heartbeat as lease loss."""
+    """Validate current authority; pure checks can omit execution payloads and budgets."""
 
-    result = await session.execute(
+    statement = (
         select(RunRecord, RunAttemptRecord, ThreadRecord)
         .join(
             RunAttemptRecord,
@@ -411,6 +414,30 @@ async def read_attempt_authority(
         )
         .where(RunRecord.organization_id == authority.organization_id, RunRecord.id == authority.run_id)
     )
+    if not load_execution_state:
+        statement = statement.options(
+            load_only(
+                RunRecord.id,
+                RunRecord.thread_id,
+                RunRecord.status,
+                RunRecord.current_run_attempt_id,
+                RunRecord.version,
+                raiseload=True,
+            ),
+            load_only(
+                RunAttemptRecord.id,
+                RunAttemptRecord.status,
+                RunAttemptRecord.attempt_number,
+                RunAttemptRecord.worker_id,
+                RunAttemptRecord.worker_build_id,
+                RunAttemptRecord.lease_token_digest,
+                RunAttemptRecord.lease_expires_at,
+                RunAttemptRecord.version,
+                raiseload=True,
+            ),
+            load_only(ThreadRecord.current_run_id, raiseload=True),
+        )
+    result = await session.execute(statement)
     row = result.one_or_none()
     if row is None:
         raise AttemptAuthorityError("Attempt authority was not found")
