@@ -193,7 +193,14 @@ def trace_environment(langfuse: Langfuse) -> dict[str, str]:
     """Local launchers own OTEL wiring; ambient collectors must never receive local data."""
     langfuse.validate()
     env = {key: value for key, value in os.environ.items() if not key.startswith("OTEL_")}
-    env.update(OTEL_TRACES_EXPORTER="none", OTEL_METRICS_EXPORTER="none", OTEL_LOGS_EXPORTER="none")
+    env.update(
+        OTEL_TRACES_EXPORTER="none",
+        OTEL_METRICS_EXPORTER="none",
+        OTEL_LOGS_EXPORTER="none",
+        OTEL_RESOURCE_ATTRIBUTES=(
+            "deployment.environment.name=" + langfuse.environment.settings.service.deployment_environment_name
+        ),
+    )
     # Requests (OTLP) and HTTPX (query/model) honor different casing precedence.
     # Preserve remote proxy policy while forcing local development traffic direct.
     bypass = ",".join(filter(None, [env.get("NO_PROXY"), env.get("no_proxy"), "127.0.0.1,localhost,::1"]))

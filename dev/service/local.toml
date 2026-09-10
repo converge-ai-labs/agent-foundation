@@ -7,6 +7,8 @@
 role = "all"
 host = "127.0.0.1"
 port = 8000
+# Exported as deployment.environment.name; trace backends show Env: local.
+# This is independent of the Run's execution Environment/provider.
 deployment_environment_name = "local"
 
 [database]

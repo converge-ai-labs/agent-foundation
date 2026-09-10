@@ -98,7 +98,9 @@ def test_standard_export_profile_replaces_all_ambient_otel_settings(tmp_path, mo
     assert env["OTEL_BSP_SCHEDULE_DELAY"] == "500"
     assert "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT" not in env
     assert "OTEL_EXPORTER_OTLP_TRACES_HEADERS" not in env
-    assert "OTEL_RESOURCE_ATTRIBUTES" not in env
+    assert env["OTEL_RESOURCE_ATTRIBUTES"] == (
+        "deployment.environment.name=" + langfuse.environment.settings.service.deployment_environment_name
+    )
     expected = base64.b64encode(b"lf_pk_agent_foundation_local:lf_sk_agent_foundation_local").decode()
     assert env["OTEL_EXPORTER_OTLP_HEADERS"] == f"Authorization=Basic%20{expected},x-langfuse-ingestion-version=4"
     before = dict(os.environ)

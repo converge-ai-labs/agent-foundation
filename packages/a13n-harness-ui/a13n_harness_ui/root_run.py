@@ -22,7 +22,7 @@ from pydantic_ai.usage import RunUsage
 from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError
 from a13n_harness_ui.live import HarnessUiSummaryHub
-from a13n_harness_ui.observation import UiObservation, finish_operation
+from a13n_harness_ui.observation import UiObservation, finish_operation, record_input, record_output
 from a13n_harness_ui.root_execution import RootRunExecutor, RootRunOutcome
 from a13n_harness_ui.root_input import RootInputFiles, detach_input
 from a13n_harness_ui.storage import ThreadConfigurationMutation
@@ -367,7 +367,14 @@ class RootRunCoordinator:
         with self._observation.operation(
             "root", thread_id=operation.receipt.thread_id, operation_id=operation.receipt.receipt_id
         ) as span:
+            record_input(
+                prompt if response is None else response, kind="prompt" if response is None else "deferred_response"
+            )
             await self._execute_operation(operation, prompt, response, mutation, model_overrides)
+            record_output(
+                operation.outcome.execution.output if operation.outcome is not None else None,
+                status=operation.status.value,
+            )
             finish_operation(
                 span,
                 status=operation.status.value,

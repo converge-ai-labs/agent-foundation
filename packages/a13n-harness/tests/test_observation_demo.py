@@ -109,7 +109,13 @@ async def test_observation_demo_exports_complete_trace(
         assert span.parent is None or span.parent.span_id in span_ids
         assert span.status.status_code != StatusCode.ERROR
         assert span.attributes["langfuse.trace.name"] == f"observation-{scenario}"
-        assert span.attributes["langfuse.session.id"] == "observation-demo-2026-08"
+        thread_id = span.attributes.get("a13n.thread.id")
+        expected_session = (
+            "observation-demo-2026-08"
+            if thread_id is None or thread_id == root.attributes["a13n.thread.id"]
+            else thread_id
+        )
+        assert span.attributes["langfuse.session.id"] == expected_session
         assert "must-not-be-projected" not in str(dict(span.attributes))
 
     parent = root
@@ -151,3 +157,5 @@ async def test_observation_demo_exports_complete_trace(
             assert attributes["gen_ai.usage.cost"] == pytest.approx(0.00125)
             assert attributes["a13n.usage.pricing.status"] == "applied"
             assert attributes["a13n.usage.cost.source"] == "custom"
+            assert attributes["langfuse.observation.metadata.usage_cost_source"] == "custom"
+            assert attributes["langfuse.observation.metadata.usage_pricing_rule_id"] == "synthetic-fixed-cost"

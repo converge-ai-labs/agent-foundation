@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.environments.usage import refresh_run_retention
 from a13n_service.lifecycle import new_mutation_id
+from a13n_service.observability import remember_output
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
@@ -295,12 +296,13 @@ class RunOutcomeService:
             validate_outcome_candidate_scope(state, run, thread)
         candidate = state.envelope.outcome_candidate
         if isinstance(candidate, CompletedOutcomeCandidate) and candidate.output_object is not None:
-            await self._payloads.verify_reference(
+            payload = await self._payloads.verify_reference(
                 authority.organization_id,
                 authority.run_id,
                 "output",
                 candidate.output_object,
             )
+            remember_output(candidate.output_object.digest_sha256, payload.payload)
         return VerifiedRunOutcome(state, authority.organization_id, authority.run_id, self._verifier)
 
     async def _best_effort_signal(self, *, organization_id: str, thread_id: str) -> None:

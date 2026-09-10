@@ -176,7 +176,9 @@ async def test_auto_recall_is_once_per_logical_run_and_persists_input_overlays()
         if span.name == "harness.operation" and span.attributes.get("a13n.operation.kind") == "memory_recall"
     ]
     assert len(operation_spans) == 1
-    assert dict(operation_spans[0].attributes) == {"a13n.operation.kind": "memory_recall"}
+    assert operation_spans[0].attributes["a13n.operation.kind"] == "memory_recall"
+    assert "langfuse.session.id" in operation_spans[0].attributes
+    assert "The user prefers tea." not in str(operation_spans[0].attributes)
     points = _metric_map(reader)["a13n.harness.operation.duration"].data.data_points
     assert any(dict(point.attributes) == {"a13n.operation.kind": "memory_recall"} for point in points)
 

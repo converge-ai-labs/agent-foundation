@@ -21,7 +21,7 @@ from a13n_service.interactions.control_wakeups import AttemptControlWakeups
 from a13n_service.interactions.harness_results import StoredHarnessOutcomeAdapter
 from a13n_service.interactions.harness_runtime import HarnessDriver
 from a13n_service.interactions.inbox import DatabaseThreadInboxReconciler, RedisThreadControlSignals, ThreadInboxStore
-from a13n_service.interactions.models import RunAttemptRecord, SessionRecord
+from a13n_service.interactions.models import RunAttemptRecord, RunRecord, SessionRecord
 from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
 from a13n_service.interactions.outcomes import RunOutcomeService
 from a13n_service.interactions.queue_completion import QueueCompletion
@@ -30,7 +30,7 @@ from a13n_service.interactions.terminal_committer import DatabaseAttemptCommitte
 from a13n_service.interactions.worker import WorkerCapacitySlot
 from a13n_service.interactions.worker_input import WorkerInputMaterializer, WorkerInputSources
 from a13n_service.interactions.worker_preparation import WorkerAttemptPreparer
-from a13n_service.observability import ObservabilityRuntime, RunAttemptCorrelation, RunAttemptOutcome
+from a13n_service.observability import ObservabilityRuntime, RecoveryReason, RunAttemptCorrelation, RunAttemptOutcome
 from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import SharedRuntime
 from a13n_service.run_stream import RedisRunStream, RunReplayStore
@@ -43,6 +43,14 @@ from a13n_service.storage import short_session
 from a13n_service.subagents.result_delivery import AsyncSubagentResultMaterializer
 from a13n_service.subagents.runtime import ServiceSubagents
 from a13n_service.temporal import utc_now
+
+_RECOVERY_REASONS: dict[str, RecoveryReason] = {
+    "lease_expired": "lease_expired",
+    "attempt_failed": "retry_after_failure",
+    "retry_after_failure": "retry_after_failure",
+    "planned_handoff": "planned_handoff",
+    "pending_input": "pending_input",
+}
 
 
 class WorkerAttempts:
@@ -124,11 +132,14 @@ class WorkerAttempts:
             agent_revision_id=run.agent_revision_id,
             model_id=run.model_execution_observation.model_id,
             replaces_run_attempt_id=attempt.replaces_run_attempt_id,
+            recovery_reason=_RECOVERY_REASONS.get(attempt.start_reason or "") if attempt.attempt_number > 1 else None,
         )
         trace_scope = (
             nullcontext(None)
             if self._observability is None
-            else self._observability.run_attempt(correlation, input_value=run.input)
+            else self._observability.run_attempt(
+                correlation, input_value=run.input, input_external=run.input_object is not None
+            )
         )
         with trace_scope as trace:
             sources = WorkerInputSources(
@@ -219,5 +230,34 @@ class WorkerAttempts:
             if trace is not None:
                 async with short_session(sessions) as session:
                     finished = await session.get(RunAttemptRecord, context.run_attempt_id)
-                    if finished is not None and finished.status in {"succeeded", "yielded", "failed", "cancelled"}:
-                        trace.set_outcome(cast(RunAttemptOutcome, finished.status))
+                    finished_attempt = finished.to_resource() if finished is not None else None
+                    completed = await session.get(RunRecord, context.run_id)
+                    # A succeeded Attempt can merely wait or continue. A later Attempt
+                    # can also seal this Run before the current Worker's final read.
+                    committed = (
+                        completed.to_resource()
+                        if completed is not None
+                        and completed.status == "completed"
+                        and completed.sealed_state_committed_by_run_attempt_id == context.run_attempt_id
+                        else None
+                    )
+                if finished_attempt is not None and finished_attempt.status in {
+                    "succeeded",
+                    "yielded",
+                    "failed",
+                    "cancelled",
+                }:
+                    failure = finished_attempt.failure
+                    if committed is not None and finished_attempt.status == "succeeded":
+                        trace.set_outcome(
+                            "succeeded",
+                            output_value=committed.output,
+                            output_object_digest=(
+                                committed.output_object.digest_sha256 if committed.output_object is not None else None
+                            ),
+                        )
+                    else:
+                        trace.set_outcome(
+                            cast(RunAttemptOutcome, finished_attempt.status),
+                            failure_code=failure.code if failure is not None else None,
+                        )

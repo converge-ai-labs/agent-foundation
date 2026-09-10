@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -51,6 +52,7 @@ _REGISTERED_SPAN_NAMES = _PHASE_NAMES | {_RUN_ATTEMPT_ROOT}
 _MAX_CORRELATION_BYTES = 1024
 _MAX_FAILURE_CODE_BYTES = 256
 _DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 30.0
+_MISSING_CONTENT = object()
 _RESOURCE_OVERRIDE_KEYS = frozenset(
     {
         "service.name",
@@ -78,7 +80,7 @@ _LINK_KINDS = frozenset(
 )
 
 RunAttemptOutcome = Literal["succeeded", "yielded", "failed", "cancelled"]
-RecoveryReason = Literal["lease_expired", "retry_after_failure", "planned_handoff"]
+RecoveryReason = Literal["lease_expired", "retry_after_failure", "planned_handoff", "pending_input"]
 
 
 class TraceContent(StrEnum):
@@ -129,6 +131,7 @@ class RunAttemptCorrelation:
             "lease_expired",
             "retry_after_failure",
             "planned_handoff",
+            "pending_input",
         }:
             raise ValueError("recovery_reason is invalid")
 
@@ -160,6 +163,36 @@ _current_run_attempt: ContextVar[RunAttemptCorrelation | None] = ContextVar(
     "a13n_service_current_run_attempt",
     default=None,
 )
+
+
+_current_attempt_trace: ContextVar[RunAttemptTrace | None] = ContextVar(
+    "a13n_service_current_attempt_trace", default=None
+)
+
+
+def observe_input(value: object) -> None:
+    """Reuse the accepted payload already materialized by Worker preparation."""
+    attempt = _current_attempt_trace.get()
+    if attempt is not None:
+        attempt.set_input(value)
+
+
+def remember_output(object_digest: str, value: object) -> None:
+    """Retain one externalized candidate locally, without publishing uncommitted output."""
+    attempt = _current_attempt_trace.get()
+    if attempt is not None:
+        attempt.remember_output(object_digest, value)
+
+
+@contextmanager
+def observe_phase(name: str) -> Generator[APISpan | None]:
+    """Time an actual Service phase under the active Attempt, never an ambient Host span."""
+    attempt = _current_attempt_trace.get()
+    if attempt is None or attempt._ended:
+        yield None
+        return
+    with attempt.phase(name) as span:
+        yield span
 
 
 class _RunAttemptSpanProcessor(SpanProcessor):
@@ -248,7 +281,8 @@ class ObservabilityRuntime:
         self,
         correlation: RunAttemptCorrelation,
         *,
-        input_value: object | None = None,
+        input_value: object = _MISSING_CONTENT,
+        input_external: bool = False,
         links: tuple[Link, ...] = (),
     ) -> Generator[RunAttemptTrace]:
         """Start one parentless Attempt root and keep it current for its lifecycle."""
@@ -266,10 +300,7 @@ class ObservabilityRuntime:
             span = tracer.start_span(
                 _RUN_ATTEMPT_ROOT,
                 context=Context(),
-                attributes={
-                    **correlation.attributes(),
-                    **_content_attributes("input", input_value, self.trace_content),
-                },
+                attributes=correlation.attributes(),
                 links=links,
             )
         except BaseException:
@@ -282,12 +313,15 @@ class ObservabilityRuntime:
             _current_run_attempt.reset(run_token)
             raise
         attempt = RunAttemptTrace(span, self.trace_content, tracer=tracer)
+        attempt.set_input(input_value, external=input_external)
+        attempt_token = _current_attempt_trace.set(attempt)
         try:
             yield attempt
         except BaseException:
             attempt.mark_local_error()
             raise
         finally:
+            _current_attempt_trace.reset(attempt_token)
             otel_context.detach(otel_token)
             _current_run_attempt.reset(run_token)
             attempt.end()
@@ -339,12 +373,46 @@ class RunAttemptTrace:
         self._tracer = tracer
         self._ended = False
         self._outcome: RunAttemptOutcome | None = None
+        self._pending_output: tuple[str, object] | None = None
+
+    def set_input(self, value: object, *, external: bool = False) -> None:
+        self._set_content(
+            "input", _MISSING_CONTENT if external else value, "external_payload" if external else "unavailable"
+        )
+
+    def remember_output(self, object_digest: str, value: object) -> None:
+        if self._captures_content():
+            self._pending_output = (object_digest, value)
+
+    def _captures_content(self) -> bool:
+        return (
+            not self._ended
+            and self._span is not None
+            and self._span.is_recording()
+            and self._trace_content is not TraceContent.none
+        )
+
+    def _set_content(self, prefix: str, value: object, omitted: str) -> None:
+        if self._span is None or self._ended or not self._span.is_recording():
+            return
+        try:
+            if self._trace_content is TraceContent.none:
+                status = "content_disabled"
+            elif value is _MISSING_CONTENT:
+                status = omitted
+            else:
+                self._span.set_attributes(_content_attributes(prefix, value, self._trace_content))
+                status = "captured"
+            self._span.set_attribute(f"a13n.run_attempt.{prefix}.capture", status)
+        except Exception:
+            _safe_warning("observability_content_projection_failed")
 
     def set_outcome(
         self,
         outcome: RunAttemptOutcome,
         *,
-        output_value: object | None = None,
+        output_value: object = _MISSING_CONTENT,
+        output_object_digest: str | None = None,
         failure_code: str | None = None,
     ) -> None:
         """Project only a matching authoritative durable Attempt decision."""
@@ -366,36 +434,66 @@ class RunAttemptTrace:
         self._span.set_attribute("a13n.run_attempt.outcome", outcome)
         if failure_code is not None:
             self._span.set_attribute("a13n.run_attempt.failure.code", failure_code)
-        if outcome == "succeeded":
-            for key, value in _content_attributes("output", output_value, self._trace_content).items():
-                self._span.set_attribute(key, value)
+        omitted = "not_committed"
+        if outcome != "succeeded":
+            output_value = _MISSING_CONTENT
+        elif output_object_digest is not None:
+            pending = self._pending_output
+            output_value = (
+                pending[1] if pending is not None and pending[0] == output_object_digest else _MISSING_CONTENT
+            )
+            omitted = "external_payload"
+        self._set_content("output", output_value, omitted)
+        self._pending_output = None
         if outcome == "failed":
             self._span.set_status(Status(StatusCode.ERROR))
 
     @contextmanager
-    def phase(self, name: str) -> Generator[None]:
+    def phase(self, name: str) -> Generator[APISpan | None]:
         """Observe one stable Service-owned execution phase."""
 
         if name not in _PHASE_NAMES:
             raise ValueError("Service phase name is not registered")
-        if self._tracer is None:
-            yield
+        if self._tracer is None or self._ended:
+            yield None
             return
         if self._span is None:
             raise RuntimeError("RunAttempt root span is unavailable")
-        span = self._tracer.start_span(
-            name,
-            context=trace.set_span_in_context(self._span, Context()),
-        )
-        token = otel_context.attach(trace.set_span_in_context(span))
         try:
-            yield
-        except BaseException:
-            span.set_status(Status(StatusCode.ERROR))
+            span = self._tracer.start_span(
+                name,
+                context=trace.set_span_in_context(self._span, Context()),
+            )
+        except Exception:
+            _safe_warning("observability_phase_start_failed")
+            yield None
+            return
+        token = otel_context.attach(trace.set_span_in_context(span))
+        outcome = "succeeded"
+        error_type: str | None = None
+        try:
+            yield span
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
+        except BaseException as error:
+            outcome = "failed"
+            error_type = type(error).__name__[:256]
             raise
         finally:
             otel_context.detach(token)
-            span.end()
+            try:
+                span.set_attribute("a13n.service.phase.outcome", outcome)
+                if error_type is not None:
+                    span.set_attribute("error.type", error_type)
+                    span.set_status(Status(StatusCode.ERROR))
+            except Exception:
+                _safe_warning("observability_phase_attributes_failed")
+            finally:
+                try:
+                    span.end()
+                except Exception:
+                    _safe_warning("observability_phase_end_failed")
 
     def mark_local_error(self) -> None:
         if self._span is not None:
@@ -405,6 +503,7 @@ class RunAttemptTrace:
         if self._ended:
             return
         self._ended = True
+        self._pending_output = None
         if self._span is not None:
             self._span.end()
 
@@ -586,8 +685,8 @@ def _sampler_from_environment() -> Sampler:
     raise ValueError("OTEL_TRACES_SAMPLER selects an unsupported head sampler")
 
 
-def _content_attributes(prefix: str, value: object | None, content: TraceContent) -> dict[str, str]:
-    if content is TraceContent.none or value is None:
+def _content_attributes(prefix: str, value: object, content: TraceContent) -> dict[str, str]:
+    if content is TraceContent.none or value is _MISSING_CONTENT:
         return {}
     if isinstance(value, str):
         return {f"{prefix}.value": value, f"{prefix}.mime_type": "text/plain"}
@@ -622,10 +721,14 @@ def _safe_warning(event: str) -> None:
 __all__ = [
     "INSTRUMENTATION_SCOPE",
     "ObservabilityRuntime",
+    "RecoveryReason",
     "RunAttemptCorrelation",
     "RunAttemptOutcome",
     "RunAttemptTrace",
     "TraceContent",
     "build_observability_runtime",
+    "observe_input",
+    "observe_phase",
+    "remember_output",
     "valid_span_link",
 ]

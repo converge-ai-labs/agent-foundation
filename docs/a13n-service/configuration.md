@@ -101,6 +101,34 @@ Most fields use the uppercase section and name, but these mappings are intention
 
 Arrays are TOML arrays in the file and JSON arrays in environment variables. Standard `OTEL_*` inputs configure telemetry transport independently; they are not aliases for every Service setting.
 
+## Trace deployment environment
+
+Set `[service].deployment_environment_name = "local"` for local execution;
+the repository's `dev/service/local.toml` already declares this explicitly.
+Service exports the value as the OpenTelemetry resource attribute
+`deployment.environment.name`, used by Langfuse's environment filter. This label
+is independent of the Run's execution Environment or provider. Restart Service
+after changing it; existing traces retain their original labels. The dev launcher
+also derives `OTEL_RESOURCE_ATTRIBUTES` from this setting for its OTLP profile.
+
+## Reading execution traces
+
+Service uses one `a13n.service.run_attempt` root per worker Attempt, with the existing Harness and model/tool spans beneath it. Root attributes identify the Run and Attempt, the stored recovery reason, and the final durable outcome and safe failure code. A retry starts a new trace, not a continuation of an unbounded Thread trace.
+
+Three coarse Service spans explain time outside model execution:
+
+- `a13n.service.reconstruct`: dependency checks and invocation preparation, ending before Harness starts.
+- `a13n.service.environment.prepare`: actual Environment creation, connection, or recovery. For `on_use`, this appears only on first use or recovery; an unused lazy Environment produces no preparation span.
+- `a13n.service.persist`: final state/result publication and the Attempt decision, including saved-outcome recovery and failure publication. A successful Harness can still be followed by failed persistence.
+
+Each phase records its local outcome; failures include an exception class, not raw exception text. Eager Environment preparation overlaps reconstruction, so do not sum all phase durations. Use the root's durable outcome to decide whether the Attempt succeeded.
+
+At `standard` or `full`, the root's `input.value` contains the accepted Run input, including external payloads once ordinary preparation reads them. `output.value` contains the final user-visible Run output only after persistence is confirmed for this Attempt, not merely the last model response. Waiting, continuing, failed, cancelled, and yielded Attempts have no final output. Text and JSON retain their values; system prompts and history are not copied into the root.
+
+Inspect `a13n.run_attempt.input.capture` and `a13n.run_attempt.output.capture` when a value is absent: `content_disabled` means policy suppressed it, `external_payload` means no matching body was available locally, and `not_committed` means this Attempt has no confirmed final output. `unavailable` denotes missing input at the observation boundary. External output already read for ordinary integrity verification, including recovery, is reused after its digest matches the committed reference. No payload is fetched just for tracing. Read the Run resource for the authoritative result.
+
+These diagnostics remain available at `observability.trace_content="none"` when tracing and export are configured. This setting suppresses ordinary execution payload capture, but is not a guarantee that upstream model/tool instrumentation is secret-free.
+
 ## Roles and migration authority
 
 | Role           | Responsibility                                               | Schema behavior                                                             |

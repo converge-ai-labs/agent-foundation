@@ -18,6 +18,7 @@ from uuid import uuid4
 
 from a13n_logging import get_logger
 from anyio import CancelScope
+from opentelemetry.trace import StatusCode
 from pydantic import BaseModel, ConfigDict, JsonValue, PydanticSchemaGenerationError, TypeAdapter, ValidationError
 from pydantic_ai import Agent
 from pydantic_ai.agent import AgentRunEvents
@@ -186,6 +187,7 @@ from a13n_harness.observation import (
     _LogicalRunObservation,
     _ObservationRuntime,
     observe_operation,
+    observe_phase,
 )
 from a13n_harness.output_schema import structured_output_type
 from a13n_harness.plugin_configuration import HarnessBuildContext, HarnessPluginConfiguration
@@ -1360,83 +1362,103 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             instance=self._bindings.instance,
             observation_context=self._bindings.observation,
         )
-        activation = self._observation.activate() if self._observation is not None else None
+        activation = (
+            self._observation.activate() if self._observation is not None else _LogicalRunObservation.suppress()
+        )
         try:
-            self._environment_ready = asyncio.get_running_loop().create_future()
-            self._environment_lifecycle_task = asyncio.create_task(self._run_environment_lifecycle())
-            environment = await asyncio.shield(self._environment_ready)
-            self._environment_ready_delivered = True
-            preparation = RunPreparationContext(
-                run_id=self.run_id,
-                instance=self._bindings.instance,
-                environment=environment,
-                metadata=self._bindings.metadata,
-            )
-            input_value = self._input
-            if self._input_factory is not None:
+            with observe_phase("prepare") as phase:
+                phase.set_attribute("a13n.phase.step", "environment")
+                self._environment_ready = asyncio.get_running_loop().create_future()
+                # This task outlives preparation and also owns Environment teardown.
+                # Keep its ambient parent at Run scope, not an already-ended prepare span.
+                environment_activation = (
+                    self._observation.activate() if self._observation is not None else _LogicalRunObservation.suppress()
+                )
                 try:
-                    input_value = await self._input_factory(preparation)
-                except Exception as exc:
-                    raise RunError("Run input factory failed.", code="input_factory_failed") from exc
-            semantic_input = normalize_input(input_value)
-            plugin_context = BoundPluginContext()
-            usage_attribution = RunUsageLedger(
-                run_id=self.run_id,
-                instance=self._bindings.instance,
-                events=self._emitter,
-            )
-            context_state = AgentContextState(self._previous_state.agent_context_state)
-            context = AgentContext(
-                run_id=self.run_id,
-                thread_id=self._previous_state.thread_id,
-                instance=self._bindings.instance,
-                state=context_state,
-                environment=environment,
-                model_resolver=self._bindings.model_resolver,
-                model_characteristics=(
-                    self._executable.definition.agent.model_characteristics
-                    if isinstance(self._executable.definition.agent, HarnessAgentSpec)
-                    else None
-                ),
-                _model_inference=self._executable._model_inference,
-                toolset_instructions=(
-                    self._bindings.toolset_instructions
-                    if self._bindings.toolset_instructions is not None
-                    else _normalize_toolset_instructions(self._executable.definition.agent)
-                ),
-                _toolset_instructions_override=self._bindings.toolset_instructions,
-                model_context=self._bindings.model_context,
-                _inherited_model_cost=self._bindings._inherited_model_cost,
-                plugins=plugin_context,
-                subagents=self._executable.subagents,
-                events=self._emitter,
-                usage_attribution=usage_attribution,
-                deferred_resume=self._deferred_resume,
-                metadata=self._bindings.metadata,
-                _steering=SteeringBridge(
-                    context_state,
+                    self._environment_lifecycle_task = asyncio.create_task(self._run_environment_lifecycle())
+                finally:
+                    _LogicalRunObservation.deactivate(environment_activation)
+                environment = await asyncio.shield(self._environment_ready)
+                self._environment_ready_delivered = True
+                phase.set_attribute("a13n.phase.step", "input")
+                preparation = RunPreparationContext(
                     run_id=self.run_id,
-                    retain_inputs=bool(
-                        {COMPACTION_CAPABILITY_ID, HANDOFF_CAPABILITY_ID}
-                        & self._executable._definition_reserved_capability_ids
-                    ),
+                    instance=self._bindings.instance,
+                    environment=environment,
+                    metadata=self._bindings.metadata,
+                )
+                input_value = self._input
+                if self._input_factory is not None:
+                    try:
+                        input_value = await self._input_factory(preparation)
+                    except Exception as exc:
+                        raise RunError("Run input factory failed.", code="input_factory_failed") from exc
+                semantic_input = normalize_input(input_value)
+                if self._observation is not None:
+                    self._observation.record_input(
+                        semantic_input.value,
+                        kind="deferred_response" if self._deferred_resume is not None else "prompt",
+                    )
+                phase.set_attribute("a13n.phase.step", "context")
+                plugin_context = BoundPluginContext()
+                usage_attribution = RunUsageLedger(
+                    run_id=self.run_id,
+                    instance=self._bindings.instance,
                     events=self._emitter,
-                ),
-                _skill_selection_names=self._skill_selection_names,
-                _capability_provenance=_CapabilityProvenance(
-                    definition_ids=self._executable._definition_reserved_capability_ids,
-                    run_ids=self._run_reserved_capability_ids,
-                ),
-            )
-            self._context = context
-            run_plugins = await bind_run_plugins(self._executable._plugins, context)
-            exchange = PluginRunExchange(
-                input=semantic_input,
-                context=context,
-                _state_exporter=self.export_state,
-            )
-            self._response = self._build_response(run_plugins, 0, exchange)
-            return self
+                )
+                context_state = AgentContextState(self._previous_state.agent_context_state)
+                context = AgentContext(
+                    run_id=self.run_id,
+                    thread_id=self._previous_state.thread_id,
+                    instance=self._bindings.instance,
+                    state=context_state,
+                    environment=environment,
+                    model_resolver=self._bindings.model_resolver,
+                    model_characteristics=(
+                        self._executable.definition.agent.model_characteristics
+                        if isinstance(self._executable.definition.agent, HarnessAgentSpec)
+                        else None
+                    ),
+                    _model_inference=self._executable._model_inference,
+                    toolset_instructions=(
+                        self._bindings.toolset_instructions
+                        if self._bindings.toolset_instructions is not None
+                        else _normalize_toolset_instructions(self._executable.definition.agent)
+                    ),
+                    _toolset_instructions_override=self._bindings.toolset_instructions,
+                    model_context=self._bindings.model_context,
+                    _inherited_model_cost=self._bindings._inherited_model_cost,
+                    plugins=plugin_context,
+                    subagents=self._executable.subagents,
+                    events=self._emitter,
+                    usage_attribution=usage_attribution,
+                    deferred_resume=self._deferred_resume,
+                    metadata=self._bindings.metadata,
+                    _steering=SteeringBridge(
+                        context_state,
+                        run_id=self.run_id,
+                        retain_inputs=bool(
+                            {COMPACTION_CAPABILITY_ID, HANDOFF_CAPABILITY_ID}
+                            & self._executable._definition_reserved_capability_ids
+                        ),
+                        events=self._emitter,
+                    ),
+                    _skill_selection_names=self._skill_selection_names,
+                    _capability_provenance=_CapabilityProvenance(
+                        definition_ids=self._executable._definition_reserved_capability_ids,
+                        run_ids=self._run_reserved_capability_ids,
+                    ),
+                )
+                self._context = context
+                phase.set_attribute("a13n.phase.step", "plugins")
+                run_plugins = await bind_run_plugins(self._executable._plugins, context)
+                exchange = PluginRunExchange(
+                    input=semantic_input,
+                    context=context,
+                    _state_exporter=self.export_state,
+                )
+                self._response = self._build_response(run_plugins, 0, exchange)
+                return self
         except asyncio.CancelledError as exc:
             await self._close_resources(outcome=None, cancellation=exc)
             raise
@@ -1444,8 +1466,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             await self._close_resources(outcome=None, failure=exc)
             raise
         finally:
-            if activation is not None:
-                _LogicalRunObservation.deactivate(activation)
+            _LogicalRunObservation.deactivate(activation)
 
     async def _run_environment_lifecycle(self) -> None:
         ready = self._environment_ready
@@ -1519,7 +1540,9 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         traceback: object,
     ) -> None:
         del exc_type, traceback
-        activation = self._observation.activate() if self._observation is not None else None
+        activation = (
+            self._observation.activate() if self._observation is not None else _LogicalRunObservation.suppress()
+        )
         try:
             if self._terminal_close_task is not None:
                 await self._terminal_close_task
@@ -1532,8 +1555,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                     failure=failure,
                 )
         finally:
-            if activation is not None:
-                _LogicalRunObservation.deactivate(activation)
+            _LogicalRunObservation.deactivate(activation)
 
     def __aiter__(self) -> HarnessRunStream[OutputT]:
         if not self._entered or self._closed:
@@ -1552,12 +1574,13 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 code="run_stream_concurrent_next",
             )
         self._next_active = True
-        activation = self._observation.activate() if self._observation is not None else None
+        activation = (
+            self._observation.activate() if self._observation is not None else _LogicalRunObservation.suppress()
+        )
         try:
             return await self._next_item()
         finally:
-            if activation is not None:
-                _LogicalRunObservation.deactivate(activation)
+            _LogicalRunObservation.deactivate(activation)
             self._next_active = False
 
     async def _next_item(self) -> HarnessStreamEvent[OutputT]:
@@ -2569,67 +2592,76 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         if failure is not None and cancellation is None:
             self._diagnostic_error = failure
 
-        fence_failure: BaseException | None = None
-        try:
-            self._environment_binding._begin_close()
-        except BaseException as exc:
-            fence_failure = exc
-
-        current_task = asyncio.current_task()
-        causes: list[BaseException] = [] if fence_failure is None else [fence_failure]
-
-        def capture_pending_cancellation(exc: asyncio.CancelledError | None = None) -> bool:
-            nonlocal cancellation
-            if current_task is None or not current_task.cancelling():
-                return False
-            if cancellation is None:
-                cancellation = exc or asyncio.CancelledError()
-            while current_task.cancelling():
-                current_task.uncancel()
-            return True
-
-        capture_pending_cancellation(cancellation)
-
-        async def finish_cleanup(awaitable: Awaitable[None]) -> None:
+        with observe_phase("finalize") as phase:
+            fence_failure: BaseException | None = None
             try:
-                # Cleanup normally stays in the task that entered plugin and AnyIO scopes.
-                await awaitable
-            except asyncio.CancelledError as exc:
-                if not capture_pending_cancellation(exc):
-                    causes.append(exc)
+                self._environment_binding._begin_close()
             except BaseException as exc:
-                causes.append(exc)
-            finally:
-                # Cleanup code may suppress or translate the injected CancelledError.
-                capture_pending_cancellation()
+                fence_failure = exc
 
-        # Repeated cancellation while draining the reader must not skip its producer.
-        await finish_cleanup(self._cancel_response_next_task())
-        await finish_cleanup(self._stop_response_pump())
-        await finish_cleanup(self._close_registered_responses())
-        outcome = outcome or self._last_valid_outcome
-        with CancelScope(shield=True):
-            if outcome is not None:
-                # A validated middleware-owned result remains the state authority.
-                self._shutdown_state = outcome.state
-            elif self._context is not None:
+            current_task = asyncio.current_task()
+            causes: list[BaseException] = [] if fence_failure is None else [fence_failure]
+
+            def capture_pending_cancellation(exc: asyncio.CancelledError | None = None) -> bool:
+                nonlocal cancellation
+                if current_task is None or not current_task.cancelling():
+                    return False
+                if cancellation is None:
+                    cancellation = exc or asyncio.CancelledError()
+                while current_task.cancelling():
+                    current_task.uncancel()
+                return True
+
+            capture_pending_cancellation(cancellation)
+
+            async def finish_cleanup(awaitable: Awaitable[None]) -> None:
                 try:
-                    self._shutdown_state = await self._context.export_state(self._latest_messages)
+                    # Cleanup normally stays in the task that entered plugin and AnyIO scopes.
+                    await awaitable
+                except asyncio.CancelledError as exc:
+                    if not capture_pending_cancellation(exc):
+                        causes.append(exc)
                 except BaseException as exc:
-                    # The Host can diagnose export failure without losing the original
-                    # execution error or preventing resource cleanup.
-                    self._shutdown_state_error = exc
-        await finish_cleanup(self._close_run_attachments())
-        causes.extend(self._source_cleanup_failures)
-        self._source_cleanup_failures.clear()
+                    causes.append(exc)
+                finally:
+                    # Cleanup code may suppress or translate the injected CancelledError.
+                    capture_pending_cancellation()
 
-        await finish_cleanup(self._close_environment_lifecycle())
-        self._emitter.close()
-        if self._environment_event_task is not None:
-            task = self._environment_event_task
-            self._environment_event_task = None
-            await finish_cleanup(_stop_environment_event_task(task))
-        self._closed = True
+            # Repeated cancellation while draining the reader must not skip its producer.
+            phase.set_attribute("a13n.phase.step", "responses")
+            await finish_cleanup(self._cancel_response_next_task())
+            await finish_cleanup(self._stop_response_pump())
+            await finish_cleanup(self._close_registered_responses())
+            phase.set_attribute("a13n.phase.step", "state_export")
+            outcome = outcome or self._last_valid_outcome
+            with CancelScope(shield=True):
+                if outcome is not None:
+                    # A validated middleware-owned result remains the state authority.
+                    self._shutdown_state = outcome.state
+                elif self._context is not None:
+                    try:
+                        self._shutdown_state = await self._context.export_state(self._latest_messages)
+                    except BaseException as exc:
+                        # The Host can diagnose export failure without losing the original
+                        # execution error or preventing resource cleanup.
+                        self._shutdown_state_error = exc
+            phase.set_attribute("a13n.phase.step", "attachments")
+            await finish_cleanup(self._close_run_attachments())
+            causes.extend(self._source_cleanup_failures)
+            self._source_cleanup_failures.clear()
+
+            phase.set_attribute("a13n.phase.step", "environment")
+            await finish_cleanup(self._close_environment_lifecycle())
+            self._emitter.close()
+            if self._environment_event_task is not None:
+                task = self._environment_event_task
+                self._environment_event_task = None
+                await finish_cleanup(_stop_environment_event_task(task))
+            self._closed = True
+
+            if causes or self._shutdown_state_error is not None:
+                phase.set_attribute("a13n.phase.status", "failed")
+                phase.set_status(StatusCode.ERROR)
 
         observation = self._observation
         if observation is not None:
@@ -2652,6 +2684,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 failure_code = failure.code
             elif observed_outcome == "failed":
                 failure_code = "run_unhandled"
+            observation.record_output(outcome.output if outcome is not None else None, status=observed_outcome)
             observation.finish(
                 outcome=observed_outcome,
                 failure_code=failure_code,

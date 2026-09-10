@@ -973,6 +973,14 @@ def test_skill_selection_requires_immutable_bounded_exact_names() -> None:
 
 
 async def test_ordinary_environment_skill_read_emits_usage_observation(tmp_path: Path) -> None:
+    from a13n_harness import HarnessInstrumentation, HarnessTraceContent
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
     path = tmp_path / ".agents" / "skills" / "review"
     path.mkdir(parents=True)
     (path / "SKILL.md").write_text(
@@ -1000,7 +1008,9 @@ async def test_ordinary_environment_skill_read_emits_usage_observation(tmp_path:
         else:
             yield "done"
 
-    executable = HarnessBuilder().build(
+    executable = HarnessBuilder(
+        instrumentation=HarnessInstrumentation(tracer_provider=provider, trace_content=HarnessTraceContent.NONE)
+    ).build(
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
@@ -1032,6 +1042,22 @@ async def test_ordinary_environment_skill_read_emits_usage_observation(tmp_path:
         and payload.get("source_id") == "workspace"
         for payload in extension_payloads
     )
+
+    spans = exporter.get_finished_spans()
+    root = next(span for span in spans if span.name == "harness.run")
+    assert root.attributes["a13n.skills.available"] == ("review",)
+    assert root.attributes["a13n.skills.accessed"] == ("review",)
+    assert root.attributes["a13n.skills.access_count"] == 1
+    resolution = next(span for span in spans if span.name == "harness.skills.resolve")
+    assert (
+        resolution.end_time
+        < next(span for span in spans if span.attributes.get("gen_ai.operation.name") == "chat").start_time
+    )
+    tool = next(span for span in spans if span.attributes.get("gen_ai.operation.name") == "execute_tool")
+    assert tool.attributes["a13n.skill.name"] == "review"
+    assert tool.attributes["a13n.skill.source_id"] == "workspace"
+    assert "a13n.input" not in root.attributes
+    provider.shutdown()
 
 
 async def test_external_capability_can_publish_skill_paths_for_relaxed_markdown_view(tmp_path: Path) -> None:

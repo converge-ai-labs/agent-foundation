@@ -30,6 +30,15 @@ with the environment-selected on/off policy instead:
 uv run --locked --env-file dev/harness/.env opentelemetry-instrument python your_agent.py
 ```
 
+## Deployment environment
+
+The committed template sets `OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=local`.
+This labels new traces as `local` in Langfuse and other OTLP backends; it does not
+select the Harness execution Environment. If a private `.env` already exists,
+merge this setting into its resource attributes without replacing the file or
+other attributes, then restart the launcher. Exported shell values take precedence.
+Previously exported traces keep their original environment label.
+
 ## Try Logfire
 
 In your private `.env`, replace the active OTLP endpoint and headers with the

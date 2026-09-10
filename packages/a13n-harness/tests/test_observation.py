@@ -375,7 +375,8 @@ async def test_stream_construction_is_observation_inert() -> None:
     assert exporter.get_finished_spans() == ()
 
     async with stream:
-        assert exporter.get_finished_spans() == ()
+        # Entry prepares the Run, but does not start model/tool execution.
+        assert [span.name for span in exporter.get_finished_spans()] == ["harness.prepare"]
 
     run_span = next(span for span in exporter.get_finished_spans() if span.name == "harness.run")
     assert run_span.attributes["a13n.run.outcome"] == "cancelled"
@@ -440,7 +441,7 @@ def test_observation_context_validates_and_freezes_bounded_values() -> None:
         assert invalid.value.code == "observation_context_invalid"
 
 
-async def test_observation_context_enriches_only_the_logical_run_span() -> None:
+async def test_observation_context_enriches_native_descendants_without_a_provider_processor() -> None:
     tracer_provider, exporter, _, _ = _providers()
     executable = _build(
         HarnessInstrumentation(
@@ -470,8 +471,14 @@ async def test_observation_context_enriches_only_the_logical_run_span() -> None:
     assert run_span.attributes["a13n.observation.metadata.synthetic"] is True
     assert run_span.attributes["a13n.observation.metadata.sequence"] == 4
     for span in spans:
-        if span is not run_span:
-            assert not any(key.startswith("a13n.observation.") for key in span.attributes)
+        assert span.attributes["langfuse.trace.name"] == "observation-summary"
+        assert span.attributes["langfuse.session.id"] == "observation-summary-session"
+        assert span.attributes["langfuse.trace.tags"] == observation.labels
+        assert span.attributes["langfuse.observation.metadata.scenario"] == "summary"
+        assert span.attributes["langfuse.observation.metadata.sequence"] == "4"
+        assert span.attributes["langfuse.observation.metadata.thread_id"] == result.state.thread_id
+        assert span.attributes["a13n.run.id"] == result.run_id
+        assert "langfuse.trace.public" not in span.attributes
 
 
 async def test_identity_and_lineage_use_only_the_bounded_attribute_registry() -> None:
@@ -935,3 +942,384 @@ async def test_cancelled_run_is_not_reported_as_an_otel_error() -> None:
     run_span = next(span for span in exporter.get_finished_spans() if span.name == "harness.run")
     assert run_span.attributes["a13n.run.outcome"] == "cancelled"
     assert run_span.status.status_code is StatusCode.UNSET
+
+
+async def test_enriched_tracer_preserves_otel_scope_semantics_and_child_identity() -> None:
+    from opentelemetry.context import Context
+    from opentelemetry.trace import Link, SpanKind
+
+    provider, exporter, _, _ = _providers()
+    tracer = HarnessInstrumentation(tracer_provider=provider).get_tracer("test-host")
+    with tracer.start_as_current_span(
+        "parent",
+        attributes={
+            "a13n.thread.id": "thread-parent",
+            "a13n.observation.session.id": "session-parent",
+            "a13n.observation.labels": ("parent",),
+            "a13n.agent.instance.id": "agent-parent",
+            "a13n.user.id": "user-parent",
+            "a13n.observation.metadata.root_thread_id": "thread-parent",
+            "a13n.observation.metadata.subagent_role": "parent-role",
+            "langfuse.observation.type": "tool",
+            "a13n.run.outcome": "failed",
+        },
+    ) as parent:
+        # An inline child remains nested but has its own Thread, identity and type.
+        with tracer.start_as_current_span(
+            "harness.run",
+            kind=SpanKind.INTERNAL,
+            attributes={
+                "a13n.thread.id": "thread-child",
+                "a13n.run.id": "run-child",
+                "a13n.agent.instance.id": "agent-child",
+            },
+        ) as child:
+
+            @tracer.start_as_current_span("decorated")
+            async def execute():
+                await asyncio.sleep(0)
+                assert trace.get_current_span().get_span_context().is_valid
+
+            await execute()
+            with tracer.start_as_current_span(
+                "tool",
+                attributes={"gen_ai.operation.name": "execute_tool", "langfuse.observation.type": "retriever"},
+            ):
+                pass
+        with tracer.start_as_current_span("detached", context=Context(), links=[Link(parent.get_span_context())]):
+            pass
+        assert trace.get_current_span() is parent
+    spans = {span.name: span for span in exporter.get_finished_spans()}
+    assert spans["harness.run"].parent.span_id == parent.get_span_context().span_id
+    assert spans["harness.run"].attributes["langfuse.observation.type"] == "agent"
+    for name in ("harness.run", "decorated", "tool"):
+        attrs = spans[name].attributes
+        assert attrs["langfuse.session.id"] == "thread-child"
+        assert attrs["a13n.agent.instance.id"] == "agent-child"
+        assert attrs["langfuse.observation.metadata.root_thread_id"] == "thread-parent"
+        assert "langfuse.user.id" not in attrs
+        assert "a13n.user.id" not in attrs
+        assert "a13n.run.outcome" not in attrs
+        assert "a13n.observation.metadata.subagent_role" not in attrs
+    assert spans["tool"].attributes["langfuse.observation.type"] == "retriever"
+    assert spans["decorated"].parent.span_id == child.get_span_context().span_id
+    assert spans["detached"].parent is None
+    assert spans["detached"].links[0].context == parent.get_span_context()
+    assert not spans["detached"].attributes
+    assert not trace.get_current_span().get_span_context().is_valid
+
+
+async def test_enrichment_is_task_local_and_child_metadata_wins_at_the_bound() -> None:
+    provider, exporter, _, _ = _providers()
+    tracer = HarnessInstrumentation(tracer_provider=provider).get_tracer("test-host")
+
+    async def branch(index):
+        with tracer.start_as_current_span(
+            f"parent-{index}",
+            attributes={
+                "a13n.observation.session.id": f"session-{index}",
+                **{f"a13n.observation.metadata.key_{key}": key for key in range(16)},
+            },
+        ):
+            await asyncio.sleep(0)
+            with tracer.start_as_current_span(
+                f"child-{index}",
+                attributes={"a13n.observation.metadata.child": index},
+            ):
+                await asyncio.sleep(0)
+
+    await asyncio.gather(branch(1), branch(2))
+    for span in exporter.get_finished_spans():
+        index = int(span.name[-1])
+        assert span.attributes["langfuse.session.id"] == f"session-{index}"
+        if span.name.startswith("child"):
+            assert span.attributes["langfuse.observation.metadata.child"] == str(index)
+            assert len([key for key in span.attributes if key.startswith("langfuse.observation.metadata.")]) == 16
+
+
+async def test_sampled_out_and_metrics_only_do_not_construct_run_enrichment(monkeypatch) -> None:
+    from a13n_harness import _trace
+    from opentelemetry.sdk.trace.sampling import ALWAYS_OFF
+
+    def unexpected(*args):
+        pytest.fail("unrecorded run constructed metadata")
+
+    monkeypatch.setattr(_trace, "_aliases", unexpected)
+    provider = TracerProvider(sampler=ALWAYS_OFF)
+    _, _, meter_provider, _ = _providers()
+    for instrumentation in (
+        HarnessInstrumentation(tracer_provider=provider),
+        HarnessInstrumentation(meter_provider=meter_provider),
+        None,
+    ):
+        assert (await _build(instrumentation).run("fictional")).status == "completed"
+
+
+async def test_native_tool_spans_receive_enrichment() -> None:
+    from pydantic_ai.capabilities import Capability
+    from pydantic_ai.toolsets import FunctionToolset
+
+    provider, exporter, _, _ = _providers()
+    tools = FunctionToolset()
+
+    @tools.tool_plain
+    def answer(value: str) -> str:
+        return value
+
+    executable = HarnessBuilder(instrumentation=HarnessInstrumentation(tracer_provider=provider)).build(
+        AgentSpec(name="tools-agent"),
+        model=TestModel(),
+        capabilities=[Capability(toolsets=[tools])],
+        output_type=str,
+    )
+    result = await executable.run("fictional")
+    assert result.status == "completed"
+    tools_spans = [
+        span for span in exporter.get_finished_spans() if span.attributes.get("gen_ai.operation.name") == "execute_tool"
+    ]
+    assert tools_spans
+    for span in tools_spans:
+        assert span.attributes["langfuse.observation.type"] == "tool"
+        assert span.attributes["langfuse.session.id"] == result.state.thread_id
+        assert span.attributes["a13n.run.id"] == result.run_id
+        assert "a13n.run.outcome" not in span.attributes
+
+
+async def test_host_sampler_still_receives_existing_neutral_run_attributes() -> None:
+    from opentelemetry.sdk.trace.sampling import Decision, ParentBased, Sampler, SamplingResult
+
+    seen = []
+
+    class NamedSampler(Sampler):
+        def should_sample(
+            self, parent_context, trace_id, name, kind=None, attributes=None, links=None, trace_state=None
+        ):
+            seen.append(dict(attributes or {}))
+            keep = (attributes or {}).get("a13n.observation.name") == "keep"
+            return SamplingResult(Decision.RECORD_AND_SAMPLE if keep else Decision.DROP, attributes=attributes)
+
+        def get_description(self):
+            return "named-run"
+
+    provider = TracerProvider(sampler=ParentBased(NamedSampler()))
+    exporter = InMemorySpanExporter()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    result = await _build(HarnessInstrumentation(tracer_provider=provider)).run(
+        "fictional",
+        bindings=RunBindings.embedded(observation=HarnessObservationContext(name="keep")),
+    )
+    assert result.status == "completed"
+    assert seen[0]["a13n.observation.name"] == "keep"
+    assert "a13n.agent.instance.id" in seen[0]
+    assert len(exporter.get_finished_spans()) >= 3
+
+
+async def test_selective_sampler_does_not_attribute_child_models_to_parent_run() -> None:
+    from opentelemetry.sdk.trace.sampling import Decision, Sampler, SamplingResult
+
+    class SelectiveSampler(Sampler):
+        def should_sample(
+            self, parent_context, trace_id, name, kind=None, attributes=None, links=None, trace_state=None
+        ):
+            drop = name == "harness.run"
+            return SamplingResult(Decision.DROP if drop else Decision.RECORD_AND_SAMPLE, attributes=attributes)
+
+        def get_description(self):
+            return "drop-logical-run"
+
+    provider = TracerProvider(sampler=SelectiveSampler())
+    exporter = InMemorySpanExporter()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = HarnessInstrumentation(tracer_provider=provider).get_tracer("test-host")
+    with tracer.start_as_current_span(
+        "parent",
+        attributes={
+            "a13n.thread.id": "thread-parent",
+            "a13n.run.id": "run-parent",
+            "a13n.agent.instance.id": "agent-parent",
+            "a13n.user.id": "user-parent",
+            "a13n.observation.session.id": "session-parent",
+        },
+    ):
+        with tracer.start_as_current_span(
+            "harness.run",
+            attributes={
+                "a13n.thread.id": "thread-child",
+                "a13n.run.id": "run-child",
+            },
+        ) as child:
+            assert not child.is_recording()
+            with tracer.start_as_current_span("chat", attributes={"gen_ai.operation.name": "chat"}):
+                pass
+    model = next(span for span in exporter.get_finished_spans() if span.name == "chat")
+    assert model.parent.span_id == child.get_span_context().span_id
+    assert model.attributes["langfuse.observation.type"] == "generation"
+    assert not any(
+        key in model.attributes
+        for key in (
+            "a13n.thread.id",
+            "a13n.run.id",
+            "a13n.agent.instance.id",
+            "a13n.user.id",
+            "langfuse.session.id",
+            "langfuse.user.id",
+        )
+    )
+
+
+@pytest.mark.parametrize("content", list(HarnessTraceContent))
+async def test_run_content_and_phases_follow_policy_and_native_ownership(content):
+    import json
+
+    provider, exporter, _, _ = _providers()
+    executable = _build(HarnessInstrumentation(tracer_provider=provider, trace_content=content))
+    result = await executable.run("only this turn")
+    spans = exporter.get_finished_spans()
+    root = next(span for span in spans if span.name == "harness.run")
+    prepare = next(span for span in spans if span.name == "harness.prepare")
+    finalize = next(span for span in spans if span.name == "harness.finalize")
+    attempt = next(span for span in spans if span.attributes.get("gen_ai.operation.name") == "invoke_agent")
+    assert prepare.parent.span_id == finalize.parent.span_id == attempt.parent.span_id == root.context.span_id
+    assert root.start_time <= prepare.start_time < prepare.end_time <= attempt.start_time
+    assert attempt.end_time <= finalize.start_time < finalize.end_time <= root.end_time
+    assert root.attributes["a13n.output.kind"] == result.status
+    if content is HarnessTraceContent.NONE:
+        assert "a13n.input" not in root.attributes and "a13n.output" not in root.attributes
+        assert "langfuse.trace.input" not in root.attributes
+    else:
+        assert json.loads(root.attributes["a13n.input"]) == "only this turn"
+        assert json.loads(root.attributes["a13n.output"]) == result.output
+        assert root.attributes["langfuse.observation.output"] == root.attributes["a13n.output"]
+    for span in spans:
+        if span is not root:
+            assert "a13n.input" not in span.attributes and "a13n.output" not in span.attributes
+            assert "langfuse.trace.output" not in span.attributes
+
+
+async def test_input_factory_and_plugin_result_are_root_content_authorities():
+    import json
+
+    provider, exporter, _, _ = _providers()
+    executable = HarnessBuilder(instrumentation=HarnessInstrumentation(tracer_provider=provider)).build(
+        AgentSpec(), output_type=str, model=_model(), plugins=[_ShortCircuitPlugin()]
+    )
+
+    async def input_factory(context):
+        return "prepared input"
+
+    result = await executable.run(input_factory=input_factory)
+    root = next(span for span in exporter.get_finished_spans() if span.name == "harness.run")
+    assert result.output == json.loads(root.attributes["a13n.output"]) == "cached"
+    assert json.loads(root.attributes["a13n.input"]) == "prepared input"
+    assert not any(span.attributes.get("gen_ai.operation.name") for span in exporter.get_finished_spans())
+
+
+async def test_content_projection_is_bounded_and_never_embeds_media_or_repr(monkeypatch):
+    import json
+
+    from pydantic_ai.messages import BinaryContent, ImageUrl
+
+    provider, exporter, _, _ = _providers()
+    instrumentation = HarnessInstrumentation(tracer_provider=provider, trace_content=HarnessTraceContent.FULL)
+    with instrumentation.get_tracer("test").start_as_current_span("root") as span:
+        instrumentation.record_input(
+            span,
+            [
+                "hello",
+                BinaryContent(data=b"private binary", media_type="image/png"),
+                ImageUrl(url="https://private.invalid/secret"),
+            ],
+        )
+        instrumentation.record_output(span, "界" * 100_000, status="completed")
+    captured = exporter.get_finished_spans()[-1].attributes
+    assert len(captured["a13n.output"].encode()) <= 8192
+    assert captured["a13n.output.truncated"]
+    assert captured["a13n.input.attachment_count"] == 2
+    assert "private binary" not in captured["a13n.input"]
+    assert "private.invalid" not in captured["a13n.input"]
+    assert json.loads(captured["a13n.input"])[0] == "hello"
+
+    def unexpected(*args):
+        pytest.fail("disabled content must not be projected")
+
+    monkeypatch.setattr("a13n_harness._trace_details._project", unexpected)
+    disabled = HarnessInstrumentation(tracer_provider=provider, trace_content=HarnessTraceContent.NONE)
+    with disabled.get_tracer("test").start_as_current_span("no-content") as span:
+        disabled.record_input(span, object())
+        disabled.record_output(span, object(), status="failed")
+
+
+async def test_skill_summary_is_bounded_and_counts_reads_not_claimed_usage():
+    from a13n_harness.observation import SkillObservation
+
+    provider, exporter, _, _ = _providers()
+    with provider.get_tracer("test").start_as_current_span("root") as span:
+        skills = SkillObservation(span)
+        skills.catalog([f"skill-{index}" for index in range(100)])
+        for index in range(100):
+            skills.access(f"skill-{index}")
+        skills.access("skill-0")
+    attributes = exporter.get_finished_spans()[-1].attributes
+    assert attributes["a13n.skills.available_count"] == 100
+    assert attributes["a13n.skills.available_omitted"] == 84
+    assert len(attributes["a13n.skills.accessed"]) == 16
+    assert attributes["a13n.skills.access_count"] == 101
+    assert attributes["a13n.skills.accessed_truncated"]
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+async def test_phase_failures_preserve_exception_and_do_not_record_exception_content(cancelled):
+    provider, exporter, _, _ = _providers()
+    instrumentation = HarnessInstrumentation(tracer_provider=provider)
+    error = asyncio.CancelledError("private failure") if cancelled else ValueError("private failure")
+    with pytest.raises(type(error)) as caught:
+        with instrumentation.phase("test", "prepare"):
+            raise error
+    assert caught.value is error
+    span = exporter.get_finished_spans()[-1]
+    assert (span.status.status_code is StatusCode.ERROR) == (not cancelled)
+    assert "private failure" not in str(span.attributes)
+    assert not span.events
+
+
+@pytest.mark.parametrize("iterate_child", [False, True])
+async def test_disabled_nested_run_masks_parent_phases_and_skill_summary(iterate_child):
+    from a13n_harness.observation import observe_skill_access, observe_skill_catalog
+
+    provider, exporter, _, _ = _providers()
+
+    async def child_input(context):
+        observe_skill_catalog(["child-only"])
+        return "child input"
+
+    async def child_model(messages, info):
+        observe_skill_access("child-only", source_id="child", tool_id="view")
+        yield "child result"
+
+    child = HarnessBuilder(instrumentation=None).build(
+        AgentSpec(), output_type=str, model=FunctionModel(stream_function=child_model)
+    )
+
+    async def parent_model(messages, info):
+        parent_span = trace.get_current_span()
+        observe_skill_catalog(["parent-only"])
+        async with child.stream(input_factory=child_input) as run:
+            if iterate_child:
+                async for _ in run:
+                    pass
+        assert trace.get_current_span() is parent_span
+        observe_skill_access("parent-only", source_id="parent", tool_id="view")
+        yield "parent result"
+
+    parent = HarnessBuilder(instrumentation=HarnessInstrumentation(tracer_provider=provider)).build(
+        AgentSpec(), output_type=str, model=FunctionModel(stream_function=parent_model)
+    )
+    assert (await parent.run("parent input")).output == "parent result"
+    spans = exporter.get_finished_spans()
+    assert [span.name for span in spans].count("harness.run") == 1
+    assert [span.name for span in spans].count("harness.prepare") == 1
+    assert [span.name for span in spans].count("harness.finalize") == 1
+    root = next(span for span in spans if span.name == "harness.run")
+    assert root.attributes["a13n.skills.available"] == ("parent-only",)
+    assert root.attributes["a13n.skills.accessed"] == ("parent-only",)
+    assert root.attributes["a13n.skills.access_count"] == 1

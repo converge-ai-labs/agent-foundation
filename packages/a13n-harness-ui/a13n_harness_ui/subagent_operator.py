@@ -92,7 +92,14 @@ from a13n_harness_ui.environment_runtime import EnvironmentRunPlan, EnvironmentR
 from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError, StoreError
 from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub
 from a13n_harness_ui.model_runtime import SubscriptionSource
-from a13n_harness_ui.observation import UiObservation, finish_operation
+from a13n_harness_ui.observation import (
+    UiObservation,
+    finish_operation,
+    record_configuration,
+    record_input,
+    record_output,
+    record_skill_event,
+)
 from a13n_harness_ui.storage import (
     AgentResourceSource,
     ChildExecutionHead,
@@ -939,7 +946,14 @@ class HarnessUiSubagentOperator(SubagentOperator):
             thread_id=prepared.state.thread_id,
             operation_id=prepared.head.execution_id,
             linked=True,
+            root_thread_id=prepared.scope.root_thread_id,
+            parent_thread_id=prepared.head.parent_thread_id,
+            subagent_role=prepared.composition.root.roster_name,
+            segment_index=prepared.head.segment_index,
+            resumed_from_execution_id=prepared.head.resumed_from,
         ) as span:
+            record_configuration(prepared.composition, prepared.reconstructed.definition_capability_ids)
+            record_input(prepared.input, kind="resume" if prepared.head.resumed_from is not None else "delegation")
             await self._execute_segment(prepared, active, span)
 
     async def _execute_segment(self, prepared: _PreparedSegment, active: _ActiveSegment, span: Span) -> None:
@@ -995,6 +1009,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                         display=display,
                     )
                     continue
+                record_output(result.output, status=result.status)
                 durable_events = await self._finish_result(
                     current.head,
                     result,
@@ -1087,6 +1102,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             ):
                 async with prepared.stream as stream:
                     async for item in stream:
+                        record_skill_event(item)
                         await self._store.usage.observe(thread_id=prepared.state.thread_id, item=item)
                         events = observer.observe(item)
                         compactor.observe(events)

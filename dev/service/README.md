@@ -76,6 +76,13 @@ a scenario-to-resource index to `var/service/seed-report.md` and `seed.json`.
 
 ## Local traces
 
+`[service].deployment_environment_name = "local"` in `local.toml` is the
+single deployment label. Service exports it as `deployment.environment.name`;
+the dev launcher also uses that value for `OTEL_RESOURCE_ATTRIBUTES`. New
+Langfuse observations show `Env: local`. This is not an execution Environment
+or provider selection. Restart the local process after changing the label;
+previous observations retain their original environment.
+
 `local.toml` enables tracing with standard input/output content and selects the
 local Langfuse query project. The development launcher uses that same project to
 initialize Langfuse and configure Service's standard OTLP/HTTP exporter. Content
