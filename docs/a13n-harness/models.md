@@ -194,7 +194,7 @@ API-key Models use their native provider's credential mechanism. Keep secrets an
 
 The `a13n_harness.model_auth` module supplies SDK-level subscription building blocks: Codex browser/device login flows and `CodexRequestModel`; Grok credential-source and OAuth/device-flow types plus `build_grok_model`. The Host owns user interaction, account storage, persistence, and permission to replace accounts. Reconstruct authenticated Models for new Runs instead of treating an exported continuation as a saved client.
 
-Use [Harness UI authentication](../a13n-harness-ui/models-and-authentication.md) for the ready-to-use local login experience. SDK integrations should follow the [Model authentication contract](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/a13n-harness/16a-model-authentication.md) and the public types in `a13n_harness.model_auth`; Harness does not supply a product account database.
+Use [Harness UI authentication](../a13n-harness-ui/models-and-authentication.md) for the ready-to-use local login experience. SDK integrations can start with [authentication and HTTP-client recipes](model-authentication.md), then follow the [Model authentication contract](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/a13n-harness/16a-model-authentication.md) and the public types in `a13n_harness.model_auth`; Harness does not supply a product account database.
 
 ## Request settings versus context policy
 

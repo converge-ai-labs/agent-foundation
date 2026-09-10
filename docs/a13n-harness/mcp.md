@@ -2,11 +2,11 @@
 
 Use MCP to connect tools supplied by another process or service. Harness composes Pydantic AI's MCP Capability instead of adding another transport client.
 
-| Need                                                                   | Choose                                                                               |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| A static server, stdio process, in-process server, or prebuilt Toolset | Native `MCP`                                                                         |
-| URL server headers derived from the current Harness identity or Run    | `ContextualMCP`                                                                      |
-| A command/JSON setup for the terminal product                          | [Harness UI MCP configuration](../a13n-harness-ui/extensions-and-mcp.md#mcp-servers) |
+| Need                                                                   | Choose                                                    |
+| ---------------------------------------------------------------------- | --------------------------------------------------------- |
+| A static server, stdio process, in-process server, or prebuilt Toolset | Native `MCP`                                              |
+| URL server headers derived from the current Harness identity or Run    | `ContextualMCP`                                           |
+| A command/JSON setup for the terminal product                          | [Harness UI MCP configuration](../a13n-harness-ui/mcp.md) |
 
 A Harness SDK `AgentSpec` does **not** accept Harness UI's top-level `mcp_servers` resource field. The SDK uses Capabilities; the application owns resource IDs and configuration files.
 

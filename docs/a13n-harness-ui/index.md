@@ -78,5 +78,6 @@ See [Use the terminal](everyday-use.md) for attachments, approvals, questions, h
 - **Connect tools:** [MCP and extensions](extensions-and-mcp.md), [native tools and Web providers](native-and-web-tools.md).
 - **Work across directories:** [Environments and Projects](environments-and-projects.md).
 - **Script a task or diagnose a failure:** [Automation and troubleshooting](automation-and-troubleshooting.md).
+- **Build another interface:** [Embed the Python App](embedding.md) or [use the HTTP API](http-api.md).
 
-Harness UI is a local interactive Host built on [Harness](../a13n-harness/index.md). Its foreground process owns active work; it is not a detached worker service. The optional `webui` command currently provides an HTTP API and a bundled authentication/status page, not browser chat. See [browser support](automation-and-troubleshooting.md#browser-ui) before choosing it as an interface.
+Harness UI is a local interactive Host built on [Harness](../a13n-harness/index.md). Its foreground process owns active work; it is not a detached worker service. The optional `webui` command currently provides an HTTP API and a bundled authentication/status page, not browser chat. See [browser support](webui.md) before choosing it as an interface.

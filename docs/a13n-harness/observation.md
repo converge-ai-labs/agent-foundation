@@ -272,7 +272,9 @@ Public key: lf_pk_agent_foundation_local
 Secret key: lf_sk_agent_foundation_local
 ```
 
-Export this complete trace-only profile before launching an embedded Host. Repository development may place the same values in a root `.env`; `make dev` loads that file only at the Host launcher boundary.
+`make langfuse-up` selects `dev/service/local.toml` by default; use `SERVICE_CONFIG=PATH` to select a different local project. It never loads the root `.env`. Service's `make dev` uses that same configuration and automatically wires trace export and querying.
+
+For an **embedded Harness Host**, explicitly export the following trace-only profile instead. You may keep Host-specific values in a private `.env` and load it explicitly with `uv run --env-file .env ...`; `.env.harness.example` documents optional debugging settings. Harness UI uses its normal YAML configuration plus the process environment and does not implicitly load this file.
 
 ```bash
 export A13N_HARNESS_TRACE_LEVEL=verbose
@@ -297,7 +299,7 @@ make langfuse-down
 make langfuse-reset
 ```
 
-The composition binds the Langfuse UI and media endpoint to loopback and does not reuse the repository's PostgreSQL or Redis services. Its credentials are for local development only. For production and high-availability deployments, follow the official [Langfuse self-hosting documentation](https://langfuse.com/self-hosting) rather than adapting this development composition.
+The composition binds the Langfuse UI and media endpoint to loopback (ports 3000 and 3001 by default) and does not reuse Service's PostgreSQL or Redis. Compose project names and volumes are isolated by checkout; Service resets preserve Langfuse data. Its credentials are for local development only. For production and high-availability deployments, follow the official [Langfuse self-hosting documentation](https://langfuse.com/self-hosting) rather than adapting this development composition.
 
 ## Add bounded context to the Harness root
 

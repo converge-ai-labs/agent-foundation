@@ -2,13 +2,23 @@
 
 from __future__ import annotations
 
+import json
+import re
+import runpy
 import subprocess
 import sys
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
+import a13n_logging
+import click
 import pytest
+import yaml
+from a13n_envd_client.eip.v1 import METHODS
+from a13n_harness_ui.cli import cli
+from a13n_harness_ui.content_plugins import ContentPluginManifest, ContentPluginMarketplace
+from a13n_harness_ui.interactive.commands import COMMANDS
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -92,3 +102,123 @@ def test_overview_has_mermaid_markup_and_local_theme_assets(built_site: Path) ->
     warning = (built_site / "a13n-harness-ui/index.html").read_text(encoding="utf-8")
     assert "Choose permissions deliberately." in warning
     assert "!!! warning" not in warning
+
+
+def test_envd_client_reference_covers_every_generated_method() -> None:
+    text = (ROOT / "docs/a13n-envd/python-client.md").read_text(encoding="utf-8")
+    documented = set(re.findall(r"^\|\s+`([a-z_]+(?:\.[a-z_]+)?)`\s+\|\s+`[a-z_]+`\s+\|\s+`", text, re.MULTILINE))
+    assert documented == set(METHODS)
+
+
+def test_every_document_has_exactly_one_navigation_entry() -> None:
+    configuration = yaml.safe_load((ROOT / "mkdocs.yml").read_text(encoding="utf-8"))
+    documented: list[str] = []
+
+    def visit(items: list[dict[str, object]]) -> None:
+        for item in items:
+            for value in item.values():
+                if isinstance(value, list):
+                    visit(value)
+                else:
+                    assert isinstance(value, str)
+                    documented.append(value)
+
+    visit(configuration["nav"])
+    expected = {str(path.relative_to(ROOT / "docs")) for path in (ROOT / "docs").rglob("*.md")}
+    assert set(documented) == expected
+    assert len(documented) == len(set(documented))
+
+
+def test_ui_command_reference_covers_registered_commands_and_options() -> None:
+    text = (ROOT / "docs/a13n-harness-ui/command-reference.md").read_text(encoding="utf-8")
+    sections = dict(re.findall(r"^### `([^`]+)`\n(.*?)(?=^### |^## |\Z)", text, re.MULTILINE | re.DOTALL))
+
+    def visit(group: click.Group, prefix: str = "") -> None:
+        for name, command in group.commands.items():
+            path = f"{prefix} {name}".strip()
+            if isinstance(command, click.Group):
+                visit(command, path)
+                continue
+            assert path in sections, path
+            for parameter in command.params:
+                if isinstance(parameter, click.Option) and not parameter.hidden:
+                    for option in (*parameter.opts, *parameter.secondary_opts):
+                        assert option in sections[path], (path, option)
+
+    visit(cli)
+    global_options = text.split("### Global options", 1)[1].split("## Commands", 1)[0]
+    for parameter in cli.params:
+        if isinstance(parameter, click.Option) and not parameter.hidden:
+            for option in (*parameter.opts, *parameter.secondary_opts):
+                assert option in global_options, option
+    for command in COMMANDS:
+        assert f"`{command.usage.replace('|', r'\|')}`" in text, command.name
+        for alias in command.aliases:
+            assert f"`/{alias}`" in text
+
+
+def test_content_plugin_authoring_examples_match_current_schemas() -> None:
+    text = (ROOT / "docs/a13n-harness-ui/skills-and-content-plugins.md").read_text(encoding="utf-8")
+    checked = 0
+    for block in re.findall(r"^```yaml\n(.*?)^```", text, re.MULTILINE | re.DOTALL):
+        value = yaml.safe_load(block)
+        if not isinstance(value, dict) or "schema_version" not in value:
+            continue
+        if "plugins" in value:
+            ContentPluginMarketplace.model_validate(value)
+        else:
+            ContentPluginManifest.model_validate(value)
+        checked += 1
+    assert checked == 2
+
+
+def test_service_generated_references_match_current_definitions(built_site: Path) -> None:
+    from a13n_service.settings import Settings
+
+    namespace = runpy.run_path(str(ROOT / "scripts/docs/references.py"))
+
+    def normalized(text: str) -> str:
+        # mdformat pads tables and escapes literal emphasis markers in schema patterns.
+        text = re.sub(r"^\|[- :|]+\|\n", "", text, flags=re.MULTILINE)
+        text = re.sub(r"\\([*_])", r"\1", text)
+        return re.sub(r"\s+", " ", text).strip()
+
+    for filename, renderer in (
+        ("configuration-reference.md", "render_configuration"),
+        ("api-reference.md", "render_native_api"),
+    ):
+        actual = (ROOT / "docs/a13n-service" / filename).read_text(encoding="utf-8")
+        assert normalized(actual) == normalized(namespace[renderer]()), filename
+
+    schema = json.loads((ROOT / "scripts/docs/service-settings.schema.json").read_text(encoding="utf-8"))
+    assert schema == Settings.model_json_schema()
+    for generated, source in {
+        "service-openapi.json": ROOT / "sdk/typescript/openapi.json",
+        "service-settings.json": ROOT / "scripts/docs/service-settings.schema.json",
+    }.items():
+        assert (built_site / "assets/reference" / generated).read_bytes() == source.read_bytes()
+
+
+def test_service_workflow_examples_match_request_models() -> None:
+    from a13n_service.agents.domain import CreateAgentRequest
+    from a13n_service.connectivity.mcp.domain import CreateMCPConnectionRequest
+    from a13n_service.gateway.requests import StartRunRequest
+    from a13n_service.skills.domain import CreateSkillRequest
+
+    def blocks(name: str) -> list[dict[str, object]]:
+        text = (ROOT / "docs/a13n-service" / name).read_text(encoding="utf-8")
+        return [json.loads(block) for block in re.findall(r"^```json\n(.*?)^```", text, re.MULTILINE | re.DOTALL)]
+
+    agent, run = blocks("agents-and-runs.md")
+    CreateAgentRequest.model_validate(agent)
+    StartRunRequest.model_validate(run)
+    mcp = next(value for value in blocks("external-tools.md") if "endpoint_url" in value)
+    CreateMCPConnectionRequest.model_validate(mcp)
+    skill = next(value for value in blocks("resources.md") if "source" in value)
+    CreateSkillRequest.model_validate(skill)
+
+
+def test_logging_reference_covers_every_public_export() -> None:
+    text = (ROOT / "docs/a13n-logging/index.md").read_text(encoding="utf-8")
+    for name in a13n_logging.__all__:
+        assert f"`{name}" in text, name

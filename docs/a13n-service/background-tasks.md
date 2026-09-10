@@ -1,48 +1,90 @@
-# Operate background tasks
+# Background tasks and retention
 
-a13n Service runs periodic delivery, recovery, and cleanup in the `control` role. The `all` role includes these tasks once. Worker-only and connectivity-only processes do not run control maintenance. A2A contributes its publisher only when enabled, and Plugin Runtime command coordination runs in the `runner` profile.
+Background work is owned by process roles, not by HTTP request traffic. The `all` role installs each role's contributions once. Run the appropriate role when relying on its reconciliation; a Worker alone does not perform control maintenance.
 
-Scans start immediately and continue without request traffic. Multiple control replicas are supported: short database transactions recheck authority, and leased operations reject expired claims. Workers continue to own Run execution, Environment maintenance, and lifecycle projection.
+## Who runs what?
 
-## Tune bounded work
+| Role                   | Work                                                                                                                                                                    |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `control` / `all`      | Delivery, Run recovery/collection, hosted-child result and successor reconciliation, Asset cleanup, Hook history/retention, Connector setup and OAuth-state maintenance |
+| `worker` / `all`       | Run execution, Environment lifecycle maintenance, lifecycle projection, optional model-price updates                                                                    |
+| `connectivity` / `all` | Provider event admission, bounded pending input, deduplication and retry                                                                                                |
 
-Configure these fields through the same Settings inputs as the rest of the service. Environment variables use the `FOUNDATION_` prefix and uppercase field names.
+A2A's publisher is conditional on that gateway being enabled. There is no `runner` process profile or Plugin Runtime artifact/command subsystem in this executable. Installed Harness Plugin code is selected through the artifact's plugin catalog and settings, not a background wheel-installation API.
 
-| Settings field                             | Default | Meaning                                                     |
-| ------------------------------------------ | ------- | ----------------------------------------------------------- |
-| `control_recovery_poll_interval_seconds`   | 1       | Delay after each queue recovery scan                        |
-| `control_recovery_batch_limit`             | 64      | Candidate count per recovery scan                           |
-| `control_recovery_item_timeout_seconds`    | 30      | Maximum time for each recovered item                        |
-| `control_collection_poll_interval_seconds` | 300     | Delay after collection scans                                |
-| `control_collection_batch_limit`           | 64      | Candidate count per collection class                        |
-| `control_collection_timeout_seconds`       | 30      | Object operation timeout; relational batches remain bounded |
-| `hook_history_minimum_retention_days`      | 30      | Minimum age before eligible Hook history is collected       |
-| `asset_tombstone_minimum_retention_days`   | 30      | Minimum age before eligible Asset metadata is collected     |
-| `object_orphan_minimum_age_hours`          | 24      | Minimum age before orphan discovery can reclaim bytes       |
-| `object_publication_timeout_seconds`       | 120     | Maximum time and lease for immutable object publication     |
+Scans start without incoming requests. Multiple replicas use short transactions, durable leases/fences, and idempotency to reject stale claims. A scan beginning or an HTTP acknowledgement does not prove its downstream work completed.
 
-Subagent maintenance uses `subagent_reconcile_poll_interval_seconds` (1 second), the recovery batch/item limits for result publication and successor scans, and `subagent_reconcile_drain_seconds` (30 seconds) to finish an active batch during shutdown.
+## Configure cadence and bounds
 
-Webhook, A2A, Asset cleanup, lifecycle retention, Connector setup, and Plugin Runtime commands retain their own configured cadence and delivery bounds. Increasing a scan interval delays attempts; it never extends credential validity or restores deleted resources. A growing backlog can take many iterations to drain.
+Use nested TOML settings or their exact **`A13N_SERVICE_*`** names. Old `FOUNDATION_*` names and former flat Settings fields are not consumed by the current loader.
 
-## Retention behavior
+```toml
+[control]
+recovery_poll_interval_seconds = 1
+recovery_batch_limit = 64
+recovery_item_timeout_seconds = 30
+collection_poll_interval_seconds = 300
+collection_batch_limit = 64
+collection_timeout_seconds = 30
 
-Expired Skill upload receipts can disappear while published packages remain available. Retained Skill Revisions and Plugin Runtime locks protect their content. Completed object deletion does not itself release command replay or audit requirements. Asset cleanup dead letters remain available for recovery; successful cleanup receipts can expire under the published-delivery retention horizon.
+[subagents]
+reconcile_poll_interval_seconds = 1
+reconcile_drain_seconds = 30
+```
 
-Hook collection preserves inline configuration needed for waiting Continue or Retry, outstanding delivery/redrive, command replay, and required audit. Audit records have no automatic expiry here and can therefore keep otherwise old Hook history or Asset tombstones retained indefinitely.
+For example, `control.recovery_poll_interval_seconds` maps to `A13N_SERVICE_CONTROL_RECOVERY_POLL_INTERVAL_SECONDS`; `subagents.reconcile_poll_interval_seconds` maps to the singular `A13N_SERVICE_SUBAGENT_RECONCILE_POLL_INTERVAL_SECONDS`.
 
-Retained Runs protect their state, replay, and payload objects. No new TTL is imposed on Runs, finalized queue/inbox history, Secret metadata, IAM tombstones, or successful Plugin artifacts. Unknown object namespaces are preserved. Workspace deletion resumes Secret erasure, Service Account tombstoning, live grant removal, and Asset deletion; disabling a User is reversible and does not trigger erasure.
+| Setting                                    | Default     | Purpose                               |
+| ------------------------------------------ | ----------- | ------------------------------------- |
+| `control.recovery_poll_interval_seconds`   | 1 second    | Delay between recovery passes         |
+| `control.recovery_batch_limit`             | 64          | Recovery candidates per batch         |
+| `control.recovery_item_timeout_seconds`    | 30 seconds  | Per-item recovery deadline            |
+| `control.collection_poll_interval_seconds` | 300 seconds | Collection cadence                    |
+| `control.collection_batch_limit`           | 64          | Candidates per collection class       |
+| `control.collection_timeout_seconds`       | 30 seconds  | Object-operation deadline             |
+| `hooks.history_minimum_retention_days`     | 30 days     | Minimum eligible Hook history age     |
+| `assets.tombstone_minimum_retention_days`  | 30 days     | Minimum eligible Asset metadata age   |
+| `objects.orphan_minimum_age_hours`         | 24 hours    | Minimum orphan age before reclamation |
+| `objects.publication_timeout_seconds`      | 120 seconds | Immutable publication deadline/lease  |
 
-## Observe recovery
+Webhook delivery, Asset cleanup, lifecycle projection/retention, Connectivity, Environment maintenance, and gateway waiting have their own settings. The [configuration reference](configuration-reference.md) lists all fields, environment spellings, bounds, and defaults rather than treating one poll interval as a universal timeout.
 
-The `a13n_service.background` logger reports a stable task name, owning role, duration, outcome, examined candidates, committed progress, deferred/failed counts, and observed lag. Empty iterations log at debug level; work logs at info, and retryable dependency failures log at warning with the exception type. Correlation IDs remain log fields rather than metric labels. Bytes reclaimed are not estimated from attempted deletes.
+Increasing a scan interval delays attempts; it does not extend credentials, revive deleted resources, or make work retry-safe. A backlog can require many bounded passes. Observe actual lag and throughput before changing batch size or concurrency.
 
-Temporary dependency failures retry after the configured delay. A programming failure follows critical component supervision and makes the service terminate after bounded cleanup. Shutdown cancels scans and leaves unfinished durable claims for the next process. A deferred collection result commonly means a retained reference or audit dependency, while repeated failures and increasing lag require operator investigation.
+## Environment capacity
 
-## Upgrade object-writing processes together
+Logical Environment allocation does not start a target or consume target capacity. First use reserves capacity atomically before Provider I/O. Exhaustion returns `environment_capacity_exceeded`; limits do not evict existing targets.
 
-Apply the service migrations and upgrade every process that writes service objects before allowing the new control collector to scan. Older writers do not participate in the per-object publication fence. For the first upgrade, stop old control and Worker processes, migrate, and start the new deployment together. Subsequent replicas using this boundary can overlap normally.
+Defaults are 1,000 prepared targets and 100 active Environments per Workspace. Set `A13N_SERVICE_ENVIRONMENT_MAX_TARGETS_PER_WORKSPACE` and `A13N_SERVICE_ENVIRONMENT_MAX_ACTIVE_PER_WORKSPACE` consistently on every worker. Stopped/unresolved managed targets still count toward target capacity. Confirmed deletion or reconciliation confirming target absence releases capacity, including reservations for interrupted creation when no target exists. Release capacity before retrying an exhausted allocation.
 
-The publication migration adds an empty table and its index, with no object backfill. Hook ownership constraints become deferred so a head and its Revisions can be collected atomically. PostgreSQL changes constraints under DDL locks; SQLite rebuilds those tables and restores the existing integrity triggers. Schedule the first upgrade during a maintenance window. Migrations run transactionally; retry an interrupted migration through the ordinary migration command. Rollback requires stopping the new collectors and writers before removing the publication table or restoring constraints.
+Active capacity counts distinct acquired Environments, not every Run sharing one Environment. A lazy Run acquires its slot only on first use. The last active Run ending or entering a waiting state starts the idle retention clock in the same transaction.
 
-Object stores must support atomic conditional deletion and fresh object versions, including when identical bytes are republished. Startup probes reject incompatible S3 endpoints. A grace period does not compensate for an endpoint that lacks these guarantees.
+Worker maintenance defaults to batches of 64, concurrency 4, a 5-second interval, and a 60-second operation timeout. Due batches drain before the next interval. Provider latency and due volume can extend observed delay; failure backoff is distinct from the poll interval. Configure workers consistently.
+
+[Environment management](resources.md#environment-providers-templates-and-targets) distinguishes Provider configuration, Template revisions, and actual Workspace targets.
+
+## Retention is reference-aware
+
+- Expired Skill upload receipts can disappear while published packages remain referenced. Retained Skill revisions protect their content.
+- Asset deletion tombstones immediately; asynchronous object cleanup does not restore logical access if deletion fails. Dead letters and replay/audit evidence have separate retention requirements.
+- Hook collection preserves configuration required by waiting continuation, delivery/redrive, command replay, and audit. Audit dependencies can keep old history/tombstones beyond a minimum age.
+- Retained Runs protect state, replay, and payload objects. A collection interval does not impose a new Run TTL.
+- Unknown object namespaces are preserved. Workspace deletion continues its owned Secret erasure, Service Account tombstoning, grant removal, and Asset deletion. Reversible User disable is not equivalent to erasure.
+
+A minimum age is eligibility, not a promise that every object is deleted at that instant. References, audit, outstanding operations, and failed cleanup can retain data longer.
+
+## Observe failures and shutdown
+
+The `a13n_service.background` logger records task/role, duration, outcome, examined candidates, committed progress, deferred/failed counts, and lag. Empty passes are debug-level, actual work is info-level, and retryable dependency failures are warnings. Correlation IDs stay in log fields rather than unbounded metric labels. Attempted deletion is not reported as confirmed reclaimed bytes.
+
+Temporary dependency failures retry under the task's bounded policy. Programming failures follow critical-component supervision and terminate the process after bounded cleanup rather than silently disabling an essential loop. Shutdown stops admission and cancels/finishes work within its owned budgets; unfinished durable claims remain available to later processes.
+
+Repeated deferral often means a retained reference or audit dependency. Repeated failures and increasing lag need operator investigation, not blind deletion of state.
+
+## Upgrade writers and collectors coherently
+
+Use the same compatible schema and publication-fence implementation across every object-writing process and collector. Do not enable a new collector while older writers can publish without its fencing contract. Apply reviewed migrations before admitting the new deployment, and follow the release's rollout instructions rather than manually creating tables.
+
+Object stores must support atomic conditional deletion and fresh versions, including republishing identical bytes. Startup rejects incompatible storage. Retention grace alone is not a substitute for those capabilities.
+
+[Service configuration](configuration.md#roles-and-migration-authority) explains migration ownership; repository migration authoring belongs in the contributor workflow, not a background task command.

@@ -51,7 +51,7 @@ result = await executable.run(
 )
 ```
 
-Close the executable when its owning cache entry or process shuts down. Replacement builders or plugin graphs should be constructed and validated before routing new runs to them.
+The executable has no `close()` or context-manager API. Retire a cached executable after its active Runs finish; scope each `stream()` with `async with`, and close separately owned Host clients/operators at their own lifespan boundary. Construct and validate replacement builders or plugin graphs before routing new Runs to them. See [cleanup ownership](agents-and-runs.md#cleanup).
 
 ## Fresh Authority
 

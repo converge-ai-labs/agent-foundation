@@ -2,7 +2,7 @@
 
 Private pnpm workspace for a13n browser applications. Use Node.js 24 and the pnpm version pinned in `package.json`.
 
-- `apps/a13n-console`: minimal Console entry point with English and Simplified Chinese resources.
+- `apps/a13n-console`: Service management and conversation application with English and Simplified Chinese resources.
 - `apps/a13n-harness-ui`: Harness UI browser application, compiled into its Python distribution.
 - `packages/a13n-ui`: shared design tokens, React primitives, and an independent development showcase.
 

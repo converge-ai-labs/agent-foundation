@@ -10,7 +10,7 @@ From the repository root, prepare local PostgreSQL, Redis and Langfuse, upgrade 
 make dev
 ```
 
-Keep the terminal open; Ctrl+C stops both application processes. If either process exits, the launcher stops the other and returns the exited process's status. The local Service configuration selects the Console origin for browser authentication. Use `make dev-reset STATE=seeded` before startup for fictional accounts and content, or `STATE=empty` for the initial administrator flow. See [local Service development](../../../../dev/service/README.md).
+Keep the terminal open; Ctrl+C stops both application processes. If either process exits, the launcher stops the other and returns the exited process's status. The local Service configuration selects the Console origin for browser authentication. Use `make dev-reset STATE=seeded` before startup for fictional accounts and content, or `STATE=empty` for the initial administrator flow. See [local Service development](../../../dev/service/README.md).
 
 To run only Console against an already running Service:
 

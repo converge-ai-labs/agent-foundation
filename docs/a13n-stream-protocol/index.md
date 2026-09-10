@@ -9,6 +9,7 @@ Stream Protocol (`a13n-stream-protocol`) converts public Harness observations in
 | Run a complete conversion without credentials                   | [Getting started](getting-started.md)                           |
 | Map text, reasoning, tools, custom events, and terminal results | [Events and processors](events.md)                              |
 | Rebuild a projection after a consumer restart                   | [Replay and recovery](replay.md)                                |
+| Look up public exports, fragment limits, and payload shapes     | [API and payload reference](api-reference.md)                   |
 | Continue Agent execution from saved state                       | [Harness State and Resume](../a13n-harness/state-and-resume.md) |
 
 ```mermaid
