@@ -114,14 +114,7 @@ function WorkspaceNavigation() {
                         <SidebarMenuButton
                           isActive={active}
                           render={
-                            <NavLink
-                              to={
-                                path === "/providers"
-                                  ? `/providers?workspace=${encodeURIComponent(workspace.key)}`
-                                  : destination(path)
-                              }
-                              onClick={close}
-                            />
+                            <NavLink to={destination(path)} onClick={close} />
                           }
                         >
                           <Icon weight={active ? "duotone" : "regular"} />

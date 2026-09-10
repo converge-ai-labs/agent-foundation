@@ -1,3 +1,4 @@
+import { PageActions } from "../../shared/page-actions";
 import { ManageProvidersLink } from "../providers/manage-link";
 import {
   Button,
@@ -52,7 +53,9 @@ export function ConnectorConnections() {
   });
   return (
     <div className={styles.stack}>
-      <ManageProvidersLink category="connectors" scope="workspace" />
+      <PageActions>
+        <ManageProvidersLink category="connectors" scope="workspace" />
+      </PageActions>
       {cleanup && (
         <div role="status">
           <h3>{t("Cleanup result")}</h3>

@@ -62,8 +62,10 @@ export function Models({ scope }: { scope: ModelScope }) {
     scope.kind === "organization" ? organizationAdmin : can("models.manage");
   return (
     <div className={styles.stack}>
-      <PageActions>{manage && <ModelEditor scope={scope} />}</PageActions>
-      <ManageProvidersLink category="models" scope={scope.kind} />
+      <PageActions>
+        <ManageProvidersLink category="models" scope={scope.kind} />
+        {manage && <ModelEditor scope={scope} />}
+      </PageActions>
       <div className={styles.filters}>
         <FormField
           className="min-w-0 w-full"

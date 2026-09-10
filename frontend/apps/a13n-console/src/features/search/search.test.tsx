@@ -172,7 +172,7 @@ it("opens centralized provider setup without changing the agent draft and refres
   );
   const link = screen.getByRole("link", { name: "Manage search providers" });
   expect(link.getAttribute("href")).toBe(
-    "/providers?category=search&scope=workspace&workspace=research",
+    "/workspace/research/settings?section=providers&category=search",
   );
   expect(link.getAttribute("target")).toBe("_blank");
   expect(

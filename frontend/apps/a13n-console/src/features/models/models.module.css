@@ -25,17 +25,10 @@
   margin-left: 4px;
 }
 .modelGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  composes: grid from "../../shared/resource-cards.module.css";
 }
 .modelCard {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  padding: 20px;
-  background: var(--a13n-surface);
-  border-radius: 12px;
+  composes: card from "../../shared/resource-cards.module.css";
 }
 .modelCard > header {
   display: flex;
@@ -85,9 +78,6 @@
   overflow-wrap: anywhere;
 }
 @media (max-width: 760px) {
-  .modelGrid {
-    grid-template-columns: minmax(0, 1fr);
-  }
   .providerGroup > header {
     flex-wrap: wrap;
   }

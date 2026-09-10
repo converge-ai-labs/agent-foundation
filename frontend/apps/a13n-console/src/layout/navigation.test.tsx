@@ -122,7 +122,7 @@ it("keeps resource categories in sidebar links and restores the selected categor
   const user = userEvent.setup();
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <MemoryRouter initialEntries={["/providers?workspace=design"]}>
+      <MemoryRouter initialEntries={["/workspace/design/models"]}>
         <Routes>
           <Route path="/workspace/:workspaceKey" element={<Shell />}>
             <Route path="models" element={<p>Model directory</p>} />
@@ -133,18 +133,11 @@ it("keeps resource categories in sidebar links and restores the selected categor
               element={<p>Instance directory</p>}
             />
           </Route>
-          <Route element={<Shell />}>
-            <Route path="/providers" element={<p>Provider directory</p>} />
-          </Route>
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  expect(
-    screen
-      .getByRole("link", { name: "Providers" })
-      .getAttribute("aria-current"),
-  ).toBe("page");
+  expect(screen.queryByRole("link", { name: "Providers" })).toBeNull();
   await user.click(screen.getByRole("link", { name: "Models" }));
   expect(screen.getByText("Model directory")).toBeTruthy();
   await user.click(screen.getByRole("link", { name: "Environments" }));

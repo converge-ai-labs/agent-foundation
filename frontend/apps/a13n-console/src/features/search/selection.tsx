@@ -1,3 +1,4 @@
+import { ArrowSquareOutIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { ChoiceField, DisclosureSection, FormField, Input } from "a13n-ui";
 import { useState } from "react";
@@ -92,12 +93,13 @@ export function AgentSearchSelection({
         )}
       {can("search_provider.manage") && (
         <a
-          className="my-3 inline-flex text-sm text-primary underline underline-offset-4"
+          className="mt-2 mb-4 inline-flex items-center gap-1.5 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
           href={providersPath("search", "workspace", workspace.key)}
           target="_blank"
           rel="noopener noreferrer"
         >
           {t("Manage search providers")}
+          <ArrowSquareOutIcon size={13} aria-hidden="true" />
         </a>
       )}
       {value && (

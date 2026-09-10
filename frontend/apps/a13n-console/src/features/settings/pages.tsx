@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import { useAccess, useWorkspace } from "../../layout/workspace";
 import { Empty, Page } from "../../shared/feedback";
 import { EnvironmentTemplates } from "../environments/templates";
+import { ProvidersPage } from "../providers/page";
 import { Models } from "../models/page";
 import { ServiceAccounts } from "./accounts";
 import { Audit } from "./audit";
@@ -27,6 +28,7 @@ export function WorkspaceSettings() {
         "member-keys": <ApiKeys memberKeys />,
         accounts: <ServiceAccounts />,
         audit: <Audit scope={scope} />,
+        providers: <ProvidersPage scope={scope} />,
       }}
     />
   );
@@ -57,6 +59,7 @@ export function OrganizationSettings() {
         environments: <EnvironmentTemplates scope={scope} />,
         workspaces: <Workspaces />,
         audit: <Audit scope={scope} />,
+        providers: <ProvidersPage scope={scope} />,
       }}
     />
   );

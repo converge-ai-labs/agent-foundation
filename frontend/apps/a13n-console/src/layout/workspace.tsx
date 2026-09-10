@@ -26,11 +26,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     { t } = useTranslation();
   const route = useParams();
   const location = useLocation();
-  const workspaceKey =
-    route.workspaceKey ??
-    (location.pathname === "/providers"
-      ? new URLSearchParams(location.search).get("workspace")
-      : null);
+  const workspaceKey = route.workspaceKey;
   const organization = auth.data?.organizations[0];
   const userId = auth.data?.user.value.id;
   const workspaces = useQuery({
@@ -189,7 +185,7 @@ function NoWorkspace({
                   <Link to="/organization/settings">
                     {t("Organization settings")}
                   </Link>
-                  <Link to="/providers?scope=organization">
+                  <Link to="/organization/settings?section=providers">
                     {t("Providers")}
                   </Link>
                 </>
@@ -209,11 +205,9 @@ function NoWorkspace({
             error={permissions.error ?? logout.error}
             retry={() => void permissions.refetch()}
           />
-          {[
-            "/settings/profile",
-            "/organization/settings",
-            "/providers",
-          ].includes(location.pathname) && !permissions.isPending ? (
+          {["/settings/profile", "/organization/settings"].includes(
+            location.pathname,
+          ) && !permissions.isPending ? (
             <Outlet />
           ) : permissions.isPending ? (
             <Loading />

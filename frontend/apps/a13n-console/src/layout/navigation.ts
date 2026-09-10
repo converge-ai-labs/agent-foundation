@@ -10,7 +10,6 @@ import {
   TreeStructureIcon,
   PlugIcon,
   PuzzlePieceIcon,
-  SlidersIcon,
 } from "@phosphor-icons/react";
 export const navigationGroups: {
   label: string;
@@ -27,7 +26,6 @@ export const navigationGroups: {
     label: "Resources",
     entries: [
       ["models", "Models", CubeIcon],
-      ["/providers", "Providers", SlidersIcon],
       ["skills", "Skills", PuzzlePieceIcon],
       ["assets", "Assets", FileIcon],
       [

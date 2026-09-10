@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from sqlalchemy import and_, or_, select
+from typing import Literal
+
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
@@ -24,6 +26,7 @@ from .domain import (
     Skill,
     SkillAgentReferenceCollection,
     SkillCollection,
+    SkillListItem,
     SkillPackageManifest,
     SkillRevision,
     SkillRevisionCollection,
@@ -34,6 +37,7 @@ from .errors import (
     invalid_skill_cursor,
     package_store_error,
     skill_in_use,
+    skill_not_found,
 )
 from .models import SkillRecord, SkillRevisionRecord
 from .objects import SkillPackageStore, SkillPackageStoreError
@@ -71,6 +75,27 @@ class SkillCatalogService:
             )
             return record.to_resource()
 
+    async def get_by_key(self, *, actor: AuthenticatedActor, workspace_id: str, skill_key: str) -> Skill:
+        async with transaction(self._sessions) as session:
+            workspace = await authorize_skill_workspace(
+                session,
+                actor=actor,
+                workspace_id=workspace_id,
+                action=WorkspaceAction.skill_read,
+                concealed_code="skill_not_found",
+            )
+            record = await session.scalar(
+                select(SkillRecord).where(
+                    SkillRecord.organization_id == workspace.organization_id,
+                    SkillRecord.workspace_id == workspace.workspace_id,
+                    SkillRecord.key == skill_key,
+                    SkillRecord.deleted_at.is_(None),
+                )
+            )
+            if record is None:
+                raise skill_not_found()
+            return record.to_resource()
+
     async def list(
         self,
         *,
@@ -78,9 +103,16 @@ class SkillCatalogService:
         workspace_id: str,
         limit: int,
         cursor: str | None,
+        q: str | None = None,
+        source_kind: Literal["zip", "github"] | None = None,
     ) -> SkillCollection:
         _validate_limit(limit)
+        term = q.strip().lower() if q else ""
         scope = _cursor_scope(actor=actor, workspace_id=workspace_id)
+        if source_kind:
+            scope["source_kind"] = source_kind
+        if term:
+            scope["q"] = term
         try:
             position = decode_skill_cursor(cursor, scope=scope) if cursor is not None else None
         except SkillCursorError as error:
@@ -92,11 +124,33 @@ class SkillCatalogService:
                 workspace_id=workspace_id,
                 action=WorkspaceAction.skill_read,
             )
-            query = select(SkillRecord).where(
-                SkillRecord.organization_id == workspace.organization_id,
-                SkillRecord.workspace_id == workspace_id,
-                SkillRecord.deleted_at.is_(None),
+            source = SkillRevisionRecord.imported_from["kind"].as_string()
+            query = (
+                select(SkillRecord, source)
+                .join(
+                    SkillRevisionRecord,
+                    and_(
+                        SkillRevisionRecord.id == SkillRecord.current_revision_id,
+                        SkillRevisionRecord.skill_id == SkillRecord.id,
+                        SkillRevisionRecord.workspace_id == SkillRecord.workspace_id,
+                        SkillRevisionRecord.organization_id == SkillRecord.organization_id,
+                    ),
+                )
+                .where(
+                    SkillRecord.organization_id == workspace.organization_id,
+                    SkillRecord.workspace_id == workspace_id,
+                    SkillRecord.deleted_at.is_(None),
+                )
             )
+            if source_kind:
+                query = query.where(source == source_kind)
+            if term:
+                query = query.where(
+                    or_(
+                        func.lower(SkillRecord.name).contains(term, autoescape=True),
+                        func.lower(SkillRecord.key).contains(term, autoescape=True),
+                    )
+                )
             if position is not None:
                 name, skill_id = position
                 query = query.where(
@@ -106,18 +160,20 @@ class SkillCatalogService:
                     )
                 )
             records = tuple(
-                (await session.scalars(query.order_by(SkillRecord.name, SkillRecord.id).limit(limit + 1))).all()
+                (await session.execute(query.order_by(SkillRecord.name, SkillRecord.id).limit(limit + 1))).all()
             )
             page = records[:limit]
             next_cursor = None
             if len(records) > limit and page:
                 next_cursor = encode_skill_cursor(
-                    name=page[-1].name,
-                    skill_id=page[-1].id,
+                    name=page[-1][0].name,
+                    skill_id=page[-1][0].id,
                     scope=scope,
                 )
             return SkillCollection(
-                items=tuple(record.to_resource() for record in page),
+                items=tuple(
+                    SkillListItem(**record.to_resource().model_dump(), source_kind=kind) for record, kind in page
+                ),
                 next_cursor=next_cursor,
             )
 

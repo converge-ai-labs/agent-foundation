@@ -1,6 +1,9 @@
 import {
   Button,
-  ChoiceField,
+  Tabs,
+  TabsList,
+  TabsTab,
+  TabsPanel,
   DisclosureSection,
   FormField,
   Input,
@@ -34,14 +37,12 @@ export function ImportSkill({
       onOpenChange={setOpen}
       trigger={
         <Button variant="default" type="button">
-          {t(skill ? "Publish revision" : "Import skill")}
+          {t(skill ? "New version" : "Import skill")}
         </Button>
       }
       size={"md"}
-      title={t(skill ? "Publish skill revision" : "Import skill")}
-      description={t(
-        "Import a normalized skill package from a ZIP file or GitHub repository.",
-      )}
+      title={t(skill ? "New version" : "Import skill")}
+      description={t("Import a skill from a ZIP file or GitHub repository.")}
       closeLabel={t("Close")}
       open={open}
     >
@@ -156,19 +157,28 @@ function ImportForm({
           />
         </FormField>
       )}
-      <ChoiceField
-        placeholder={t("Select source")}
+      <Tabs
         value={kind}
-        className="min-w-0"
-        onValueChange={setKind}
-        label={t("Source")}
-        options={[
-          { value: "zip_upload", label: t("ZIP file") },
-          { value: "github", label: "GitHub" },
-        ]}
-      />
-      {kind === "zip_upload" ? (
-        <>
+        onValueChange={(value) => {
+          setKind(String(value));
+          publish.reset();
+        }}
+      >
+        <TabsList aria-label={t("Source")}>
+          <TabsTab
+            value="zip_upload"
+            disabled={publish.isPending || stage.isPending}
+          >
+            {t("ZIP file")}
+          </TabsTab>
+          <TabsTab
+            value="github"
+            disabled={publish.isPending || stage.isPending}
+          >
+            GitHub
+          </TabsTab>
+        </TabsList>
+        <TabsPanel value="zip_upload" className={styles.stack}>
           <FileUpload
             label={t("ZIP file")}
             file={upload?.file}
@@ -194,9 +204,8 @@ function ImportForm({
             </DisclosureSection>
           )}
           <ErrorNotice error={stage.error} />
-        </>
-      ) : (
-        <>
+        </TabsPanel>
+        <TabsPanel value="github" className={styles.stack}>
           <FormField className="min-w-0 w-full" label={t("Repository URL")}>
             <Input
               required={true}
@@ -228,12 +237,12 @@ function ImportForm({
               onChange={(event) => setCommit(event.target.value)}
             />
           </FormField>
-        </>
-      )}
+        </TabsPanel>
+      </Tabs>
       <ErrorNotice error={publish.error} />
       <FormActions
         pending={publish.isPending}
-        label={t(basis ? "Publish revision" : "Import skill")}
+        label={t(basis ? "Publish version" : "Import skill")}
       />
     </form>
   );

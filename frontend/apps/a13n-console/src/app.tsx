@@ -18,11 +18,6 @@ import { Shell } from "./layout/shell";
 import { WorkspaceProvider } from "./layout/workspace";
 import { Empty, ErrorNotice, Loading, Page } from "./shared/feedback";
 
-const ProvidersPage = lazy(() =>
-  import("./features/providers/page").then((module) => ({
-    default: module.ProvidersPage,
-  })),
-);
 const ModelsPage = lazy(() =>
   import("./features/models/page").then((module) => ({
     default: module.ModelsPage,
@@ -254,7 +249,7 @@ function AppContent() {
                     />
                     <Route path="assets" element={<AssetsPage />} />
                     <Route path="skills" element={<SkillsPage />} />
-                    <Route path="skills/:skillId" element={<SkillDetail />} />
+                    <Route path="skills/:skillKey" element={<SkillDetail />} />
                     <Route path="models" element={<ModelsPage />} />
                     <Route path="settings" element={<WorkspaceSettings />} />
                     <Route path="usage" element={<ComingSoon />} />
@@ -263,7 +258,6 @@ function AppContent() {
                   </Route>
                   <Route element={<WorkspaceShell />}>
                     <Route path="/" element={null} />
-                    <Route path="/providers" element={<ProvidersPage />} />
                     <Route
                       path="/settings/profile"
                       element={<PersonalSettings />}

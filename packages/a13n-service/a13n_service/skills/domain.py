@@ -188,10 +188,14 @@ class SkillPublicationReceipt(BaseModel):
     outcome: Literal["published", "already_current"]
 
 
+class SkillListItem(Skill):
+    source_kind: Literal["zip", "github"]
+
+
 class SkillCollection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    items: tuple[Skill, ...]
+    items: tuple[SkillListItem, ...]
     next_cursor: str | None
 
 

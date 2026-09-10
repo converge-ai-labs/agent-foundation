@@ -15,7 +15,7 @@ import { useTranslation } from "react-i18next";
 import { StateBadge } from "../../shared/feedback";
 import { JsonView } from "../../shared/form";
 import styles from "./conversations.module.css";
-import { MessageMarkdown } from "./markdown";
+import { MarkdownContent } from "../../shared/markdown";
 import { isObject, type PresentedItem } from "./projection";
 export function PresentedItems({
   items,
@@ -87,7 +87,7 @@ export function PresentedItems({
               </span>
             }
           >
-            {item.text && <MessageMarkdown text={item.text} />}
+            {item.text && <MarkdownContent text={item.text} />}
             {item.protectedReasoning && (
               <p>{t("The provider retained protected reasoning content.")}</p>
             )}
@@ -115,7 +115,7 @@ export function PresentedItems({
               <strong>{agentName ?? t("Agent")}</strong>
               {item.state !== "completed" && <StateBadge state={item.state} />}
             </div>
-            <MessageMarkdown
+            <MarkdownContent
               text={
                 item.text ||
                 (item.state === "streaming"

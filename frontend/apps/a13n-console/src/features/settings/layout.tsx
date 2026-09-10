@@ -11,6 +11,7 @@ import { useSettingsNavigation, type SettingsScope } from "./navigation";
 import styles from "./settings.module.css";
 
 const descriptions: Record<string, string> = {
+  providers: "Manage the services and credentials your agents use.",
   preferences: "Choose how Console looks and feels.",
   profile: "Manage your name and image.",
   security: "Manage how you sign in and keep your account secure.",

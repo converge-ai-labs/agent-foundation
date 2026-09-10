@@ -35,7 +35,7 @@ import { HistoryTranscript } from "./history";
 import { RunInspector } from "./inspector";
 import { InputContent, PresentedItems } from "./items";
 import { useLiveRun } from "./live";
-import { MessageMarkdown } from "./markdown";
+import { MarkdownContent } from "../../shared/markdown";
 import { OptionsComposer } from "./options";
 import { PendingFeedback } from "./pending";
 import { useAgent } from "../agents/queries";
@@ -294,7 +294,7 @@ function RunContent({
             <article className={styles.message}>
               <div className={styles.messageBody}>
                 <strong>{agent.data?.name ?? t("Agent")}</strong>
-                <MessageMarkdown text={run.output_text} />
+                <MarkdownContent text={run.output_text} />
               </div>
             </article>
           )}

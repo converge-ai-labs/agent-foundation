@@ -2977,6 +2977,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/workspaces/{workspace}/skills/{skill_key}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Skill By Key */
+    get: operations["get_skill_by_key_api_v1_workspaces__workspace__skills__skill_key__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/workspaces/{workspace}/threads": {
     parameters: {
       query?: never;
@@ -6926,9 +6943,45 @@ export interface components {
     /** SkillCollection */
     SkillCollection: {
       /** Items */
-      items: components["schemas"]["Skill"][];
+      items: components["schemas"]["SkillListItem"][];
       /** Next Cursor */
       next_cursor: string | null;
+    };
+    /** SkillListItem */
+    SkillListItem: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      created_by: components["schemas"]["PrincipalRef"];
+      /** Current Revision Id */
+      current_revision_id: string;
+      /** Deleted At */
+      deleted_at: string | null;
+      /** Id */
+      id: string;
+      /** Key */
+      key: string;
+      /** Name */
+      name: string;
+      /** Organization Id */
+      organization_id: string;
+      /**
+       * Source Kind
+       * @enum {string}
+       */
+      source_kind: "zip" | "github";
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      updated_by: components["schemas"]["PrincipalRef"];
+      /** Version */
+      version: number;
+      /** Workspace Id */
+      workspace_id: string;
     };
     /** SkillPackageFile */
     SkillPackageFile: {
@@ -16073,6 +16126,8 @@ export interface operations {
       query?: {
         limit?: number;
         cursor?: string | null;
+        q?: string | null;
+        source_kind?: ("zip" | "github") | null;
       };
       header?: never;
       path: {
@@ -16126,6 +16181,38 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["SkillPublicationReceipt"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_skill_by_key_api_v1_workspaces__workspace__skills__skill_key__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        skill_key: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Skill"];
         };
       };
       /** @description Validation Error */

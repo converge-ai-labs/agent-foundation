@@ -176,8 +176,19 @@ async def test_skill_http_lifecycle_and_content_contract(api_client: httpx2.Asyn
     assert skill["key"] == "deploy-helper"
 
     listed = await api_client.get(f"/api/v1/workspaces/{WORKSPACE_ID}/skills")
-    assert listed.json() == {"items": [skill], "next_cursor": None}
+    assert listed.json() == {"items": [{**skill, "source_kind": "zip"}], "next_cursor": None}
     assert (await api_client.get(f"/api/v1/skills/{skill['id']}")).json() == skill
+    keyed = await api_client.get(f"/api/v1/workspaces/default/skills/{skill['key']}")
+    assert keyed.status_code == 200
+    assert keyed.json() == skill
+    assert keyed.headers["etag"] == created.headers["etag"]
+    assert (await api_client.get(f"/api/v1/workspaces/default/skills/{skill['id']}")).status_code == 404
+    for query in ("deploy", "DEPLOY-HELPER"):
+        searched = await api_client.get(f"/api/v1/workspaces/{WORKSPACE_ID}/skills", params={"q": query})
+        assert searched.json()["items"] == [{**skill, "source_kind": "zip"}]
+    assert (await api_client.get(f"/api/v1/workspaces/{WORKSPACE_ID}/skills", params={"q": "missing"})).json()[
+        "items"
+    ] == []
     revisions = await api_client.get(f"/api/v1/skills/{skill['id']}/revisions")
     assert revisions.json() == {"items": [revision], "next_cursor": None}
     references = await api_client.get(f"/api/v1/skills/{skill['id']}/references")
@@ -212,6 +223,7 @@ async def test_skill_http_lifecycle_and_content_contract(api_client: httpx2.Asyn
     deleted = await api_client.delete(f"/api/v1/skills/{skill['id']}", headers={"If-Match": patched.headers["etag"]})
     assert deleted.status_code == 204
     assert (await api_client.get(f"/api/v1/skills/{skill['id']}")).status_code == 404
+    assert (await api_client.get(f"/api/v1/workspaces/default/skills/{skill['key']}")).status_code == 404
     assert (await api_client.get(f"/api/v1/skill-revisions/{revision['id']}")).status_code == 404
     assert (await api_client.get(f"/api/v1/skill-revisions/{revision['id']}/content")).status_code == 404
 

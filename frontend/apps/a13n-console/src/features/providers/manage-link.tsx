@@ -1,3 +1,5 @@
+import { ArrowSquareOutIcon } from "@phosphor-icons/react";
+import { Button } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { useAccess } from "../../layout/workspace";
 import { providersPath } from "./navigation";
@@ -11,13 +13,19 @@ export function ManageProvidersLink({
   const { t } = useTranslation();
   const { workspace } = useAccess();
   return (
-    <a
-      className="inline-flex text-sm text-primary underline underline-offset-4"
-      href={providersPath(category, scope, workspace?.key)}
-      target="_blank"
-      rel="noopener noreferrer"
+    <Button
+      variant="ghost"
+      className="text-muted-foreground"
+      render={
+        <a
+          href={providersPath(category, scope, workspace?.key)}
+          target="_blank"
+          rel="noopener noreferrer"
+        />
+      }
     >
       {t("Manage providers")}
-    </a>
+      <ArrowSquareOutIcon size={13} aria-hidden="true" />
+    </Button>
   );
 }

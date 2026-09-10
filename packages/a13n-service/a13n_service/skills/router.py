@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
@@ -166,13 +166,26 @@ async def list_skills(
     workspace_id: WorkspaceId,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
+    q: Annotated[str | None, Query(max_length=256)] = None,
+    source_kind: Literal["zip", "github"] | None = None,
 ) -> SkillCollection:
     return await _catalog(request).list(
         actor=actor,
         workspace_id=workspace_id,
         limit=limit,
         cursor=cursor,
+        q=q,
+        source_kind=source_kind,
     )
+
+
+@router.get("/workspaces/{workspace}/skills/{skill_key}", response_model=Skill)
+async def get_skill_by_key(
+    request: Request, response: Response, actor: Actor, workspace_id: WorkspaceId, skill_key: str
+) -> Skill:
+    skill = await _catalog(request).get_by_key(actor=actor, workspace_id=workspace_id, skill_key=skill_key)
+    response.headers["ETag"] = resource_etag(skill.id, skill.updated_at)
+    return skill
 
 
 @router.get("/skills/{skill_id}", response_model=Skill)

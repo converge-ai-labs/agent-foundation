@@ -90,6 +90,7 @@ export function ErrorNotice({
 }
 export function Page({
   title,
+  titleAction,
   description,
   actions,
   back,
@@ -97,6 +98,7 @@ export function Page({
   children,
 }: {
   title: string;
+  titleAction?: ReactNode;
   description?: string;
   actions?: ReactNode;
   back?: string;
@@ -118,7 +120,10 @@ export function Page({
         )}
         <header className={styles.pageHeader}>
           <div>
-            <h1>{title}</h1>
+            <div className={styles.titleRow}>
+              <h1>{title}</h1>
+              {titleAction}
+            </div>
             {description && <p>{description}</p>}
           </div>
           <div className={styles.actions} ref={setActionsTarget}>

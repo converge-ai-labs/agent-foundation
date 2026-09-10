@@ -10651,7 +10651,7 @@
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/Skill"
+              "$ref": "#/components/schemas/SkillListItem"
             },
             "title": "Items",
             "type": "array"
@@ -10670,6 +10670,101 @@
         },
         "required": ["items", "next_cursor"],
         "title": "SkillCollection",
+        "type": "object"
+      },
+      "SkillListItem": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "$ref": "#/components/schemas/PrincipalRef"
+          },
+          "current_revision_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Current Revision Id",
+            "type": "string"
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted At"
+          },
+          "id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "organization_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "source_kind": {
+            "enum": ["zip", "github"],
+            "title": "Source Kind",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "$ref": "#/components/schemas/PrincipalRef"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          },
+          "workspace_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "workspace_id",
+          "key",
+          "name",
+          "version",
+          "current_revision_id",
+          "created_at",
+          "created_by",
+          "updated_at",
+          "updated_by",
+          "deleted_at",
+          "source_kind"
+        ],
+        "title": "SkillListItem",
         "type": "object"
       },
       "SkillPackageFile": {
@@ -27344,6 +27439,40 @@
               ],
               "title": "Cursor"
             }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": ["zip", "github"],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Kind"
+            }
           }
         ],
         "responses": {
@@ -27428,6 +27557,55 @@
           }
         },
         "summary": "Create Skill",
+        "tags": ["skill-management"]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/skills/{skill_key}": {
+      "get": {
+        "operationId": "get_skill_by_key_api_v1_workspaces__workspace__skills__skill_key__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_key",
+            "required": true,
+            "schema": {
+              "title": "Skill Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Skill"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Skill By Key",
         "tags": ["skill-management"]
       }
     },

@@ -180,7 +180,8 @@ A GitHub source is a one-time acquisition performed during this request. Every c
 ### Read, Update, References, and Delete
 
 ```http
-GET /api/v1/workspaces/{workspace}/skills?limit=50&cursor=opaque
+GET /api/v1/workspaces/{workspace}/skills?limit=50&cursor=opaque&q=review
+GET /api/v1/workspaces/{workspace}/skills/{skill_key}
 GET /api/v1/skills/{skill_id}
 GET /api/v1/skills/{skill_id}/revisions?limit=50&cursor=opaque
 GET /api/v1/skill-revisions/{skill_revision_id}
@@ -209,6 +210,8 @@ class SkillPublicationReceipt:
 ```
 
 Reads expose safe provenance and manifest metadata, never Secret selectors, object keys, or provider responses. Skill head reads return a strong representation `ETag`. The authorized `/content` route streams a normalized ZIP as `application/zip` with `ETag: W/"sha256:<content_digest>"`; it is not the original upload or a public object-storage URL. Skill collections order by `(name, id)`, Revision collections by `(version desc, id)`, and reference collections by `(agent_name, agent_id)` under the shared cursor contract.
+
+The Workspace-scoped Skill read resolves the exact active `skill_key`, never an ID alias, and returns the same representation and `ETag` as the ID read under `skill.read` authorization. Deleted or inaccessible Skills remain concealed. The collection's optional `q` performs a case-insensitive literal substring match on name or key, trimming surrounding whitespace. Search terms are bounded to 256 characters and bound to pagination cursors; switching terms requires a new first page. Collection items extend the Skill representation with `source_kind` (`zip` or `github`) from the current revision. The optional `source_kind` query filters that same current revision provenance before pagination, combines with `q`, and is bound to the cursor. Publishing a new current revision updates the observed source without changing historical provenance.
 
 PATCH changes only `name` and requires the current strong `ETag` in `If-Match`. It does not append a Revision or advance `Skill.version`; `key` is never patchable.
 

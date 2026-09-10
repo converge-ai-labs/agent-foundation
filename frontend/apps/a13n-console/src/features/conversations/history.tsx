@@ -10,7 +10,7 @@ import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
 import { conversationQueries, runPath } from "./api";
 import styles from "./conversations.module.css";
 import { InputContent, PresentedItems } from "./items";
-import { MessageMarkdown } from "./markdown";
+import { MarkdownContent } from "../../shared/markdown";
 import { mergeRetainedItems } from "./projection";
 
 export function HistoryTranscript({ runId }: { runId: string }) {
@@ -88,7 +88,7 @@ function HistoricalRun({ runId }: { runId: string }) {
           item.role === "assistant" &&
           item.text,
       ) &&
-        run.output_text && <MessageMarkdown text={run.output_text} />}
+        run.output_text && <MarkdownContent text={run.output_text} />}
       {!retained.data.available && (
         <p className={styles.notice}>
           {t("Detailed items are currently unavailable for this run.")}

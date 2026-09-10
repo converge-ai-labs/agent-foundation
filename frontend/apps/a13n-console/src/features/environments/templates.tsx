@@ -26,8 +26,10 @@ export function EnvironmentTemplates({ scope }: { scope: EnvironmentScope }) {
       : can("environment_template.manage");
   return (
     <div className={styles.stack}>
-      <ManageProvidersLink category="environments" scope={scope.kind} />
-      <PageActions>{manage && <TemplateEditor scope={scope} />}</PageActions>
+      <PageActions>
+        <ManageProvidersLink category="environments" scope={scope.kind} />
+        {manage && <TemplateEditor scope={scope} />}
+      </PageActions>
       <ErrorNotice error={query.error} />
       {query.isPending ? (
         <Loading />

@@ -38,6 +38,7 @@ const sections: Record<SettingsScope, Section[]> = {
   ],
   workspace: [
     { value: "profile", label: "General", icon: GearSixIcon },
+    { value: "providers", label: "Providers", icon: SlidersIcon },
     {
       value: "members",
       label: "Members",
@@ -84,7 +85,6 @@ const sections: Record<SettingsScope, Section[]> = {
       value: "providers",
       label: "Providers",
       icon: SlidersIcon,
-      href: "/providers?scope=organization",
     },
     { value: "workspaces", label: "Workspaces", icon: StackIcon },
     { value: "audit", label: "Audit", icon: ClipboardTextIcon },

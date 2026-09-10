@@ -526,6 +526,7 @@ async def test_read_content_tombstone_and_viewer_authorization(
     )
     for read in (
         catalog.get(actor=actor(), skill_id=skill.id),
+        catalog.get_by_key(actor=actor(), workspace_id=WORKSPACE_ID, skill_key=skill.key),
         catalog.get_revision(actor=actor(), revision_id=revision.id),
         catalog.content(actor=actor(), revision_id=revision.id),
     ):
@@ -632,6 +633,12 @@ async def test_skill_collection_cursor_preserves_name_order(
     )
     assert [item.name for item in first.items] == ["Alpha", "Bravo"]
     assert first.next_cursor is not None
+    assert {item.source_kind for item in first.items} == {"zip"}
+    with pytest.raises(SkillError) as mismatch:
+        await skill_services.catalog.list(
+            actor=actor(), workspace_id=WORKSPACE_ID, limit=2, cursor=first.next_cursor, source_kind="zip"
+        )
+    assert mismatch.value.code == "invalid_cursor"
     second = await skill_services.catalog.list(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
@@ -640,6 +647,29 @@ async def test_skill_collection_cursor_preserves_name_order(
     )
     assert [item.name for item in second.items] == ["Charlie"]
     assert second.next_cursor is None
+
+    catalog = skill_services.catalog
+    keyed = await catalog.get_by_key(actor=actor(VIEWER_ID), workspace_id=WORKSPACE_ID, skill_key="skill-2")
+    assert keyed.name == "Alpha"
+    for key in (keyed.id, "missing"):
+        with pytest.raises(SkillError, match="not found"):
+            await catalog.get_by_key(actor=actor(), workspace_id=WORKSPACE_ID, skill_key=key)
+    with pytest.raises(SkillError):
+        await catalog.get_by_key(actor=actor("usr_0000000000000000"), workspace_id=WORKSPACE_ID, skill_key=keyed.key)
+    with pytest.raises(SkillError):
+        await catalog.get_by_key(actor=actor(), workspace_id="ws_0000000000000000", skill_key=keyed.key)
+    by_key = await catalog.list(actor=actor(), workspace_id=WORKSPACE_ID, limit=1, cursor=None, q="SKILL-2")
+    assert [item.name for item in by_key.items] == ["Alpha"]
+    page = await catalog.list(actor=actor(), workspace_id=WORKSPACE_ID, limit=2, cursor=None, q=" A ")
+    assert [item.name for item in page.items] == ["Alpha", "Bravo"]
+    remainder = await catalog.list(actor=actor(), workspace_id=WORKSPACE_ID, limit=2, cursor=page.next_cursor, q="a")
+    assert [item.name for item in remainder.items] == ["Charlie"]
+    with pytest.raises(SkillError) as mismatch:
+        await catalog.list(actor=actor(), workspace_id=WORKSPACE_ID, limit=2, cursor=page.next_cursor, q="b")
+    assert mismatch.value.code == "invalid_cursor"
+    for term in ("%", "_", "unmatched"):
+        empty = await catalog.list(actor=actor(), workspace_id=WORKSPACE_ID, limit=2, cursor=None, q=term)
+        assert empty.items == ()
 
 
 @pytest.mark.anyio
@@ -718,6 +748,26 @@ async def test_github_publication_uses_secret_without_persisting_selector_or_val
     assert SECRET_ID not in serialized
     assert "private-token-value" not in serialized
     assert created.result.revision.imported_from.kind == "github"
+    catalog = skill_services.catalog
+    listed = await catalog.list(
+        actor=actor(), workspace_id=WORKSPACE_ID, limit=50, cursor=None, source_kind="github", q="github"
+    )
+    assert [(item.id, item.source_kind) for item in listed.items] == [(created.result.skill.id, "github")]
+    empty = await catalog.list(actor=actor(), workspace_id=WORKSPACE_ID, limit=50, cursor=None, source_kind="zip")
+    assert not empty.items
+    upload = await staged_source(
+        skill_services.uploads, key="switch-source", content=archive(name="github-skill", body="# New version")
+    )
+    await skill_services.publication.publish_revision(
+        actor=actor(),
+        skill_id=created.result.skill.id,
+        request=CreateSkillRevisionRequest(source=upload, expected_version=1),
+        idempotency_key="switch-source",
+    )
+    github = await catalog.list(actor=actor(), workspace_id=WORKSPACE_ID, limit=50, cursor=None, source_kind="github")
+    assert not github.items
+    zipped = await catalog.list(actor=actor(), workspace_id=WORKSPACE_ID, limit=50, cursor=None, source_kind="zip")
+    assert [(item.id, item.source_kind) for item in zipped.items] == [(created.result.skill.id, "zip")]
 
 
 @pytest.mark.anyio
