@@ -1,5 +1,5 @@
 site_name: Agent Foundation
-site_description: Build and embed Pydantic AI agents with portable environments and typed streams
+site_description: Use Harness UI or build agents with the Harness SDK, portable Environments, and typed streams
 site_url: https://agent-foundation-docs.converge.ai/
 repo_name: converge-ai-labs/agent-foundation
 repo_url: https://github.com/converge-ai-labs/agent-foundation
@@ -8,54 +8,118 @@ docs_dir: docs
 site_dir: site
 strict: true
 
+hooks:
+  - scripts/docs/hooks.py
+
+extra_css:
+  - assets/a13n/tokens.css
+  - assets/a13n/theme.css
+
+watch:
+  - scripts/docs
+  - frontend/packages/a13n-ui/src/brand
+  - frontend/packages/a13n-ui/src/styles/tokens.css
+
 nav:
   - Home: index.md
   - Harness UI:
-      - Start here: a13n-harness-ui/index.md
-      - Use the terminal: a13n-harness-ui/everyday-use.md
-      - Configuration reference: a13n-harness-ui/configuration.md
-      - Models and authentication: a13n-harness-ui/models-and-authentication.md
-      - Agents and subagents: a13n-harness-ui/agents-and-subagents.md
-      - Environments and Projects: a13n-harness-ui/environments-and-projects.md
-      - Extensions and MCP: a13n-harness-ui/extensions-and-mcp.md
-      - Native and Web tools: a13n-harness-ui/native-and-web-tools.md
+      - Overview: a13n-harness-ui/index.md
+      - Get started:
+          - Installation and upgrades: a13n-harness-ui/installation.md
+          - Set up your first Agent: a13n-harness-ui/setup.md
+          - Use the terminal: a13n-harness-ui/everyday-use.md
+      - Configure:
+          - Common recipes: a13n-harness-ui/configuration-recipes.md
+          - Configuration reference: a13n-harness-ui/configuration.md
+          - Models and authentication: a13n-harness-ui/models-and-authentication.md
+          - Agents and subagents: a13n-harness-ui/agents-and-subagents.md
+          - Environments and Projects: a13n-harness-ui/environments-and-projects.md
+      - Add tools:
+          - MCP, Skills, and extensions: a13n-harness-ui/extensions-and-mcp.md
+          - Native tools and Web providers: a13n-harness-ui/native-and-web-tools.md
       - Automation and troubleshooting: a13n-harness-ui/automation-and-troubleshooting.md
-  - Agent Harness:
+  - Harness:
       - Overview: a13n-harness/index.md
       - Get started:
           - Getting Started: a13n-harness/getting-started.md
           - Testing: a13n-harness/testing.md
-      - Core concepts:
+      - Build an Agent:
           - Agents and Runs: a13n-harness/agents-and-runs.md
+          - Models and authentication: a13n-harness/models.md
+          - Tools and dependencies: a13n-harness/tools-and-dependencies.md
+          - Inputs and outputs: a13n-harness/inputs-and-outputs.md
           - Capabilities: a13n-harness/capabilities.md
+      - Add behavior:
+          - Context and memory: a13n-harness/context-and-memory.md
           - Environments: a13n-harness/environments.md
           - State and Resume: a13n-harness/state-and-resume.md
-      - Build behavior:
-          - Multimedia Understanding: a13n-harness/multimedia-understanding.md
+          - MCP tools: a13n-harness/mcp.md
+          - Multimedia understanding: a13n-harness/multimedia-understanding.md
           - Delegation and CodeAct: a13n-harness/delegation-and-codeact.md
           - Skills: a13n-harness/skills.md
       - Integrate and operate:
+          - Usage, limits, and pricing: a13n-harness/usage-and-limits.md
           - Observation: a13n-harness/observation.md
           - Embedding in a Host: a13n-harness/hosting.md
           - Plugins and Extensions: a13n-harness/plugins.md
-  - Environments:
-      - Overview: environments/index.md
-      - a13n Environment:
-          - Overview: a13n-environment/index.md
-          - Built-in Examples: a13n-environment/examples.md
-          - Remote Envd: a13n-environment/remote-envd.md
-      - a13n-envd: a13n-envd/index.md
+  - Environment:
+      - Overview: a13n-environment/index.md
+      - Getting started: a13n-environment/getting-started.md
+      - Choose a backend: environments/index.md
+      - Lifecycle and state: a13n-environment/lifecycle.md
+      - Providers and runtime: a13n-environment/providers.md
+      - Operations and limits: a13n-environment/operations.md
+      - Built-in examples: a13n-environment/examples.md
+      - Remote Envd: a13n-environment/remote-envd.md
+  - Envd:
+      - Overview: a13n-envd/index.md
+      - Installation: a13n-envd/installation.md
+      - Configuration and transports: a13n-envd/configuration.md
+      - Isolation and troubleshooting: a13n-envd/isolation.md
   - a13n Service:
       - Identity and Access: a13n-service/identity.md
       - External Tools: a13n-service/external-tools.md
       - Configure Models: a13n-service/models.md
       - Configure Web Search: a13n-service/search.md
       - Background Tasks: a13n-service/background-tasks.md
-  - Streaming:
-      - Agent Stream Protocol: a13n-stream-protocol/index.md
+  - Stream Protocol:
+      - Overview: a13n-stream-protocol/index.md
+      - Getting started: a13n-stream-protocol/getting-started.md
+      - Events and processors: a13n-stream-protocol/events.md
+      - Replay and recovery: a13n-stream-protocol/replay.md
 
 theme:
   name: material
+  custom_dir: scripts/docs/theme
+  font: false
+  logo: assets/a13n/logo.svg
+  favicon: assets/a13n/logo.svg
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: lucide/moon
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: lucide/sun
+        name: Switch to light mode
+  icon:
+    menu: lucide/menu
+    search: lucide/search
+    close: lucide/x
+    previous: lucide/arrow-left
+    next: lucide/arrow-right
+    top: lucide/arrow-up
+    repo: lucide/github
+    edit: lucide/pencil
+    admonition:
+      note: lucide/pencil
+      info: lucide/info
+      tip: lucide/lightbulb
+      warning: lucide/triangle-alert
+      danger: lucide/circle-alert
   features:
     - navigation.tabs
     - navigation.sections
@@ -74,6 +138,9 @@ markdown_extensions:
   - pymdownx.details
   - pymdownx.highlight:
       anchor_linenums: true
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
   - pymdownx.tabbed:
       alternate_style: true

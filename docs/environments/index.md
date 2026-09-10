@@ -1,4 +1,6 @@
-# Environments
+# Choose an Environment backend
+
+For a first file operation without an Agent, use the [Environment quickstart](../a13n-environment/getting-started.md). This guide compares backends and shows how they fit into Harness.
 
 An Environment gives an Agent a provider-neutral way to work with files, commands, processes, retained output, and ports. A Host uses an Environment Provider to construct one fresh adapter for a selected workspace, sandbox, container, VM, or remote execution target.
 

@@ -13,8 +13,10 @@ import httpx2
 import pytest
 from a13n_service.app import Components, create_app
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
+from a13n_service.iam.models import OrganizationRecord, WorkspaceRecord
 from a13n_service.observability import RunAttemptCorrelation, TraceContent, build_observability_runtime
 from a13n_service.settings import ProcessRole, Settings
+from a13n_service.storage import transaction
 from a13n_service.trace_query import (
     AuthorizedRunAttempt,
     LangfuseTraceQueryProvider,
@@ -40,14 +42,15 @@ pytestmark = pytest.mark.skipif(
 async def test_otlp_trace_round_trips_through_langfuse_v4(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    service_sqlite_database: Path,
 ) -> None:
     assert _BASE_URL is not None
     assert _PUBLIC_KEY is not None
     assert _SECRET_KEY is not None
 
     suffix = uuid4().hex[:12]
-    organization_id = f"org-it-{suffix}"
-    workspace_id = f"workspace-it-{suffix}"
+    organization_id = f"org_{suffix}"
+    workspace_id = f"ws_{suffix}"
     run_attempt_id = f"attempt-it-{suffix}"
     search_token = f"trace-integration-{suffix}"
     authorization = base64.b64encode(f"{_PUBLIC_KEY}:{_SECRET_KEY}".encode()).decode()
@@ -96,7 +99,7 @@ async def test_otlp_trace_round_trips_through_langfuse_v4(
         search_in=SearchIn.input,
         run_attempt_id=run_attempt_id,
     )
-    async with httpx2.AsyncClient(follow_redirects=False, timeout=5) as client:
+    async with httpx2.AsyncClient(follow_redirects=False, timeout=5, trust_env=False) as client:
         provider = LangfuseTraceQueryProvider(
             client,
             base_url=_BASE_URL,
@@ -166,7 +169,7 @@ async def test_otlp_trace_round_trips_through_langfuse_v4(
 
     settings = Settings(
         service={"role": ProcessRole.control},
-        database={"backend": "sqlite", "sqlite_path": tmp_path / "database.sqlite3"},
+        database={"backend": "sqlite", "sqlite_path": service_sqlite_database},
         redis={"backend": "memory"},
         objects={"backend": "local", "local_root": tmp_path / "objects"},
         filesystem={"root": tmp_path / "files"},
@@ -192,6 +195,25 @@ async def test_otlp_trace_round_trips_through_langfuse_v4(
         ),
     )
     async with app.router.lifespan_context(app):
+        # The ordinary HTTP boundary resolves workspace references before the
+        # test authorizer runs. Keep schema and identity scope fixture-owned.
+        async with transaction(app.state.runtime.shared.storage.sessions) as session:
+            session.add(
+                OrganizationRecord(
+                    id=organization_id, key="trace-test", name="Trace test", created_at=now, updated_at=now
+                )
+            )
+            await session.flush()
+            session.add(
+                WorkspaceRecord(
+                    id=workspace_id,
+                    organization_id=organization_id,
+                    key="trace-test",
+                    name="Trace test",
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
         transport = httpx2.ASGITransport(app=app)
         async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
             response = await client.get(

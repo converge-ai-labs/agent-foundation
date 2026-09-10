@@ -33,7 +33,7 @@ Each resource file defines one resource except MCP files, which also accept a mu
 
 The optional `AGENTS.md` beside the root YAML is global user-role guidance. Its exact UTF-8 content participates in the accepted generation fingerprint and source digest, under the same stable regular-file read and size limits as other primary sources. Edits and removal take effect on later accepted generations; captured Runs remain immutable. `RULES.md` and `AGENTS.override.md` are not instruction sources. Harness UI does not import guidance from ambient Codex configuration. [Composition](02-agent-composition-and-snapshots.md#resolution) owns injection and capture.
 
-The root file owns restart-bound process settings, global defaults, and application tool switches:
+The root file owns restart-bound process settings, user-input delivery, global defaults, and application tool switches:
 
 ```yaml
 schema_version: "1"
@@ -43,6 +43,9 @@ process:
   terminal_update_check: true
   log_level: INFO
   log_format: pretty
+
+input:
+  long_text_threshold_chars: 8000
 
 tools:
   enable_ask_user_question: true
@@ -64,6 +67,8 @@ defaults:
 `subagents.include` is an ordered unique list of release-owned names: `code-reviewer`, `executor`, and `explorer`. Omitted or `[]` includes none. Normal setup includes all three; `setup --advanced` offers all or none; individual names remain editor-configurable. These selections extend the root Run roster, not every descendant roster. They are composition inputs, not sticky Thread selections. The package owns the definitions; no definition files are copied into the configuration tree. `a13n-harness-ui config subagents` lists available roles and current inclusion. [Composition](02-agent-composition-and-snapshots.md#built-in-subagents) owns expansion, identity, inheritance, and conflict handling.
 
 `tools.enable_ask_user_question` defaults to `true`; disabling it excludes the built-in `ask_user_question` Capability from newly resolved Runs, including explicitly authored selections. `tools.enable_codeact` defaults to `true`; when enabled it includes the native Harness CodeAct Capability with `run_code`, `run_program`, and its explicit `store`, `load`, and `forget` state tools. State bounds and persistence semantics follow the [Harness CodeAct contract](../a13n-harness/18-codeact.md). An explicit Agent `codeact` Capability configuration can narrow or tune its native runners, but cannot bypass the global disabled switch. Ordinary tool visibility filters still apply. These switches participate in accepted generations and captured compositions; they do not alter active or previously captured Runs. [Composition](02-agent-composition-and-snapshots.md#resolution) owns reconstruction.
+
+`input.long_text_threshold_chars` is a positive integer, default `8000`, or `null` to disable automatic text files. It counts Unicode characters in each submitted user-text block, not tokens or UTF-8 bytes. A block is eligible only when strictly longer than the threshold. A root Run captures the policy from its accepted generation and uses it for initial input and human steering; later configuration changes affect later Runs. The [root input contract](05-runtime-subagents-and-surfaces.md#long-text-input-files) owns conversion, readability checks, and failure behavior.
 
 `tools.ask_user_question_timeout_seconds` is a positive finite number, default `120`. It controls the terminal's wait for each displayed structured question, not model execution or shell-approval timeouts. The [interactive contract](07-interactive-cli.md#decisions-cancellation-and-recovery) owns expiry and continuation behavior.
 

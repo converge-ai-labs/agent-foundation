@@ -48,7 +48,31 @@ private_endpoint_cidrs = ["127.0.0.1/32"]
 auto_update = false
 
 [observability]
-tracing = false
+tracing = true
+# Local debugging captures input/output content in the local Langfuse volumes.
+trace_content = "standard"
+
+# Logfire alternative for development (explicit opt-in; no Logfire SDK required):
+# Keep tracing = true above; consider trace_content = "none" for remote export.
+# In [observability.query] below, replace provider = "langfuse" with provider = "none".
+# Service has no built-in Logfire trace-query adapter; inspect traces in Logfire.
+# Exporter credentials remain Host environment, not committed TOML values:
+#   export A13N_DEV_TRACE_BACKEND=logfire
+#   export LOGFIRE_TOKEN='YOUR_LOGFIRE_WRITE_TOKEN'
+#   export LOGFIRE_BASE_URL=https://logfire-us.pydantic.dev
+#   make service-dev
+# For the EU region use https://logfire-eu.pydantic.dev.
+# The dev launcher builds a fresh HTTP/protobuf OTLP profile from these values,
+# rather than retaining ambient OTEL_* endpoints or Langfuse Basic headers.
+# To return to local Langfuse, unset A13N_DEV_TRACE_BACKEND and restore provider below.
+
+[observability.query]
+# dev.service uses this same local project for OTLP export and trace queries.
+# The adjacent port (3001) serves Langfuse media. Neither backend reads .env.
+provider = "langfuse"
+langfuse_base_url = "http://127.0.0.1:3000"
+langfuse_public_key = "lf_pk_agent_foundation_local"
+langfuse_secret_key = "lf_sk_agent_foundation_local"
 
 [migration]
 auto_migrate = false

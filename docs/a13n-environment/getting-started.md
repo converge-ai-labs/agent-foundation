@@ -1,0 +1,95 @@
+# Getting started
+
+Read and write one file through an Environment, without Harness, a model, Docker, or a cloud account. This shows the Provider boundary before introducing Agent tools.
+
+## Install from this checkout
+
+The examples track `main`. Use Python 3.13 and the locked workspace:
+
+```console
+git clone https://github.com/converge-ai-labs/agent-foundation.git
+cd agent-foundation
+uv sync --locked --package a13n-environment
+```
+
+For a published-version application, install `a13n-environment` with your package manager and use the matching release API.
+
+## Run a complete file example
+
+Save this as `environment_example.py`, then run `uv run python environment_example.py`:
+
+```python
+import asyncio
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from a13n_environment import build_environment_provider_catalog
+
+
+async def main() -> None:
+    # The application owns this disposable directory, not the Provider.
+    with TemporaryDirectory(prefix="a13n-environment-") as temporary:
+        workspace = Path(temporary).resolve()
+        provider = build_environment_provider_catalog(
+            builtin_keys=("a13n.direct-local",),
+        ).require("a13n.direct-local")
+        configuration = provider.validate_configuration(
+            schema_version="1",
+            value={"root": {"path": str(workspace)}},
+        )
+        environment = provider.create_environment(
+            configuration=configuration,
+            environment_id="example-workspace",
+            state=None,
+        )
+
+        async with environment:
+            await environment.ensure_ready(frozenset({"files"}))
+            files = environment.operations.files
+            if files is None:
+                raise RuntimeError("This Environment does not expose files")
+            await files.write_text("/hello.txt", "Hello from Environment", mode="upsert")
+            text = await files.read_text("/hello.txt")
+            assert text.text == "Hello from Environment"
+            print(text.text)
+
+        # Adapter close leaves Host-owned files intact.
+        assert (workspace / "hello.txt").is_file()
+        assert environment.dump_state() is None
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+The output is `Hello from Environment`.
+
+1. The catalog explicitly includes Direct Local; installing another Provider would not activate it.
+2. Validation and adapter construction do not access the target.
+3. `async with` enters a single-use operation scope. `ensure_ready({"files"})` prepares the target and checks the required family.
+4. `/hello.txt` is a logical path within this Environment, not the Host filesystem root.
+5. Context exit closes adapter resources. The application-owned temporary directory is removed later by `TemporaryDirectory`, not by Environment cleanup.
+
+Direct Local shares the Host account. Its file mapping is not OS isolation for allowed commands.
+
+## Use the same Provider with Harness
+
+Create **another fresh adapter** and pass it to Harness; do not pass the already entered adapter from the example:
+
+```python
+environment = provider.create_environment(
+    configuration=configuration,
+    environment_id="example-workspace",
+    state=None,
+)
+result = await executable.run("Inspect the workspace", environment=environment)
+```
+
+This fragment assumes the workspace still exists and `executable` was built with `DynamicEnvironmentCapability`. Harness handles entry, readiness on use, and close. Supplying an Environment alone does not add tools to a Model.
+
+## Where to go next
+
+- [Choose a backend](../environments/index.md) before adding isolation or remote execution.
+- [Lifecycle and state](lifecycle.md) explains retained Docker/E2B targets and explicit destruction.
+- [Operations](operations.md) explains search syntax, output limits, and process handles.
+- [Harness integration](../a13n-harness/environments.md) adds model-facing tools and multiple mounts.

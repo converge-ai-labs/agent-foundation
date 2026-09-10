@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -163,6 +163,9 @@ dependencies = [
     { name = "markdownify" },
     { name = "openai" },
     { name = "openpyxl" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-sdk" },
     { name = "packaging" },
     { name = "pillow" },
     { name = "prompt-toolkit" },
@@ -207,6 +210,9 @@ requires-dist = [
     { name = "markdownify", specifier = ">=1,<2" },
     { name = "openai", specifier = ">=3.5,<4" },
     { name = "openpyxl", specifier = ">=3.1,<4" },
+    { name = "opentelemetry-api", specifier = ">=1.39,<2" },
+    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.39,<2" },
+    { name = "opentelemetry-sdk", specifier = ">=1.39,<2" },
     { name = "packaging", specifier = ">=24,<27" },
     { name = "pillow", specifier = ">=11,<13" },
     { name = "prompt-toolkit", specifier = ">=3.0.52,<4" },

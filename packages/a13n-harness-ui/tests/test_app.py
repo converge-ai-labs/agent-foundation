@@ -587,10 +587,17 @@ async def test_environment_run_service_prepares_sandbox_with_canonical_host_path
         plan = await executor._environments.prepare(published.value)
         project_root = Path(published.value.project_roots[0]).as_posix()
 
-        assert tuple(plan.environments) == ("workspace", "user-skills", "configuration", "thread-files")
+        assert tuple(plan.environments) == (
+            "workspace",
+            "builtin-skills",
+            "user-skills",
+            "configuration",
+            "thread-files",
+        )
         assert isinstance(plan.environments["workspace"], LocalEnvdEnvironment)
         assert tuple(item.mount_path for item in plan._mounts) == (
             project_root,
+            "/environment/builtin-skills",
             user_skills.resolve().as_posix(),
             root.parent.resolve().as_posix(),
             (tmp_path / "state/threads" / published.value.thread_id).as_posix(),
@@ -766,12 +773,14 @@ async def test_environment_run_service_mounts_plugin_files_read_write(tmp_path: 
 
         plan = await executor._environments.prepare(composition)
 
-        expected_aliases = ("workspace", "content-plugin-1") + (("user-skills",) if skills_enabled else ())
+        expected_aliases = ("workspace", "content-plugin-1") + (
+            ("builtin-skills", "user-skills") if skills_enabled else ()
+        )
         assert tuple(plan.environments) == (*expected_aliases, "configuration", "thread-files")
         assert tuple(item.mount_path for item in plan._mounts) == (
             (tmp_path / "workspace").resolve().as_posix(),
             plugin_skills.parent.resolve().as_posix(),
-        ) + ((user_skills.resolve().as_posix(),) if skills_enabled else ()) + (
+        ) + (("/environment/builtin-skills", user_skills.resolve().as_posix()) if skills_enabled else ()) + (
             root.parent.resolve().as_posix(),
             (tmp_path / "state/threads" / composition.thread_id).as_posix(),
         )
@@ -807,7 +816,7 @@ async def test_environment_run_service_mounts_plugin_files_read_write(tmp_path: 
     assert "Updated by the Agent." in plugin_skill.read_text()
 
 
-async def test_environment_run_service_adds_only_the_dedicated_user_skill_mount(tmp_path: Path) -> None:
+async def test_environment_run_service_adds_dedicated_skill_mounts(tmp_path: Path) -> None:
     root = _write_configuration(tmp_path)
     agent = tmp_path / "agents" / "assistant.yaml"
     agent.write_text(f"{agent.read_text()}capabilities:\n  - capability: skills\n")
@@ -838,7 +847,13 @@ async def test_environment_run_service_adds_only_the_dedicated_user_skill_mount(
         published = await executor._compositions.publish(source, selection)
         plan = await executor._environments.prepare(published.value)
 
-        assert tuple(plan.environments) == ("workspace", "user-skills", "configuration", "thread-files")
+        assert tuple(plan.environments) == (
+            "workspace",
+            "builtin-skills",
+            "user-skills",
+            "configuration",
+            "thread-files",
+        )
         assert plan.default_environment == "workspace"
         assert user_skills.is_dir()
         async with plan.runtime.bind(
@@ -852,6 +867,7 @@ async def test_environment_run_service_adds_only_the_dedicated_user_skill_mount(
         ) as environment:
             assert tuple(item.mount_path for item in environment.snapshot.mounts) == (
                 Path(published.value.project_roots[0]).as_posix(),
+                "/environment/builtin-skills",
                 user_skills.resolve().as_posix(),
                 root.parent.resolve().as_posix(),
                 (tmp_path / "state/threads" / stored.thread_id).as_posix(),
@@ -906,6 +922,7 @@ async def test_native_skills_reuse_a_project_mount_at_the_user_skill_root(
         plan = await executor._environments.prepare(composition)
 
         expected_aliases = ("workspace",) if project_position == "first" else ("workspace", "workspace-2")
+        expected_aliases = (*expected_aliases, "builtin-skills")
         assert tuple(plan.environments) == (*expected_aliases, "configuration", "thread-files")
         reconstructed = AgentReconstructor(user_skills_root=user_skills).reconstruct(
             composition,

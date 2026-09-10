@@ -36,7 +36,7 @@ from a13n_harness.environment.providers import EnvironmentRuntime
 from anyio import CancelScope, move_on_after, to_thread
 
 from a13n_harness_ui.composition import ResolvedEnvironmentProfile, ResolvedRunComposition
-from a13n_harness_ui.environment_paths import EnvironmentPathLayout
+from a13n_harness_ui.environment_paths import BUILTIN_SKILLS_PATH, BUILTIN_SKILLS_ROOT, EnvironmentPathLayout
 from a13n_harness_ui.errors import CompositionError, EnvironmentLifecycleError, StoreError
 from a13n_harness_ui.extensions import (
     LOCAL_ENVD_PROVIDER_KEY,
@@ -396,6 +396,14 @@ class EnvironmentRunService:
                     )
                 )
             if _root_selects_skills(composition):
+                mounts.append(
+                    await self._prepare_host_files_mount(
+                        root=BUILTIN_SKILLS_ROOT,
+                        alias="builtin-skills",
+                        mount_path=BUILTIN_SKILLS_PATH,
+                        read_only=True,
+                    )
+                )
                 if not (canonical_host_paths and Path(path_layout.user_skills) in roots):
                     mounts.append(
                         await self._prepare_user_skills_mount(
@@ -492,6 +500,7 @@ class EnvironmentRunService:
         root: Path,
         alias: str,
         mount_path: str | None,
+        read_only: bool = False,
     ) -> _PreparedMount:
         try:
             normalized = await to_thread.run_sync(_validate_content_plugin_root, root)
@@ -499,7 +508,7 @@ class EnvironmentRunService:
             configuration = provider.validate_configuration(
                 schema_version="1",
                 value={
-                    "root": {"path": os.fspath(normalized), "read_only": False},
+                    "root": {"path": os.fspath(normalized), "read_only": read_only},
                     "shell_profiles": [],
                     "allowed_executables": [],
                     "allowed_ports": [],
@@ -518,7 +527,21 @@ class EnvironmentRunService:
                 code="host_files_mount_failed",
                 details={"mount": alias, "root": os.fspath(root)},
             ) from exc
-        file_actions = frozenset(action for action in EnvironmentAction if action.value.startswith("environment.file."))
+        file_actions = (
+            frozenset(
+                {
+                    EnvironmentAction.FILE_STAT,
+                    EnvironmentAction.FILE_READ_TEXT,
+                    EnvironmentAction.FILE_READ_BYTES,
+                    EnvironmentAction.FILE_LIST,
+                    EnvironmentAction.FILE_QUERY,
+                    EnvironmentAction.FILE_SEARCH_TEXT,
+                    EnvironmentAction.FILE_COPY_SOURCE,
+                }
+            )
+            if read_only
+            else frozenset(action for action in EnvironmentAction if action.value.startswith("environment.file."))
+        )
         return _PreparedMount(
             alias=alias,
             key=None,

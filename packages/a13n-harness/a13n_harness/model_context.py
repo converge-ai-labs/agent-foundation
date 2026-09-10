@@ -418,10 +418,10 @@ def _requires_exact_history(messages: list[ModelMessage]) -> bool:
     for message in messages:
         if isinstance(message, ModelResponse):
             pending.update(part.tool_call_id for part in message.parts if isinstance(part, BaseToolCallPart))
-        elif isinstance(message, ModelRequest):
-            pending.difference_update(
-                part.tool_call_id for part in message.parts if isinstance(part, BaseToolReturnPart | RetryPromptPart)
-            )
+        # Provider-executed native tools return inside ModelResponse, not ModelRequest.
+        pending.difference_update(
+            part.tool_call_id for part in message.parts if isinstance(part, BaseToolReturnPart | RetryPromptPart)
+        )
     return bool(pending)
 
 

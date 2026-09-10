@@ -227,7 +227,7 @@ capabilities:
 
 `roots` is Harness UI's optional ordered unique list of **Environment paths**, up to 128 entries, scanned before automatic sources. It is not an arbitrary host path escape hatch. Automatic sources come from Project, installed Content Plugin, and user Skill locations through the selected Environment's exposed paths. Automatic directories are `<project-root>/.agents/skills` and `~/.agents/skills`, plus installed plugin Skill roots. Explicit roots must be canonical absolute Environment paths, not `~` or relative paths. In Sandbox, a host path that is not mapped into the Environment is not made available by writing it here.
 
-Discovered Skill names appear in slash completion. Skill instructions are task-specific; adding a source does not mean every Skill should run on every prompt. Exact source precedence, path mapping, and native discovery follow the [Environment Skill Sources contract](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/a13n-harness-ui/02b-environment-skill-sources.md).
+Type `$` in the chat composer to discover and complete Skill names; `/` is for terminal commands. Skill instructions are task-specific; adding a source does not mean every Skill should run on every prompt. Exact source precedence, path mapping, and native discovery follow the [Environment Skill Sources contract](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/a13n-harness-ui/02b-environment-skill-sources.md).
 
 ## Content Plugins
 

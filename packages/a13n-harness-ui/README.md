@@ -88,6 +88,16 @@ a13n-harness-ui plugin uninstall plugin-reviewer
 
 Install and list output includes the immutable installation directory so its complete content can be inspected directly. Uninstall removes the registration but retains that content-addressed directory for Runs that already captured it. Content Plugin management is an explicit CLI operation.
 
+## Built-in Configuration Skill
+
+Agents selecting the `skills` Capability automatically discover `harness-ui-configuration`. It supplies a configuration workflow, a generated documentation map, and a detailed section index with line ranges. Ask the Agent, for example, to use this Skill to inspect its configuration and explain how to enable an MCP server before changing anything.
+
+The Skill and this release's Harness UI documentation are bundled in the wheel and sdist. They are exposed at `/environment/builtin-skills/harness-ui-configuration` through a read-only, file-only mount, including in projectless conversations and with Sandbox or remote Project profiles. No files are copied into your project or user Skill directory. Existing sources override the built-in Skill by name; omitting the Skills Capability omits the mount and catalog entry.
+
+For source development, `make a13n-harness-ui-skills` regenerates the bundle from `mkdocs.yml`, `docs/a13n-harness-ui/`, and the package's operational template. `make a13n-harness-ui`, `make a13n-harness-ui-assets`, and `make test` prepare it before their consumers run. CI also generates it explicitly after dependency synchronization: cached editable wheels can skip the package build hook, so `uv sync` alone does not guarantee a current bundle. Package builds generate it; wheel rebuilds from the sdist use the bundled result without the repository docs. Generated content is ignored by Git. After editing documentation, regenerate before starting a new application process to inspect the updated Skill.
+
+The Skill does not grant new configuration permissions or guarantee external connectivity. The Agent must distinguish accepted edits and warnings from later-Run changes, restart requirements, and actual model/MCP connection tests. Cross-topic references outside the bundled docs remain online references, listed in the section index.
+
 ## Local Store Development
 
 Harness UI owns its SQLite schema and Alembic history independently from a13n Service. Before the first published Harness UI release, an unreleased history may be squashed to one generated base revision because no supported user database depends on its revision IDs. After publication, retain revision identity and generate additive revisions. Generate every reviewed revision from the repository root against a disposable SQLite database:

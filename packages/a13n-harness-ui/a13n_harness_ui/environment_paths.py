@@ -5,6 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+# Package resources keep one logical route independently of Project path presentation.
+BUILTIN_SKILLS_PATH = "/environment/builtin-skills"
+BUILTIN_SKILLS_ROOT = Path(__file__).parent / "assets" / "builtin_skills"
+BUILTIN_SKILLS_SOURCE_ID = "a13n-harness-ui:builtin-skills"
+
 
 @dataclass(frozen=True, slots=True)
 class EnvironmentPathLayout:
@@ -57,4 +62,4 @@ class EnvironmentPathLayout:
         )
 
 
-__all__ = ["EnvironmentPathLayout"]
+__all__ = ["BUILTIN_SKILLS_PATH", "BUILTIN_SKILLS_ROOT", "BUILTIN_SKILLS_SOURCE_ID", "EnvironmentPathLayout"]
