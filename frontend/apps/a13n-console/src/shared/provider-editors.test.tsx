@@ -205,8 +205,12 @@ it.each(cases)(
     const name = await screen.findByRole("textbox", { name: "Name" });
     expect((name as HTMLInputElement).value).toBe(provider.name);
     expect(
-      screen.queryByRole("combobox", { name: "Provider type" }),
-    ).toBeNull();
+      (
+        screen.getByRole("combobox", {
+          name: "Provider type",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
     expect(http.GET).toHaveBeenCalledWith(detailPath, expect.anything());
     await user.clear(name);
     await user.type(name, "Renamed provider");

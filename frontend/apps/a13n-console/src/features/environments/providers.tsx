@@ -1,3 +1,4 @@
+import { ProviderTypeField } from "../../shared/provider-type-field";
 import { ProviderEnabled } from "../../shared/provider-enabled";
 import {
   useResourceEditorState,
@@ -11,7 +12,6 @@ import { ResourceIdentity } from "../../shared/collection";
 import { ScopeBadge } from "../../shared/scope-badge";
 import {
   Button,
-  SearchPicker,
   DisclosureSection,
   FormField,
   Input,
@@ -326,14 +326,23 @@ function ProviderForm({
             maxLength={128}
           />
         </FormField>
+        <ProviderTypeField
+          definitions={definitions}
+          value={type}
+          disabled={!!basis}
+          onValueChange={(value) => {
+            setType(value);
+            setConfiguration({});
+            setCredential({});
+          }}
+          labelAction={
+            type === "a13n.e2b" && (
+              <ProviderKeyLink href="https://e2b.dev/dashboard?tab=keys" />
+            )
+          }
+        />
         {basis ? (
           <>
-            <FormField label={t("Provider type")}>
-              <Input
-                readOnly
-                value={String(definition?.display_name ?? type)}
-              />
-            </FormField>
             {Object.keys(configuration).length > 0 && (
               <DisclosureSection title={t("Configuration")}>
                 <JsonView value={configuration} />
@@ -342,37 +351,6 @@ function ProviderForm({
           </>
         ) : (
           <>
-            <FormField
-              label={t("Provider type")}
-              labelAction={
-                type === "a13n.e2b" && (
-                  <ProviderKeyLink href="https://e2b.dev/dashboard?tab=keys" />
-                )
-              }
-            >
-              <SearchPicker
-                placeholder={t("Search providers…")}
-                emptyMessage={t("No matching providers")}
-                value={type}
-                onValueChange={(value) => {
-                  setType(value);
-                  setConfiguration({});
-                  setCredential({});
-                }}
-                label={t("Provider type")}
-                groups={[
-                  {
-                    label: "",
-                    options: definitions.map((item) => ({
-                      value: item.type,
-                      label: item.display_name,
-                      keywords: [item.type],
-                      icon: <ProviderIcon type={item.type} />,
-                    })),
-                  },
-                ]}
-              />
-            </FormField>
             <SchemaFields
               key={type}
               schema={configSchema}

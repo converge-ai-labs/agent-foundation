@@ -1,3 +1,4 @@
+import { ProviderTypeField } from "../../shared/provider-type-field";
 import { ProviderEnabled } from "../../shared/provider-enabled";
 import { ProviderIcon } from "../../shared/provider-icon";
 import {
@@ -10,7 +11,6 @@ import { ResourceIdentity } from "../../shared/collection";
 import { ScopeBadge } from "../../shared/scope-badge";
 import {
   Button,
-  SearchPicker,
   SettingsSection,
   SettingsRow,
   DisclosureSection,
@@ -329,11 +329,18 @@ function ProviderForm({
             maxLength={128}
           />
         </FormField>
+        <ProviderTypeField
+          definitions={definitions}
+          value={type}
+          disabled={!!basis}
+          onValueChange={(value) => {
+            setType(value);
+            setConfiguration({});
+            setCredentials({});
+          }}
+        />
         {basis ? (
           <>
-            <FormField label={t("Provider type")}>
-              <Input readOnly value={definition?.display_name ?? type} />
-            </FormField>
             {Object.keys(configuration).length > 0 && (
               <DisclosureSection title={t("Configuration")}>
                 <JsonView value={configuration} />
@@ -342,29 +349,6 @@ function ProviderForm({
           </>
         ) : (
           <>
-            <FormField label={t("Provider type")}>
-              <SearchPicker
-                placeholder={t("Search providers…")}
-                emptyMessage={t("No matching providers")}
-                value={type}
-                onValueChange={(value) => {
-                  setType(value);
-                  setConfiguration({});
-                  setCredentials({});
-                }}
-                label={t("Provider type")}
-                groups={[
-                  {
-                    label: "",
-                    options: definitions.map((item) => ({
-                      value: item.type,
-                      label: item.display_name,
-                      icon: <ProviderIcon type={item.type} />,
-                    })),
-                  },
-                ]}
-              />
-            </FormField>
             {definition && (
               <>
                 <SchemaFields

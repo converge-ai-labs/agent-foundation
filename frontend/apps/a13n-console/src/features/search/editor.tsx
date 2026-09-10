@@ -1,16 +1,15 @@
+import { ProviderTypeField } from "../../shared/provider-type-field";
 import {
   useResourceEditorState,
   type ResourceEditorControl,
 } from "../../shared/resource-modal";
 import { ProviderEnabled } from "../../shared/provider-enabled";
 import { ProviderKeyLink } from "../../shared/provider-key-link";
-import { ProviderIcon } from "../../shared/provider-icon";
 import { ResourceEditorButton } from "../../shared/resource-editor-button";
 import { ApiError } from "@converge.ai/a13n";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
-  SearchPicker,
   FormField,
   Input,
   SettingsSection,
@@ -228,35 +227,18 @@ export function SearchProviderForm({
           onChange={(event) => setName(event.target.value)}
         />
       </FormField>
-      <FormField
-        label={t("Provider type")}
+      <ProviderTypeField
+        definitions={definitions}
+        value={type}
+        disabled={!!original}
+        onValueChange={(value) => {
+          setType(value);
+          setCredential("");
+        }}
         labelAction={
           definition && <ProviderKeyLink href={definition.setup_url} />
         }
-      >
-        <SearchPicker
-          label={t("Provider type")}
-          placeholder={t("Search providers…")}
-          emptyMessage={t("No matching providers")}
-          value={type}
-          disabled={!!original}
-          onValueChange={(value) => {
-            setType(value);
-            setCredential("");
-          }}
-          groups={[
-            {
-              label: "",
-              options: definitions.map((item) => ({
-                value: item.type,
-                label: item.display_name,
-                keywords: [item.type],
-                icon: <ProviderIcon key={item.type} type={item.type} />,
-              })),
-            },
-          ]}
-        />
-      </FormField>
+      />
       <FormField
         label={t("API Key")}
         description={t(

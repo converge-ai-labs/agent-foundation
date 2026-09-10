@@ -1,3 +1,4 @@
+import { ProviderTypeField } from "../../shared/provider-type-field";
 import { ProviderEnabled } from "../../shared/provider-enabled";
 import { ProviderKeyLink } from "../../shared/provider-key-link";
 import { providerKeyUrls } from "./provider-key-urls";
@@ -12,7 +13,6 @@ import {
   Input,
   SettingsRow,
   SettingsSection,
-  SearchPicker,
 } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -24,7 +24,6 @@ import { SchemaFields } from "../../shared/schema-fields";
 import styles from "../../shared/shared.module.css";
 import { validateSettings } from "../../shared/validation";
 import { modelApi, type ModelScope } from "./api";
-import { ProviderIcon } from "../../shared/provider-icon";
 
 const credentialFields: Record<string, { label: string; description: string }> =
   {
@@ -135,40 +134,23 @@ export function ProviderForm({
           maxLength={128}
         />
       </FormField>
-      <FormField
-        label={t("Provider type")}
+      <ProviderTypeField
+        definitions={definitions}
+        value={type}
+        disabled={!!original}
+        onValueChange={(value) => {
+          setType(value);
+          setConfiguration({});
+          setCredential("");
+          setRemoveCredential(false);
+          setSuggestedApi(undefined);
+        }}
         labelAction={
           providerKeyUrls[type] && (
             <ProviderKeyLink {...providerKeyUrls[type]} />
           )
         }
-      >
-        <SearchPicker
-          placeholder={t("Search providers…")}
-          emptyMessage={t("No matching providers")}
-          value={type}
-          disabled={!!original}
-          onValueChange={(value) => {
-            setType(value);
-            setConfiguration({});
-            setCredential("");
-            setRemoveCredential(false);
-            setSuggestedApi(undefined);
-          }}
-          label={t("Provider type")}
-          groups={[
-            {
-              label: "",
-              options: definitions.map((item) => ({
-                value: item.type,
-                label: item.display_name,
-                icon: <ProviderIcon key={item.type} type={item.type} />,
-                keywords: [item.type],
-              })),
-            },
-          ]}
-        />
-      </FormField>
+      />
       {type === "openai_compatible" ? (
         <>
           <FormField label={t("Base URL")}>
