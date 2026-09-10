@@ -24,7 +24,7 @@ from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, Ins
 from pydantic_ai.models.instrumented import InstrumentationSettings
 
 from a13n_harness._trace import _EnrichedTracer
-from a13n_harness._trace_details import SkillObservation, record_content
+from a13n_harness._trace_details import SkillObservation, record_content, record_span_metadata
 from a13n_harness.errors import DefinitionError
 
 if TYPE_CHECKING:
@@ -250,8 +250,9 @@ class HarnessInstrumentation:
         except BaseException as exc:
             try:
                 if isinstance(exc, CancelledError):
-                    span.set_attribute("a13n.phase.status", "cancelled")
+                    record_span_metadata(span, {"phase.status": "cancelled"})
                 else:
+                    record_span_metadata(span, {"phase.status": "failed"})
                     span.set_attribute("error.type", type(exc).__name__)
                     span.set_status(StatusCode.ERROR)
             except Exception:
@@ -700,7 +701,7 @@ class _LogicalRunObservation:
         *,
         capability_id: str | None = None,
         operation_id: str | None = None,
-    ) -> Generator[None]:
+    ) -> Generator[Span]:
         started_at = monotonic()
         attributes: dict[str, str] = {"a13n.operation.kind": kind}
         if capability_id is not None:
@@ -720,8 +721,23 @@ class _LogicalRunObservation:
         activation = None
         if span_context is not None:
             activation = otel_context.attach(span_context)
+        observed_span = span or INVALID_SPAN
+        record_span_metadata(observed_span, {"operation.kind": kind})
         try:
-            yield
+            yield observed_span
+        except BaseException as exc:
+            record_span_metadata(
+                observed_span, {"operation.status": "cancelled" if isinstance(exc, CancelledError) else "failed"}
+            )
+            if not isinstance(exc, CancelledError):
+                try:
+                    observed_span.set_attribute("error.type", type(exc).__name__)
+                    observed_span.set_status(StatusCode.ERROR)
+                except Exception:
+                    pass
+            raise
+        else:
+            record_span_metadata(observed_span, {"operation.status": "completed"})
         finally:
             if activation is not None:
                 otel_context.detach(activation)
@@ -746,18 +762,18 @@ def observe_operation(
     *,
     capability_id: str | None = None,
     operation_id: str | None = None,
-) -> Generator[None]:
+) -> Generator[Span]:
     """Observe a bounded Harness operation when an active run selected it."""
     observation = _current_run_observation.get()
     if observation is None:
-        yield
+        yield INVALID_SPAN
         return
     with observation.operation(
         kind,
         capability_id=capability_id,
         operation_id=operation_id,
-    ):
-        yield
+    ) as span:
+        yield span
 
 
 @contextmanager
@@ -769,6 +785,14 @@ def observe_phase(kind: Literal["prepare", "finalize", "skills.resolve"]) -> Gen
         return
     with configuration.phase(_INSTRUMENTATION_SCOPE, f"harness.{kind}") as span:
         yield span
+
+
+def observe_output(span: Span, value: object, *, status: str) -> None:
+    """Record an operation-local result using the active Run's content policy."""
+    observation = _current_run_observation.get()
+    configuration = observation._runtime.configuration if observation is not None else None
+    if configuration is not None:
+        configuration.record_output(span, value, status=status)
 
 
 def observe_skill_catalog(names: Sequence[str], *, count: int | None = None) -> None:
@@ -810,4 +834,5 @@ __all__ = [
     "HarnessObservationContext",
     "HarnessTraceContent",
     "SkillObservation",
+    "record_span_metadata",
 ]

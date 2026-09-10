@@ -203,6 +203,20 @@ async def test_worker_trace_matches_real_phase_boundaries_and_durable_outcomes(
                 assert root.start_time <= phase.start_time <= phase.end_time <= root.end_time
                 assert "private" not in str(phase.attributes)
                 assert not phase.events
+                assert (
+                    phase.attributes["langfuse.observation.metadata.service_phase_outcome"]
+                    == phase.attributes["a13n.service.phase.outcome"]
+                )
+                if phase.name == "a13n.service.persist":
+                    assert phase.attributes["a13n.service.phase.operation"] in {"finalize", "failure_decision"}
+                if phase.attributes["a13n.service.phase.outcome"] == "succeeded":
+                    if content is TraceContent.none:
+                        assert "output.value" not in phase.attributes
+                    else:
+                        summary = json.loads(phase.attributes["output.value"])
+                        assert summary
+                        if phase.name == "a13n.service.reconstruct":
+                            assert summary["disposition"] == "ready_for_harness"
             harness = next((span for span in subtree if span.name == "harness.run"), None)
             if attempt.harness_run_id is not None:
                 assert harness is not None
@@ -218,6 +232,7 @@ async def test_worker_trace_matches_real_phase_boundaries_and_durable_outcomes(
             assert len(environment_spans) == (1 if scenario == "on_run" else 0)
             if environment_spans:
                 assert environment_spans[0].attributes["a13n.environment.generation"] == 1
+                assert environment_spans[0].attributes["a13n.environment.generation_before"] == 0
                 assert environment_spans[0].end_time <= harness.start_time
             if scenario in {"reconstruct_failure", "persist_failure", "retry"} and attempt.attempt_number == 1:
                 failed_name = "a13n.service.persist" if scenario == "persist_failure" else "a13n.service.reconstruct"
@@ -365,7 +380,15 @@ async def test_recovered_candidate_captures_only_confirmed_output_without_extra_
         root = roots[0]
         assert root.attributes["a13n.run_attempt.outcome"] == "succeeded"
         assert not any(span.name == "harness.run" for span in spans)
+        expected = "waiting" if waiting else "completed"
+        assert root.attributes["a13n.run_attempt.disposition"] == expected
+        reconstruct = next(span for span in spans if span.name == "a13n.service.reconstruct")
+        persist = next(span for span in spans if span.name == "a13n.service.persist")
+        assert json.loads(reconstruct.attributes["output.value"])["disposition"] == "saved_outcome_available"
+        assert persist.attributes["a13n.service.phase.operation"] == "recover_outcome"
+        assert json.loads(persist.attributes["output.value"])["disposition"] == expected
         if waiting:
+            assert persist.attributes["a13n.service.phase.pending_call_count"] == 1
             assert "output.value" not in root.attributes
             assert root.attributes["a13n.run_attempt.output.capture"] == "not_committed"
             assert payload_reads == []

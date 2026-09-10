@@ -17,6 +17,7 @@ from urllib.parse import unquote
 
 import anyio
 from a13n_harness import HarnessInstrumentation, HarnessTraceContent
+from a13n_harness.observation import record_span_metadata
 from anyio import to_thread
 from opentelemetry import context as otel_context
 from opentelemetry import trace
@@ -185,14 +186,28 @@ def remember_output(object_digest: str, value: object) -> None:
 
 
 @contextmanager
-def observe_phase(name: str) -> Generator[APISpan | None]:
+def observe_phase(name: str, *, operation: str | None = None) -> Generator[APISpan | None]:
     """Time an actual Service phase under the active Attempt, never an ambient Host span."""
     attempt = _current_attempt_trace.get()
     if attempt is None or attempt._ended:
         yield None
         return
     with attempt.phase(name) as span:
+        if span is not None and operation is not None:
+            record_span_metadata(span, {"service.phase.operation": operation})
         yield span
+
+
+def observe_phase_result(span: APISpan | None, **facts: str | bool | int) -> None:
+    """Project owner-selected phase decisions, never candidate business output."""
+    attempt = _current_attempt_trace.get()
+    if span is None or attempt is None or attempt._ended or not span.is_recording():
+        return
+    record_span_metadata(span, {f"service.phase.{key}": value for key, value in facts.items()})
+    try:
+        span.set_attributes(_content_attributes("output", facts, attempt._trace_content))
+    except Exception:
+        _safe_warning("observability_content_projection_failed")
 
 
 class _RunAttemptSpanProcessor(SpanProcessor):
@@ -407,6 +422,11 @@ class RunAttemptTrace:
         except Exception:
             _safe_warning("observability_content_projection_failed")
 
+    def set_disposition(self, disposition: str) -> None:
+        """Keep the returned fenced decision distinct from the Attempt lifecycle."""
+        if self._span is not None and not self._ended:
+            record_span_metadata(self._span, {"run_attempt.disposition": disposition})
+
     def set_outcome(
         self,
         outcome: RunAttemptOutcome,
@@ -431,7 +451,7 @@ class RunAttemptTrace:
         self._outcome = outcome
         if self._span is None:
             return
-        self._span.set_attribute("a13n.run_attempt.outcome", outcome)
+        record_span_metadata(self._span, {"run_attempt.outcome": outcome})
         if failure_code is not None:
             self._span.set_attribute("a13n.run_attempt.failure.code", failure_code)
         omitted = "not_committed"
@@ -483,7 +503,7 @@ class RunAttemptTrace:
         finally:
             otel_context.detach(token)
             try:
-                span.set_attribute("a13n.service.phase.outcome", outcome)
+                record_span_metadata(span, {"service.phase.outcome": outcome})
                 if error_type is not None:
                     span.set_attribute("error.type", error_type)
                     span.set_status(Status(StatusCode.ERROR))
@@ -729,6 +749,7 @@ __all__ = [
     "build_observability_runtime",
     "observe_input",
     "observe_phase",
+    "observe_phase_result",
     "remember_output",
     "valid_span_link",
 ]

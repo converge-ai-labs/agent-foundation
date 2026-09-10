@@ -13,7 +13,7 @@ from math import isfinite
 from typing import TYPE_CHECKING, Literal
 
 from a13n_harness import HarnessEvent, HarnessExtensionEvent, HarnessInstrumentation
-from a13n_harness.observation import SkillObservation
+from a13n_harness.observation import SkillObservation, record_span_metadata
 from a13n_logging import get_logger
 from anyio import CancelScope, get_cancelled_exc_class, move_on_after, to_thread
 from opentelemetry import trace
@@ -206,6 +206,14 @@ def phase(kind: Literal["prepare", "finalize"]) -> Iterator[Span]:
         return
     with operation.instrumentation.phase(_SCOPE, f"harness_ui.{kind}") as span:
         yield span
+
+
+def record_phase_result(span: Span, *, status: str, **facts: str | bool | int) -> None:
+    """Expose the phase's own result without copying the Run's response body."""
+    operation = _active_operation()
+    if operation is not None:
+        record_span_metadata(span, {"phase.status": status, **{f"phase.{key}": value for key, value in facts.items()}})
+        operation.instrumentation.record_output(span, facts, status=status)
 
 
 def record_input(value: object, *, kind: str = "prompt") -> None:
