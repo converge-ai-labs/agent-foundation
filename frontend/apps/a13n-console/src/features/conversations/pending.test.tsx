@@ -14,7 +14,7 @@ vi.mock("../../auth/context", () => ({
 }));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
-    basePath: "/acme/design",
+    basePath: "/workspace/design",
     workspace: { id: "workspace" },
     can: () => true,
   }),

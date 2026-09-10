@@ -7,7 +7,6 @@ import { useNavigate } from "react-router";
 import { Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
-import { useAccess } from "../../layout/workspace";
 import { workspacePath } from "../../shared/paths";
 import { data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
@@ -20,7 +19,6 @@ export function CreateWorkspace({
   organizationId: string;
 }) {
   const client = useClient(),
-    { organization } = useAccess(),
     { t } = useTranslation(),
     cache = useQueryClient(),
     navigate = useNavigate();
@@ -44,7 +42,7 @@ export function CreateWorkspace({
       });
       setOpen(false);
       setName("");
-      navigate(`${workspacePath(organization, result)}/settings`);
+      navigate(`${workspacePath(result)}/settings`);
     },
   });
   return (

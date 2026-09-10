@@ -21,7 +21,7 @@ vi.mock("./choices", () => ({
 }));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
-    basePath: "/acme/design",
+    basePath: "/workspace/design",
     workspace: { id: "workspace" },
   }),
 }));

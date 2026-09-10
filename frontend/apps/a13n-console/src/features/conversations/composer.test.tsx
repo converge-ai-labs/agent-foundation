@@ -13,7 +13,7 @@ import { Composer } from "./composer";
 vi.mock("../../auth/context", () => ({ useClient: () => ({ http: {} }) }));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
-    basePath: "/acme/design",
+    basePath: "/workspace/design",
     workspace: { id: "workspace" },
     can: () => false,
   }),

@@ -12,7 +12,7 @@ vi.mock("../../shared/download", () => ({ downloadBlob: download }));
 vi.mock("../../auth/context", () => ({ useClient: () => client }));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
-    basePath: "/acme/design",
+    basePath: "/workspace/design",
     workspace: { id: workspaceId },
     can: () => true,
   }),
@@ -107,14 +107,14 @@ function setup(workspace: string) {
   });
   render(
     <QueryClientProvider client={cache}>
-      <MemoryRouter initialEntries={["/acme/design/skills/sk_example"]}>
+      <MemoryRouter initialEntries={["/workspace/design/skills/sk_example"]}>
         <Routes>
           <Route
-            path="/:organizationKey/:workspaceKey/skills/:skillId"
+            path="/workspace/:workspaceKey/skills/:skillId"
             element={<SkillDetail />}
           />
           <Route
-            path="/:organizationKey/:workspaceKey/skills"
+            path="/workspace/:workspaceKey/skills"
             element={<p>Skill collection</p>}
           />
         </Routes>

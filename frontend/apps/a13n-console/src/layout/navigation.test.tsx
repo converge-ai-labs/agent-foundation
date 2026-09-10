@@ -15,7 +15,7 @@ vi.mock("../auth/context", () => ({
 const access = vi.hoisted(() => ({ organizationAdmin: false }));
 vi.mock("./workspace", () => ({
   useWorkspace: () => ({
-    basePath: "/acme/design",
+    basePath: "/workspace/design",
     workspace: { id: "workspace", key: "design", name: "Design" },
     organization: { key: "acme", name: "Organization" },
     workspaces: [{ id: "workspace", key: "design", name: "Design" }],
@@ -57,9 +57,9 @@ it.each([
     const user = userEvent.setup();
     render(
       <QueryClientProvider client={new QueryClient()}>
-        <MemoryRouter initialEntries={["/acme/design/agents"]}>
+        <MemoryRouter initialEntries={["/workspace/design/agents"]}>
           <Routes>
-            <Route path="/:organizationKey/:workspaceKey" element={<Shell />}>
+            <Route path="/workspace/:workspaceKey" element={<Shell />}>
               <Route path="agents" element={<h1>Agent directory</h1>} />
               <Route
                 path="settings"
@@ -121,9 +121,9 @@ it("keeps resource categories in sidebar links and restores the selected categor
   const user = userEvent.setup();
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <MemoryRouter initialEntries={["/acme/design/models/providers"]}>
+      <MemoryRouter initialEntries={["/workspace/design/models/providers"]}>
         <Routes>
-          <Route path="/:organizationKey/:workspaceKey" element={<Shell />}>
+          <Route path="/workspace/:workspaceKey" element={<Shell />}>
             <Route path="models" element={<p>Model directory</p>} />
             <Route
               path="models/providers"
@@ -161,9 +161,9 @@ it("keeps workspace switching available with one workspace and marks the current
   const user = userEvent.setup();
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <MemoryRouter initialEntries={["/acme/design/agents"]}>
+      <MemoryRouter initialEntries={["/workspace/design/agents"]}>
         <Routes>
-          <Route path="/:organizationKey/:workspaceKey/*" element={<Shell />} />
+          <Route path="/workspace/:workspaceKey/*" element={<Shell />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -188,7 +188,9 @@ it("shows all authorized settings groups and searches without changing the selec
   access.organizationAdmin = true;
   const user = userEvent.setup();
   render(
-    <MemoryRouter initialEntries={["/acme/design/settings?section=profile"]}>
+    <MemoryRouter
+      initialEntries={["/workspace/design/settings?section=profile"]}
+    >
       <SettingsLayout
         scope="workspace"
         content={{ profile: <p>Workspace profile</p> }}

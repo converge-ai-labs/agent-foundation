@@ -10,7 +10,7 @@ let client: Client;
 vi.mock("../../auth/context", () => ({ useClient: () => client }));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
-    basePath: "/acme/design",
+    basePath: "/workspace/design",
     workspace: { id: "workspace" },
     can: () => false,
   }),
@@ -59,10 +59,10 @@ it("renders a full Session page from collection previews without per-row Thread 
   });
   render(
     <QueryClientProvider client={cache}>
-      <MemoryRouter initialEntries={["/acme/design/sessions/session_0"]}>
+      <MemoryRouter initialEntries={["/workspace/design/sessions/session_0"]}>
         <Routes>
           <Route
-            path="/:organizationKey/:workspaceKey/sessions"
+            path="/workspace/:workspaceKey/sessions"
             element={<ConversationsPage />}
           >
             <Route path=":sessionId" element={<p>Session detail</p>} />
@@ -77,7 +77,7 @@ it("renders a full Session page from collection previews without per-row Thread 
   expect(screen.getByText("Open session")).toBeTruthy();
   expect(
     screen.getByRole("link", { name: /Question 0/ }).getAttribute("href"),
-  ).toBe("/acme/design/sessions/session_0");
+  ).toBe("/workspace/design/sessions/session_0");
   expect(requests).toEqual(["/api/v1/workspaces/workspace/sessions"]);
   cleanup();
   cache.clear();

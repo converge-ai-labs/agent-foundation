@@ -214,7 +214,7 @@ function AppContent() {
                 ))}
                 <Route element={<Authenticated />}>
                   <Route
-                    path="/:organizationKey/:workspaceKey"
+                    path="/workspace/:workspaceKey"
                     element={<WorkspaceShell />}
                   >
                     <Route index element={<Navigate to="agents" replace />} />
@@ -284,7 +284,7 @@ function AppContent() {
                       element={<PersonalSettings />}
                     />
                     <Route
-                      path="/:organizationKey/settings"
+                      path="/organization/settings"
                       element={<OrganizationSettings />}
                     />
                   </Route>

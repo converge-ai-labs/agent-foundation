@@ -24,7 +24,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const auth = useAuth(),
     client = useClient(),
     { t } = useTranslation();
-  const { organizationKey, workspaceKey } = useParams();
+  const { workspaceKey } = useParams();
   const location = useLocation();
   const organization = auth.data?.organizations[0];
   const userId = auth.data?.user.value.id;
@@ -72,10 +72,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     (selected && permissions.isPending)
   )
     return <Loading />;
-  if (
-    (organizationKey && organization?.key !== organizationKey) ||
-    (workspaceKey && workspaces.isSuccess && !selected)
-  )
+  if (workspaceKey && workspaces.isSuccess && !selected)
     return (
       <Page title={t("Not found")}>
         <ErrorNotice error={new Error(t("Resource not found"))} />
@@ -99,9 +96,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           .filter((item) => item.id !== selected)
           .map((item) => (
             <p key={item.id}>
-              <Link to={`${workspacePath(organization!, item)}/agents`}>
-                {item.name}
-              </Link>
+              <Link to={`${workspacePath(item)}/agents`}>{item.name}</Link>
             </p>
           ))}
         <Link to="/settings/profile">{t("Personal settings")}</Link>
@@ -113,20 +108,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         <ErrorNotice error={new Error("Workspace unavailable")} />
         {workspaces.data?.items.map((item) => (
           <p key={item.id}>
-            <Link to={`${workspacePath(organization!, item)}/agents`}>
-              {item.name}
-            </Link>
+            <Link to={`${workspacePath(item)}/agents`}>{item.name}</Link>
           </p>
         ))}
       </Page>
     );
   if (!workspaceKey && location.pathname === "/")
-    return (
-      <Navigate
-        to={`${workspacePath(organization, workspace)}/agents`}
-        replace
-      />
-    );
+    return <Navigate to={`${workspacePath(workspace)}/agents`} replace />;
   return (
     <Context.Provider
       value={{
@@ -152,7 +140,7 @@ export function useWorkspace() {
   return {
     ...access,
     workspace: access.workspace,
-    basePath: workspacePath(access.organization, access.workspace),
+    basePath: workspacePath(access.workspace),
   };
 }
 
@@ -192,7 +180,7 @@ function NoWorkspace({
             <>
               <Link to="/settings/profile">{t("Personal settings")}</Link>
               {permissions.data?.organization_admin && (
-                <Link to={`/${organization.key}/settings`}>
+                <Link to="/organization/settings">
                   {t("Organization settings")}
                 </Link>
               )}
@@ -211,7 +199,7 @@ function NoWorkspace({
             error={permissions.error ?? logout.error}
             retry={() => void permissions.refetch()}
           />
-          {["/settings/profile", `/${organization.key}/settings`].includes(
+          {["/settings/profile", "/organization/settings"].includes(
             location.pathname,
           ) && !permissions.isPending ? (
             <Outlet />

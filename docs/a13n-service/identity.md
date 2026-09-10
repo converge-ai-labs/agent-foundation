@@ -75,7 +75,7 @@ Embedded distributions that supply `Components.request_authenticator` own authen
 
 ## Resource keys and browser links
 
-Organizations, Workspaces, and Agents have an immutable `id`, a display `name`, and an editable `key` for readable addresses. For example, an Agent can appear at `/acme/research/agents/code-reviewer` in Console. Display names can repeat. A generated key uses the readable ASCII parts of the name; a collision adds four random hexadecimal characters. You can choose an explicit key when creating a resource or edit it later in its settings.
+Organizations, Workspaces, and Agents have an immutable `id`, a display `name`, and an editable `key` for readable addresses. For example, an Agent can appear at `/workspace/research/agents/code-reviewer` in Console. Display names can repeat. A generated key uses the readable ASCII parts of the name; a collision adds four random hexadecimal characters. You can choose an explicit key when creating a resource or edit it later in its settings.
 
 Keys use lowercase letters, numbers, and single hyphens, up to 64 characters. Renaming the display label preserves the key. Changing the key preserves the resource and its history but invalidates its previous address; there are no redirects or aliases.
 

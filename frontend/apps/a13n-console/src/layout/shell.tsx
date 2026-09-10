@@ -41,7 +41,7 @@ export function Shell() {
   const contextual =
     /^\/[^/]+\/[^/]+\/(sessions|settings)(\/|$)/.test(location.pathname) ||
     location.pathname === "/settings/profile" ||
-    /^\/[^/]+\/settings$/.test(location.pathname);
+    location.pathname === "/organization/settings";
   if (contextual)
     return (
       <div className="min-h-svh bg-background">

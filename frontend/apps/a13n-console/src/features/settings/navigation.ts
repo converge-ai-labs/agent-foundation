@@ -113,7 +113,7 @@ export function useSettingsNavigation() {
             scope: "organization" as const,
             label: "Organization",
             name: organization.name,
-            path: `/${organization.key}/settings`,
+            path: "/organization/settings",
             sections: sections.organization,
           },
         ]

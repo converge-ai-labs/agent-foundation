@@ -69,7 +69,7 @@ export function Agents() {
       description={t("The agents your workspace runs on.")}
       actions={create}
     >
-      <div className={shared.toolbar}>
+      <div className={styles.listFilters}>
         <FormField
           className="min-w-0 w-full"
           label={t("Search this page")}

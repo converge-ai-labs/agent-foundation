@@ -52,8 +52,9 @@ function mount(path: string) {
     >
       <MemoryRouter initialEntries={[path]}>
         <Routes>
+          <Route path="*" element={<h1>Not found</h1>} />
           <Route
-            path="/:organizationKey/:workspaceKey/*"
+            path="/workspace/:workspaceKey/*"
             element={
               <WorkspaceProvider>
                 <CurrentWorkspace />
@@ -75,15 +76,17 @@ function mount(path: string) {
 }
 
 it("selects the exact workspace key and retains its immutable identity", async () => {
-  mount("/acme/design/agents");
+  mount("/workspace/design/agents");
   expect(
-    await screen.findByText("/acme/design/agents|ws_second|/acme/design"),
+    await screen.findByText(
+      "/workspace/design/agents|ws_second|/workspace/design",
+    ),
   ).toBeTruthy();
 });
 it.each([
   "/other/design/agents",
-  "/acme/missing/agents",
-  "/acme/ws_first/agents",
+  "/workspace/missing/agents",
+  "/workspace/ws_first/agents",
   "/org_test/research/agents",
 ])("does not fall back to an accessible workspace for %s", async (path) => {
   mount(path);
@@ -92,11 +95,11 @@ it.each([
   ).toBeTruthy();
   expect(screen.queryByText(/\|ws_/)).toBeNull();
 });
-it("redirects the entry page using current organization and workspace keys", async () => {
+it("redirects the entry page using the current workspace key", async () => {
   mount("/");
   expect(
     await screen.findByText(
-      /\/acme\/(research|design)\/agents\|ws_(first|second)\|\/acme\//,
+      /\/workspace\/(research|design)\/agents\|ws_(first|second)\|\/workspace\//,
     ),
   ).toBeTruthy();
 });

@@ -156,9 +156,13 @@ function ProfileForm({
         );
       }
       const oldKey = "key" in current.value ? current.value.key : undefined;
-      if ("key" in result.value && oldKey !== result.value.key) {
+      if (
+        target.kind === "workspace" &&
+        "key" in result.value &&
+        oldKey !== result.value.key
+      ) {
         const parts = location.pathname.split("/");
-        parts[target.kind === "organization" ? 1 : 2] = result.value.key;
+        parts[2] = result.value.key;
         navigate(parts.join("/") + location.search, { replace: true });
       }
       void cache.invalidateQueries();
