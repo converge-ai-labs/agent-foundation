@@ -277,6 +277,7 @@ class SetupWizard:
                     )
                     endpoint = self.values.get("base_url", "xAI SDK default (gRPC)")
                     hint += f"\n{self.values['api_provider']}:{self.values['model']}\nEndpoint: {endpoint}\nSettings: {json.dumps(preset.settings, sort_keys=True)}"
+                    hint += f"\n{preset.output_limit_label}. Saved as editable settings; not adjusted during a run."
                     hint += f"\nContext: {int(self.values['context']):,} tokens · Summary reminder: 65% · Compact: 90%."
                 else:
                     hint += f"\n{self.values['provider']}:{self.values['model']}"
@@ -317,7 +318,11 @@ class SetupWizard:
             elif question.key == "provider":
                 hint += "Reuse a subscription or connect an API key."
             elif question.key == "preset":
-                hint += "Choose settings supported by this model. Provider limits still apply."
+                hint += (
+                    "Thinking and output limits are saved together as editable settings. Provider limits still apply.\n"
+                    "Provider defaults adds no output cap; unreviewed models keep their existing preset behavior. "
+                    "Custom endpoints may impose different limits."
+                )
             return hint
         return "Esc goes back; Ctrl+C cancels."
 
@@ -381,7 +386,7 @@ class SetupWizard:
         if question.key == "preset":
             return Selection(
                 tuple(
-                    Choice(p.key, p.label, p.description)
+                    Choice(p.key, p.label, f"{p.description} · {p.output_limit_label}")
                     for p in settings_presets(self.values["api_provider"], self.values["model"])
                 ),
                 cursor=question.choices.index(question.default),

@@ -951,7 +951,7 @@ async def test_generic_service_tier_override_only_changes_root_and_inherited_chi
     model.write_text(
         model.read_text()
         .replace("route: openai:gpt-5", f"route: {route}")
-        .replace("settings: {temperature: 0}", f"settings: {{{tier_key}: {configured}}}")
+        .replace("settings: {temperature: 0}", f"settings: {{{tier_key}: {configured}, max_tokens: 32768}}")
     )
     source = await load_harness_ui_configuration(path)
     resolver = AgentCompositionResolver(_catalog())
@@ -967,9 +967,10 @@ async def test_generic_service_tier_override_only_changes_root_and_inherited_chi
         if tier_key != "service_tier":
             assert tier_key not in composition.root.model.settings
     assert composition.root.model.settings["thinking"] == "low"
+    assert composition.root.model.settings["max_tokens"] == 32768
     assert composition.root.children[0].definition.model == composition.root.model
     assert composition.root.children[1].definition.model == original.root.children[1].definition.model
-    assert source.models["model-primary"].settings == {tier_key: configured}
+    assert source.models["model-primary"].settings == {tier_key: configured, "max_tokens": 32768}
     assert resolver.resolve_run(source, _selection()).root == original.root
 
 

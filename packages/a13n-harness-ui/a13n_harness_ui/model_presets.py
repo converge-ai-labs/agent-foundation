@@ -7,7 +7,7 @@ not interchangeable with an API key and a base URL.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlsplit
 
@@ -176,9 +176,60 @@ class SettingsPreset:
     description: str
     settings: dict[str, JsonValue]
 
+    @property
+    def output_limit_label(self) -> str:
+        tokens = self.settings.get("max_tokens")
+        return f"Output limit: {tokens:,} tokens" if isinstance(tokens, int) else "Output limit: provider default"
+
+
+# Creation-time recommendations, not provider limits or a runtime model registry.
+# Keep exact reviewed IDs separate from suggestions and permissive upstream profiles:
+# adding a model suggestion must not silently certify its output budget.
+# Provider references and budget semantics: docs/a13n-harness-ui/models-and-authentication.md.
+_OUTPUT_PRESET_MODELS: dict[str, frozenset[str]] = {
+    "openai": frozenset({"gpt-5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-6-astra"}),
+    "anthropic": frozenset({"claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5", "claude-sonnet-4-5"}),
+    "google": frozenset({"gemini-3.1-pro-preview", "gemini-3.5-flash", "gemini-2.5-pro", "gemini-2.5-flash"}),
+    "deepseek": frozenset({"deepseek-v4-pro", "deepseek-v4-flash", "deepseek-reasoner"}),
+    "zai": frozenset({"glm-5.3", "glm-5.2", "glm-4.7", "glm-4.5"}),
+    "moonshotai": frozenset({"kimi-k2.6", "kimi-k2.5", "kimi-k2-thinking"}),
+}
+_OUTPUT_TOKEN_BUDGETS = {
+    "openai": {"low": 16384, "medium": 32768, "high": 65536, "xhigh": 65536},
+    "anthropic": {"adaptive": 32768, "interleaved": 16384, "low": 16384, "medium": 32768, "high": 32768},
+    # Native Gemini 2.5 high thinking uses 24,576 tokens; leave room for the answer.
+    "google": {"low": 16384, "medium": 32768, "high": 32768},
+    "deepseek": {"thinking": 32768},
+    "zai": {"thinking": 32768},
+    "moonshotai": {"thinking": 32768},
+}
+
 
 def settings_presets(provider: str, model_id: str) -> tuple[SettingsPreset, ...]:
-    """Expand recommendations using the installed upstream model profile, without I/O."""
+    """Materialize paired thinking/output recommendations as editable native settings."""
+    presets = _thinking_presets(provider, model_id)
+    budget_provider = "openai" if provider in {"openai-responses", "openai-chat"} else provider
+    if provider == "openrouter":
+        # Routed limits can differ from the native endpoint; only reviewed routes
+        # receive a budget. Do not normalize arbitrary aliases or route suffixes.
+        budget_provider, model_id = {
+            "anthropic/claude-sonnet-4.6": ("anthropic", "claude-sonnet-4-6"),
+            "openai/gpt-5.4": ("openai", "gpt-5.4"),
+            "google/gemini-2.5-pro": ("google", "gemini-2.5-pro"),
+        }.get(model_id, ("", ""))
+    if model_id not in _OUTPUT_PRESET_MODELS.get(budget_provider, frozenset()):
+        return presets
+    budgets = _OUTPUT_TOKEN_BUDGETS[budget_provider]
+    return tuple(
+        replace(preset, settings={**preset.settings, "max_tokens": budgets[preset.key]})
+        if preset.key in budgets
+        else preset
+        for preset in presets
+    )
+
+
+def _thinking_presets(provider: str, model_id: str) -> tuple[SettingsPreset, ...]:
+    """Expand thinking choices using the installed upstream model profile, without I/O."""
     if provider in {"deepseek", "zai", "moonshotai"}:
         from pydantic_ai.profiles.deepseek import deepseek_model_profile
         from pydantic_ai.profiles.moonshotai import moonshotai_model_profile
@@ -227,6 +278,8 @@ def settings_presets(provider: str, model_id: str) -> tuple[SettingsPreset, ...]
             {
                 "anthropic_thinking": {"type": "enabled", "budget_tokens": 8192, "display": "summarized"},
                 "anthropic_betas": ["interleaved-thinking-2025-05-14"],
+                # Also retain this baseline for custom IDs: the explicit 8,192
+                # thinking budget must not fall back to the adapter's 4,096 cap.
                 "max_tokens": 16384,
             },
         )
