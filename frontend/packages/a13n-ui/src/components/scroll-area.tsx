@@ -27,7 +27,7 @@ export function ScrollArea({
     >
       <ScrollAreaPrimitive.Viewport
         className={cn(
-          "h-full rounded-[inherit] outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+          "h-full rounded-[inherit] outline-none transition-shadow focus-visible:ring-1 focus-visible:ring-ring/80 focus-visible:ring-offset-1 focus-visible:ring-offset-background",
           overscrollContain &&
             "data-has-overflow-y:overscroll-y-contain data-has-overflow-x:overscroll-x-contain",
           scrollFade &&
@@ -60,7 +60,7 @@ export function ScrollBar({
   return (
     <ScrollAreaPrimitive.Scrollbar
       className={cn(
-        "m-1 flex opacity-0 transition-opacity delay-300 data-[orientation=horizontal]:h-1.5 data-[orientation=vertical]:w-1.5 data-[orientation=horizontal]:flex-col data-hovering:opacity-100 data-scrolling:opacity-100 data-hovering:delay-0 data-scrolling:delay-0 data-hovering:duration-100 data-scrolling:duration-100",
+        "m-1 flex opacity-0 transition-opacity delay-300 data-[orientation=horizontal]:h-(--a13n-scrollbar-size) data-[orientation=vertical]:w-(--a13n-scrollbar-size) data-[orientation=horizontal]:flex-col data-hovering:opacity-100 data-scrolling:opacity-100 data-hovering:delay-0 data-scrolling:delay-0 data-hovering:duration-100 data-scrolling:duration-100",
         className,
       )}
       data-slot="scroll-area-scrollbar"
@@ -68,7 +68,7 @@ export function ScrollBar({
       {...props}
     >
       <ScrollAreaPrimitive.Thumb
-        className="relative flex-1 rounded-full bg-foreground/20"
+        className="relative flex-1 rounded-full bg-(--a13n-scrollbar-thumb) transition-colors hover:bg-(--a13n-scrollbar-thumb-hover) active:bg-(--a13n-scrollbar-thumb-hover)"
         data-slot="scroll-area-thumb"
       />
     </ScrollAreaPrimitive.Scrollbar>

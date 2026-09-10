@@ -13,16 +13,17 @@ vi.mock("../auth/context", () => ({
   }),
 }));
 const access = vi.hoisted(() => ({ organizationAdmin: false }));
-vi.mock("./workspace", () => ({
-  useWorkspace: () => ({
-    basePath: "/acme/design",
+vi.mock("./workspace", () => {
+  const useAccess = () => ({
+    basePath: "/workspace/design",
     workspace: { id: "workspace", key: "design", name: "Design" },
     organization: { key: "acme", name: "Organization" },
     workspaces: [{ id: "workspace", key: "design", name: "Design" }],
     organizationAdmin: access.organizationAdmin,
     can: () => true,
-  }),
-}));
+  });
+  return { useWorkspace: useAccess, useAccess };
+});
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string) => key,
@@ -57,9 +58,9 @@ it.each([
     const user = userEvent.setup();
     render(
       <QueryClientProvider client={new QueryClient()}>
-        <MemoryRouter initialEntries={["/acme/design/agents"]}>
+        <MemoryRouter initialEntries={["/workspace/design/agents"]}>
           <Routes>
-            <Route path="/:organizationKey/:workspaceKey" element={<Shell />}>
+            <Route path="/workspace/:workspaceKey" element={<Shell />}>
               <Route path="agents" element={<h1>Agent directory</h1>} />
               <Route
                 path="settings"
@@ -121,19 +122,19 @@ it("keeps resource categories in sidebar links and restores the selected categor
   const user = userEvent.setup();
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <MemoryRouter initialEntries={["/acme/design/models/providers"]}>
+      <MemoryRouter initialEntries={["/providers?workspace=design"]}>
         <Routes>
-          <Route path="/:organizationKey/:workspaceKey" element={<Shell />}>
+          <Route path="/workspace/:workspaceKey" element={<Shell />}>
             <Route path="models" element={<p>Model directory</p>} />
-            <Route
-              path="models/providers"
-              element={<p>Provider directory</p>}
-            />
+
             <Route path="environments" element={<p>Template directory</p>} />
             <Route
               path="environments/instances"
               element={<p>Instance directory</p>}
             />
+          </Route>
+          <Route element={<Shell />}>
+            <Route path="/providers" element={<p>Provider directory</p>} />
           </Route>
         </Routes>
       </MemoryRouter>
@@ -144,7 +145,7 @@ it("keeps resource categories in sidebar links and restores the selected categor
       .getByRole("link", { name: "Providers" })
       .getAttribute("aria-current"),
   ).toBe("page");
-  await user.click(screen.getByRole("link", { name: "All models" }));
+  await user.click(screen.getByRole("link", { name: "Models" }));
   expect(screen.getByText("Model directory")).toBeTruthy();
   await user.click(screen.getByRole("link", { name: "Environments" }));
   await user.click(screen.getByRole("link", { name: "Instances" }));
@@ -161,9 +162,9 @@ it("keeps workspace switching available with one workspace and marks the current
   const user = userEvent.setup();
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <MemoryRouter initialEntries={["/acme/design/agents"]}>
+      <MemoryRouter initialEntries={["/workspace/design/agents"]}>
         <Routes>
-          <Route path="/:organizationKey/:workspaceKey/*" element={<Shell />} />
+          <Route path="/workspace/:workspaceKey/*" element={<Shell />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -188,7 +189,9 @@ it("shows all authorized settings groups and searches without changing the selec
   access.organizationAdmin = true;
   const user = userEvent.setup();
   render(
-    <MemoryRouter initialEntries={["/acme/design/settings?section=profile"]}>
+    <MemoryRouter
+      initialEntries={["/workspace/design/settings?section=profile"]}
+    >
       <SettingsLayout
         scope="workspace"
         content={{ profile: <p>Workspace profile</p> }}

@@ -1,4 +1,4 @@
-# Extensions, tools, and Skills
+# Tools and extension types
 
 Harness UI separates reusable configuration from executable integrations. A YAML file selects an installed capability or extension; it does not install Python code or invent a provider implementation.
 
@@ -15,148 +15,15 @@ For the guided multi-select, all nine upstream native tools, subscription differ
 
 ## Native search and image generation
 
-Agent capabilities compose independently. For a compatible Model, add the following entries to its `capabilities` list:
-
-```yaml
-capabilities:
-  - capability: NativeTool
-    configuration:
-      kind: web_search
-      external_web_access: true
-  - capability: native_image_generation
-    configuration:
-      quality: auto
-      output_format: png
-  - capability: web
-    configuration:
-      search:
-        mode: off
-```
-
-`NativeTool` accepts the upstream native tool specification, including the explicit `tool: {kind: web_search}` form. Multiple entries can select different native tools. The example enables live search, matching the Codex setup default; set `external_web_access: false` to explicitly request cached search on compatible providers. Options and availability depend on the actual Model/provider, not merely its brand or API compatibility label.
-
-`native_image_generation` wraps the Model's native `ImageGenerationTool` and saves the returned images before reporting their paths. It does not call a separate image API or fall back to another Model. Harness UI supplies its saver automatically: files land at `tmp/image-<id>.<extension>` under the **current Thread's** file area. Replies, transcripts, and resumed history carry readable file paths rather than image bytes. The Agent can use `view` to inspect a saved image later; a file reference does not automatically send its pixels to a later Model. Saving failures fail the Run instead of silently losing the image.
-
-These images survive Run completion and application restart, but are subject to ordinary Thread scratch cleanup. Ask the Agent to copy an important image into your Project or another retained destination. Generated images are not submitted attachments.
-
-The `web` entry above keeps fetch, scrape, and download available without registering a second search tool. Set its `search.mode` to `host` to expose the independent keyless DuckDuckGo search implementation, even alongside native search. Native search uses the selected Model provider's account and billing; Host search uses the UI's Web transport. Neither is implied merely by installing a Capability.
-
-Setup writes reviewed starter choices into **new Agent resources**: Codex uses live native search plus native image generation; Grok subscription uses native search. Compatible API templates use native tools where reviewed, otherwise Host search. Custom endpoints and older incompatible tool combinations are not assumed to support native tools. Existing resources and Agents are not migrated, and changing Models does not rewrite their tool selections. Edit the Agent YAML and run `a13n-harness-ui config validate` to change them.
+Use [Native tools and Web providers](native-and-web-tools.md#native-search-and-image-generation) for the complete configuration recipe, provider support, saved-image lifecycle, and independent Host search behavior.
 
 ## MCP servers
 
-Creating a server file makes it available; selecting its ID enables it. There is no server-level `enabled` flag.
-
-### Copy a JSON configuration
-
-Create `mcp/servers.json` beside your selected root configuration. Common client-style `mcpServers` objects work directly:
-
-```json
-{
-  "mcpServers": {
-    "filesystem": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/workspace"]
-    },
-    "docs": {
-      "type": "http",
-      "url": "https://mcp.example.com/mcp",
-      "headers": {
-        "Authorization": "Bearer example-token",
-        "X-Workspace": "${WORKSPACE_ID}"
-      }
-    }
-  }
-}
-```
-
-Replace the illustrative endpoint, path, and token. Enable these entries with `mcp_servers: [mcp-filesystem, mcp-docs]` on an Agent or under root `defaults`. Creating the JSON file alone does not enable them.
-
-A file can contain multiple servers. Names become lowercase, punctuation/underscore/space runs become hyphens, and `mcp-` is added unless already present: `My_Server` becomes `mcp-my-server`. Names with no ASCII letters or digits use `mcp-` plus the first 12 hex characters of their SHA-256 digest. Conflicting IDs across YAML/JSON files or after name normalization reject the configuration; no file silently wins. Names are limited to 256 characters and resulting IDs to 128.
-
-For a command entry, use `command`, optional `args`, and optional `env`. For a remote entry, use `url` and optional `headers`. Optional `type` accepts `stdio` for commands and `http` or `streamable-http` for remote endpoints. Remote connections use Streamable HTTP, not legacy SSE. OAuth login, JSONC comments, trailing commas, `disabled`, and unrelated client-specific fields are not supported. `mcpServers` is a common client convention, not a universal MCP protocol configuration standard.
-
-Both `.yaml` and `.json` can also contain the single-resource format shown below; both accept the `mcpServers` wrapper. Existing YAML files continue to work without migration.
-
-### Literal values and environment references
-
-Command `env` (or canonical `transport.environment`) and remote `headers` accept:
-
-| Value                   | Behavior                                                        |
-| ----------------------- | --------------------------------------------------------------- |
-| `"example-token"`       | A literal string, including ordinary non-secret settings        |
-| `"${API_TOKEN}"`        | Read an environment variable when a Run starts                  |
-| `"Bearer ${API_TOKEN}"` | Substitute `${NAME}` occurrences in a string                    |
-| `{"env": "API_TOKEN"}`  | Existing explicit environment reference; works in YAML and JSON |
-
-Empty literal strings and whitespace are preserved. References require non-empty variables in the **Harness UI process** environment; exporting in another shell does not change an already-running process. Expansion is one pass, only for `${NAME}` with a valid environment-variable name; there is no shell execution or default-value syntax. These substitutions apply only to environment/header values, not commands, arguments, or URLs.
-
-Direct token configuration is supported; environment references are optional. Keep credential-bearing source files private and out of version control. Harness UI does not copy MCP source text or literal environment/header values into `config show`, accepted generations, or Run compositions: it retains source locations and digests, then reads values at Run startup. A captured Run requires that literal-bearing source file to remain present and byte-identical until client construction. Editing it is supported for newly captured Runs, but an older captured Run or child continuation may fail with `mcp_source_changed`; use current configuration for a new Run. Already constructed clients keep their Run-local values. Environment references can rotate without editing the source file.
-
-After editing, run `a13n-harness-ui config validate` and start a new session if you changed default MCP selections. Validation does not connect to servers or verify credentials.
-
-### Command transport
-
-Create `mcp/github.yaml`:
-
-```yaml
-schema_version: "1"
-kind: mcp_server
-id: mcp-github
-name: GitHub
-transport:
-  command: npx
-  arguments: ["-y", "@modelcontextprotocol/server-github"]
-  environment:
-    GITHUB_TOKEN:
-      env: GITHUB_TOKEN
-```
-
-This illustrative server requires its executable/package and access token to be available. Harness UI does not validate external service entitlement by making a test call during file parsing. Review the command and package before enabling it.
-
-### Remote transport
-
-Create `mcp/docs.yaml` using your actual MCP endpoint:
-
-```yaml
-schema_version: "1"
-kind: mcp_server
-id: mcp-docs
-name: Documentation service
-transport:
-  url: https://mcp.example.com/mcp
-  headers:
-    Authorization:
-      env: DOCS_MCP_AUTHORIZATION
-```
-
-The environment variable contains the entire header value expected by that server, for example a bearer value. Alternatively, write the header value directly or use `"Bearer ${DOCS_MCP_TOKEN}"`. URLs must be credential-free HTTPS; plain HTTP is allowed only for a literal loopback host with no configured headers. Authenticated redirects cannot weaken the transport or leak headers to another origin.
-
-### Enable a server
-
-In an Agent file:
-
-```yaml
-mcp_servers: [mcp-github, mcp-docs]
-```
-
-Or in root YAML:
-
-```yaml
-defaults:
-  mcp_servers: [mcp-github]
-```
-
-An Agent's `mcp_servers: null` inherits the root defaults; `[]` explicitly selects none. Existing sessions retain exact sticky selections. Clients/processes are constructed fresh for Runs and are not saved into continuations. Model Sandbox selection does not imply that an arbitrary external MCP command or remote service is sandboxed.
+See [MCP servers](mcp.md) for JSON/YAML formats, environment and literal credentials, command/remote transports, enablement, and Run capture.
 
 ### MCP field reference
 
-The shared fields are `schema_version: "1"`, `kind: mcp_server`, unique `mcp-` `id`, and `name`. `transport` accepts exactly one form:
-
-| Form    | Fields                                                                                                                    |
-| ------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Command | Required `command`; `arguments` defaults to `[]`; `environment` defaults to `{}`, values are strings or `{env: VARIABLE}` |
-| Remote  | Required `url`; `headers` defaults to `{}`, values are strings or `{env: VARIABLE}`                                       |
+The complete fields are in [MCP field reference](mcp.md#mcp-field-reference).
 
 ## Agent capabilities
 
@@ -216,40 +83,11 @@ Root `tools.enable_ask_user_question` gates `ask_user_question`; `tools.enable_c
 
 ## Skills
 
-An Agent must select the `skills` capability to expose Skills:
-
-```yaml
-capabilities:
-  - capability: skills
-    configuration:
-      roots: []
-```
-
-`roots` is Harness UI's optional ordered unique list of **Environment paths**, up to 128 entries, scanned before automatic sources. It is not an arbitrary host path escape hatch. Automatic sources come from Project, installed Content Plugin, and user Skill locations through the selected Environment's exposed paths. Automatic directories are `<project-root>/.agents/skills` and `~/.agents/skills`, plus installed plugin Skill roots. Explicit roots must be canonical absolute Environment paths, not `~` or relative paths. In Sandbox, a host path that is not mapped into the Environment is not made available by writing it here.
-
-Discovered Skill names appear in slash completion. Skill instructions are task-specific; adding a source does not mean every Skill should run on every prompt. Exact source precedence, path mapping, and native discovery follow the [Environment Skill Sources contract](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/a13n-harness-ui/02b-environment-skill-sources.md).
+See [Skills and Content Plugins](skills-and-content-plugins.md) for explicit and automatic source precedence, the built-in offline configuration Skill, file access, and catalog capture. Selecting Skills adds knowledge discovery; it does not grant execution permissions.
 
 ## Content Plugins
 
-Content Plugins package editable Skills and Markdown subagents. They are stored under the selected data root, separate from root YAML and Python Harness Plugins.
-
-```console
-a13n-harness-ui plugin install /path/to/plugin-repository
-a13n-harness-ui plugin install https://github.com/example/agent-content --plugin plugin-review --ref v1.0.0
-a13n-harness-ui plugin list --format json
-a13n-harness-ui plugin uninstall plugin-review
-```
-
-The repository/ref and plugin ID must exist and follow the [Content Plugin layout](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/a13n-harness-ui/01b-content-plugin-repositories.md). Inspect and trust repository content before installing it. Installation does not automatically enable every child in every Agent.
-
-Select a contributed child normally:
-
-```yaml
-subagents:
-  - markdown: subagent-investigator
-```
-
-Local `subagents/*.md` overrides a Content Plugin child with the same ID. Plugin-to-plugin duplicate IDs use deterministic precedence and produce diagnostics. Invalid optional plugin content is skipped with a diagnostic; a selected missing child still fails composition. Package-owned built-in IDs are reserved and cannot be overridden. `config validate`, `config show`, and terminal logs expose diagnostics.
+See [Content Plugin installation](skills-and-content-plugins.md#install-a-content-plugin), [destructive uninstall behavior](skills-and-content-plugins.md#remove-a-content-plugin), and the [complete repository format](skills-and-content-plugins.md#author-a-content-plugin-repository). These are editable content bundles, not installed Python Harness Plugins.
 
 ## Harness Plugin and Run Extension files
 

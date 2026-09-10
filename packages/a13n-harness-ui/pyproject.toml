@@ -22,6 +22,9 @@ dependencies = [
     "httpx>=0.28,<1",
     "httpx2>=2.5,<3",
     "openai>=3.5,<4",
+    "opentelemetry-api>=1.39,<2",
+    "opentelemetry-sdk>=1.39,<2",
+    "opentelemetry-exporter-otlp-proto-http>=1.39,<2",
     "packaging>=24,<27",
     "pydantic>=2.12,<3",
     "pydantic-ai-slim>=2.41.0,<3",
@@ -54,11 +57,11 @@ test = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "pyyaml>=6,<7", "markdown-it-py>=3,<5"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build]
-artifacts = ["a13n_harness_ui/static/**"]
+artifacts = ["a13n_harness_ui/static/**", "a13n_harness_ui/assets/builtin_skills/**"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["a13n_harness_ui"]
@@ -67,6 +70,7 @@ packages = ["a13n_harness_ui"]
 include = [
     "a13n_harness_ui",
     "hatch_build.py",
+    "build_skills.py",
     "LICENSE",
     "README.md",
     "pyproject.toml",

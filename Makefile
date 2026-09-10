@@ -7,9 +7,10 @@ EXAMPLE_DIRS := examples/agent-app examples/environment-provider examples/plugin
 PYTHON_TEST_DIRS ?=
 PYTHON_TEST_WORKERS ?=
 SERVICE_CONFIG ?= dev/service/local.toml
+HARNESS_ENV ?= dev/harness/.env
+HARNESS_UI_ENV ?= dev/harness-ui/.env
 STATE ?=
 SERVICE_DEV = uv run --locked python -m dev.service --config "$(SERVICE_CONFIG)"
-LANGFUSE_COMPOSE := docker compose $(if $(wildcard .env),--env-file .env,) -f dev/observability/langfuse.compose.yaml
 CHECK_JOBS ?= 4
 CHECK_TARGETS := \
 	lint \
@@ -93,12 +94,22 @@ examples-check: examples-lock-check examples-format-check examples-typecheck ## 
 examples-check-all: examples-check examples-test examples-smoke examples-build ## Run the complete examples gate
 
 .PHONY: setup
-setup: sync ## Start local PostgreSQL and Redis
+setup: sync ## Prepare local PostgreSQL, Redis, Langfuse and the Service schema
 	@$(SERVICE_DEV) setup
 
 .PHONY: dev
 dev: setup frontend-sync sdk-typescript-build ## Upgrade the schema and run a13n Service and Console
 	@bash scripts/dev.sh "$(SERVICE_CONFIG)"
+
+.PHONY: cli harness-dev harness-ui-smoke
+cli: ## Run Harness UI with dev/harness-ui/.env (CLI_ARGS forwards CLI options)
+	@uv run --locked --env-file "$(HARNESS_UI_ENV)" a13n-harness-ui --no-update-check $(CLI_ARGS)
+
+harness-dev: ## Run SDK observation scenarios with dev/harness/.env (HARNESS_ARGS selects a scenario)
+	@uv run --locked --env-file "$(HARNESS_ENV)" opentelemetry-instrument python dev/observation-demo/agent.py $(HARNESS_ARGS)
+
+harness-ui-smoke: ## Exercise HarnessUiApp with a local scripted model and dev/harness-ui/.env
+	@uv run --locked --env-file "$(HARNESS_UI_ENV)" python -m dev.harness-ui.smoke
 
 .PHONY: dev-down
 .PHONY: live-test-init live-test-setup live-test-control live-test-worker live-test live-test-local live-test-check live-test-auth-control live-test-round-two live-test-management
@@ -145,60 +156,28 @@ live-test-check: sync ## Validate live-test support without contacting services
 	@uv run --locked mdformat --check dev/live_tests/README.md
 	@uv run --locked python -m pytest dev/live_tests -q
 
-dev-down: ## Stop local infrastructure, preserving all data
+dev-down: ## Stop local Service and Langfuse infrastructure, preserving all data
 	@$(SERVICE_DEV) stop
 
-.PHONY: langfuse-up
-langfuse-up: ## Start the local Langfuse trace backend
-	@set -e; \
-	$(LANGFUSE_COMPOSE) up -d --wait; \
-	web_address="$$( $(LANGFUSE_COMPOSE) port langfuse-web 3000 )"; \
-	worker_address="$$( $(LANGFUSE_COMPOSE) port langfuse-worker 3030 )"; \
-	web_port="$${web_address##*:}"; \
-	worker_port="$${worker_address##*:}"; \
-	deadline=$$(( $$(date +%s) + 120 )); \
-	check_url() { \
-		remaining=$$(( deadline - $$(date +%s) )); \
-		[ "$$remaining" -gt 0 ] || return 1; \
-		max_time=$$remaining; \
-		[ "$$max_time" -le 5 ] || max_time=5; \
-		curl --fail --silent --show-error --connect-timeout 2 --max-time "$$max_time" "$$1" >/dev/null 2>&1; \
-	}; \
-	until check_url "http://127.0.0.1:$$web_port/api/public/health?failIfDatabaseUnavailable=true" \
-		&& check_url "http://127.0.0.1:$$web_port/api/public/ready" \
-		&& check_url "http://127.0.0.1:$$worker_port/api/health"; do \
-		if [ "$$(date +%s)" -ge "$$deadline" ]; then \
-			echo "Langfuse web and worker did not become ready within 120 seconds." >&2; \
-			$(LANGFUSE_COMPOSE) ps >&2; \
-			$(LANGFUSE_COMPOSE) logs --tail=100 langfuse-web langfuse-worker >&2; \
-			exit 1; \
-		fi; \
-		sleep 2; \
-	done; \
-	echo "Langfuse: http://127.0.0.1:$$web_port"
+.PHONY: langfuse-up langfuse-down langfuse-test langfuse-reset
+langfuse-up: sync ## Start and authenticate local Langfuse using SERVICE_CONFIG
+	@$(SERVICE_DEV) langfuse up
 
-.PHONY: langfuse-down
-langfuse-down: ## Stop local Langfuse while preserving its data
-	@$(LANGFUSE_COMPOSE) down --remove-orphans
+langfuse-down: sync ## Stop local Langfuse while preserving its data
+	@$(SERVICE_DEV) langfuse down
 
-.PHONY: langfuse-test
-langfuse-test: langfuse-up ## Verify Service OTLP write and Trace Query against local Langfuse v4
-	@set -e; \
-	web_container="$$( $(LANGFUSE_COMPOSE) ps -q langfuse-web )"; \
-	public_key="$$( docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$$web_container" | sed -n 's/^LANGFUSE_INIT_PROJECT_PUBLIC_KEY=//p' )"; \
-	secret_key="$$( docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$$web_container" | sed -n 's/^LANGFUSE_INIT_PROJECT_SECRET_KEY=//p' )"; \
-	web_address="$$( $(LANGFUSE_COMPOSE) port langfuse-web 3000 )"; \
-	A13N_TEST_LANGFUSE_BASE_URL="http://$$web_address" \
-	A13N_TEST_LANGFUSE_PUBLIC_KEY="$$public_key" \
-	A13N_TEST_LANGFUSE_SECRET_KEY="$$secret_key" \
-	uv run --locked python -m pytest packages/a13n-service/tests/trace_query/test_langfuse_integration.py
+langfuse-test: sync ## Verify Service OTLP write and Trace Query against local Langfuse v4
+	@$(SERVICE_DEV) langfuse test
 
-.PHONY: langfuse-reset
-langfuse-reset: ## Stop local Langfuse and remove all local Langfuse data
-	@$(LANGFUSE_COMPOSE) down --volumes --remove-orphans
+langfuse-reset: sync ## Stop local Langfuse and remove only its data
+	@$(SERVICE_DEV) langfuse reset
+
+.PHONY: a13n-harness-ui-skills
+a13n-harness-ui-skills: sync ## Generate the bundled configuration Skill and documentation navigation
+	@uv run --locked python packages/a13n-harness-ui/build_skills.py
 
 .PHONY: a13n-harness-ui
-a13n-harness-ui: sync ## Run the interactive Harness UI without release update checks
+a13n-harness-ui: a13n-harness-ui-skills ## Run the interactive Harness UI without release update checks
 	@uv run --locked a13n-harness-ui --no-update-check
 
 .PHONY: a13n-harness-ui-db-migrate
@@ -263,7 +242,7 @@ docs-build: sync docs-check ## Build the documentation site in strict mode
 	@uv run --locked mkdocs build --strict
 
 .PHONY: test
-test: sync ## Run Python workspace tests
+test: a13n-harness-ui-skills ## Run Python workspace tests
 	@uv run --locked python -m scripts.run_python_tests $(if $(PYTHON_TEST_WORKERS),--workers $(PYTHON_TEST_WORKERS)) $(PYTHON_TEST_DIRS)
 
 .PHONY: eip-generate
@@ -513,7 +492,7 @@ a13n-harness-ui-webui-build: frontend-sync ## Build Harness UI WebUI production 
 	@pnpm --dir frontend --filter a13n-harness-ui-webui run build
 
 .PHONY: a13n-harness-ui-assets
-a13n-harness-ui-assets: sync a13n-harness-ui-webui-build ## Prepare generated Harness UI WebUI files for Python packaging
+a13n-harness-ui-assets: a13n-harness-ui-skills a13n-harness-ui-webui-build ## Prepare generated Harness UI WebUI files for Python packaging
 	@uv run --locked python scripts/prepare-a13n-harness-ui-assets.py
 
 sdk/typescript/node_modules/.package-lock.json: sdk/typescript/package.json sdk/typescript/package-lock.json

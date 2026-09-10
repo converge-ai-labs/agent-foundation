@@ -1,150 +1,96 @@
-# Agent Harness
+# Harness
 
-`a13n-harness` is an embeddable, process-local runtime for building Pydantic AI agents with consistent composition, Environment access, continuation state, observation, and extension boundaries.
+Harness (`a13n-harness`) is a Python SDK for building agents on Pydantic AI. It adds reusable Agent composition, scoped execution, portable continuation state, Environment tools, and public observations. Embed it in an application that owns its users, storage, and delivery.
 
-Use it as a Python library inside the application that already owns identity, policy, persistence, and delivery. It is not a hosted service and it does not replace the Pydantic AI Agent loop.
+**Want an application rather than an SDK?** Start with [Harness UI](../a13n-harness-ui/index.md). You do not need to write Python to use the terminal product.
 
-## Quick start
+## Start with a small Agent
 
-These guides track `main` and target the next Harness release. Until that release is published, use the locked source workspace:
-
-```bash
-git clone https://github.com/converge-ai-labs/agent-foundation.git
-cd agent-foundation
-uv sync --locked --package a13n-harness
-```
+The [Getting started guide](getting-started.md) contains a complete offline example. Its essential application code is:
 
 ```python
-import asyncio
-from collections.abc import AsyncIterator
+from a13n_harness import AgentSpec, HarnessBuilder
+from pydantic_ai.models.test import TestModel
 
-from a13n_harness import (
-    AgentSpec,
-    HarnessBuilder,
+executable = HarnessBuilder().build(
+    AgentSpec(instructions="Answer clearly."),
+    output_type=str,
+    model=TestModel(custom_output_text="Hello from Harness"),
 )
-from pydantic_ai.messages import ModelMessage
-from pydantic_ai.models.function import AgentInfo, FunctionModel
-
-
-async def respond(
-    messages: list[ModelMessage],
-    info: AgentInfo,
-) -> AsyncIterator[str]:
-    del messages, info
-    yield "Hello from the Harness"
-
-
-async def main() -> None:
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=respond),
-    )
-
-    result = await executable.run("Say hello")
-    print(result.output_or_raise())
-
-
-asyncio.run(main())
 ```
 
-Save the example as `app.py` and run it with `uv run python app.py` from the repository root.
+Inside an async application:
 
-This example is deterministic and needs no model credentials. The [Getting Started guide](getting-started.md) explains every boundary and shows how to select a real model.
-
-## What the Harness adds
-
-Pydantic AI remains responsible for models, messages, tools, Toolsets, Capabilities, output validation, deferred values, native events, and the Agent loop. The Harness adds reusable boundaries around that loop:
-
-- code-first `AgentDefinition` and `HarnessBuilder` construction;
-- one immutable reusable `ExecutableAgent` whose runs have deterministic cleanup;
-- fresh typed run context and collaborators for each logical run;
-- one canonical event stream, terminal result, usage record, and correlation model;
-- portable `HarnessState`, continuation, forking, checkpoints, and deferred resume;
-- provider-neutral Environment operations and current mounts;
-- trusted middleware, Skills, inline delegation, and restricted CodeAct;
-- mandatory message-integrity and tool-result boundaries;
-- OpenTelemetry traces and metrics selected at the embedding process boundary.
-
-The smallest path is:
-
-```text
-AgentSpec -> HarnessBuilder -> ExecutableAgent -> run or stream -> HarnessRunResult
+```python
+result = await executable.run("Say hello")
+print(result.output_or_raise())
 ```
 
-`RunBindings` is optional for the embedded default. Supply fresh bindings when current identity, model routing, provider collaborators, policy, or other run authority must be explicit.
+No model credentials, Environment, plugins, or service are needed for this test. Replace the test Model when you are ready to connect a provider.
 
-## Capabilities all the way down
+```mermaid
+flowchart LR
+    Spec["AgentSpec and Capabilities"] --> Build["HarnessBuilder"]
+    Build --> Agent["Reusable ExecutableAgent"]
+    Agent --> Run["Scoped Run"]
+    Bindings["Fresh bindings and Environment"] --> Run
+    State["Previous HarnessState"] --> Run
+    Run --> Result["Result and next state"]
+```
 
-Stable Agent behavior is composed as Pydantic AI Capabilities. The Harness provides first-party Capability families while preserving native Pydantic AI composition.
+Build once; create fresh run inputs each time. The executable is reusable, while each Run owns its temporary resources. Persist returned state only when your application accepts that checkpoint.
 
-| Need                                             | Capability or guide                                                                         |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| Runtime context and model-readable working state | `RuntimeContextCapability`, `WorkingStateCapability`                                        |
-| Long-term memory                                 | `Mem0Capability` with native Mem0 recall and bounded memory tools                           |
-| Files, commands, processes, output, and ports    | `DynamicEnvironmentCapability` and [Environments](environments.md)                          |
-| Human clarification or deferred approval         | `UserInteractionCapability`                                                                 |
-| Media, documents, and Web integrations           | [Capabilities](capabilities.md) and [Multimedia Understanding](multimedia-understanding.md) |
-| MCP servers                                      | Native `MCP` or Harness `ContextualMCP`                                                     |
-| Child Agents and restricted Python orchestration | [Delegation and CodeAct](delegation-and-codeact.md)                                         |
-| Packaged procedural knowledge                    | [Skills](skills.md)                                                                         |
-| Known provider-history repair                    | `SelfHealingModelCapability`                                                                |
-| Trusted outer middleware                         | [Plugins and Extensions](plugins.md)                                                        |
+## Learn by feature
 
-Definition Capabilities describe stable behavior. Credentials, authorization, provider clients, user-specific selection, and other current authority belong in fresh run bindings or Host-owned integrations.
+Each guide starts with the use case, then shows the public API and the boundary it does not own.
 
-## When to use the Harness
+| Feature                                                 | What you use it for                                                          | Design boundary                                                       |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| [Agents and Runs](agents-and-runs.md)                   | Build definitions, run, stream, cancel, recover                              | Process-local execution, not a durable job queue                      |
+| [Models and authentication](models.md)                  | Native Models, routing, gateways, request settings, subscription integration | Host owns credentials; provider owns model behavior                   |
+| [Tools and dependencies](tools-and-dependencies.md)     | Typed functions and current application services                             | Native Pydantic AI tool composition, not another dispatcher           |
+| [Inputs and outputs](inputs-and-outputs.md)             | Text/media input and typed business output                                   | Output contract is fixed at build; progress is not final output       |
+| [Capabilities](capabilities.md)                         | Select behavior, hooks, Toolsets, and trusted implementations                | Feature selection is not permission to access a resource              |
+| [Context and memory](context-and-memory.md)             | Context projections, tasks, notes, handoff, compaction, Mem0                 | Continuation and memory are not workflow ownership                    |
+| [Environments](environments.md)                         | Files, shell, processes, output, ports, multi-mount routing                  | Host selects Providers; Provider owns the target                      |
+| [State and Resume](state-and-resume.md)                 | Continue, fork, export checkpoints, answer deferred calls                    | State restores data, not clients, credentials, or current authority   |
+| [MCP tools](mcp.md)                                     | External tools and per-run headers                                           | Pydantic AI owns MCP transport; local/native paths differ             |
+| [Multimedia understanding](multimedia-understanding.md) | Read image, audio, and video files                                           | Native modality or an explicit fallback, not guessed provider support |
+| [Delegation and CodeAct](delegation-and-codeact.md)     | Declared child agents and restricted Python orchestration                    | No implicit detached workers or unrestricted Python I/O               |
+| [Skills](skills.md)                                     | Discover and select procedural knowledge                                     | Skill text is context, not authority or automatic execution           |
+| [Usage, limits, and pricing](usage-and-limits.md)       | Bound work and attribute observed usage                                      | Local estimates are not durable billing                               |
+| [Observation](observation.md)                           | Events, traces, metrics, and correlation                                     | Export/delivery policy belongs to the embedding process               |
+| [Plugins and extensions](plugins.md)                    | Trusted outer middleware and Environment integration                         | Plugins wrap execution; Capabilities work inside the Agent loop       |
+| [Embedding in a Host](hosting.md)                       | Add persistence, acceptance, fresh policy, and recovery                      | Host owns distributed lifecycle and product policy                    |
+| [Testing](testing.md)                                   | Exercise the real loop with offline Models and fake services                 | Provider smoke tests remain a separate validation layer               |
 
-Use the Harness when an application needs one or more of these boundaries:
+## What comes from Pydantic AI?
 
-- a reusable definition and run lifecycle shared across several Agents;
-- portable continuation state beyond raw message history;
-- provider-neutral files, shell, process, output, or port tools;
-- a canonical public stream and normalized terminal result;
-- usage attribution across root, child, and mixed-model work;
-- trusted plugins, packaged Skills, delegation, or CodeAct;
-- a clear path from embedded execution to Host-owned durable lifecycle.
+Pydantic AI owns the Agent loop, Model interface, messages, Toolsets, native Capabilities, deferred values, output validation, and native usage. Import those primitives directly from `pydantic_ai`.
 
-Use Pydantic AI directly when its native `Agent` surface already satisfies the application and none of these additional boundaries is needed.
+Harness supplies `AgentSpec` extensions, `HarnessBuilder`, `ExecutableAgent`, `RunBindings`, `AgentContext`, normalized events/results, and `HarnessState`. It does not fork the Agent loop or define a parallel model or message protocol.
 
-## Choose a guide
+Use Pydantic AI directly if its native `Agent` already meets your application needs. Choose Harness when you need its reusable lifecycle, Environment integration, continuation, or hosting boundaries.
 
-| Goal                                                     | Guide                                                   |
-| -------------------------------------------------------- | ------------------------------------------------------- |
-| Run the smallest offline Agent, then select a real model | [Getting Started](getting-started.md)                   |
-| Test definitions, streams, state, and integrations       | [Testing](testing.md)                                   |
-| Build definitions; configure models; run and stream      | [Agents and Runs](agents-and-runs.md)                   |
-| Select optional behavior and run collaborators           | [Capabilities](capabilities.md)                         |
-| Expose files, commands, processes, output, or ports      | [Environments](environments.md)                         |
-| Continue, fork, suspend, and resume                      | [State and Resume](state-and-resume.md)                 |
-| Understand image, video, and audio files                 | [Multimedia Understanding](multimedia-understanding.md) |
-| Use child Agents or restricted Python                    | [Delegation and CodeAct](delegation-and-codeact.md)     |
-| Discover and select Skill packages                       | [Skills](skills.md)                                     |
-| Export traces, metrics, events, and usage                | [Observation](observation.md)                           |
-| Add trusted middleware or Environment extensions         | [Plugins and Extensions](plugins.md)                    |
-| Add durable persistence, fencing, and delivery           | [Embedding in a Host](hosting.md)                       |
+## Three places to put configuration
 
-## Ownership at a glance
+| Place                                         | Put here                                                           | Do not put here                                                      |
+| --------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| Definition: `AgentSpec` / `AgentDefinition`   | Instructions, output contract, stable Capabilities, child topology | Current user credentials or live per-request clients                 |
+| Invocation: `RunBindings`, Environment, input | Current identity, routing, collaborators, policy, request context  | A previously entered adapter from another Run                        |
+| Continuation: `HarnessState`                  | Messages and portable feature state                                | A live client, restored authorization, or proof of durable execution |
 
-| Concern                                                                | Owner                |
-| ---------------------------------------------------------------------- | -------------------- |
-| Agent loop, models, messages, native tools, output validation          | Pydantic AI          |
-| Process-local definition, run, events, result, and continuation state  | Agent Harness        |
-| Target creation or re-entry, operations, cached state, and destruction | Environment Provider |
-| Credentials, current authorization, durable records, and delivery      | Application or Host  |
-| Product experience and business policy                                 | Product              |
+Harness UI YAML is a **Host configuration format**, not the SDK's `AgentSpec` format. An SDK application can use Python composition without adopting UI resource directories or IDs.
 
-A Host constructs one fresh Provider `Environment` per independent Run and passes that adapter, or an `EnvironmentMount`, to Harness. Harness enters and closes each adapter non-destructively; it never discovers Providers or chooses target destruction. `HarnessState` can preserve provider state evidence, but it never restores an adapter, credentials, runtime collaborators, or current authority.
+## Runnable applications
 
-## Runnable examples
+- [Agent Application](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app): repeated streaming turns, successful-turn persistence, restart recovery, and a fresh Environment per turn.
+- [Plugin Integration](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins): packaged middleware, Environment extensions, and custom Capabilities.
 
-- [Agent Application](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) demonstrates repeated offline streaming turns, successful-turn state persistence, restart recovery, and one fresh local Environment per turn.
-- [Plugin Integration](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) demonstrates packaged Harness middleware and Environment extensions.
+Both use deterministic Models and include tests. Start with the [offline quickstart](getting-started.md), then use an example when you need a complete application boundary.
 
-Both examples use deterministic `FunctionModel` implementations and are tested without model credentials.
+## Versions and scope
 
-## Version policy
+These pages track the source API on `main`; use the locked source setup to reproduce their examples. Match published-package usage to its release documentation and metadata rather than assuming all `0.x` versions are interchangeable.
 
-Agent Harness, Environment Provider, and Agent Stream Protocol form one release group and publish the same version. The project is currently refining its 0.x public contracts; review release notes before upgrading across versions.
-
-These pages are user documentation. Normative architecture, invariants, and compatibility rules remain in the [Agent Harness specification](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/a13n-harness).
+Harness, Environment, and Stream Protocol publish at the same release version. Harness UI releases independently. The [accepted specifications](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/a13n-harness) contain architecture contracts; these guides explain how to use the SDK.

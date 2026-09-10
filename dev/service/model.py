@@ -67,6 +67,22 @@ async def completion(request: Request):
             "## Local tool result\n\nThe local fixture returned:\n\n```json\n" + str(tool_result) + "\n```\n\n" + text
         )
     response_id = "chatcmpl-local-development"
+    usage = {"prompt_tokens": 20, "completion_tokens": len(text) // 4, "total_tokens": 20 + len(text) // 4}
+    usage_chunk = (
+        "data: "
+        + json.dumps(
+            {
+                "id": response_id,
+                "object": "chat.completion.chunk",
+                "created": int(time.time()),
+                "model": "local-scripted",
+                "choices": [],
+                "usage": usage,
+            }
+        )
+        + "\n\n"
+    )
+    include_usage = body.get("stream_options", {}).get("include_usage", False)
     if not body.get("stream"):
         return {
             "id": response_id,
@@ -82,7 +98,7 @@ async def completion(request: Request):
                     "finish_reason": "tool_calls" if tool_call else "stop",
                 }
             ],
-            "usage": {"prompt_tokens": 20, "completion_tokens": len(text) // 4, "total_tokens": 20 + len(text) // 4},
+            "usage": usage,
         }
 
     async def chunks():
@@ -106,6 +122,8 @@ async def completion(request: Request):
         if tool_call:
             yield await emit({"tool_calls": [{"index": 0, **tool_call}]})
             yield await emit({}, "tool_calls")
+            if include_usage:
+                yield usage_chunk
             yield "data: [DONE]\n\n"
             return
         for offset in range(0, len(text), 60):
@@ -113,6 +131,8 @@ async def completion(request: Request):
             if "[slow]" in prompt:
                 await anyio.sleep(0.3)
         yield await emit({}, "stop")
+        if include_usage:
+            yield usage_chunk
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(chunks(), media_type="text/event-stream")

@@ -18,9 +18,9 @@ import { Shell } from "./layout/shell";
 import { WorkspaceProvider } from "./layout/workspace";
 import { Empty, ErrorNotice, Loading, Page } from "./shared/feedback";
 
-const SearchProvidersPage = lazy(() =>
-  import("./features/search/page").then((module) => ({
-    default: module.SearchProvidersPage,
+const ProvidersPage = lazy(() =>
+  import("./features/providers/page").then((module) => ({
+    default: module.ProvidersPage,
   })),
 );
 const ModelsPage = lazy(() =>
@@ -214,7 +214,7 @@ function AppContent() {
                 ))}
                 <Route element={<Authenticated />}>
                   <Route
-                    path="/:organizationKey/:workspaceKey"
+                    path="/workspace/:workspaceKey"
                     element={<WorkspaceShell />}
                   >
                     <Route index element={<Navigate to="agents" replace />} />
@@ -246,16 +246,8 @@ function AppContent() {
                       element={<ApplicationAccountDetail />}
                     />
                     <Route path="connectors" element={<ConnectorsPage />} />
-                    <Route
-                      path="connectors/providers"
-                      element={<ConnectorsPage providers />}
-                    />
                     <Route path="mcp" element={<MCPPage />} />
                     <Route path="environments" element={<EnvironmentsPage />} />
-                    <Route
-                      path="environments/providers"
-                      element={<EnvironmentsPage section="providers" />}
-                    />
                     <Route
                       path="environments/instances"
                       element={<EnvironmentsPage section="instances" />}
@@ -263,15 +255,7 @@ function AppContent() {
                     <Route path="assets" element={<AssetsPage />} />
                     <Route path="skills" element={<SkillsPage />} />
                     <Route path="skills/:skillId" element={<SkillDetail />} />
-                    <Route
-                      path="search-providers"
-                      element={<SearchProvidersPage />}
-                    />
                     <Route path="models" element={<ModelsPage />} />
-                    <Route
-                      path="models/providers"
-                      element={<ModelsPage providers />}
-                    />
                     <Route path="settings" element={<WorkspaceSettings />} />
                     <Route path="usage" element={<ComingSoon />} />
                     <Route path="schedules" element={<ComingSoon />} />
@@ -279,12 +263,13 @@ function AppContent() {
                   </Route>
                   <Route element={<WorkspaceShell />}>
                     <Route path="/" element={null} />
+                    <Route path="/providers" element={<ProvidersPage />} />
                     <Route
                       path="/settings/profile"
                       element={<PersonalSettings />}
                     />
                     <Route
-                      path="/:organizationKey/settings"
+                      path="/organization/settings"
                       element={<OrganizationSettings />}
                     />
                   </Route>

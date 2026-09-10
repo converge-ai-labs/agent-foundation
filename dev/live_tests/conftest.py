@@ -124,6 +124,15 @@ async def control(request):
 
 
 @pytest.fixture
+async def multiworker(management):
+    """Three owned one-slot Workers; retain the management opt-in and cleanup boundary."""
+    management.live.timeout = 180
+    await management.lab.start_worker()
+    await management.lab.start_worker()
+    return management
+
+
+@pytest.fixture
 async def configured_provider(request):
     selection, upstream_model = request.param if isinstance(request.param, tuple) else (request.param, None)
     slack = selection == "slack"

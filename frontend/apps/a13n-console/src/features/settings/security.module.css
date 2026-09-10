@@ -2,47 +2,11 @@
   display: grid;
   gap: 40px;
 }
-.sectionHeading {
-  margin: 0 0 14px;
-}
-.sectionHeading h2 {
-  margin: 0;
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 550;
-}
-.sectionHeading p {
-  margin: 5px 0 0;
-  color: var(--a13n-secondary);
-  font-size: 12px;
-  line-height: 20px;
-  text-wrap: pretty;
-}
-.card {
-  min-width: 0;
-  border: 1px solid var(--a13n-border-soft);
-  border-radius: 8px;
-  background: var(--a13n-elevated);
-}
-.identity {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 18px 20px;
-}
-.email {
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-.identity > button {
-  flex: none;
-}
 .note {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 12px 20px;
+  padding: 12px 0;
   border-top: 1px solid var(--a13n-border-soft);
   color: var(--a13n-secondary);
 }
@@ -55,42 +19,19 @@
   line-height: 18px;
   margin: 0;
 }
-.fields {
-  padding: 4px 20px;
-}
-.identity + form {
+.fields > * + * {
   border-top: 1px solid var(--a13n-border-soft);
-}
-.row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 240px;
-  align-items: start;
-  gap: 24px;
-  padding: 16px 0;
-}
-.row + .row {
-  border-top: 1px solid var(--a13n-border-soft);
-}
-.row > label {
-  font-size: 13px;
-  line-height: 20px;
-  padding-top: 6px;
-}
-.row > div {
-  min-width: 0;
 }
 .actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  padding: 12px 20px;
-  background: var(--a13n-canvas);
+  padding: 12px 0;
   border-top: 1px solid var(--a13n-border-soft);
-  border-radius: 0 0 8px 8px;
 }
 .notice {
-  padding: 0 20px 16px;
+  padding: 12px 0;
 }
 .notice > [role="alert"] {
   margin: 0;
@@ -99,49 +40,11 @@
   background: color-mix(in srgb, var(--a13n-danger) 5%, var(--a13n-elevated));
 }
 .success {
-  padding: 0 20px 16px;
+  padding: 12px 0;
   margin: 0;
   font-size: 12px;
   color: var(--a13n-success);
 }
-@media (max-width: 1000px) {
-  .row {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 55%);
-    gap: 20px;
-  }
-}
-@media (max-width: 650px) {
-  .sections {
-    gap: 32px;
-  }
-  .identity {
-    flex-wrap: wrap;
-    gap: 12px;
-    padding: 16px;
-  }
-  .note,
-  .actions {
-    padding: 12px 16px;
-  }
-  .fields {
-    padding: 0 16px;
-  }
-  .row {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
-  }
-  .row > label {
-    padding: 0;
-  }
-  .sections input {
-    font-size: 16px;
-    min-height: 40px;
-  }
-  .sections button {
-    min-height: 44px;
-  }
-}
-
 .passwordForm {
   display: grid;
   gap: 16px;

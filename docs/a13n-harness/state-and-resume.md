@@ -116,7 +116,7 @@ second = await executable.run(
 )
 ```
 
-The exact result-building API depends on whether the deferred item is an approval, external call, or structured user question. Cover every pending item exactly once and preserve its category.
+The exact result-building API depends on whether the deferred item is an approval, external call, or structured user question. Cover every pending item exactly once and preserve its category. The [client-side tool example](client-tools.md) demonstrates a complete offline declaration, suspension, correlated external result, and resume. [Managed tool policy](managed-tools.md) explains approval metadata and fresh authorization.
 
 Resume validates that:
 

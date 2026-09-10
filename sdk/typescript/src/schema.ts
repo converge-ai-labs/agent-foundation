@@ -2222,6 +2222,41 @@ export interface paths {
     patch: operations["update_agent_api_v1_workspaces__workspace__agents__agent__patch"];
     trace?: never;
   };
+  "/api/v1/workspaces/{workspace}/agents/{agent}/avatar": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Put Agent Avatar */
+    put: operations["put_agent_avatar_api_v1_workspaces__workspace__agents__agent__avatar_put"];
+    post?: never;
+    /** Delete Agent Avatar */
+    delete: operations["delete_agent_avatar_api_v1_workspaces__workspace__agents__agent__avatar_delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/agents/{agent}/avatar/{image_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Agent Avatar */
+    get: operations["get_agent_avatar_api_v1_workspaces__workspace__agents__agent__avatar__image_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/workspaces/{workspace}/agents/{agent}/duplicate": {
     parameters: {
       query?: never;
@@ -3207,6 +3242,8 @@ export interface components {
       enabled: boolean;
       /** Id */
       id: string;
+      /** Image Url */
+      image_url?: string | null;
       /** Key */
       key: string;
       /** Name */
@@ -13735,6 +13772,111 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Agent"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  put_agent_avatar_api_v1_workspaces__workspace__agents__agent__avatar_put: {
+    parameters: {
+      query?: never;
+      header: {
+        "If-Match": string;
+      };
+      path: {
+        workspace: string;
+        agent: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/octet-stream": Binary;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Agent"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  delete_agent_avatar_api_v1_workspaces__workspace__agents__agent__avatar_delete: {
+    parameters: {
+      query?: never;
+      header: {
+        "If-Match": string;
+      };
+      path: {
+        workspace: string;
+        agent: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Agent"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_agent_avatar_api_v1_workspaces__workspace__agents__agent__avatar__image_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        image_id: string;
+        workspace: string;
+        agent: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": unknown;
         };
       };
       /** @description Validation Error */

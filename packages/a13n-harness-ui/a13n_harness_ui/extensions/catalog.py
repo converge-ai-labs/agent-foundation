@@ -52,7 +52,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, Valid
 from pydantic_ai.capabilities import CAPABILITY_TYPES, AbstractCapability, NativeTool
 from pydantic_ai.native_tools import ImageGenerationTool
 
-from a13n_harness_ui.environment_paths import EnvironmentPathLayout
+from a13n_harness_ui.environment_paths import BUILTIN_SKILLS_PATH, BUILTIN_SKILLS_SOURCE_ID, EnvironmentPathLayout
 from a13n_harness_ui.errors import CompositionError
 
 from .environment_adapters import (
@@ -525,10 +525,15 @@ def _construct_skills_capability(
     parsed = SkillsConfiguration.model_validate(configuration, strict=True)
     sources = [
         FileSkillSource(
+            BUILTIN_SKILLS_SOURCE_ID,
+            (BUILTIN_SKILLS_PATH,),
+            required=True,
+        ),
+        FileSkillSource(
             "a13n-harness-ui:user-skills",
             (path_layout.user_skills,),
             required=False,
-        )
+        ),
     ]
     sources.extend(
         FileSkillSource(

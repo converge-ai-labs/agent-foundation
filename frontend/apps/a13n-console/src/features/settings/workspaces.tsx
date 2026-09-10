@@ -27,9 +27,7 @@ export function Workspaces() {
             label: t("Name"),
             render: (item) => (
               <>
-                <Link to={`${workspacePath(organization, item)}/settings`}>
-                  {item.name}
-                </Link>
+                <Link to={`${workspacePath(item)}/settings`}>{item.name}</Link>
                 <small>
                   <CopyableId value={item.id} />
                 </small>

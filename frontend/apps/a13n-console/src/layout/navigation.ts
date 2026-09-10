@@ -10,7 +10,7 @@ import {
   Network,
   Plug,
   Sparkles,
-  Search,
+  Settings2,
 } from "lucide-react";
 export const navigationGroups: {
   label: string;
@@ -26,16 +26,8 @@ export const navigationGroups: {
   {
     label: "Resources",
     entries: [
-      [
-        "models",
-        "Models",
-        Boxes,
-        [
-          ["models", "All models"],
-          ["models/providers", "Providers"],
-        ],
-      ],
-      ["search-providers", "Search accounts", Search],
+      ["models", "Models", Boxes],
+      ["/providers", "Providers", Settings2],
       ["skills", "Skills", Sparkles],
       ["assets", "Assets", File],
       [
@@ -45,7 +37,6 @@ export const navigationGroups: {
         [
           ["environments", "Templates"],
           ["environments/instances", "Instances"],
-          ["environments/providers", "Providers"],
         ],
       ],
     ],
@@ -54,15 +45,7 @@ export const navigationGroups: {
     label: "Integrations",
     entries: [
       ["application-accounts", "Application accounts", Cable],
-      [
-        "connectors",
-        "Connectors",
-        Plug,
-        [
-          ["connectors", "Connections"],
-          ["connectors/providers", "Providers"],
-        ],
-      ],
+      ["connectors", "Connectors", Plug],
       ["mcp", "MCP connections", Network],
     ],
   },

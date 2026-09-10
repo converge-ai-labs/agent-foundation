@@ -233,7 +233,12 @@ def test_setup_access_selection_and_back_preserve_no_secret_defaults() -> None:
             "proactive_context_management_threshold": 0.65,
             "compact_threshold": 0.90,
         },
-        "settings": {"thinking": "high", "openai_reasoning_summary": "detailed", "openai_store": False},
+        "settings": {
+            "thinking": "high",
+            "openai_reasoning_summary": "detailed",
+            "openai_store": False,
+            "max_tokens": 65536,
+        },
     }
     assert wizard.back()
     assert wizard.question.key == "environment"

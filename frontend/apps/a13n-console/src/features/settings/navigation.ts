@@ -1,20 +1,20 @@
 import {
   Activity,
   Boxes,
-  Cable,
   KeyRound,
   Layers,
   Mail,
   Monitor,
   Settings,
-  Search,
+  Settings2,
   Shield,
   SlidersHorizontal,
   User,
   Users,
   type LucideIcon,
 } from "lucide-react";
-import { useWorkspace } from "../../layout/workspace";
+import { workspacePath } from "../../shared/paths";
+import { useAccess } from "../../layout/workspace";
 
 export type SettingsScope = "personal" | "workspace" | "organization";
 type Section = {
@@ -22,6 +22,7 @@ type Section = {
   label: string;
   icon: LucideIcon;
   permission?: string;
+  href?: string;
 };
 const sections: Record<SettingsScope, Section[]> = {
   personal: [
@@ -70,26 +71,23 @@ const sections: Record<SettingsScope, Section[]> = {
     { value: "members", label: "Members", icon: Users },
     { value: "invitations", label: "Invitations", icon: Mail },
     { value: "models", label: "Models", icon: Boxes },
-    { value: "model-providers", label: "Model providers", icon: Boxes },
-    { value: "search-providers", label: "Search accounts", icon: Search },
     {
       value: "environments",
       label: "Environment templates",
       icon: Monitor,
     },
     {
-      value: "environment-providers",
-      label: "Environment providers",
-      icon: Monitor,
+      value: "providers",
+      label: "Providers",
+      icon: Settings2,
+      href: "/providers?scope=organization",
     },
-    { value: "connectors", label: "Connector providers", icon: Cable },
     { value: "workspaces", label: "Workspaces", icon: Layers },
     { value: "audit", label: "Audit", icon: Activity },
   ],
 };
 export function useSettingsNavigation() {
-  const { workspace, organization, can, organizationAdmin, basePath } =
-    useWorkspace();
+  const { workspace, organization, can, organizationAdmin } = useAccess();
   return [
     {
       scope: "personal" as const,
@@ -98,22 +96,26 @@ export function useSettingsNavigation() {
       path: "/settings/profile",
       sections: sections.personal,
     },
-    {
-      scope: "workspace" as const,
-      label: "Workspace",
-      name: workspace.name,
-      path: `${basePath}/settings`,
-      sections: sections.workspace.filter(
-        (item) => !item.permission || can(item.permission),
-      ),
-    },
+    ...(workspace
+      ? [
+          {
+            scope: "workspace" as const,
+            label: "Workspace",
+            name: workspace.name,
+            path: `${workspacePath(workspace)}/settings`,
+            sections: sections.workspace.filter(
+              (item) => !item.permission || can(item.permission),
+            ),
+          },
+        ]
+      : []),
     ...(organizationAdmin
       ? [
           {
             scope: "organization" as const,
             label: "Organization",
             name: organization.name,
-            path: `/${organization.key}/settings`,
+            path: "/organization/settings",
             sections: sections.organization,
           },
         ]

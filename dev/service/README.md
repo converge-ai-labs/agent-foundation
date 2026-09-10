@@ -1,7 +1,7 @@
 # Local Service development
 
 This directory owns the local Service environment: its explicit TOML configuration,
-PostgreSQL and Redis containers, state reset tooling, and fictional sample content.
+PostgreSQL and Redis containers, local Langfuse, state reset tooling, and fictional sample content.
 It does not depend on Console. Console, SDKs, the service CLI and direct API clients
 can all use the resulting Service.
 
@@ -10,15 +10,13 @@ can all use the resulting Service.
 These local tools support macOS and Linux. From the repository root, with Docker running:
 
 ```sh
-make dev-reset STATE=seeded
-make service-dev
+make dev
 ```
 
-`service-dev` starts dependencies, applies committed migrations, and runs Service
-at `http://127.0.0.1:8000` with a scripted local model at
-`http://127.0.0.1:18080/v1`. Ctrl+C stops the application and model, preserving data.
-`make dev` is the optional outer launcher for Service plus Console. Console's
-separate Vite command remains documented in its README.
+This installs locked dependencies, starts PostgreSQL, Redis and the complete local
+Langfuse stack, verifies Langfuse project authentication, applies committed
+migrations, and runs Service, the scripted model and Console. No `.env`, manual
+Langfuse project creation, API-key copying or OTEL exports are needed.
 
 `make setup`, also used by `make dev` and `make service-dev`, checks Docker before
 starting the containers. If the selected daemon is already ready, it proceeds
@@ -27,7 +25,30 @@ attempt to open Docker Desktop and wait up to 120 seconds for readiness. Docker
 must already be installed. On Linux or with another Docker endpoint, start the
 selected daemon yourself; the tools preserve your Docker context and `DOCKER_HOST`.
 
-For Console, sign in as `admin@example.com` with the public test password
+Use `make setup` to prepare Python dependencies, infrastructure and schema without
+starting an application listener. It preserves existing data and credentials.
+Use `make service-dev` for Service and the scripted model without Console or its
+frontend dependencies. Default addresses are:
+
+| Component      | Address                     |
+| -------------- | --------------------------- |
+| Console        | `http://127.0.0.1:5173`     |
+| Service        | `http://127.0.0.1:8000`     |
+| Scripted model | `http://127.0.0.1:18080/v1` |
+| Langfuse       | `http://127.0.0.1:3000`     |
+| Langfuse media | `http://127.0.0.1:3001`     |
+
+Ctrl+C stops the applications, not the Docker infrastructure. The outer launcher
+stops both Service and Console if either exits. Console's separate Vite command
+remains documented in its README.
+
+A new installation follows the normal initial administrator invitation flow;
+the single-use link is printed in protected Service startup logs when SMTP is
+not configured. For fictional accounts and example conversations, explicitly run
+`make dev-reset STATE=seeded` **before** starting applications. This deletes existing
+Service data; neither setup nor daily startup implicitly resets or seeds it.
+
+After a seeded reset, sign in to Console as `admin@example.com` with the public test password
 `local-public-password-123`. `builder@example.com`, `runner@example.com`, and
 `viewer@example.com` use the same public test password with different Workspace
 roles. All identities and content are fictional. None of these credentials grants
@@ -52,6 +73,67 @@ protected startup logs. `seeded` provisions more than 60 Agents, Skills and Asse
 120 bulk Sessions plus distinct execution journeys, and an additional empty Workspace.
 It checks the resulting data before reporting success and writes exact counts and
 a scenario-to-resource index to `var/service/seed-report.md` and `seed.json`.
+
+## Local traces
+
+`local.toml` enables tracing with standard input/output content and selects the
+local Langfuse query project. The development launcher uses that same project to
+initialize Langfuse and configure Service's standard OTLP/HTTP exporter. Content
+is retained in local Docker volumes; do not use real private inputs unless you
+intend to store them there. Langfuse telemetry is disabled in the Compose file.
+
+The public local Langfuse login is `dev@agent-foundation.local` /
+`agent-foundation-local`. The organization and project are `Agent Foundation Local`.
+The public test API keys are in `[observability.query]` in `local.toml`.
+Changing initialization keys does not rotate keys in existing Langfuse data;
+restore the matching configuration or explicitly reset the trace store.
+
+```sh
+make langfuse-up       # Start and authenticate only the trace backend
+make langfuse-test     # Write a real OTLP trace and query it through the Service adapter
+make langfuse-down     # Stop Langfuse, retaining traces
+make langfuse-reset    # Delete only Langfuse data, never Service data
+```
+
+`make setup` checks web/worker readiness and project authentication; the explicit
+smoke test additionally waits for ingestion and verifies input search and trace
+detail. Application runtime readiness still does not depend on exporter availability.
+Service state resets never delete Langfuse volumes. Seeded resets export their
+fictional execution journeys to the same trace store.
+
+The default Service composition does not yet supply a `TraceAccessAuthorizer`.
+Trace ingestion and the Langfuse UI work, but Console's Service Trace Query API
+remains safely unavailable until the authoritative RunAttempt authorizer is
+composed. The smoke test uses a fixture-owned authorizer; it verifies transport,
+backend reads and HTTP mapping, not production authorization completeness.
+
+### Upgrading an older local Langfuse stack
+
+Older `make langfuse-up` versions used the shared Compose project
+`agent-foundation-langfuse-dev`. The launcher warns if it is still running; it
+never stops it automatically. To release its ports without deleting its data:
+
+```sh
+docker compose --env-file /dev/null \
+  --project-name agent-foundation-langfuse-dev \
+  --file dev/observability/langfuse.compose.yaml stop
+make setup
+```
+
+The new checkout-owned stack has separate volumes. Old traces are not migrated
+or deleted; retain the old project and volumes if you need to inspect that history.
+
+### Export environment isolation
+
+The local launcher replaces inherited `OTEL_*` variables with the selected local
+profile and announces this when applicable. This prevents an ambient remote
+collector or trace-specific endpoint/header override from receiving local content.
+Loopback HTTP traffic also bypasses inherited proxies; other destinations retain
+their proxy policy. It does not change the calling shell. The production CLI
+continues to accept standard OTEL environment settings independently from query
+configuration.
+To opt out of local Langfuse, set `observability.tracing = false` and
+`observability.query.provider = "none"` in the selected TOML.
 
 ## Seed coverage
 
@@ -101,8 +183,11 @@ are public test values; never put a real secret in it. Real credentials belong i
 explicit environment overrides or the normal resource credential flow, never in
 tracked sample files.
 
-`SERVICE_CONFIG` selects the same explicit TOML for development and database Make
-targets. The [Service configuration guide](../../packages/a13n-service/README.md#executable-configuration)
+`SERVICE_CONFIG` selects the same explicit TOML for development, database and
+Langfuse Make targets. There is no implicit overlay or `.env` loading. For a
+custom configuration, pass `make dev SERVICE_CONFIG=dev/service/my-local.toml`;
+keep private copies out of Git. Console's port and upstream follow the selected
+IAM origin and Service listener. The [Service configuration guide](../../packages/a13n-service/README.md#executable-configuration)
 owns source precedence and environment names. Relative paths use the TOML file's
 directory. `var/service/` therefore resolves to the same location regardless of
 where the executable is invoked.
@@ -116,6 +201,11 @@ and Redis ports may be changed in configuration; the tool derives the Compose
 port mappings from those same values. The Compose project name is derived from
 the checkout path, so separate worktrees do not share named volumes. Concurrent
 worktrees need different host ports and separate Service/model listeners.
+Langfuse uses its own checkout-derived Compose project and volumes. Its HTTP
+port comes from `observability.query.langfuse_base_url`; media uses the adjacent
+port. Both bind only to `127.0.0.1`. Its worker, PostgreSQL, Redis and ClickHouse
+are internal to that stack. Neither Langfuse nor Service infrastructure reads the
+root `.env`; optional Harness/debug and live-test workflows remain independent.
 
 A reset recreates owned PostgreSQL/Redis volumes and removes the owned state
 directory, including object bytes and materialized files. It then replays real

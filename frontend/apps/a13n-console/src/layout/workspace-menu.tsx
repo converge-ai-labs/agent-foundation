@@ -71,9 +71,7 @@ export function WorkspaceMenu({ onNavigate }: { onNavigate: () => void }) {
                           predicate: (query) =>
                             query.queryKey.includes(context.workspace.id),
                         });
-                        navigate(
-                          `${workspacePath(context.organization, item)}/agents`,
-                        );
+                        navigate(`${workspacePath(item)}/agents`);
                       }
                       onNavigate();
                     }}

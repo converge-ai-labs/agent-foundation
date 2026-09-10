@@ -374,6 +374,7 @@ class PreparedAgentPlugins(StrictModel):
 
 
 class Agent(StrictModel):
+    image_url: str | None = None
     default_environment_template_id: ObjectId | None = None
     id: ObjectId
     organization_id: ObjectId

@@ -35,7 +35,49 @@ def test_ui_ci_keeps_main_linux_and_separate_windows_backstop() -> None:
             "scripts/run_python_tests.py",
             ".github/workflows/ci-a13n-harness-ui*.yml",
             "scripts/tests/test_harness_ui_ci_workflow.py",
+            "docs/a13n-harness-ui/**",
+            "mkdocs.yml",
         } <= set(triggers[event]["paths"])
+
+
+@pytest.mark.parametrize(
+    "workflow_name,job",
+    [
+        ("ci-a13n-harness-ui.yml", "tests"),
+        ("ci-a13n-harness-ui.yml", "distribution"),
+        ("ci-a13n-harness-ui.yml", "windows"),
+        ("ci-a13n-harness-ui-webui.yml", "webui"),
+    ],
+)
+def test_editable_ui_jobs_prepare_skills_after_dependency_sync(workflow_name: str, job: str) -> None:
+    workflow = yaml.safe_load((ROOT / ".github/workflows" / workflow_name).read_text())
+    steps = workflow["jobs"][job]["steps"]
+    sync = next(index for index, step in enumerate(steps) if step.get("run", "").startswith("uv sync "))
+    prepare = steps[sync + 1]
+    assert "if" not in prepare
+    assert shlex.split(prepare["run"]) == [
+        "uv",
+        "run",
+        "--locked",
+        "--no-sync",
+        "python",
+        "packages/a13n-harness-ui/build_skills.py",
+    ]
+
+
+@pytest.mark.parametrize(
+    "target,consumer",
+    [
+        ("a13n-harness-ui", "uv run --locked a13n-harness-ui --no-update-check"),
+        ("a13n-harness-ui-assets", "scripts/prepare-a13n-harness-ui-assets.py"),
+        ("test", "scripts.run_python_tests"),
+    ],
+)
+def test_source_ui_consumers_prepare_skills(target: str, consumer: str) -> None:
+    result = subprocess.run(["make", "--dry-run", target], cwd=ROOT, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.index("uv sync ") < result.stdout.index("packages/a13n-harness-ui/build_skills.py")
+    assert result.stdout.index("packages/a13n-harness-ui/build_skills.py") < result.stdout.index(consumer)
 
 
 def test_linux_keeps_full_tests_and_distribution_checks() -> None:
@@ -123,3 +165,13 @@ def test_webui_ci_only_runs_unit_contract_and_http_tests() -> None:
     assert "a13n-harness-ui-webui run check" in commands
     assert "docker" not in str(steps).lower()
     assert "uv build" not in commands
+
+
+def test_bundled_documentation_is_a_ui_image_input() -> None:
+    workflow = yaml.safe_load((ROOT / ".github/workflows/images.yml").read_text())
+    inputs = {"docs/a13n-harness-ui/**", "mkdocs.yml"}
+    assert inputs <= set(workflow[True]["push"]["paths"])
+    step = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "filter")
+    filters = yaml.safe_load(step["with"]["filters"])
+    assert inputs <= set(filters["harness_ui"])
+    assert not inputs.intersection(filters["service"])

@@ -46,9 +46,9 @@ export function SearchProviderEditor({
     <ModalFrame
       open={open}
       onOpenChange={setOpen}
-      title={t(providerId ? "Edit search account" : "Add search account")}
+      title={t(providerId ? "Edit search provider" : "Add search provider")}
       description={t(
-        "Save an API key once and reuse this account across agents.",
+        "Save an API key once and reuse this provider across agents.",
       )}
       closeLabel={t("Close")}
       trigger={
@@ -57,7 +57,7 @@ export function SearchProviderEditor({
           variant={providerId ? "outline" : "default"}
           size="sm"
         >
-          {t(providerId ? "Edit" : "Add search account")}
+          {t(providerId ? "Edit" : "Add search provider")}
         </Button>
       }
     >
@@ -133,7 +133,7 @@ export function SearchProviderForm({
     retry: false,
     mutationFn: async () => {
       if (!name.trim() || !definition)
-        throw new Error(t("Choose a provider type and account name."));
+        throw new Error(t("Choose a provider type and name."));
       if (
         (!original || credential) &&
         (!credential.trim() ||
@@ -236,7 +236,7 @@ export function SearchProviderForm({
         <Switch checked={enabled} onCheckedChange={setEnabled} />
         {t("Enabled")}
       </Label>
-      <p>{t("Saving an account does not test the key or save your agent.")}</p>
+      <p>{t("Saving a provider does not test the key.")}</p>
       <ErrorNotice error={reloadError ?? save.error ?? reconcileError} />
       {conflict && (
         <Button
@@ -263,7 +263,7 @@ export function SearchProviderForm({
       )}
       {reconciling && (
         <p role="status">
-          {t("Checking existing accounts before another create attempt…")}
+          {t("Checking existing providers before another create attempt…")}
         </p>
       )}
       {!!reconcileError && (
@@ -272,14 +272,14 @@ export function SearchProviderForm({
           variant="outline"
           onClick={() => void reconcile()}
         >
-          {t("Review existing accounts")}
+          {t("Review existing providers")}
         </Button>
       )}
       {existing && (
         <div>
           <p>
             {t(
-              "Review these saved accounts before creating another. Stored API keys cannot be compared.",
+              "Review these saved providers before creating another. Stored API keys cannot be compared.",
             )}
           </p>
           {existing.map((item) => (
@@ -294,7 +294,7 @@ export function SearchProviderForm({
                   onSaved(item);
                 }}
               >
-                {t("Use this account")}
+                {t("Use this provider")}
               </Button>
             </div>
           ))}
@@ -332,7 +332,7 @@ export function SearchProviderTest({
         onClick={() => test.mutate()}
         title={t("Sends one test search and may consume provider quota.")}
       >
-        {t(test.isPending ? "Testing…" : "Test account")}
+        {t(test.isPending ? "Testing…" : "Test provider")}
       </Button>
       {test.data && (
         <p role="status">

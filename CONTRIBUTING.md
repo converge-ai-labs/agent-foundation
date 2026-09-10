@@ -39,7 +39,7 @@ make install
 
 The frontend pnpm workspace lives under `frontend/`: applications in `frontend/apps/` and shared UI source in `frontend/packages/`. `frontend/package.json` pins pnpm; install that version before running `make install`. The standalone TypeScript SDK retains its independent npm project and lockfile.
 
-Local Service development uses the explicit, public test configuration in `dev/service/local.toml`. See [the local Service guide](dev/service/README.md) for startup, storage ownership, reset baselines, and fictional login credentials. Service does not automatically load `.env`; environment variables remain available as explicit deployment overrides.
+Local Service development uses the explicit, public test configuration in `dev/service/local.toml`. `make dev` prepares local PostgreSQL, Redis and Langfuse, applies migrations, and launches Service and Console; no `.env` or manual trace credentials are required. See [the local Service guide](dev/service/README.md) for startup, storage ownership, reset baselines, and fictional login credentials. Service does not automatically load `.env`; environment variables remain available as explicit deployment overrides. `dev/harness/.env.example` and `dev/harness-ui/.env.example` provide separate Langfuse-first development profiles with commented Logfire alternatives. Copy each to its sibling ignored `.env` without overwriting an existing private file, then use `make harness-dev`, `make cli`, or `make harness-ui-smoke`. See the [Harness](dev/harness/README.md) and [Harness UI](dev/harness-ui/README.md) development guides. `.env.harness.example` remains optional reference material for other embedded Harness workflows. Existing examples and live-test targets load private environment files only at their explicit launcher boundaries.
 
 The repository selects Python 3.13 through `.python-version`. Python packages are uv workspace members under `packages/`; Rust crates under `crates/` are validated by the same top-level merge gate.
 
@@ -64,13 +64,16 @@ Use the Makefile as the stable development interface:
 | ----------------------------- | ------------------------------------------------------------------ |
 | `make help`                   | List available commands                                            |
 | `make install`                | Synchronize locked workspace, application, and SDK dependencies    |
-| `make setup`                  | Start local PostgreSQL and Redis                                   |
+| `make setup`                  | Prepare local PostgreSQL, Redis, Langfuse and Service schema       |
 | `make dev`                    | Upgrade the schema and run a13n Service and Console                |
 | `make service-dev`            | Run only local Service and the scripted development model          |
 | `make dev-reset STATE=empty`  | Rebuild owned Service storage with no business data                |
 | `make dev-reset STATE=seeded` | Rebuild owned Service storage with fictional resources and history |
 | `make dev-state-check`        | Validate state tools with disposable local infrastructure          |
-| `make dev-down`               | Stop local infrastructure while preserving its data                |
+| `make dev-down`               | Stop local Service and Langfuse infrastructure; preserve data      |
+| `make cli`                    | Run Harness UI with `dev/harness-ui/.env`                          |
+| `make harness-dev`            | Run SDK observation scenarios with `dev/harness/.env`              |
+| `make harness-ui-smoke`       | Run a scripted real-App observation smoke test                     |
 | `make langfuse-up`            | Start the isolated local Langfuse trace backend                    |
 | `make langfuse-down`          | Stop local Langfuse while preserving its data                      |
 | `make langfuse-reset`         | Stop local Langfuse and remove its data volumes                    |

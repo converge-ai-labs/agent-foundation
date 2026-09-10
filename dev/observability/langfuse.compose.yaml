@@ -1,7 +1,7 @@
-name: agent-foundation-langfuse-dev
+# Owned by dev.service.langfuse; configuration comes from SERVICE_CONFIG, never .env.
 
 x-langfuse-environment: &langfuse-environment
-  NEXTAUTH_URL: http://localhost:${LANGFUSE_LOCAL_PORT:-3000}
+  NEXTAUTH_URL: http://127.0.0.1:${LANGFUSE_LOCAL_PORT:-3000}
   DATABASE_URL: postgresql://langfuse:langfuse@langfuse-postgres:5432/langfuse
   NEXTAUTH_SECRET: agent-foundation-local-nextauth-secret
   SALT: agent-foundation-local-langfuse-salt
@@ -46,7 +46,7 @@ services:
         condition: service_healthy
     environment:
       <<: *langfuse-environment
-      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://localhost:${LANGFUSE_LOCAL_MINIO_PORT:-9090}
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://127.0.0.1:${LANGFUSE_LOCAL_MINIO_PORT:-3001}
       LANGFUSE_INIT_ORG_ID: agent-foundation-local
       LANGFUSE_INIT_ORG_NAME: Agent Foundation Local
       LANGFUSE_INIT_PROJECT_ID: agent-foundation-local
@@ -58,6 +58,12 @@ services:
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_LOCAL_USER_PASSWORD:-agent-foundation-local}
     ports:
       - "127.0.0.1:${LANGFUSE_LOCAL_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "Promise.all(['/api/public/health?failIfDatabaseUnavailable=true','/api/public/ready'].map(p=>fetch('http://'+require('os').hostname()+':3000'+p).then(r=>{if(!r.ok)throw Error(r.status)}))).then(()=>process.exit(0),()=>process.exit(1))"]
+      interval: 3s
+      timeout: 5s
+      start_period: 30s
+      retries: 50
 
   langfuse-worker:
     image: docker.langfuse.com/langfuse/langfuse-worker:4
@@ -72,8 +78,12 @@ services:
       langfuse-minio:
         condition: service_healthy
     environment: *langfuse-environment
-    ports:
-      - "127.0.0.1:${LANGFUSE_LOCAL_WORKER_PORT:-3030}:3030"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://'+require('os').hostname()+':3030/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 3s
+      timeout: 5s
+      start_period: 30s
+      retries: 50
 
   langfuse-postgres:
     image: postgres:17-alpine
@@ -130,7 +140,7 @@ services:
       MINIO_ROOT_USER: minio
       MINIO_ROOT_PASSWORD: miniosecret
     ports:
-      - "127.0.0.1:${LANGFUSE_LOCAL_MINIO_PORT:-9090}:9000"
+      - "127.0.0.1:${LANGFUSE_LOCAL_MINIO_PORT:-3001}:9000"
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 2s

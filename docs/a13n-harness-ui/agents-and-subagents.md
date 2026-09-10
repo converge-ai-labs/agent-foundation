@@ -4,6 +4,16 @@ An **Agent** is a reusable YAML configuration: it chooses a Model, instructions,
 
 You do not need a separate executor or daemon. All three forms use the same Harness execution and captured Run lifecycle.
 
+| I want to…                               | Read…                                                                     |
+| ---------------------------------------- | ------------------------------------------------------------------------- |
+| Add an Agent interactively               | Run `a13n-harness-ui add agent`                                           |
+| Write a working Agent YAML               | [Create an Agent from files](#create-an-agent-from-files)                 |
+| Look up every Agent field                | [Agent file reference](#agent-file-reference)                             |
+| Give a child its own model               | [Reference an existing Agent](#reference-an-existing-agent-as-a-subagent) |
+| Give a child different instructions only | [Write a Markdown child](#write-a-markdown-child)                         |
+| Enable the shipped helper roles          | [Built-in subagents](#built-in-subagents)                                 |
+| Add repository or global guidance        | [Instructions and guidance](#instructions-and-guidance)                   |
+
 ## Create an Agent from files
 
 This complete example creates a coding Agent and a separately configured reviewer. Paths below are relative to the directory containing your selected `a13n-harness-ui.yaml`, normally `~/.a13n-harness-ui/`.
@@ -207,7 +217,7 @@ subagents:
   include: []
 ```
 
-Setup asks only **Include all defaults** or **Do not include defaults**, immediately after Environment selection. Choosing all saves the concrete names; it does not create user-owned copies. Unknown or repeated names are invalid.
+Normal setup includes all three roles. `setup --advanced` offers **Include all defaults** or **Do not include defaults**. Choosing all saves the concrete names; it does not create user-owned copies. To choose a subset, edit `subagents.include`. Unknown or repeated names are invalid.
 
 Inclusion appends children to the root Agent's authored roster in listed order. It does not recursively attach all defaults to child Agents. Built-in Markdown children are leaves. To explicitly attach one to a particular Agent instead of global inclusion, write:
 

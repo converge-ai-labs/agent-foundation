@@ -26,8 +26,9 @@ wheels/
 # Python environments
 .env
 .env.*
-!.env.example
 !.env.harness.example
+!/dev/harness/.env.example
+!/dev/harness-ui/.env.example
 .venv/
 env/
 venv/
@@ -61,6 +62,7 @@ node_modules/
 *.tsbuildinfo
 /frontend/apps/*/dist/
 /packages/a13n-harness-ui/a13n_harness_ui/static/
+/packages/a13n-harness-ui/a13n_harness_ui/assets/builtin_skills/
 
 # Editors and operating systems
 .DS_Store

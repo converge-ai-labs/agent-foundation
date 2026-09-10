@@ -15,6 +15,8 @@ on:
       - "packages/a13n-harness/**"
       - "packages/a13n-stream-protocol/**"
       - "packages/a13n-harness-ui/**"
+      - "docs/a13n-harness-ui/**"
+      - "mkdocs.yml"
       - "pyproject.toml"
       - "conftest.py"
       - "scripts/run_python_tests.py"
@@ -43,6 +45,8 @@ on:
       - "packages/a13n-harness/**"
       - "packages/a13n-stream-protocol/**"
       - "packages/a13n-harness-ui/**"
+      - "docs/a13n-harness-ui/**"
+      - "mkdocs.yml"
       - "pyproject.toml"
       - "conftest.py"
       - "scripts/run_python_tests.py"
@@ -98,10 +102,15 @@ jobs:
       - name: Synchronize UI test environment
         run: uv sync --locked --package a13n-harness-ui --group test --no-default-groups
 
+      # Cached editable wheels do not rerun the package build hook.
+      - name: Prepare bundled configuration Skill
+        run: uv run --locked --no-sync python packages/a13n-harness-ui/build_skills.py
+
       - name: Type-check UI
         run: >-
           uv run --locked --no-sync pyright
           packages/a13n-harness-ui/a13n_harness_ui
+          packages/a13n-harness-ui/build_skills.py
           scripts/check-a13n-harness-ui-distribution.py
           scripts/check_a13n_harness_ui_distribution.py
           scripts/prepare-a13n-harness-ui-assets.py
@@ -193,6 +202,10 @@ jobs:
       - name: Synchronize UI test environment
         run: uv sync --locked --package a13n-harness-ui --group test --no-default-groups
 
+      # Cached editable wheels do not rerun the package build hook.
+      - name: Prepare bundled configuration Skill
+        run: uv run --locked --no-sync python packages/a13n-harness-ui/build_skills.py
+
       - name: Build WebUI assets
         run: |
           pnpm --dir frontend install --frozen-lockfile
@@ -259,6 +272,10 @@ jobs:
 
       - name: Synchronize UI test environment
         run: uv sync --locked --package a13n-harness-ui --group test --no-default-groups
+
+      # Cached editable wheels do not rerun the package build hook.
+      - name: Prepare bundled configuration Skill
+        run: uv run --locked --no-sync python packages/a13n-harness-ui/build_skills.py
 
       - name: Test Windows native UI integration
         if: github.event_name == 'pull_request'

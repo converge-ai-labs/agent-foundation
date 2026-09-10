@@ -8,10 +8,11 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.etags import resource_etag
+from a13n_service.http_images import IMAGE_UPLOAD, image_body, image_response
 from a13n_service.http_types import IdempotencyKey
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.iam.http.resource_dependencies import WorkspaceId, workspace_actor
-from a13n_service.request_runtime import get_control_runtime
+from a13n_service.request_runtime import get_control_runtime, get_process_runtime
 
 from .application import AgentManagement
 from .domain import (
@@ -234,3 +235,42 @@ async def get_agent_revision(
     agent_revision_id: str,
 ) -> AgentRevision:
     return await _management(request).queries.get_revision(actor=actor, revision_id=agent_revision_id)
+
+
+def _objects(request: Request):
+    runtime = get_process_runtime(request)
+    if runtime is None:
+        raise AgentError(
+            "agent_management_unavailable", "Agent Management is unavailable.", category=ErrorCategory.unavailable
+        )
+    return runtime.shared.storage.objects
+
+
+@router.put("/workspaces/{workspace}/agents/{agent}/avatar", response_model=Agent, openapi_extra=IMAGE_UPLOAD)
+async def put_agent_avatar(
+    request: Request, response: Response, actor: Actor, agent_id: AgentId, if_match: IfMatch
+) -> Agent:
+    agent = await _management(request).images.replace(
+        actor=actor, agent_id=agent_id, content=await image_body(request), if_match=if_match, objects=_objects(request)
+    )
+    _set_etag(response, agent)
+    return agent
+
+
+@router.delete("/workspaces/{workspace}/agents/{agent}/avatar", response_model=Agent)
+async def delete_agent_avatar(
+    request: Request, response: Response, actor: Actor, agent_id: AgentId, if_match: IfMatch
+) -> Agent:
+    agent = await _management(request).images.replace(
+        actor=actor, agent_id=agent_id, content=None, if_match=if_match, objects=_objects(request)
+    )
+    _set_etag(response, agent)
+    return agent
+
+
+@router.get("/workspaces/{workspace}/agents/{agent}/avatar/{image_id}")
+async def get_agent_avatar(request: Request, actor: Actor, agent_id: AgentId, image_id: str) -> Response:
+    content = await _management(request).images.read(
+        actor=actor, agent_id=agent_id, image_id=image_id, objects=_objects(request)
+    )
+    return image_response(content)

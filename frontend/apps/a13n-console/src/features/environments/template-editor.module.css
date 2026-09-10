@@ -18,14 +18,11 @@
   line-height: 1.6;
 }
 .advanced {
-  border-top: 1px solid var(--a13n-border-soft);
-  padding-top: 20px;
   font-size: 13px;
 }
 .advancedBody {
   display: grid;
   gap: 20px;
-  margin-top: 16px;
   padding: 0;
 }
 .footer {

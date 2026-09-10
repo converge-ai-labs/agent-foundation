@@ -1,4 +1,11 @@
-import { Button, FormField, Input, ModalFrame } from "a13n-ui";
+import {
+  Button,
+  FormField,
+  Input,
+  ModalFrame,
+  SettingsSection,
+  SettingsRow,
+} from "a13n-ui";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useId, useRef, useState } from "react";
@@ -62,206 +69,194 @@ export function Security() {
   };
   return (
     <div className={styles.sections}>
-      <section aria-labelledby={`${id}-email-title`}>
-        <header className={styles.sectionHeading}>
-          <h2 id={`${id}-email-title`}>{t("Email address")}</h2>
-          <p>
-            {t("Verify a new address before it becomes your sign-in email.")}
-          </p>
-        </header>
-        <div className={styles.card}>
-          <div className={styles.identity}>
-            <span className={styles.email}>{auth.data!.user.value.email}</span>
-            <Button
-              ref={emailTrigger}
-              aria-expanded={editingEmail}
-              aria-controls={`${id}-email-form`}
-              variant="outline"
-              disabled={
-                config.isPending ||
-                config.isError ||
-                config.data?.email_delivery === false ||
-                changeEmail.isPending
-              }
-              onClick={() => {
-                setEditingEmail(!editingEmail);
-                changeEmail.reset();
-              }}
-              type="button"
-            >
-              {t("Change email")}
-            </Button>
-          </div>
-          {config.data?.email_delivery === false && (
-            <div className={styles.note}>
-              <Info size={14} aria-hidden="true" />
-              <p>
-                {t(
-                  "Email delivery is not configured. Contact your organization administrator.",
-                )}
-              </p>
-            </div>
-          )}
-          {config.isError && (
-            <div className={styles.notice}>
-              <ErrorNotice
-                error={config.error}
-                retry={() => void config.refetch()}
-              />
-            </div>
-          )}
-          {editingEmail && (
-            <form
-              id={`${id}-email-form`}
-              onSubmit={(event) => {
-                event.preventDefault();
-                changeEmail.mutate();
-              }}
-            >
-              <div className={styles.fields}>
-                <div className={styles.row}>
-                  <label htmlFor={`${id}-email`}>
-                    {t("New email address")}
-                  </label>
-                  <FormField
-                    className="min-w-0 w-full"
-                    label={t("New email address")}
-                    hideLabel={true}
-                  >
-                    <Input
-                      required={true}
-                      id={`${id}-email`}
-                      type="email"
-                      autoComplete="email"
-                      value={email}
-                      onChange={(event) => setEmail(event.target.value)}
-                    />
-                  </FormField>
-                </div>
-                <div className={styles.row}>
-                  <label htmlFor={`${id}-email-password`}>
-                    {t("Current password")}
-                  </label>
-                  <FormField
-                    className="min-w-0 w-full"
-                    label={t("Current password")}
-                    hideLabel={true}
-                  >
-                    <Input
-                      required={true}
-                      id={`${id}-email-password`}
-                      type="password"
-                      autoComplete="current-password"
-                      value={emailPassword}
-                      onChange={(event) => setEmailPassword(event.target.value)}
-                    />
-                  </FormField>
-                </div>
-              </div>
-              {changeEmail.error && (
-                <div className={styles.notice}>
-                  <ErrorNotice error={changeEmail.error} />
-                </div>
+      <SettingsSection
+        title={t("Email address")}
+        description={t(
+          "Verify a new address before it becomes your sign-in email.",
+        )}
+      >
+        <SettingsRow label={auth.data!.user.value.email}>
+          <Button
+            ref={emailTrigger}
+            aria-expanded={editingEmail}
+            aria-controls={`${id}-email-form`}
+            variant="outline"
+            disabled={
+              config.isPending ||
+              config.isError ||
+              config.data?.email_delivery === false ||
+              changeEmail.isPending
+            }
+            onClick={() => {
+              setEditingEmail(!editingEmail);
+              changeEmail.reset();
+            }}
+            type="button"
+          >
+            {t("Change email")}
+          </Button>
+        </SettingsRow>
+        {config.data?.email_delivery === false && (
+          <div className={styles.note}>
+            <Info size={14} aria-hidden="true" />
+            <p>
+              {t(
+                "Email delivery is not configured. Contact your organization administrator.",
               )}
-              <footer className={styles.actions}>
-                <Button
-                  variant="outline"
-                  disabled={changeEmail.isPending}
-                  onClick={() => {
-                    setEditingEmail(false);
-                    setEmailPassword("");
-                    emailTrigger.current?.focus();
-                  }}
-                  type="button"
-                >
-                  {t("Cancel")}
-                </Button>
-                <Button
-                  type="submit"
-                  variant="default"
-                  loading={changeEmail.isPending}
-                >
-                  {t("Send verification email")}
-                </Button>
-              </footer>
-            </form>
-          )}
-          {changeEmail.isSuccess && (
-            <p role="status" className={styles.success}>
-              {t("Check your new inbox for the verification link.")}
             </p>
-          )}
-        </div>
-      </section>
-      <section aria-labelledby={`${id}-password-title`}>
-        <header className={styles.sectionHeading}>
-          <h2 id={`${id}-password-title`}>{t("Password")}</h2>
-        </header>
-        <div className={styles.card}>
-          <div className={styles.identity}>
-            <span className={styles.email}>
-              {t("Use a strong, unique password.")}
-            </span>
-            <ModalFrame
-              onOpenChange={togglePassword}
-              trigger={
-                <Button variant="outline" type="button">
-                  {t("Change password")}
-                </Button>
-              }
-              size={"md"}
-              title={t("Change password")}
-              description={t(
-                "Changing your password signs out all browser sessions. API keys remain active.",
-              )}
-              closeLabel={t("Close")}
-              open={passwordOpen}
-            >
-              <form
-                className={styles.passwordForm}
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  changePassword.mutate();
-                }}
+          </div>
+        )}
+        {config.isError && (
+          <div className={styles.notice}>
+            <ErrorNotice
+              error={config.error}
+              retry={() => void config.refetch()}
+            />
+          </div>
+        )}
+        {editingEmail && (
+          <form
+            id={`${id}-email-form`}
+            onSubmit={(event) => {
+              event.preventDefault();
+              changeEmail.mutate();
+            }}
+          >
+            <div className={styles.fields}>
+              <SettingsRow
+                label={t("New email address")}
+                controlId={`${id}-email`}
               >
                 <FormField
-                  className="min-w-0 w-full"
-                  label={t("Current password")}
+                  className="min-w-0 w-60 max-w-full"
+                  label={t("New email address")}
+                  hideLabel={true}
                 >
                   <Input
                     required={true}
+                    id={`${id}-email`}
+                    type="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                  />
+                </FormField>
+              </SettingsRow>
+              <SettingsRow
+                label={t("Current password")}
+                controlId={`${id}-email-password`}
+              >
+                <FormField
+                  className="min-w-0 w-60 max-w-full"
+                  label={t("Current password")}
+                  hideLabel={true}
+                >
+                  <Input
+                    required={true}
+                    id={`${id}-email-password`}
                     type="password"
                     autoComplete="current-password"
-                    value={currentPassword}
-                    onChange={(event) => setCurrentPassword(event.target.value)}
+                    value={emailPassword}
+                    onChange={(event) => setEmailPassword(event.target.value)}
                   />
                 </FormField>
-                <FormField
-                  className="min-w-0 w-full"
-                  label={t("New password")}
-                  description={t("Use at least 15 characters.")}
-                >
-                  <Input
-                    required={true}
-                    type="password"
-                    autoComplete="new-password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    minLength={15}
-                    maxLength={128}
-                  />
-                </FormField>
-                <ErrorNotice error={changePassword.error} />
-                <FormActions
-                  pending={changePassword.isPending}
-                  label={t("Change password")}
-                  onCancel={() => togglePassword(false)}
+              </SettingsRow>
+            </div>
+            {changeEmail.error && (
+              <div className={styles.notice}>
+                <ErrorNotice error={changeEmail.error} />
+              </div>
+            )}
+            <footer className={styles.actions}>
+              <Button
+                variant="outline"
+                disabled={changeEmail.isPending}
+                onClick={() => {
+                  setEditingEmail(false);
+                  setEmailPassword("");
+                  emailTrigger.current?.focus();
+                }}
+                type="button"
+              >
+                {t("Cancel")}
+              </Button>
+              <Button
+                type="submit"
+                variant="default"
+                loading={changeEmail.isPending}
+              >
+                {t("Send verification email")}
+              </Button>
+            </footer>
+          </form>
+        )}
+        {changeEmail.isSuccess && (
+          <p role="status" className={styles.success}>
+            {t("Check your new inbox for the verification link.")}
+          </p>
+        )}
+      </SettingsSection>
+      <SettingsSection title={t("Password")}>
+        <SettingsRow label={t("Use a strong, unique password.")}>
+          <ModalFrame
+            onOpenChange={togglePassword}
+            trigger={
+              <Button variant="outline" type="button">
+                {t("Change password")}
+              </Button>
+            }
+            size={"md"}
+            title={t("Change password")}
+            description={t(
+              "Changing your password signs out all browser sessions. API keys remain active.",
+            )}
+            closeLabel={t("Close")}
+            open={passwordOpen}
+          >
+            <form
+              className={styles.passwordForm}
+              onSubmit={(event) => {
+                event.preventDefault();
+                changePassword.mutate();
+              }}
+            >
+              <FormField
+                className="min-w-0 w-full"
+                label={t("Current password")}
+              >
+                <Input
+                  required={true}
+                  type="password"
+                  autoComplete="current-password"
+                  value={currentPassword}
+                  onChange={(event) => setCurrentPassword(event.target.value)}
                 />
-              </form>
-            </ModalFrame>
-          </div>
-        </div>
-      </section>
+              </FormField>
+              <FormField
+                className="min-w-0 w-full"
+                label={t("New password")}
+                description={t("Use at least 15 characters.")}
+              >
+                <Input
+                  required={true}
+                  type="password"
+                  autoComplete="new-password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  minLength={15}
+                  maxLength={128}
+                />
+              </FormField>
+              <ErrorNotice error={changePassword.error} />
+              <FormActions
+                pending={changePassword.isPending}
+                label={t("Change password")}
+                onCancel={() => togglePassword(false)}
+              />
+            </form>
+          </ModalFrame>
+        </SettingsRow>
+      </SettingsSection>
     </div>
   );
 }

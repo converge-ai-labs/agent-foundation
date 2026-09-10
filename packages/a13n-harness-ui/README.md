@@ -2,6 +2,8 @@
 
 `a13n-harness-ui` is the interactive coding CLI supplied by the `a13n-harness-ui` distribution. It uses a native full-terminal Markdown viewport, an editable multiline/image draft, and a compact status bar. One reusable `HarnessUiApp` owns execution, continuation-backed history, async subagents, decisions, and live events. `a13n-harness-ui webui` starts the HTTP API and bundled authentication/runtime-status page in a foreground server process; browser chat and management are not implemented. There is no detached daemon.
 
+For custom interfaces, see [Python App embedding](../../docs/a13n-harness-ui/embedding.md) and [the HTTP API](../../docs/a13n-harness-ui/http-api.md). These preserve the distinction between process-local operation receipts, saved continuation, and best-effort observation.
+
 ## Install and Run
 
 Install the published CLI in an isolated tool environment with [`uv`](https://docs.astral.sh/uv/getting-started/installation/):
@@ -38,7 +40,7 @@ First use opens a single-screen setup wizard before chat: choose a connection, a
 
 `/mode concise|detailed` or Ctrl+O switches output live. Concise mode emphasizes text and necessary results; detailed mode includes exposed reasoning, file/tool calls, and bounded results. Display mode never changes model reasoning or tool permissions.
 
-The current directory is the workspace. `/new` starts fresh without deleting history; `/resume` opens a searchable, paginated browser with saved input/reply previews. Ctrl+T inspects a selected conversation without switching, F2 edits its name, and Ctrl+A toggles current/all-directory scope. Enter resumes; Escape preserves the original conversation and draft. Internal Project and Thread identities are retained for persistence, not presented as a management workbench. `/agent` selects a complete configured agent for subsequent turns while retaining history; `/model` is its alias. `/thinking` adjusts reasoning without rewriting resources. The CLI and HTTP adapter reuse the same App boundary; the browser foundation uses authenticated status queries, and the CLI does not contain a second execution engine.
+The current directory is the workspace. `/new` starts fresh without deleting history; `/resume` opens a searchable, paginated browser with saved input/reply previews. Ctrl+T inspects a selected conversation without switching, F2 edits its name, and Ctrl+A toggles current/all-directory scope. Enter resumes; Escape preserves the original conversation and draft. Internal Project and Thread identities are retained for persistence, not presented as a management workbench. `/agent` selects a complete configured agent for subsequent turns while retaining history. `/model` temporarily selects a Model without changing the Agent or saving configuration; `/model default` returns to the Agent's Model. `/thinking` adjusts reasoning without rewriting resources. The CLI and HTTP adapter reuse the same App boundary; the browser foundation uses authenticated status queries, and the CLI does not contain a second execution engine.
 
 ```console
 a13n-harness-ui --environment-mode sandbox
@@ -55,7 +57,7 @@ See the [user guide](../../docs/a13n-harness-ui/index.md) for setup, all slash c
 
 ## Configuration
 
-Harness UI selects a root YAML from explicit `--config PATH` or the platform user path, `~/.a13n-harness-ui/a13n-harness-ui.yaml` on Unix-like systems. Fixed immediate sibling directories contain YAML Model, extension, MCP server, Agent, and Project resources, plus canonical Markdown `subagents/` definitions. MCP files also support `.json` and multi-server `mcpServers` objects, with literal or environment-referenced header/environment values. Direct editing remains a complete configuration path; valid changes reload without restarting imported Python code.
+Harness UI selects a root YAML from explicit `--config PATH` or the platform user path, `~/.a13n-harness-ui/a13n-harness-ui.yaml` on Unix-like systems. Fixed immediate sibling directories contain YAML Model, extension, MCP server, Agent, and Project resources, plus canonical Markdown `subagents/` definitions. MCP files also support `.json` and multi-server `mcpServers` objects, with literal or environment-referenced header/environment values. Direct editing remains a complete configuration path. Valid resource edits are accepted for later Run captures, not applied to an active Run; process settings and imported Python code require restart. See [configuration precedence and capture timing](../../docs/a13n-harness-ui/configuration.md#what-wins-and-when-edits-apply) for settings that apply live, to new Threads, or to subsequent Runs.
 
 App-owned file mutations validate replacement content and use last-write-wins atomic publication. They require no expected source digest and do not reject concurrent editor saves. SQLite stores accepted-generation indexes and mutable Thread/runtime heads, but files remain desired-configuration authority. The data root is resolved before root-YAML parsing from `--data-root`, `A13N_HARNESS_UI_DATA_ROOT`, or the config directory's `data/` default.
 
@@ -87,6 +89,16 @@ a13n-harness-ui plugin uninstall plugin-reviewer
 ```
 
 Install and list output includes the immutable installation directory so its complete content can be inspected directly. Uninstall removes the registration but retains that content-addressed directory for Runs that already captured it. Content Plugin management is an explicit CLI operation.
+
+## Built-in Configuration Skill
+
+Agents selecting the `skills` Capability automatically discover `harness-ui-configuration`. It supplies a configuration workflow, a generated documentation map, and a detailed section index with line ranges. Ask the Agent, for example, to use this Skill to inspect its configuration and explain how to enable an MCP server before changing anything.
+
+The Skill and this release's Harness UI documentation are bundled in the wheel and sdist. They are exposed at `/environment/builtin-skills/harness-ui-configuration` through a read-only, file-only mount, including in projectless conversations and with Sandbox or remote Project profiles. No files are copied into your project or user Skill directory. Existing sources override the built-in Skill by name; omitting the Skills Capability omits the mount and catalog entry.
+
+For source development, `make a13n-harness-ui-skills` regenerates the bundle from `mkdocs.yml`, `docs/a13n-harness-ui/`, and the package's operational template. `make a13n-harness-ui`, `make a13n-harness-ui-assets`, and `make test` prepare it before their consumers run. CI also generates it explicitly after dependency synchronization: cached editable wheels can skip the package build hook, so `uv sync` alone does not guarantee a current bundle. Package builds generate it; wheel rebuilds from the sdist use the bundled result without the repository docs. Generated content is ignored by Git. After editing documentation, regenerate before starting a new application process to inspect the updated Skill.
+
+The Skill does not grant new configuration permissions or guarantee external connectivity. The Agent must distinguish accepted edits and warnings from later-Run changes, restart requirements, and actual model/MCP connection tests. Cross-topic references outside the bundled docs remain online references, listed in the section index.
 
 ## Local Store Development
 

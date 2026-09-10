@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ChoiceField, FormField, Input } from "a13n-ui";
+import { ChoiceField, DisclosureSection, FormField, Input } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -7,7 +7,7 @@ import { useWorkspace } from "../../layout/workspace";
 import { allPages, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { searchApi } from "./api";
-import { SearchProviderEditor, SearchProviderTest } from "./editor";
+import { providersPath } from "../providers/navigation";
 
 export function AgentSearchSelection({
   value,
@@ -25,6 +25,7 @@ export function AgentSearchSelection({
   );
   const query = useQuery({
     queryKey: ["search-providers", scope.kind, scope.id, "choices"],
+    refetchOnWindowFocus: "always",
     queryFn: ({ signal }) =>
       allPages((cursor) => searchApi(client, scope).providers(signal, cursor)),
   });
@@ -42,15 +43,19 @@ export function AgentSearchSelection({
     );
   }
   return (
-    <section>
-      <h2>{t("Web search")}</h2>
-      <p>
+    <DisclosureSection
+      title={t("Configure web search")}
+      summary={
+        selected?.name ?? t(value ? "Selected provider unavailable" : "Off")
+      }
+    >
+      <p className="mb-4 text-sm text-muted-foreground">
         {t(
-          "Choose one saved search account. Web tools require an Environment and include search, fetch, and download. Search can consume provider quota.",
+          "Choose one saved search provider. Web tools require an Environment and include search, fetch, and download. Search can consume provider quota.",
         )}
       </p>
       <ChoiceField
-        label={t("Search account")}
+        label={t("Search provider")}
         value={value?.provider_id ?? "off"}
         onValueChange={choose}
         options={[
@@ -69,7 +74,7 @@ export function AgentSearchSelection({
             ? [
                 {
                   value: value.provider_id,
-                  label: t("Selected account unavailable"),
+                  label: t("Selected provider unavailable"),
                 },
               ]
             : []),
@@ -81,15 +86,19 @@ export function AgentSearchSelection({
         (!selected?.enabled || !selected.credential_configured) && (
           <p role="alert">
             {t(
-              "The selected account is unavailable or disabled. Choose another account before saving.",
+              "The selected provider is unavailable or disabled. Choose another provider before saving.",
             )}
           </p>
         )}
       {can("search_provider.manage") && (
-        <SearchProviderEditor
-          scope={scope}
-          onSaved={(provider) => choose(provider.id)}
-        />
+        <a
+          className="my-3 inline-flex text-sm text-primary underline underline-offset-4"
+          href={providersPath("search", "workspace", workspace.key)}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {t("Manage search providers")}
+        </a>
       )}
       {value && (
         <>
@@ -125,15 +134,8 @@ export function AgentSearchSelection({
               }}
             />
           </FormField>
-          {selected && can("search_provider.manage") && (
-            <SearchProviderTest
-              scope={scope}
-              providerId={selected.id}
-              disabled={!selected.enabled}
-            />
-          )}
         </>
       )}
-    </section>
+    </DisclosureSection>
   );
 }

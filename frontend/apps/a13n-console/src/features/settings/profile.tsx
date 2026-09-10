@@ -3,11 +3,11 @@ import { Button, Input } from "a13n-ui";
 import { SettingsRow, SettingsSection } from "a13n-ui";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useId, useRef, useState, type FormEvent } from "react";
+import { useId, useState, type FormEvent } from "react";
 
-import { Camera, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router";
+import { ImagePicker, MAX_IMAGE_BYTES } from "../../shared/image-picker";
 import { ResourceKeyField } from "../../shared/resource-key";
 import { useClient, type IdentityData } from "../../auth/context";
 import { UserAvatar } from "../../layout/avatar";
@@ -92,8 +92,7 @@ function ProfileForm({
     cache = useQueryClient(),
     navigate = useNavigate(),
     location = useLocation();
-  const [name, setName] = useState(resource.value.name),
-    uploadInput = useRef<HTMLInputElement>(null);
+  const [name, setName] = useState(resource.value.name);
   const [key, setKey] = useState(
     "key" in resource.value ? resource.value.key : "",
   );
@@ -156,9 +155,13 @@ function ProfileForm({
         );
       }
       const oldKey = "key" in current.value ? current.value.key : undefined;
-      if ("key" in result.value && oldKey !== result.value.key) {
+      if (
+        target.kind === "workspace" &&
+        "key" in result.value &&
+        oldKey !== result.value.key
+      ) {
         const parts = location.pathname.split("/");
-        parts[target.kind === "organization" ? 1 : 2] = result.value.key;
+        parts[2] = result.value.key;
         navigate(parts.join("/") + location.search, { replace: true });
       }
       void cache.invalidateQueries();
@@ -170,7 +173,7 @@ function ProfileForm({
         throw new Error(
           t("Version information is unavailable. Reload this page."),
         );
-      if (file && file.size > 5 * 1024 * 1024)
+      if (file && file.size > MAX_IMAGE_BYTES)
         throw new Error(
           t("Choose a PNG, JPEG, or WebP image smaller than 5 MB."),
         );
@@ -248,7 +251,7 @@ function ProfileForm({
       <SettingsSection
         title={
           target.kind === "personal"
-            ? undefined
+            ? t("Account")
             : t(target.kind === "workspace" ? "Workspace" : "Organization")
         }
       >
@@ -256,61 +259,18 @@ function ProfileForm({
           label={t(target.kind === "personal" ? "Avatar" : "Icon")}
           description={t("PNG, JPEG, or WebP. Up to 5 MB.")}
         >
-          <div className={styles.profileImage}>
-            {editable ? (
-              <Button
-                type="button"
-                className={styles.imageButton}
-                aria-label={t("Upload image")}
-                variant="ghost"
-                disabled={pending}
-                onClick={() => uploadInput.current?.click()}
-              >
-                <UserAvatar
-                  name={current.value.name}
-                  url={current.value.image_url}
-                />
-                <span className={styles.imageOverlay} aria-hidden="true">
-                  <Camera size={16} />
-                </span>
-              </Button>
-            ) : (
-              <UserAvatar
-                name={current.value.name}
-                url={current.value.image_url}
-              />
-            )}
-            {editable && (
-              <>
-                <Input
-                  ref={uploadInput}
-                  type="file"
-                  nativeInput
-                  unstyled
-                  accept="image/png,image/jpeg,image/webp"
-                  hidden
-                  disabled={pending}
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (file) image.mutate(file);
-                    event.target.value = "";
-                  }}
-                />
-                {current.value.image_url && (
-                  <Button
-                    aria-label={t("Remove image")}
-                    variant="ghost"
-                    disabled={pending}
-                    onClick={() => image.mutate(null)}
-                    size="icon"
-                    type="button"
-                  >
-                    {<Trash2 size={14} />}
-                  </Button>
-                )}
-              </>
-            )}
-          </div>
+          <ImagePicker
+            hasImage={!!current.value.image_url}
+            editable={editable}
+            pending={pending}
+            onChange={(file) => image.mutate(file)}
+          >
+            <UserAvatar
+              name={current.value.name}
+              url={current.value.image_url}
+              className="size-12 rounded-xl"
+            />
+          </ImagePicker>
         </SettingsRow>
         <SettingsRow label={nameLabel} controlId={nameId}>
           <div className={styles.nameControl}>
@@ -325,11 +285,13 @@ function ProfileForm({
           </div>
         </SettingsRow>
         {"key" in current.value && (
-          <ResourceKeyField
-            value={key}
-            onChange={setKey}
-            disabled={!editable || pending}
-          />
+          <div className={styles.profileKey}>
+            <ResourceKeyField
+              value={key}
+              onChange={setKey}
+              disabled={!editable || pending}
+            />
+          </div>
         )}
         <SettingsRow label={t("ID")}>
           <CopyableId value={current.value.id} />

@@ -22,13 +22,8 @@ const descriptions: Record<string, string> = {
   audit: "Review changes to access and account security.",
   activity: "Review recent security activity on your account.",
   sessions: "Manage browsers signed in to your account.",
-  "search-providers": "Search accounts available across your organization.",
   models: "Models available across your organization.",
-  "model-providers": "Model providers available across your organization.",
-  "environment-providers":
-    "Environment providers available across your organization.",
-  environments: "Shared providers and templates for agent execution.",
-  connectors: "Providers available to connections across your organization.",
+  environments: "Shared templates for agent execution.",
   workspaces: "Separate resources, members, and work into workspaces.",
 };
 export function SettingsLayout({
@@ -82,7 +77,7 @@ export function SettingsLayout({
         </div>
         <aside
           id="settings-outline"
-          className={styles.outline}
+          className={`${styles.outline} a13n-scrollbar`}
           data-open={navigationOpen}
         >
           <Link className={styles.back} to="/">
@@ -126,7 +121,7 @@ export function SettingsLayout({
                     <Link
                       key={item.value}
                       onClick={() => setNavigationOpen(false)}
-                      to={`${group.path}?section=${item.value}`}
+                      to={item.href ?? `${group.path}?section=${item.value}`}
                       aria-current={
                         group.scope === scope && item.value === selected.value
                           ? "page"

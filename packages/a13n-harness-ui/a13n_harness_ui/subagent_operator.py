@@ -69,6 +69,7 @@ from ag_ui.core.events import (
 )
 from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc_class, move_on_after, to_thread
 from anyio.abc import TaskGroup
+from opentelemetry.trace import Span
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai import ToolDenied, ToolReturn
 from pydantic_ai.exceptions import ToolFailed
@@ -91,6 +92,7 @@ from a13n_harness_ui.environment_runtime import EnvironmentRunPlan, EnvironmentR
 from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError, StoreError
 from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub
 from a13n_harness_ui.model_runtime import SubscriptionSource
+from a13n_harness_ui.observation import UiObservation, finish_operation
 from a13n_harness_ui.storage import (
     AgentResourceSource,
     ChildExecutionHead,
@@ -235,7 +237,9 @@ class HarnessUiSubagentOperator(SubagentOperator):
         live_hub: HarnessUiLiveHub | None = None,
         summary_hub: HarnessUiSummaryHub | None = None,
         cleanup_timeout_seconds: float = 30.0,
+        observation: UiObservation | None = None,
     ) -> None:
+        self._observation = observation or UiObservation()
         self._store = store
         self._configurations = configurations
         self._compositions = compositions
@@ -930,6 +934,15 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 raise
 
     async def _run_segment(self, prepared: _PreparedSegment, active: _ActiveSegment) -> None:
+        with self._observation.operation(
+            "subagent",
+            thread_id=prepared.state.thread_id,
+            operation_id=prepared.head.execution_id,
+            linked=True,
+        ) as span:
+            await self._execute_segment(prepared, active, span)
+
+    async def _execute_segment(self, prepared: _PreparedSegment, active: _ActiveSegment, span: Span) -> None:
         current = prepared
         expected_checkpoint: ObjectRef | None = None
         try:
@@ -991,8 +1004,21 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 )
                 await self._publish_summary(current.head)
                 await self._publish_live(current, durable_events)
+                terminal_error = next((event for event in durable_events if isinstance(event, RunErrorEvent)), None)
+                finish_operation(
+                    span,
+                    status="failed" if result.status == "completed" and terminal_error is not None else result.status,
+                    run_id=result.run_id,
+                    error_code=terminal_error.code if terminal_error is not None else None,
+                )
                 return
         except BaseException as exc:
+            finish_operation(
+                span,
+                status="lost" if isinstance(exc, get_cancelled_exc_class()) else "failed",
+                run_id=current.stream.run_id,
+                error_code="subagent_execution_failed",
+            )
             if isinstance(exc, (KeyboardInterrupt, SystemExit)):
                 raise
             with CancelScope(shield=True):

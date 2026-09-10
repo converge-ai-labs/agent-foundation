@@ -3,6 +3,7 @@ import {
   Button,
   ChoiceField,
   DisclosureSection,
+  SettingsSection,
   FormField,
   Input,
 } from "a13n-ui";
@@ -137,11 +138,8 @@ export function TemplateRecipe({
           </div>
         </section>
       )}
-      <section className={editorStyles.section}>
-        <div className={editorStyles.sectionHeading}>
-          <h3>{t("Runtime")}</h3>
-        </div>
-        <div className={styles.stack}>
+      <SettingsSection title={t("Runtime")}>
+        <div className={`${styles.stack} py-5`}>
           <div className={styles.twoColumns}>
             <ChoiceField
               placeholder={t("Select provider")}
@@ -199,7 +197,7 @@ export function TemplateRecipe({
             rows={5}
           />
         </div>
-      </section>
+      </SettingsSection>
       <DisclosureSection
         className={editorStyles.advanced}
         title={<>{t("Lifecycle and advanced settings")}</>}

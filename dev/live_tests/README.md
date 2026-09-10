@@ -619,7 +619,7 @@ after Thread advancement.
 
 ## Management integration: Service configuration to Harness execution
 
-This round adds 36 live variants in 11 independently selectable files. Cases 19,
+This round adds 45 live variants in 13 independently selectable files. Cases 19,
 28, 29 and 30 are intentionally excluded. All management resources are created
 through public HTTP APIs, and each enabled test uses its own isolated lab with
 the same automatic RustFS setup and optional loopback S3 override as round two.
@@ -637,6 +637,8 @@ the same automatic RustFS setup and optional loopback S3 override as round two.
 | `test_26_output_and_client_tools.py` | Structured output advertises the authored schema and enforces JSON Schema validation and native retry bounds; external client tool waits and resumes with actual supplied data; malformed, duplicate and stale feedback cannot create extra successors       |
 | `test_27_connectivity_execution.py`  | Production MCP client and Composio adapter connect to local HTTP peers; selected tools, arguments and credential hashes agree; disabling/revoking the connection prevents later dispatch                                                                     |
 | `test_31_observability.py`           | Actual OTLP/HTTP exports correlate Service Attempt, Harness, model and tool spans; durable Items, SSE and model usage agree; rejecting trace exports with HTTP 503 does not change the result or repeat the effect                                           |
+| `test_32_multiworker_resources.py`   | Three Workers retain accepted Agent/Model/Template selections while live resource disablement or connection revocation blocks later dispatch, including after Worker replacement                                                                             |
+| `test_33_multiworker_iam.py`         | Native session/key revocation denies reads, downloads, commands, approval and SSE continuation; three replacement Workers reauthorize the persisted User; regrant does not resurrect revoked keys                                                            |
 
 ```sh
 make image-sandbox
@@ -727,6 +729,31 @@ native isolation. Reverse WebSocket uses an explicit, authenticated test Host
 listener and a connection SDK injected into its single Worker. This verifies
 Service/Harness execution through the production Provider without claiming
 cross-Worker connection routing or a production WebSocket ingress deployment.
+
+## Multi-worker resource changes and native IAM
+
+Select the nine additional cases with:
+
+```sh
+make live-test-management LIVE_TEST_ARGS='-k multiworker'
+```
+
+Each case owns three one-slot Workers and requires no cloud credentials. Concurrent
+execution is established by gated model requests and Worker execution-start logs;
+stream-maintenance log mentions do not establish task ownership. Template recovery
+uses one shared Direct Local Environment because independent Environments cannot
+claim the same backing directory. Assertions check observed tool results, files,
+and remote dispatch counts as well as terminal Run state.
+
+Case 33 adds a separate Control process using unmodified native IAM over the same
+owned lab storage. Only the initial administrator session is seeded; the test User
+joins through manual invitation acceptance and creates its Personal API Key through
+HTTP. The fixture's model endpoint remains on its original Control process. Native
+cookie validation and CSRF are exercised with explicit cookie transport over
+loopback HTTP; browser Secure-cookie transport and Console rendering are outside
+this case. Stream revocation follows the standard 30-second authorization interval.
+All clients, processes and containers close with the lab, and generated credentials
+remain in private files under its ignored `.state/management/<random-id>/` directory.
 
 ## E2B lifecycle and Sandbox SDK coverage
 

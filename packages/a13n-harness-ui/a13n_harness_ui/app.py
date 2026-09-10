@@ -14,6 +14,7 @@ from typing import Any, Literal
 
 import httpx2
 from a13n_environment import EnvironmentProvider
+from a13n_harness import HarnessInstrumentation
 from a13n_harness.environment import EnvironmentRunExtensionFactory
 from a13n_harness.input import RunInputValue
 from a13n_harness.model_auth import GrokCredentials
@@ -92,6 +93,7 @@ from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus, A
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginSessions, LoginStatus
 from a13n_harness_ui.model_accounts.usage import CodexUsage, CodexUsageClient, ResetRequest, ResetResult
 from a13n_harness_ui.model_runtime import CodexSubscriptionSource, GrokSubscriptionSource, SubscriptionSource
+from a13n_harness_ui.observation import open_observation
 from a13n_harness_ui.root_execution import RootRunExecutor
 from a13n_harness_ui.root_input import detach_input
 from a13n_harness_ui.root_run import RootRunCoordinator
@@ -1495,13 +1497,20 @@ async def open_harness_ui_app(
     grok_refresh: Callable[[GrokCredentials], Awaitable[GrokCredentials]] | None = None,
     grok_login: GrokLoginCallback | None = None,
     integrations: HarnessUiIntegrations | None = None,
+    instrumentation: HarnessInstrumentation | Literal["environment"] | None = "environment",
 ) -> AsyncGenerator[HarnessUiApp]:
     """Start, expose, and close one complete process-local App lifetime."""
 
     app: HarnessUiApp | None = None
     operator: HarnessUiSubagentOperator | None = None
     try:
-        async with open_local_store(settings.storage) as store, AsyncExitStack() as resources:
+        async with (
+            open_observation(
+                instrumentation, shutdown_timeout_seconds=settings.shutdown_timeout_seconds
+            ) as observation,
+            open_local_store(settings.storage) as store,
+            AsyncExitStack() as resources,
+        ):
             if settings.pricing_auto_update:
                 resources.enter_context(prices.update_in_background())
             selected_integrations = integrations or HarnessUiIntegrations()
@@ -1561,6 +1570,7 @@ async def open_harness_ui_app(
             )
             agent_reconstructor = AgentReconstructor(
                 catalog,
+                instrumentation=observation.instrumentation,
                 api_keys=ApiKeyStore(store.layout.root / "auth.json"),
                 configuration_root=configuration_path.expanduser().resolve().parent
                 if configuration_path is not None
@@ -1596,6 +1606,7 @@ async def open_harness_ui_app(
                 )
 
             operator = HarnessUiSubagentOperator(
+                observation=observation,
                 store=store,
                 configurations=configurations,
                 compositions=compositions,
@@ -1621,8 +1632,9 @@ async def open_harness_ui_app(
                 subscription_sources=subscription_sources,
                 live_hub=live_hub,
                 cleanup_timeout_seconds=cleanup_timeout,
+                thread_files=thread_files,
             )
-            root_runs = RootRunCoordinator(root_executor, summary_hub=summary_hub)
+            root_runs = RootRunCoordinator(root_executor, summary_hub=summary_hub, observation=observation)
             projections = ThreadProjectionService(
                 store=store,
                 configurations=configurations,

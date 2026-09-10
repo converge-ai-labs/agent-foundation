@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 
-import { Bot, Layers, Plus } from "lucide-react";
+import { Layers, Plus } from "lucide-react";
+import { AgentAvatar } from "./avatar";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -65,11 +66,12 @@ export function Agents() {
     ) ?? [];
   return (
     <Page
+      className={styles.listPage}
       title={t("Agents")}
       description={t("The agents your workspace runs on.")}
       actions={create}
     >
-      <div className={shared.toolbar}>
+      <div className={styles.listFilters}>
         <FormField
           className="min-w-0 w-full"
           label={t("Search this page")}
@@ -89,10 +91,10 @@ export function Agents() {
             setFilter(value);
             page.reset();
           }}
-          label={t("Agent status")}
+          label={t("Archive filter")}
           hideLabel
           options={[
-            { value: "active", label: t("Current agents") },
+            { value: "active", label: t("Not archived") },
             { value: "all", label: t("Include archived") },
           ]}
         />
@@ -114,48 +116,55 @@ export function Agents() {
           action={!search && create}
         />
       ) : (
-        <ResourceTable
-          items={visible}
-          columns={[
-            {
-              label: t("Agent"),
-              render: (agent) => (
-                <ResourceIdentity
-                  to={agent.key}
-                  name={agent.name}
-                  description={agent.description || undefined}
-                  icon={<Bot size={18} strokeWidth={1.5} />}
-                />
-              ),
-            },
-            {
-              label: t("Model"),
-              render: (agent) => (
-                <AgentModel revisionId={agent.current_revision_id} />
-              ),
-            },
-            {
-              label: t("Status"),
-              render: (agent) => (
-                <StateBadge
-                  state={
-                    agent.archived_at
-                      ? "archived"
-                      : agent.enabled
-                        ? "enabled"
-                        : "disabled"
-                  }
-                />
-              ),
-            },
-            {
-              label: t("Updated"),
-              render: (agent) => (
-                <Timestamp value={agent.updated_at} relative />
-              ),
-            },
-          ]}
-        />
+        <div className={`${styles.listTable} a13n-scrollbar`}>
+          <ResourceTable
+            items={visible}
+            columns={[
+              {
+                label: t("Agent"),
+                render: (agent) => (
+                  <ResourceIdentity
+                    to={agent.key}
+                    name={agent.name}
+                    description={agent.description || undefined}
+                    icon={
+                      <AgentAvatar
+                        url={agent.image_url}
+                        className="size-8 rounded-lg"
+                      />
+                    }
+                  />
+                ),
+              },
+              {
+                label: t("Model"),
+                render: (agent) => (
+                  <AgentModel revisionId={agent.current_revision_id} />
+                ),
+              },
+              {
+                label: t("Status"),
+                render: (agent) => (
+                  <StateBadge
+                    state={
+                      agent.archived_at
+                        ? "archived"
+                        : agent.enabled
+                          ? "enabled"
+                          : "disabled"
+                    }
+                  />
+                ),
+              },
+              {
+                label: t("Updated"),
+                render: (agent) => (
+                  <Timestamp value={agent.updated_at} relative />
+                ),
+              },
+            ]}
+          />
+        </div>
       )}
       {query.data && (
         <footer className={shared.collectionFooter}>

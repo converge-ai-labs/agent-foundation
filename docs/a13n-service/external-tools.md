@@ -46,6 +46,43 @@ Preview tool definitions before linking an account with `GET /api/v1/connector-p
 
 OOMOL's published Project API has no remote revoke operation. Service revoke/delete still disables the connection immediately and reports remote cleanup as failed; finish remote account removal in OOMOL. An initial setup interrupted by a lost response, cancellation, or process failure is not automatically retried because the Project API does not promise idempotent link creation. Concurrent retries return the same pending setup without a redirect until the active sender finishes; retry the same command afterward to resume its authorization URL.
 
+## Remote MCP connections
+
+Service manages remote MCP endpoints, not Harness UI's local stdio server files. Configure endpoint policy and credential encryption before creating a connection. This example uses an HTTPS server that deliberately needs no authentication; replace the endpoint with your authorized server and choose the authentication mode it requires.
+
+Save as `mcp-connection.json`:
+
+```json
+{
+  "name": "Documentation tools",
+  "endpoint_url": "https://mcp.example.com/mcp",
+  "auth_mode": "none"
+}
+```
+
+```bash
+curl --fail-with-body "$SERVICE_URL/api/v1/workspaces/$WORKSPACE/mcp-connections" \
+  -H "Authorization: Bearer $A13N_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: docs-create-mcp-001' \
+  --data-binary @mcp-connection.json
+```
+
+Save the returned connection `id` and `version`. Creation is not proof that the endpoint is reachable or its tools are usable. The authentication modes are `none`, `bearer`, `static_headers`, and `oauth`:
+
+| Mode             | Next step                                                                                                                                         |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `none`           | Discover using the current resource version                                                                                                       |
+| `bearer`         | POST write-only `bearer` plus `expected_version` to `/mcp-connections/{connection_id}/credentials` with an idempotency key                        |
+| `static_headers` | Declare up to 16 `static_header_names` at creation; replace credentials with matching `static_headers` values and current version                 |
+| `oauth`          | POST current `expected_version` to `/mcp-connections/{connection_id}/authorize` with an idempotency key; follow its expiring authorization launch |
+
+All table paths are under `/api/v1`. Credential replacement does not expose stored values in reads; keep source credentials outside committed JSON files. OAuth has [browser callback constraints](identity.md#browser-oauth-callbacks): a provider redirect alone does not satisfy local session/CSRF checks.
+
+To discover tools, POST `{"expected_version": VERSION_FROM_READ}` to `/api/v1/mcp-connections/{connection_id}/discover`. This performs remote work. Use returned source-native names in the Agent's `mcp_tools` selection, not generated model-facing aliases. The returned collection contains tool names, descriptions, input/output schemas, and annotations.
+
+Resource states are `pending`, `ready`, `action_required`, and `disabled`; `action_required` includes its reason, such as reauthorization or incompatibility. PATCH updates the supported display name with an expected version, not arbitrary endpoint/auth fields. Reconnect, enable, disable, and delete are separate versioned commands. Delete returns cleanup evidence; it is not proof that remote revocation succeeded. Read the [Native operation reference](api-reference.md#connectivity-management) for each command's body and header requirements.
+
 ## Application Accounts and event reception
 
 An Application Account represents one provider account, Bot, or concrete application installation. Configure its credentials through `/api/v1/workspaces/{workspace}/application-accounts`. Credentials are write-only and encrypted on the Account.

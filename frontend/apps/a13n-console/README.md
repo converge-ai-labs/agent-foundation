@@ -4,13 +4,13 @@ The private React and TypeScript web application for Agent Foundation Service. C
 
 ## Local development
 
-From the repository root, start local PostgreSQL and Redis, upgrade the schema, prepare frontend dependencies and the TypeScript SDK, and run Service and Console together:
+From the repository root, prepare local PostgreSQL, Redis and Langfuse, upgrade the schema, prepare frontend dependencies and the TypeScript SDK, and run Service and Console together. Configuration comes from `dev/service/local.toml`; no `.env` or manual Langfuse setup is required:
 
 ```bash
 make dev
 ```
 
-Keep the terminal open; Ctrl+C stops both application processes. If either process exits, the launcher stops the other and returns the exited process's status. The local Service configuration selects the Console origin for browser authentication. Use `make dev-reset STATE=seeded` before startup for fictional accounts and content, or `STATE=empty` for the initial administrator flow. See [local Service development](../../../../dev/service/README.md).
+Keep the terminal open; Ctrl+C stops both application processes. If either process exits, the launcher stops the other and returns the exited process's status. The local Service configuration selects the Console origin for browser authentication. Use `make dev-reset STATE=seeded` before startup for fictional accounts and content, or `STATE=empty` for the initial administrator flow. See [local Service development](../../../dev/service/README.md).
 
 To run only Console against an already running Service:
 

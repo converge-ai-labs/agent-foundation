@@ -71,6 +71,7 @@ class AgentRecord(Base):
     source: Mapped[str] = mapped_column(String(16), nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     key: Mapped[str] = mapped_column(String(RESOURCE_KEY_MAX_LENGTH), nullable=False)
+    image_id: Mapped[str | None] = mapped_column(String(72))
     description: Mapped[str | None] = mapped_column(String(4096))
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     current_revision_id: Mapped[str] = mapped_column(String(72), nullable=False)
@@ -95,6 +96,11 @@ class AgentRecord(Base):
             name=self.name,
             key=self.key,
             description=self.description,
+            image_url=(
+                f"/api/v1/workspaces/{self.workspace_id}/agents/{self.id}/avatar/{self.image_id}"
+                if self.image_id
+                else None
+            ),
             version=self.version,
             current_revision_id=self.current_revision_id,
             enabled=self.enabled,

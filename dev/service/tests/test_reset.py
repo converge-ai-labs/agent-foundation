@@ -43,6 +43,8 @@ def environment(tmp_path):
         LOCAL_CONFIG,
         environ={},
         overrides={
+            # Disposable reset tests never export to or query the developer's Langfuse.
+            "observability": {"tracing": False, "query": {"provider": "none"}},
             "database": {
                 "url": f"postgresql+psycopg://a13n_service_dev:local-only-password@127.0.0.1:{postgres_port}/a13n_service_dev"
             },

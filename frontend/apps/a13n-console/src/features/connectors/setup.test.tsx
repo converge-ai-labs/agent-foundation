@@ -11,7 +11,7 @@ const http = vi.hoisted(() => ({ POST: vi.fn(), GET: vi.fn() }));
 vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
-    basePath: "/acme/design",
+    basePath: "/workspace/design",
     workspace: { id: "ws_test" },
   }),
 }));

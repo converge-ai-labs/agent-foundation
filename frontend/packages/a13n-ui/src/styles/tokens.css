@@ -18,8 +18,20 @@
   --a13n-muted: var(--muted-foreground);
   --a13n-border: var(--border);
   --a13n-border-soft: var(--border);
+  --a13n-input-border: var(--input);
   --a13n-accent: var(--primary);
   --a13n-focus: var(--ring);
+  --a13n-scrollbar-size: 6px;
+  --a13n-scrollbar-thumb: color-mix(
+    in srgb,
+    var(--foreground) 22%,
+    transparent
+  );
+  --a13n-scrollbar-thumb-hover: color-mix(
+    in srgb,
+    var(--foreground) 36%,
+    transparent
+  );
   --a13n-success: var(--success);
   --a13n-danger: var(--destructive-foreground);
   --a13n-shadow: 0 8px 28px #0001;

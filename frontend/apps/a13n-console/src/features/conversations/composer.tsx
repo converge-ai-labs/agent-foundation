@@ -124,6 +124,7 @@ export function Composer({
     >
       <fieldset disabled={disabled || busy} className={styles.composerFields}>
         <Textarea
+          unstyled
           className={styles.messageInput}
           aria-label={t("Message")}
           placeholder={t("Message your agent…")}

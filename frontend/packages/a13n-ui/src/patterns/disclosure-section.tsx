@@ -1,5 +1,5 @@
 import type { ComponentProps, ReactNode } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { Button } from "../components/button";
 import {
   Collapsible,
@@ -9,29 +9,35 @@ import {
 
 export function DisclosureSection({
   title,
+  summary,
   children,
   ...props
-}: Omit<ComponentProps<typeof Collapsible>, "title"> & { title: ReactNode }) {
+}: Omit<ComponentProps<typeof Collapsible>, "title"> & {
+  title: ReactNode;
+  summary?: ReactNode;
+}) {
   return (
     <Collapsible {...props}>
-      <CollapsibleTrigger
-        className="group/disclosure-trigger"
-        render={
-          <Button
-            variant="ghost"
-            className="w-full justify-between text-left"
+      <div className="rounded-lg bg-muted/50" data-slot="disclosure-surface">
+        <CollapsibleTrigger
+          className="group/disclosure-trigger h-auto min-h-9 w-full justify-start gap-2 px-3 py-2 text-left whitespace-normal"
+          render={<Button type="button" variant="ghost" />}
+        >
+          <ChevronRight
+            aria-hidden="true"
+            className="size-3.5 text-muted-foreground transition-transform group-aria-expanded/disclosure-trigger:rotate-90"
           />
-        }
-      >
-        {title}
-        <ChevronDown
-          aria-hidden="true"
-          className="transition-transform group-data-open/disclosure-trigger:rotate-180"
-        />
-      </CollapsibleTrigger>
-      <CollapsiblePanel>
-        <div className="pt-3">{children}</div>
-      </CollapsiblePanel>
+          <span className="min-w-0 flex-1">{title}</span>{" "}
+          {summary && (
+            <span className="min-w-0 text-right text-xs font-normal text-muted-foreground">
+              {summary}
+            </span>
+          )}
+        </CollapsibleTrigger>
+        <CollapsiblePanel>
+          <div className="grid gap-4 px-4 pt-2 pb-4">{children}</div>
+        </CollapsiblePanel>
+      </div>
     </Collapsible>
   );
 }

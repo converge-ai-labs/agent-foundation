@@ -1,12 +1,8 @@
 import { useTranslation } from "react-i18next";
 import { useAccess, useWorkspace } from "../../layout/workspace";
 import { Empty, Page } from "../../shared/feedback";
-import { ConnectorProviders } from "../connectors/providers";
-import { EnvironmentProviders } from "../environments/providers";
 import { EnvironmentTemplates } from "../environments/templates";
-import { SearchProviders } from "../search/page";
 import { Models } from "../models/page";
-import { Providers } from "../models/providers";
 import { ServiceAccounts } from "./accounts";
 import { Audit } from "./audit";
 import { Invitations } from "./invitations";
@@ -58,11 +54,7 @@ export function OrganizationSettings() {
         members: <Members scope={scope} />,
         invitations: <Invitations scope={scope} />,
         models: <Models scope={scope} />,
-        "model-providers": <Providers scope={scope} />,
-        "search-providers": <SearchProviders scope={scope} />,
         environments: <EnvironmentTemplates scope={scope} />,
-        "environment-providers": <EnvironmentProviders scope={scope} />,
-        connectors: <ConnectorProviders scope={scope} />,
         workspaces: <Workspaces />,
         audit: <Audit scope={scope} />,
       }}

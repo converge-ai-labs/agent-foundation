@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from a13n_harness import (
     AgentContext,
@@ -13,6 +13,7 @@ from a13n_harness import (
     AgentSpec,
     ExecutableAgent,
     HarnessBuilder,
+    HarnessInstrumentation,
     ModelRecoveryPolicy,
     SubagentDefinition,
 )
@@ -162,7 +163,9 @@ class AgentReconstructor:
         user_skills_root: Path | None = None,
         api_keys: ApiKeyStore | None = None,
         configuration_root: Path | None = None,
+        instrumentation: HarnessInstrumentation | Literal["environment"] | None = "environment",
     ) -> None:
+        self._instrumentation: HarnessInstrumentation | Literal["environment"] | None = instrumentation
         self._api_keys = api_keys
         self._configuration_root = configuration_root
         self._catalog = catalog or HarnessUiExtensionCatalog()
@@ -212,7 +215,7 @@ class AgentReconstructor:
                     and environment_profile.adapter_key == FULL_CONTROL_PROFILE.adapter_key
                 ),
             )
-            executable = HarnessBuilder(configured_plugins_enabled=False).build(
+            executable = HarnessBuilder(configured_plugins_enabled=False, instrumentation=self._instrumentation).build(
                 definition, pricing_catalog=pricing_catalog
             )
         except CompositionError:

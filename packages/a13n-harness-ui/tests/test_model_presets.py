@@ -94,6 +94,7 @@ def test_reasoning_defaults_and_anthropic_model_profile_selection() -> None:
         "thinking": "high",
         "openai_reasoning_summary": "detailed",
         "openai_store": False,
+        "max_tokens": 65536,
     }
     assert "openai_reasoning_summary" not in settings_presets("openai-chat", "custom")[0].settings
     assert settings_presets("anthropic", "claude-sonnet-4-6")[0].key == "adaptive"
@@ -103,7 +104,7 @@ def test_reasoning_defaults_and_anthropic_model_profile_selection() -> None:
     assert legacy.settings["anthropic_betas"] == ["interleaved-thinking-2025-05-14"]
     # Pydantic AI maps this to include_thoughts=True AND the model's effort;
     # a partial google_thinking_config would override that native translation.
-    assert settings_presets("google", "gemini-2.5-pro")[0].settings == {"thinking": "high"}
+    assert settings_presets("google", "gemini-2.5-pro")[0].settings == {"thinking": "high", "max_tokens": 32768}
 
 
 @pytest.mark.parametrize(
@@ -290,6 +291,21 @@ async def test_presets_reach_native_http_and_preserve_returned_thinking(provider
             }
         if model_id == "gpt-4.1":
             body["output"] = body["output"][1:]
+        if provider == "anthropic" and json.loads(request.content).get("stream"):
+            # The native SDK transparently requires streaming for a larger cap,
+            # including when callers use Agent.run rather than run_stream.
+            events = [{"type": "message_start", "message": {**body, "content": [], "stop_reason": None}}]
+            for index, block in enumerate(body["content"]):
+                events.append({"type": "content_block_start", "index": index, "content_block": block})
+                events.append({"type": "content_block_stop", "index": index})
+            events.extend(
+                [
+                    {"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 2}},
+                    {"type": "message_stop"},
+                ]
+            )
+            content = "".join(f"event: {event['type']}\ndata: {json.dumps(event)}\n\n" for event in events)
+            return httpx.Response(200, text=content, headers={"content-type": "text/event-stream"})
         return httpx.Response(200, json=body)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
@@ -340,9 +356,13 @@ async def test_presets_reach_native_http_and_preserve_returned_thinking(provider
         else:
             assert payload["reasoning"] == {"effort": "high", "summary": "detailed"}
         assert payload["store"] is False
+        if model_id == "gpt-4.1":
+            assert "max_output_tokens" not in payload
+        else:
+            assert payload["max_output_tokens"] == 65536
     else:
         assert payload["thinking"]["display"] == "summarized"
-        assert payload["max_tokens"] == 16384
+        assert payload["max_tokens"] == (16384 if preset.key == "interleaved" else 32768)
         if preset.key == "interleaved":
             assert payload["thinking"]["budget_tokens"] == 8192
             assert "interleaved-thinking-2025-05-14" in requests[0].headers["anthropic-beta"]
@@ -487,6 +507,8 @@ async def test_native_thinking_stream_tool_continuation_and_checkpoint_replay(pr
     assert replayed == ["plan next", "checked result"]
     for payload in payloads:
         assert payload["stream"] is True
+        assert payload["max_completion_tokens"] == 32768
+        assert "max_tokens" not in payload
         assert "openai_reasoning_summary" not in payload
         assert payload.get("reasoning_effort") != "none"
         if provider == "zai":

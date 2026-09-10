@@ -17,7 +17,10 @@ afterEach(() => {
   cleanup();
   vi.resetAllMocks();
 });
-function setup(editable = true) {
+function setup(
+  editable = true,
+  kind: "workspace" | "organization" = "workspace",
+) {
   const resource = {
     id: "ws_preview",
     key: "design",
@@ -35,12 +38,15 @@ function setup(editable = true) {
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
       }
     >
-      <MemoryRouter initialEntries={["/acme/design/settings?section=profile"]}>
+      <MemoryRouter
+        initialEntries={[
+          kind === "workspace"
+            ? "/workspace/design/settings?section=profile"
+            : "/organization/settings?section=profile",
+        ]}
+      >
         <Location />
-        <Profile
-          target={{ kind: "workspace", id: resource.id }}
-          editable={editable}
-        />
+        <Profile target={{ kind, id: resource.id }} editable={editable} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -48,7 +54,9 @@ function setup(editable = true) {
 }
 it("opens image selection from the avatar and preserves the upload version and media type", async () => {
   const { container, user } = setup();
-  const button = await screen.findByRole("button", { name: "Upload image" });
+  const [button] = await screen.findAllByRole("button", {
+    name: "Upload image",
+  });
   const input =
     container.querySelector<HTMLInputElement>('input[type="file"]')!;
   const click = vi.spyOn(input, "click");
@@ -100,7 +108,7 @@ it("changes a workspace key independently and navigates to its new address", asy
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() =>
     expect(screen.getByLabelText("Current path").textContent).toBe(
-      "/acme/research/settings",
+      "/workspace/research/settings",
     ),
   );
   expect(http.PATCH).toHaveBeenCalledWith(
@@ -112,5 +120,24 @@ it("changes a workspace key independently and navigates to its new address", asy
         path: { workspace: "ws_preview" },
       },
     }),
+  );
+});
+
+it("keeps the organization settings address when its key changes", async () => {
+  const { user } = setup(true, "organization");
+  http.PATCH.mockResolvedValue({
+    data: { id: "ws_preview", key: "renamed", name: "Product workspace" },
+    response: new Response(null, { headers: { ETag: '\"v2\"' } }),
+  });
+  const key = await screen.findByRole("textbox", { name: "URL key" });
+  await user.clear(key);
+  await user.type(key, "renamed");
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(http.PATCH).toHaveBeenCalledOnce());
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull(),
+  );
+  expect(screen.getByLabelText("Current path").textContent).toBe(
+    "/organization/settings",
   );
 });

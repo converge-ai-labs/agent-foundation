@@ -23,7 +23,8 @@ from a13n_harness import (
 from a13n_harness import __version__ as harness_version
 from a13n_harness.capabilities import AskUserQuestionRequest, SubagentOperator, UserQuestionAnswers
 from a13n_harness.context import AgentContext
-from a13n_harness.input import RunInputValue
+from a13n_harness.environment.dynamic import DynamicEnvironmentCapability
+from a13n_harness.input import RunInputFactory, RunInputValue, RunPreparationContext
 from a13n_harness.pricing import get_current_pricing_catalog
 from a13n_logging import get_logger
 from a13n_stream_protocol import HarnessAguiObserver
@@ -47,7 +48,7 @@ from a13n_harness_ui.environment_runtime import EnvironmentFinalization, Environ
 from a13n_harness_ui.errors import RunCoordinationError, ThreadError
 from a13n_harness_ui.live import HarnessUiLiveHub
 from a13n_harness_ui.model_runtime import SubscriptionSource
-from a13n_harness_ui.root_input import detach_input
+from a13n_harness_ui.root_input import RootInputFiles, detach_input
 from a13n_harness_ui.storage import (
     LocalStore,
     ObjectKind,
@@ -59,6 +60,7 @@ from a13n_harness_ui.storage import (
 )
 from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
 from a13n_harness_ui.surfaces import ApprovalDecision, ExternalToolResult, RunModelOverrides, ThreadDeferredResponse
+from a13n_harness_ui.thread_files import ThreadFiles
 from a13n_harness_ui.thread_service import ThreadService
 
 
@@ -93,6 +95,7 @@ class RootRunExecutor:
         subscription_sources: Mapping[str, SubscriptionSource] | None = None,
         live_hub: HarnessUiLiveHub | None = None,
         cleanup_timeout_seconds: float = 30.0,
+        thread_files: ThreadFiles | None = None,
     ) -> None:
         self._store = store
         self._threads = threads
@@ -104,6 +107,7 @@ class RootRunExecutor:
         self._subscription_sources = dict(subscription_sources or {})
         self._live_hub = live_hub
         self._cleanup_timeout_seconds = cleanup_timeout_seconds
+        self._thread_files = thread_files
         self._root_capability_factory: Callable[[str], AbstractCapability[AgentContext]] | None = None
 
     def replace_subscription_sources(self, sources: Mapping[str, SubscriptionSource]) -> None:
@@ -126,7 +130,7 @@ class RootRunExecutor:
         response: ThreadDeferredResponse | None = None,
         mutation: ThreadConfigurationMutation | None = None,
         model_overrides: RunModelOverrides | None = None,
-        on_stream: Callable[[HarnessRunStream[Any]], Awaitable[None]] | None = None,
+        on_stream: Callable[[HarnessRunStream[Any], RootInputFiles | None], Awaitable[None]] | None = None,
     ) -> RootRunOutcome:
         if (prompt is None) == (response is None):
             raise RunCoordinationError(
@@ -161,6 +165,30 @@ class RootRunExecutor:
             ),
             subscription_sources=self._subscription_sources,
         )
+        input_files = (
+            RootInputFiles(
+                self._thread_files,
+                thread_id,
+                source.document.input,
+                view_enabled=(published.value.root.tools is None or "view" in published.value.root.tools)
+                and any(
+                    isinstance(capability, DynamicEnvironmentCapability) and capability.configuration.files_enabled
+                    for capability in reconstructed.executable.definition.capabilities
+                ),
+            )
+            if self._thread_files is not None
+            else None
+        )
+        input_factory: RunInputFactory | None = None
+        if prompt is not None and input_files is not None:
+            submitted = prompt
+
+            async def prepare_input(context: RunPreparationContext) -> RunInputValue:
+                assert input_files is not None
+                return await input_files.prepare(submitted, context.environment)
+
+            input_factory = prepare_input
+            prompt = None
         environment = await self._environments.prepare(published.value)
         instance = AgentInstanceContext(
             identity=AgentIdentityRef(issuer="a13n-harness-ui", subject=thread.thread_id),
@@ -181,13 +209,14 @@ class RootRunExecutor:
         try:
             stream = reconstructed.executable.stream(
                 prompt,
+                input_factory=input_factory,
                 bindings=bindings,
                 previous_state=previous_state,
                 deferred_resume=deferred_resume,
             )
             excerpts = ExcerptCollector(thread.excerpt, run_id=stream.run_id)
             if on_stream is not None:
-                await on_stream(stream)
+                await on_stream(stream, input_files)
             observer = HarnessAguiObserver()
             async with self._bind_subagent_parent(
                 thread_id=thread.thread_id,

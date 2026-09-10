@@ -154,6 +154,19 @@ class RoundTwoLab:
             await self.client.collection(f"/api/v1/runs/{run_id}/attempts"), key=lambda item: item["attempt_number"]
         )
 
+    def execution_owner(self, run_id):
+        """Identify an initial owner from execution logs, not stream maintenance mentions."""
+        matches = []
+        for worker in self.workers:
+            lines = (self.root / f"process-{self.processes.index(worker)}.log").read_text().splitlines()
+            if any(
+                "run_attempt_execution_started" in line and run_id in "\n".join(lines[index : index + 5])
+                for index, line in enumerate(lines)
+            ):
+                matches.append(worker)
+        assert len(matches) == 1, f"Expected one initial execution owner for {run_id}, got {len(matches)}"
+        return matches[0]
+
     async def wait_evidence(self, case, field, *, run_id=None):
         async def fetch():
             evidence = await self.client.evidence(case)

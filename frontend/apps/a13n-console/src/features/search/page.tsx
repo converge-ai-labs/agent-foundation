@@ -3,34 +3,14 @@ import { Button, ModalFrame } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
-import { useAccess, useWorkspace } from "../../layout/workspace";
+import { useAccess } from "../../layout/workspace";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
-import {
-  Empty,
-  ErrorNotice,
-  Loading,
-  Page,
-  StateBadge,
-} from "../../shared/feedback";
+import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
 import { PageActions } from "../../shared/page-actions";
 import styles from "../../shared/shared.module.css";
 import { searchApi, type SearchScope } from "./api";
 import { SearchProviderEditor, SearchProviderTest } from "./editor";
 
-export function SearchProvidersPage() {
-  const { workspace } = useWorkspace(),
-    { t } = useTranslation();
-  return (
-    <Page
-      title={t("Search accounts")}
-      description={t(
-        "Connect a search account once and reuse it across agents.",
-      )}
-    >
-      <SearchProviders scope={{ kind: "workspace", id: workspace.id }} />
-    </Page>
-  );
-}
 export function SearchProviders({ scope }: { scope: SearchScope }) {
   const client = useClient(),
     { t } = useTranslation(),
@@ -60,7 +40,7 @@ export function SearchProviders({ scope }: { scope: SearchScope }) {
             items={query.data.items}
             columns={[
               {
-                label: t("Account"),
+                label: t("Provider"),
                 render: (item) => (
                   <>
                     <strong>{item.name}</strong>
@@ -117,9 +97,9 @@ export function SearchProviders({ scope }: { scope: SearchScope }) {
         </>
       ) : (
         <Empty
-          title={t("No search accounts yet")}
+          title={t("No search providers yet")}
           description={t(
-            "Add a Brave or Exa account, then select it in your agent.",
+            "Add a Brave or Exa provider, then select it in your agent.",
           )}
         />
       )}

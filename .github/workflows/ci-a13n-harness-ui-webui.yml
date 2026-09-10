@@ -84,6 +84,9 @@ jobs:
           pnpm --dir frontend --filter a13n-harness-ui-webui run check
       - name: Synchronize Python test dependencies
         run: uv sync --locked --package a13n-harness-ui --group test --no-default-groups
+      # Cached editable wheels do not rerun the package build hook.
+      - name: Prepare bundled configuration Skill
+        run: uv run --locked --no-sync python packages/a13n-harness-ui/build_skills.py
       - name: Test startup and HTTP integration
         run: >-
           uv run --locked --no-sync python -m pytest

@@ -55,7 +55,7 @@ export function AccountTargets({ account }: { account: Schema["Account"] }) {
   });
   return (
     <div className={styles.stack}>
-      <div className={styles.toolbar}>
+      <div className={styles.filters}>
         <p className={styles.muted}>
           {t("Override routing for one exact conversation or repository.")}
         </p>

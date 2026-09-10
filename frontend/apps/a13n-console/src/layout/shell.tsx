@@ -41,7 +41,7 @@ export function Shell() {
   const contextual =
     /^\/[^/]+\/[^/]+\/(sessions|settings)(\/|$)/.test(location.pathname) ||
     location.pathname === "/settings/profile" ||
-    /^\/[^/]+\/settings$/.test(location.pathname);
+    location.pathname === "/organization/settings";
   if (contextual)
     return (
       <div className="min-h-svh bg-background">
@@ -60,16 +60,18 @@ function WorkspaceNavigation() {
   const { pathname } = useLocation();
   const { setOpenMobile } = useSidebar();
   const base = basePath;
+  const destination = (path: string) =>
+    path.startsWith("/") ? path : `${base}/${path}`;
   const close = () => setOpenMobile(false);
   const current = navigationGroups
     .flatMap((group) => group.entries)
     .find(
       ([path]) =>
-        pathname === `${base}/${path}` ||
-        pathname.startsWith(`${base}/${path}/`),
+        pathname === destination(path) ||
+        pathname.startsWith(`${destination(path)}/`),
     );
   const currentChild = current?.[3]?.find(
-    ([path]) => path !== current[0] && pathname === `${base}/${path}`,
+    ([path]) => path !== current[0] && pathname === destination(path),
   );
   return (
     <>
@@ -105,14 +107,21 @@ function WorkspaceNavigation() {
                 <SidebarMenu>
                   {group.entries.map(([path, label, Icon, children]) => {
                     const active =
-                      pathname === `${base}/${path}` ||
-                      pathname.startsWith(`${base}/${path}/`);
+                      pathname === destination(path) ||
+                      pathname.startsWith(`${destination(path)}/`);
                     return (
                       <SidebarMenuItem key={path}>
                         <SidebarMenuButton
                           isActive={active}
                           render={
-                            <NavLink to={`${base}/${path}`} onClick={close} />
+                            <NavLink
+                              to={
+                                path === "/providers"
+                                  ? `/providers?workspace=${encodeURIComponent(workspace.key)}`
+                                  : destination(path)
+                              }
+                              onClick={close}
+                            />
                           }
                         >
                           <Icon />

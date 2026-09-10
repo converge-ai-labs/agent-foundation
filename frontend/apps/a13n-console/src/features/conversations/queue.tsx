@@ -112,12 +112,8 @@ export function ThreadQueue({
   return (
     <DisclosureSection
       className={styles.queue}
-      title={
-        <>
-          {t("Thread queue")}· {items.length}
-          {t(state)}
-        </>
-      }
+      title={t("Thread queue")}
+      summary={`${items.length} ${t(state)}`}
     >
       <div className={styles.queueBody}>
         <div className={styles.inline}>

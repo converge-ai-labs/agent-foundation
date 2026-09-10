@@ -26,6 +26,7 @@ from release_version import ReleaseVersionError, validate_dependency_range
 DISTRIBUTION_STEM = "a13n_harness_ui"
 MANIFEST_NAME = "asset-manifest.json"
 PACKAGE_PREFIX = PurePosixPath("a13n_harness_ui/static")
+SKILL_PREFIX = PurePosixPath("a13n_harness_ui/assets/builtin_skills/harness-ui-configuration")
 TERMINAL_PACKAGE_PATHS = (
     PurePosixPath("a13n_harness_ui/__init__.py"),
     PurePosixPath("a13n_harness_ui/__main__.py"),
@@ -158,6 +159,19 @@ def _validate_assets(read: Callable[[str], bytes], names: set[str], prefix: Pure
             raise DistributionError(f"Harness UI shell references an undeclared or missing asset: {value}")
 
 
+def _validate_builtin_skill(read: Callable[[str], bytes], names: set[str], prefix: PurePosixPath) -> None:
+    for relative in ("SKILL.md", "references/navigation.md"):
+        if str(prefix / relative) not in names:
+            raise DistributionError(f"Harness UI artifact is missing {prefix / relative}")
+    skill = read(str(prefix / "SKILL.md")).decode("utf-8")
+    documents = re.findall(r"\]\((docs/[^)]+)\)", skill)
+    if not documents:
+        raise DistributionError("Harness UI configuration Skill has no documentation map")
+    for document in documents:
+        if str(prefix / document) not in names:
+            raise DistributionError(f"Harness UI artifact is missing bundled documentation: {document}")
+
+
 def _validate_terminal_package(names: set[str], prefix: PurePosixPath | None = None) -> None:
     root = prefix or PurePosixPath()
     for path in TERMINAL_PACKAGE_PATHS:
@@ -234,6 +248,7 @@ def validate_wheel(path: Path, *, require_compatible_dependencies: bool = False)
         names = set(archive.namelist())
         _validate_assets(archive.read, names, PACKAGE_PREFIX)
         _validate_terminal_package(names)
+        _validate_builtin_skill(archive.read, names, SKILL_PREFIX)
         if not any(name.endswith(".dist-info/licenses/LICENSE") for name in names):
             raise DistributionError("Harness UI wheel is missing the project license")
         entrypoint_paths = [name for name in names if name.endswith(".dist-info/entry_points.txt")]
@@ -269,6 +284,7 @@ def validate_sdist(path: Path, *, require_compatible_dependencies: bool = False)
 
         _validate_assets(read, names, PurePosixPath(root) / PACKAGE_PREFIX)
         _validate_terminal_package(names, PurePosixPath(root))
+        _validate_builtin_skill(read, names, PurePosixPath(root) / SKILL_PREFIX)
         if f"{root}/LICENSE" not in names:
             raise DistributionError("Harness UI sdist is missing the project license")
         if any("frontend/apps/a13n-harness-ui" in name for name in names):
