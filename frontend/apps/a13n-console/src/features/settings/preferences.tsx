@@ -1,7 +1,6 @@
-import { ChoiceField, cn, ToggleGroup, ToggleGroupItem } from "a13n-ui";
+import { ChoiceField } from "a13n-ui";
 
 import { SettingsRow, SettingsSection } from "a13n-ui";
-import { Laptop, Moon, Sun } from "lucide-react";
 
 import { useTranslation } from "react-i18next";
 import { useAppearance } from "../../layout/appearance";
@@ -13,54 +12,22 @@ export function Preferences() {
   return (
     <div className={styles.preferences}>
       <SettingsSection title={t("Appearance")}>
-        <ToggleGroup
-          className={cn(styles.themeOptions, "w-full")}
-          value={[theme]}
-          variant="default"
-          onValueChange={(values) => {
-            const next = values[0];
-            if (next === "light" || next === "dark" || next === "system")
-              setTheme(next);
-          }}
-          aria-label={t("Color theme")}
-        >
-          {(["light", "dark", "system"] as const).map((value) => {
-            const Icon =
-              value === "light" ? Sun : value === "dark" ? Moon : Laptop;
-            return (
-              <ToggleGroupItem
-                type="button"
-                key={value}
-                value={value}
-                className="h-auto min-w-0 flex-col gap-0 whitespace-normal p-1.5 sm:h-auto"
-                variant="default"
-              >
-                <span
-                  className={`${styles.themePreview} w-full shrink-0`}
-                  data-preview={value}
-                  aria-hidden="true"
-                >
-                  <span />
-                  <span>
-                    <i />
-                    <i />
-                    <i />
-                  </span>
-                </span>
-                <span className="flex items-center justify-center gap-2 pt-2 pb-1 text-xs">
-                  <Icon className="size-3.5" />
-                  {t(
-                    value === "light"
-                      ? "Light"
-                      : value === "dark"
-                        ? "Dark"
-                        : "System",
-                  )}
-                </span>
-              </ToggleGroupItem>
-            );
-          })}
-        </ToggleGroup>
+        <SettingsRow label={t("Color theme")}>
+          <ChoiceField
+            label={t("Color theme")}
+            hideLabel
+            value={theme}
+            onValueChange={(value) => {
+              if (value === "light" || value === "dark" || value === "system")
+                setTheme(value);
+            }}
+            options={[
+              { value: "light", label: t("Light") },
+              { value: "dark", label: t("Dark") },
+              { value: "system", label: t("System") },
+            ]}
+          />
+        </SettingsRow>
       </SettingsSection>
       <SettingsSection title={t("Language and region")}>
         <SettingsRow

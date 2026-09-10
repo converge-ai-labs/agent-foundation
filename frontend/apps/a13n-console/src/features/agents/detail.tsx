@@ -23,51 +23,13 @@ import { isResourceKey } from "../../shared/paths";
 import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
 import agentStyles from "./agents.module.css";
-import { initialConfig, type AgentConfig } from "./configuration";
+import { type AgentConfig } from "./configuration";
 import { AgentForm } from "./form";
 import { AgentEnvironment } from "./environment";
 import { AgentActions, AgentDetails } from "./settings";
 import { AgentVersions } from "./versions";
 
-export function CreateAgent() {
-  const { t } = useTranslation(),
-    client = useClient(),
-    { workspace, basePath } = useWorkspace(),
-    cache = useQueryClient(),
-    navigate = useNavigate(),
-    idempotency = useIdempotency();
-  const create = useMutation({
-    mutationFn: (body: Schema["CreateAgentRequest"]) =>
-      client.http
-        .POST("/api/v1/workspaces/{workspace}/agents", {
-          params: {
-            path: { workspace: workspace.id },
-            header: commandHeaders(workspace.id, idempotency.forBody(body)),
-          },
-          body,
-        })
-        .then(data),
-    onSuccess: (result) => {
-      idempotency.reset();
-      void cache.invalidateQueries({ queryKey: ["agents", workspace.id] });
-      navigate(`${basePath}/agents/${result.agent.key}`, {
-        replace: true,
-      });
-    },
-  });
-  return (
-    <AgentForm
-      back={`${basePath}/agents`}
-      initial={initialConfig("")}
-      creating
-      pending={create.isPending}
-      error={create.error}
-      submit={(config, name, description) =>
-        create.mutate({ config, name, description: description || null })
-      }
-    />
-  );
-}
+export { CreateAgent } from "./create";
 
 export function AgentDetail() {
   const { agentKey = "" } = useParams(),
@@ -145,6 +107,7 @@ export function AgentDetail() {
       key={`${agent.id}:${agent.key}:${generation}`}
       back={`${basePath}/agents`}
       name={agent.name}
+      imageUrl={agent.image_url}
       description={agent.description ?? ""}
       environment={
         <AgentEnvironment
@@ -174,6 +137,9 @@ export function AgentDetail() {
             <AgentDetails
               key={`${agent.id}:${agent.key}:${generation}`}
               resource={query.data}
+              onImageSaved={async () => {
+                await query.refetch();
+              }}
               reload={() => void reload()}
             />
           </ModalFrame>

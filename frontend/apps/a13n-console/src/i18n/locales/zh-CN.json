@@ -1138,6 +1138,14 @@
   "Edit agent details": "编辑 Agent 信息",
   "More agent actions": "更多 Agent 操作",
   "Save or discard changes before managing this agent.": "请先保存或放弃更改，再管理此 Agent。",
-  "Used for new sessions. Changes save automatically.": "用于新建会话，修改后自动保存。",
-  "Saving…": "保存中…"
+  "Saving…": "保存中…",
+  "Archive filter": "归档筛选",
+  "Not archived": "未归档",
+  "Used for new sessions.": "用于新建会话。",
+  "Saved automatically": "已自动保存",
+  "Not saved": "未保存",
+  "Saves automatically": "修改后自动保存",
+  "Agent created. Finish uploading its avatar.": "Agent 已创建，正在完成头像上传。",
+  "Retry upload": "重试上传",
+  "Continue without avatar": "暂不设置头像，继续"
 }

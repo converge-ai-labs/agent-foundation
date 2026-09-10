@@ -118,7 +118,6 @@ export function TracesPage() {
           </Button>
         </div>
         <DisclosureSection
-          className={traceStyles.moreFilters}
           defaultOpen={Boolean(
             searchParams.get("thread_id") ||
             searchParams.get("run_id") ||

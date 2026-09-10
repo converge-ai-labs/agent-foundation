@@ -52,6 +52,7 @@ class Agent:
     name: str
     key: str
     description: str | None
+    image_url: str | None
     version: int
     current_revision_id: AgentRevisionId
     default_environment_template_id: EnvironmentTemplateId | None
@@ -68,6 +69,14 @@ class Agent:
 `Agent.version` starts at `1` and always equals the current `AgentRevision.version`. It advances only when a genuinely new immutable Revision becomes current. `current_revision_id` is always present; Service never exposes an Agent without an executable Revision.
 
 `name`, `key`, `description` and `default_environment_template_id` are mutable head metadata. Name changes preserve the key; explicit key changes follow the shared resource-key contract and preserve the Agent ID. The template default only seeds new Thread Environment allocation under [Environment Management](29-environment-management.md#thread-defaults-and-run-selection); it never changes an existing Thread or Run and does not publish an AgentRevision. `enabled` and `archived_at` are independent lifecycle axes. Their mutations change `updated_at` and the representation ETag without advancing `version` or rewriting a Revision.
+
+### Avatar
+
+An Agent may have one current avatar. `image_url` is a nullable authenticated content URL; the internal image ID and object key are not writable metadata fields. `PUT` and `DELETE /api/v1/workspaces/{workspace}/agents/{agent}/avatar` replace or remove it under `agent.update`, exact `If-Match`, and the same custom, non-archived restrictions as other metadata changes. They update audit attribution, `updated_at`, and the ETag without creating a Revision or advancing `version`.
+
+Uploads use the shared [profile image processing rules](33-identity-and-access-management.md#profile-images). `GET /api/v1/workspaces/{workspace}/agents/{agent}/avatar/{image_id}` requires current `agent.read` authority and serves only the currently referenced image with private, non-storing cache policy. Agent collections and detail reads expose the same URL. Duplication starts without an avatar; image ownership remains local to one Agent.
+
+Image content lives at `organizations/{organization_id}/workspaces/{workspace_id}/agents/{agent_id}/avatar/{image_id}/content.webp`. Upload processing and object I/O happen outside relational transactions. Publication rechecks authorization, mutable state, and ETag before referencing the object under the shared object-publication fence. The current image remains retained, including for archived Agents; replaced, removed, and failed-publication images follow canonical orphan collection.
 
 ## AgentConfig
 

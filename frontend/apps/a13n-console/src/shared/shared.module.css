@@ -58,10 +58,10 @@
 .field small {
   color: var(--a13n-secondary);
 }
-.code,
+.code [data-slot="textarea"],
 .json {
-  font-family: var(--a13n-mono) !important;
-  font-size: 12px !important;
+  font-family: var(--a13n-mono);
+  font-size: 12px;
 }
 .json {
   padding: 16px;
@@ -80,13 +80,12 @@
 }
 .twoColumns {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
 .card {
-  background: var(--a13n-elevated);
-  border: 1px solid var(--a13n-border-soft);
-  border-radius: 8px;
+  background: var(--a13n-surface);
+  border-radius: 12px;
   padding: 24px;
 }
 .toolbar {
@@ -94,7 +93,8 @@
   justify-content: flex-start;
   gap: 16px;
   margin-bottom: 0;
-  align-items: center;
+  align-items: end;
+  flex-wrap: wrap;
 }
 .tableWrap {
   overflow-x: auto;
@@ -190,12 +190,11 @@
   display: none;
 }
 
-.form h3 {
+.form > h3 {
   font-size: 13px;
   font-weight: 550;
   margin: 8px 0 0;
   padding-top: 16px;
-  border-top: 1px solid var(--a13n-border-soft);
 }
 
 .schemaFields {
@@ -206,4 +205,19 @@
 }
 .schemaFields > :has(textarea) {
   grid-column: 1 / -1;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.filters > [data-slot="field"] {
+  flex: 0 1 220px;
+  min-width: 0;
+}
+.filters > [data-slot="field"]:has(input[type="search"]) {
+  flex: 1 1 240px;
 }

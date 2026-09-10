@@ -92,7 +92,10 @@ export function ConversationsPage() {
           <Pagination page={page} next={sessions.data.next_cursor} />
         )}
       </aside>
-      <div className={styles.sessionStage} data-session-stage>
+      <div
+        className={`${styles.sessionStage} a13n-scrollbar`}
+        data-session-stage
+      >
         {nested ? <Outlet /> : <NewConversation />}
       </div>
     </div>

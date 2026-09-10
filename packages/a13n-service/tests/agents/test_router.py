@@ -2,20 +2,24 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from dataclasses import replace
+from io import BytesIO
+from pathlib import Path
 
 import httpx2
 import pytest
 from a13n_service.agents.application import AgentManagement
 from a13n_service.agents.router import router
 from a13n_service.api import install_api_conventions
+from a13n_service.storage.object_store import LocalObjectStore
 from fastapi import FastAPI, Request
+from PIL import Image
 
 from .conftest import DIRECT_USER_ID, NOW, ORG_ID, USER_ID, WORKSPACE_ID, actor, agent_config
 
 
 @pytest.fixture
 async def api_client(
-    agent_management: AgentManagement, agent_sessions, process_runtime_factory
+    agent_management: AgentManagement, agent_sessions, process_runtime_factory, tmp_path: Path
 ) -> AsyncIterator[httpx2.AsyncClient]:
     app = FastAPI()
     install_api_conventions(app)
@@ -32,6 +36,7 @@ async def api_client(
         agents=agent_management,
         sessions=agent_sessions,
     )
+    app.state.runtime.shared.storage.objects = await LocalObjectStore.create(tmp_path / "images")
     transport = httpx2.ASGITransport(app=app)
     async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
         yield client
@@ -180,3 +185,53 @@ async def test_browser_agent_keys_preserve_grants_and_parent_scope(api_client, a
     api_client.headers["X-Test-User"] = DIRECT_USER_ID
     for reference in (agent["id"], agent["key"]):
         assert (await api_client.get(f"/api/v1/workspaces/default/agents/{reference}")).status_code == 404
+
+
+@pytest.mark.anyio
+async def test_agent_avatar_upload_replace_remove_and_authorization(api_client: httpx2.AsyncClient) -> None:
+    created = await api_client.post(
+        f"/api/v1/workspaces/{WORKSPACE_ID}/agents",
+        headers={"Idempotency-Key": "avatar-agent"},
+        json={"name": "Avatar Agent", "config": agent_config().model_dump(mode="json", by_alias=True)},
+    )
+    assert created.status_code == 201
+    original = created.json()["agent"]
+    path = f"/api/v1/workspaces/{WORKSPACE_ID}/agents/{original['key']}/avatar"
+    image = BytesIO()
+    Image.new("RGB", (640, 320), "purple").save(image, format="PNG")
+    content = image.getvalue()
+    headers = {"If-Match": created.headers["ETag"], "Content-Type": "image/png"}
+    invalid = await api_client.put(path, headers=headers, content=b"not an image")
+    assert invalid.status_code == 400
+    denied = await api_client.put(path, headers={**headers, "X-Test-User": DIRECT_USER_ID}, content=content)
+    assert denied.status_code in {403, 404}
+    uploaded = await api_client.put(path, headers=headers, content=content)
+    assert uploaded.status_code == 200, uploaded.text
+    avatar = uploaded.json()
+    assert avatar["image_url"] and "image_id" not in avatar
+    assert avatar["version"] == original["version"]
+    assert avatar["current_revision_id"] == original["current_revision_id"]
+    assert uploaded.headers["ETag"] != created.headers["ETag"]
+    read = await api_client.get(avatar["image_url"])
+    assert read.status_code == 200
+    assert read.headers["Content-Type"] == "image/webp"
+    assert read.headers["Cache-Control"] == "private, no-store"
+    with Image.open(BytesIO(read.content)) as normalized:
+        assert normalized.size == (512, 256)
+    assert (await api_client.get(avatar["image_url"], headers={"X-Test-User": DIRECT_USER_ID})).status_code in {
+        403,
+        404,
+    }
+    assert (await api_client.put(path, headers=headers, content=content)).status_code == 412
+    headers["If-Match"] = uploaded.headers["ETag"]
+    replaced = await api_client.put(path, headers=headers, content=content)
+    assert replaced.status_code == 200
+    assert replaced.json()["image_url"] != avatar["image_url"]
+    assert (await api_client.get(avatar["image_url"])).status_code == 404
+    listed = await api_client.get(f"/api/v1/workspaces/{WORKSPACE_ID}/agents")
+    assert listed.json()["items"][0]["image_url"] == replaced.json()["image_url"]
+    removed = await api_client.delete(path, headers={"If-Match": replaced.headers["ETag"]})
+    assert removed.status_code == 200
+    assert removed.json()["image_url"] is None
+    assert removed.json()["version"] == original["version"]
+    assert (await api_client.get(replaced.json()["image_url"])).status_code == 404

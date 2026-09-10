@@ -51,6 +51,8 @@ Applications distinguish changes saved immediately from changes held in a draft.
 
 ## Fields and Focus
 
+Numeric Input fields hide native visual stepper buttons while preserving numeric validation, direct entry, and keyboard stepping.
+
 Input, Textarea, selection triggers, and composers use subtle control borders without stacked resting shadows. Focus adds a fine indicator; error borders and messages remain distinguishable. Buttons, switches, checkboxes, tabs, and other keyboard targets retain visible focus at both control densities. Disabled explanations remain readable.
 
 A composite input owns its boundary and focus treatment once, on the enclosing control. Inner Input or Textarea instances use their unstyled composition mode when the parent supplies that treatment. Unstyled mode preserves field semantics; the caller owns the visible boundary and focus indicator. Searchable composites apply this rule to their search row, and composers apply it to their text-entry surface.
@@ -58,6 +60,12 @@ A composite input owns its boundary and focus treatment once, on the enclosing c
 FormField associates labels, descriptions, and validation messages with Input or Textarea and exposes invalid state. ChoiceField supplies equivalent semantics for Select. Choice options accept text labels and optional decorative icons. Fields and icon-only actions always have an accessible name. Tooltips complement a named trigger and do not provide its only accessible name.
 
 SettingsSection supports grouped and plain presentations. Grouped settings use the muted surface against the page canvas, with rounded corners and an external secondary heading. Adjacent items share a single fine divider inset by the group padding; there is no leading or trailing rule. The page composition owns spacing between sections so component margins do not add a second gap. Plain sections use whitespace without a surface. SettingsRow pairs a name and optional explanation with a control, stacking in narrow containers. Its `controlId` associates the visible label with the control; its description uses `<controlId>-description`, which callers connect through `aria-describedby`. A Switch uses the associated row label as its accessible name.
+
+## Identity Images and Save Feedback
+
+Identity image controls compose one preview with adjacent upload/removal actions and concise format guidance. Keep the preview large enough to inspect, use a neutral fallback, and preserve the same image across list and detail surfaces. Supporting labels and file guidance belong to the image control rather than separate competing rows.
+
+When automatic and manual saving coexist, identify the automatically saved setting beside that setting using a compact, legible status treatment. Distinguish its idle, saving, saved, and failed states; do not rely on low-contrast descriptive text or color alone. Keep labels short enough for their actual layout.
 
 ## Scrolling and Long Content
 

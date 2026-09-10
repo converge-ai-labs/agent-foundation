@@ -3,6 +3,7 @@ import {
   Button,
   ChoiceField,
   DisclosureSection,
+  SettingsSection,
   FormField,
   Input,
   Label,
@@ -217,101 +218,105 @@ function ModelForm({
           />
         </FormField>
       </div>
-      <FormField label={t("Provider")}>
-        <SearchPicker
-          label={t("Provider")}
-          placeholder={t("Choose a provider…")}
-          emptyMessage={t("Add a provider first.")}
-          value={provider}
-          groups={[
-            {
-              label: t("Providers"),
-              options:
-                providers.data?.map((item) => ({
-                  value: item.id,
-                  label: item.name,
-                  description: item.type,
-                })) ?? [],
-            },
-          ]}
-          disabled={!!original}
-          onValueChange={(value) => {
-            setProvider(value);
-            setModelApiKey("");
-            describe.reset();
-          }}
-        />
-      </FormField>
-      <FormField
-        className="min-w-0 w-full"
-        label={t("Upstream model")}
-        description={t(
-          "Use the model or deployment identifier accepted by your provider.",
-        )}
-      >
-        <Input
-          required={true}
-          value={upstream}
-          onChange={(event) => {
-            setUpstream(event.target.value);
-            describe.reset();
-          }}
-          maxLength={256}
-        />
-      </FormField>
-      <ChoiceField
-        placeholder={t("Select API")}
-        value={modelApiKey || definition?.default_model_api}
-        className="min-w-0"
-        onValueChange={(value) => {
-          setModelApiKey(value);
-          describe.reset();
-        }}
-        label={t("Calling API")}
-        options={
-          definition?.supported_model_apis.map((value) => ({
-            value,
-            label: value,
-          })) ?? []
-        }
-      />
-      <Button
-        variant="outline"
-        disabled={!provider || !upstream}
-        loading={describe.isPending}
-        onClick={() => describe.mutate()}
-        type="button"
-      >
-        {t("Load model information")}
-      </Button>
-      <ErrorNotice
-        error={describe.error ?? providers.error ?? definitions.error}
-      />
-      {describe.data && (
-        <>
-          <div className={styles.actions}>
-            <Badge variant={"secondary"}>
-              {t("Context window")}:{" "}
-              {describe.data.limits?.context_window_tokens?.toLocaleString() ??
-                t("Unknown")}
-            </Badge>
-            <Badge variant={"secondary"}>
-              {t("Max output")}:{" "}
-              {describe.data.limits?.max_output_tokens?.toLocaleString() ??
-                t("Unknown")}
-            </Badge>
-          </div>
-          {settings && (
-            <SchemaFields
-              schema={describe.data.settings_schema}
-              value={settings}
-              onChange={(value) =>
-                setSettingsText(JSON.stringify(value, null, 2))
-              }
+      <SettingsSection title={t("Provider")}>
+        <div className={`${styles.stack} py-5`}>
+          <FormField label={t("Provider")}>
+            <SearchPicker
+              label={t("Provider")}
+              placeholder={t("Choose a provider…")}
+              emptyMessage={t("Add a provider first.")}
+              value={provider}
+              groups={[
+                {
+                  label: t("Providers"),
+                  options:
+                    providers.data?.map((item) => ({
+                      value: item.id,
+                      label: item.name,
+                      description: item.type,
+                    })) ?? [],
+                },
+              ]}
+              disabled={!!original}
+              onValueChange={(value) => {
+                setProvider(value);
+                setModelApiKey("");
+                describe.reset();
+              }}
             />
+          </FormField>
+          <FormField
+            className="min-w-0 w-full"
+            label={t("Upstream model")}
+            description={t(
+              "Use the model or deployment identifier accepted by your provider.",
+            )}
+          >
+            <Input
+              required={true}
+              value={upstream}
+              onChange={(event) => {
+                setUpstream(event.target.value);
+                describe.reset();
+              }}
+              maxLength={256}
+            />
+          </FormField>
+          <ChoiceField
+            placeholder={t("Select API")}
+            value={modelApiKey || definition?.default_model_api}
+            className="min-w-0"
+            onValueChange={(value) => {
+              setModelApiKey(value);
+              describe.reset();
+            }}
+            label={t("Calling API")}
+            options={
+              definition?.supported_model_apis.map((value) => ({
+                value,
+                label: value,
+              })) ?? []
+            }
+          />
+          <Button
+            variant="outline"
+            disabled={!provider || !upstream}
+            loading={describe.isPending}
+            onClick={() => describe.mutate()}
+            type="button"
+          >
+            {t("Load model information")}
+          </Button>
+          <ErrorNotice
+            error={describe.error ?? providers.error ?? definitions.error}
+          />
+          {describe.data && (
+            <>
+              <div className={styles.actions}>
+                <Badge variant={"secondary"}>
+                  {t("Context window")}:{" "}
+                  {describe.data.limits?.context_window_tokens?.toLocaleString() ??
+                    t("Unknown")}
+                </Badge>
+                <Badge variant={"secondary"}>
+                  {t("Max output")}:{" "}
+                  {describe.data.limits?.max_output_tokens?.toLocaleString() ??
+                    t("Unknown")}
+                </Badge>
+              </div>
+              {settings && (
+                <SchemaFields
+                  schema={describe.data.settings_schema}
+                  value={settings}
+                  onChange={(value) =>
+                    setSettingsText(JSON.stringify(value, null, 2))
+                  }
+                />
+              )}
+            </>
           )}
-        </>
-      )}
+        </div>
+      </SettingsSection>
       <DisclosureSection title={<>{t("Advanced model settings")}</>}>
         <TextAreaField
           code

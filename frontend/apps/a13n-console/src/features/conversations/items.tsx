@@ -6,7 +6,6 @@ import {
   Bot,
   Brain,
   Check,
-  ChevronRight,
   Copy,
   File,
   LoaderCircle,
@@ -41,8 +40,7 @@ export function PresentedItems({
             key={item.id}
             className={styles.tool}
             title={
-              <>
-                <ChevronRight size={12} className={styles.disclosureChevron} />
+              <span className={styles.disclosureTitle}>
                 <Wrench size={14} />
                 <strong>{item.toolName || t("Tool call")}</strong>
                 <span className={styles.toolState}>
@@ -60,7 +58,7 @@ export function PresentedItems({
                     />
                   )}
                 </span>
-              </>
+              </span>
             }
           >
             <div className={styles.toolBody}>
@@ -82,11 +80,11 @@ export function PresentedItems({
             key={item.id}
             className={styles.reasoning}
             title={
-              <>
+              <span className={styles.disclosureTitle}>
                 <Brain size={14} />
                 {t("Reasoning summary")}
                 <StateBadge state={item.state} />
-              </>
+              </span>
             }
           >
             {item.text && <MessageMarkdown text={item.text} />}

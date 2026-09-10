@@ -128,7 +128,7 @@ export function AssetsPage() {
         )
       }
     >
-      <div className={styles.toolbar}>
+      <div className={styles.filters}>
         <ChoiceField
           placeholder={t("All sources")}
           value={source || "all"}

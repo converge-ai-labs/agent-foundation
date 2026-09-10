@@ -3,7 +3,7 @@
   flex-wrap: wrap;
   gap: 24px;
   padding: 20px;
-  border: 1px solid var(--a13n-border);
+  background: var(--a13n-surface);
   border-radius: var(--a13n-radius-lg);
 }
 .metrics > div {
@@ -18,6 +18,7 @@
   font-weight: 500;
 }
 .timeline {
+  margin-block: 24px;
   border: 1px solid var(--a13n-border);
   border-radius: var(--a13n-radius-lg);
   overflow: hidden;
@@ -36,6 +37,10 @@
 }
 .observation {
   width: 100%;
+  height: auto;
+  min-height: 48px;
+  white-space: normal;
+  border-radius: 0;
   border: 0;
   border-top: 1px solid var(--a13n-border);
   color: var(--a13n-text);
@@ -126,17 +131,10 @@
   gap: 12px;
   align-items: end;
 }
-.moreFilters summary {
-  width: fit-content;
-  cursor: pointer;
-  color: var(--a13n-secondary);
-  font-size: 12px;
-}
 .advancedFilters {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
-  margin-top: 12px;
 }
 @media (max-width: 1100px) {
   .primaryFilters,

@@ -1138,6 +1138,14 @@
   "Edit agent details": "Edit agent details",
   "More agent actions": "More agent actions",
   "Save or discard changes before managing this agent.": "Save or discard changes before managing this agent.",
-  "Used for new sessions. Changes save automatically.": "Used for new sessions. Changes save automatically.",
-  "Saving…": "Saving…"
+  "Saving…": "Saving…",
+  "Archive filter": "Archive filter",
+  "Not archived": "Not archived",
+  "Used for new sessions.": "Used for new sessions.",
+  "Saved automatically": "Saved automatically",
+  "Not saved": "Not saved",
+  "Saves automatically": "Saves automatically",
+  "Agent created. Finish uploading its avatar.": "Agent created. Finish uploading its avatar.",
+  "Retry upload": "Retry upload",
+  "Continue without avatar": "Continue without avatar"
 }

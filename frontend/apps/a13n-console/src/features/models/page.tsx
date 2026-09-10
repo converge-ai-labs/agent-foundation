@@ -69,7 +69,7 @@ export function Models({ scope }: { scope: ModelScope }) {
   return (
     <div className={styles.stack}>
       <PageActions>{manage && <ModelEditor scope={scope} />}</PageActions>
-      <div className={styles.toolbar}>
+      <div className={styles.filters}>
         <FormField
           className="min-w-0 w-full"
           label={t("Search models")}

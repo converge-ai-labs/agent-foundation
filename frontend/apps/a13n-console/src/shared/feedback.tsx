@@ -88,12 +88,14 @@ export function Page({
   description,
   actions,
   back,
+  className,
   children,
 }: {
   title: string;
   description?: string;
   actions?: ReactNode;
   back?: string;
+  className?: string;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -102,7 +104,7 @@ export function Page({
   );
   return (
     <PageActionsTarget value={actionsTarget}>
-      <div className={styles.page}>
+      <div className={`${styles.page} ${className ?? ""}`}>
         {back && (
           <Link className={styles.back} to={back}>
             <ArrowLeft size={14} />

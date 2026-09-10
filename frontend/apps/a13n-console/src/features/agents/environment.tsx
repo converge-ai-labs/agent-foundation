@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertCircle, Check, LoaderCircle } from "lucide-react";
 import { ChoiceField } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -10,6 +11,7 @@ import {
   type Schema,
 } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
+import styles from "./agents.module.css";
 import { EditorSection } from "./section";
 
 export function AgentEnvironment({
@@ -70,7 +72,29 @@ export function AgentEnvironment({
   return (
     <EditorSection
       title={t("Default environment")}
-      description={t("Used for new sessions. Changes save automatically.")}
+      description={
+        <>
+          {t("Used for new sessions.")}
+          <span className={styles.autoSaveNotice} role="status">
+            {save.isPending ? (
+              <LoaderCircle size={13} className="animate-spin" />
+            ) : save.isError ? (
+              <AlertCircle size={13} />
+            ) : (
+              <Check size={13} />
+            )}
+            {t(
+              save.isPending
+                ? "Saving…"
+                : save.isError
+                  ? "Not saved"
+                  : save.isSuccess
+                    ? "Saved automatically"
+                    : "Saves automatically",
+            )}
+          </span>
+        </>
+      }
     >
       <ChoiceField
         label={t("Default environment")}
@@ -89,7 +113,6 @@ export function AgentEnvironment({
             : []),
         ]}
       />
-      {save.isPending && <small role="status">{t("Saving…")}</small>}
       <ErrorNotice
         error={save.error ?? templates.error}
         retry={() => {

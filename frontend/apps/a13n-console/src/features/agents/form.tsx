@@ -7,13 +7,14 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 import { EditorSection } from "./section";
 
-import { ArrowLeft, Check, Circle, Layers, Sparkles } from "lucide-react";
+import { ArrowLeft, Check, Circle, Layers } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ErrorNotice } from "../../shared/feedback";
 import { TextAreaField } from "../../shared/form";
 import { jsonObject } from "../../shared/validation";
 import styles from "./agents.module.css";
 import { AgentSearchSelection } from "../search/selection";
+import { AgentAvatar } from "./avatar";
 import { AgentCapabilities } from "./capabilities";
 import { useAgentChoices } from "./choices";
 import { advancedConfig, buildConfig, type AgentConfig } from "./configuration";
@@ -32,6 +33,8 @@ export function AgentForm({
   context,
   primaryAction,
   identityAction,
+  imageUrl,
+  imagePicker,
   environment,
   metadata,
   back,
@@ -54,6 +57,8 @@ export function AgentForm({
   context?: ReactNode;
   primaryAction?: ReactNode;
   identityAction?: ReactNode;
+  imageUrl?: string | null;
+  imagePicker?: ReactNode;
   environment?: ReactNode;
   metadata?: ReactNode;
   back: string;
@@ -135,9 +140,7 @@ export function AgentForm({
       <form onSubmit={save} className={styles.editor}>
         <header className={styles.identity}>
           <div className={styles.identityHeading}>
-            <span className={styles.agentIcon}>
-              <Sparkles size={18} strokeWidth={1.5} />
-            </span>
+            <AgentAvatar url={imageUrl} className={styles.agentIcon} />
             <h1>{creating ? t("Create agent") : initialName}</h1>
             {identityAction && (
               <fieldset
@@ -204,6 +207,7 @@ export function AgentForm({
             >
               {creating && (
                 <section className={styles.section}>
+                  {imagePicker}
                   <FormField className="min-w-0 w-full" label={t("Agent name")}>
                     <Input
                       required={true}

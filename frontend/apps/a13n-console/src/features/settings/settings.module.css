@@ -10,7 +10,6 @@
   top: 0;
   height: 100dvh;
   overflow-y: auto;
-  scrollbar-width: thin;
 }
 .back {
   display: flex;
@@ -156,45 +155,7 @@
   display: grid;
   gap: 16px;
 }
-.profileImage {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.profileImage [data-slot="avatar"] {
-  width: 48px;
-  height: 48px;
-  flex-basis: 48px;
-  font-size: 16px;
-}
-.imageButton {
-  position: relative;
-  display: flex;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-}
-.imageButton:disabled {
-  opacity: 0.5;
-  cursor: wait;
-}
-.imageOverlay {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  border-radius: inherit;
-  color: white;
-  background: rgb(0 0 0 / 48%);
-  opacity: 0;
-}
-.imageButton:hover .imageOverlay,
-.imageButton:focus-visible .imageOverlay {
-  opacity: 1;
-}
+
 .nameControl {
   width: 240px;
   max-width: 100%;
@@ -266,71 +227,8 @@
   }
 }
 
-.themeOptions {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  padding: 16px 0;
-}
-.themePreview {
-  display: grid;
-  grid-template-columns: 25% 1fr;
-  height: 100px;
-  border-radius: 5px;
-  overflow: hidden;
-  background: #fafafa;
-  border: 1px solid #e4e4e8;
-}
-.themePreview > span:first-child {
-  background: #ededf0;
-  border-right: 1px solid #dedee5;
-}
-.themePreview > span:last-child {
-  display: grid;
-  gap: 6px;
-  align-content: center;
-  padding: 14px;
-}
-.themePreview i {
-  display: block;
-  background: #e4e4e8;
-  height: 6px;
-  border-radius: 3px;
-}
-.themePreview i:first-child {
-  width: 65%;
-  background: #b7b0de;
-}
-.themePreview[data-preview="dark"] {
-  background: #202125;
-  border-color: #35363e;
-}
-.themePreview[data-preview="dark"] > span:first-child {
-  background: #141517;
-  border-color: #35363e;
-}
-.themePreview[data-preview="dark"] i {
-  background: #42434d;
-}
-.themePreview[data-preview="dark"] i:first-child {
-  background: #7164d7;
-}
-.themePreview[data-preview="system"] {
-  background: linear-gradient(120deg, #fafafa 50%, #202125 50%);
-}
 .preferenceNote {
   color: var(--a13n-secondary);
   font-size: 11px;
   margin: 0;
-}
-@media (max-width: 500px) {
-  .themeOptions {
-    gap: 8px;
-  }
-  .themePreview {
-    height: 70px;
-  }
-  .themePreview > span:last-child {
-    padding: 8px;
-  }
 }

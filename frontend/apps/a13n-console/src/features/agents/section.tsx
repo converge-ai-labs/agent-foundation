@@ -7,7 +7,7 @@ export function EditorSection({
   children,
 }: {
   title: string;
-  description: string;
+  description: ReactNode;
   children: ReactNode;
 }) {
   return (

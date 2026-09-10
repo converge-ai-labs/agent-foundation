@@ -16,6 +16,7 @@ def _assert_tables(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
         if present:
             assert AGENT_TABLES <= tables
             columns = {column["name"] for column in inspector.get_columns("agents")}
+            assert "image_id" in columns
             assert "current_revision_id" in columns
             assert "active_revision_id" not in columns
             revision_columns = {column["name"]: column for column in inspector.get_columns("agent_revisions")}

@@ -54,7 +54,9 @@ function setup(
 }
 it("opens image selection from the avatar and preserves the upload version and media type", async () => {
   const { container, user } = setup();
-  const button = await screen.findByRole("button", { name: "Upload image" });
+  const [button] = await screen.findAllByRole("button", {
+    name: "Upload image",
+  });
   const input =
     container.querySelector<HTMLInputElement>('input[type="file"]')!;
   const click = vi.spyOn(input, "click");

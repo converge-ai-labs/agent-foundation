@@ -119,7 +119,11 @@ export function Confirm({
   );
 }
 export function JsonView({ value }: { value: unknown }) {
-  return <pre className={styles.json}>{JSON.stringify(value, null, 2)}</pre>;
+  return (
+    <pre className={`${styles.json} a13n-scrollbar`}>
+      {JSON.stringify(value, null, 2)}
+    </pre>
+  );
 }
 export function FormActions({
   pending,

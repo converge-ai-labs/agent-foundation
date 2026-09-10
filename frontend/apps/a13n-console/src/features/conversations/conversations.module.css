@@ -1,23 +1,16 @@
 .queue {
-  border-top: 1px solid var(--a13n-border);
-  padding-top: 20px;
-}
-.queue > summary {
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
+  min-width: 0;
 }
 .queueBody {
   display: grid;
   gap: 16px;
-  padding-top: 20px;
 }
 .queueBody > p {
   color: var(--a13n-secondary);
   font-size: 12px;
 }
 .queueItem {
-  border: 1px solid var(--a13n-border);
+  background: var(--a13n-canvas);
   border-radius: 8px;
   padding: 16px;
   display: grid;
@@ -214,6 +207,7 @@
 }
 .transcript {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 26px;
   padding: 24px 0 36px;
   flex: 1;
@@ -221,7 +215,8 @@
 }
 .inputMessage {
   padding: 16px 20px;
-  background: transparent;
+  background: var(--a13n-surface);
+  border-radius: 12px;
   margin-left: 18px;
 }
 .inputMessage > strong {
@@ -276,38 +271,36 @@
 }
 .tool,
 .reasoning {
+  min-width: 0;
   font-size: 12px;
   margin-left: 38px;
   color: var(--a13n-secondary);
 }
-.tool summary,
-.reasoning summary {
+.disclosureTitle {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 0;
-  cursor: pointer;
-  list-style: none;
+  flex-wrap: wrap;
 }
-.tool summary::-webkit-details-marker,
-.reasoning summary::-webkit-details-marker {
-  display: none;
-}
-.tool summary strong {
+.disclosureTitle strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-weight: 500;
   color: var(--a13n-text);
 }
 .toolState {
-  margin-left: auto;
   display: flex;
 }
-.tool[open] .disclosureChevron {
-  transform: rotate(90deg);
+.toolBody {
+  display: grid;
+  gap: 12px;
 }
-.toolBody,
-.reasoning > div {
-  padding: 8px 0 12px 20px;
-  border-left: 1px solid var(--a13n-border);
+.toolBody h4 {
+  margin: 0;
+  font-weight: 500;
+}
+.toolBody pre {
+  margin: 0;
 }
 .liveStatus {
   display: flex;
@@ -464,10 +457,9 @@
   flex-wrap: wrap;
 }
 .pending {
-  border: 1px solid var(--a13n-border);
-  border-left: 3px solid var(--a13n-accent);
+  background: var(--a13n-accent-soft);
   padding: 20px;
-  border-radius: 8px;
+  border-radius: 12px;
 }
 .pending h3 {
   margin-top: 0;
@@ -489,7 +481,7 @@
   color: var(--a13n-secondary);
 }
 .failure {
-  border: 1px solid var(--a13n-border);
+  background: color-mix(in srgb, var(--a13n-danger) 6%, var(--a13n-canvas));
   padding: 16px;
   border-radius: 8px;
 }

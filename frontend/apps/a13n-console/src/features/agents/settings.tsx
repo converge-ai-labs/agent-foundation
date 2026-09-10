@@ -20,6 +20,9 @@ import {
   workspaceHeaders,
   type Schema,
 } from "../../shared/api";
+import { changeAgentImage } from "./images";
+import { AgentAvatar } from "./avatar";
+import { ImagePicker, MAX_IMAGE_BYTES } from "../../shared/image-picker";
 import { ResourceKeyField } from "../../shared/resource-key";
 import { ErrorNotice } from "../../shared/feedback";
 import { Confirm, FormActions } from "../../shared/form";
@@ -29,11 +32,13 @@ import styles from "../../shared/shared.module.css";
 export function AgentDetails({
   resource,
   reload,
+  onImageSaved,
 }: {
   resource: { value: Schema["Agent"]; etag?: string };
   reload: () => void;
+  onImageSaved: () => Promise<void>;
 }) {
-  const [snapshot] = useState(resource);
+  const [snapshot, setSnapshot] = useState(resource);
   const { value: agent, etag } = snapshot,
     client = useClient(),
     { t } = useTranslation(),
@@ -75,6 +80,27 @@ export function AgentDetails({
       } else reload();
     },
   });
+  const image = useMutation({
+    mutationFn: async (file: File | null) => {
+      if (!etag)
+        throw new Error(
+          t("Version information is unavailable. Reload this page."),
+        );
+      if (file && file.size > MAX_IMAGE_BYTES)
+        throw new Error(
+          t("Choose a PNG, JPEG, or WebP image smaller than 5 MB."),
+        );
+      return changeAgentImage(client, workspace.id, agent.id, etag, file);
+    },
+    onSuccess: async (result) => {
+      setSnapshot(result);
+      await onImageSaved();
+      await cache.invalidateQueries({ queryKey: ["agents", workspace.id] });
+      await cache.invalidateQueries({
+        queryKey: ["agent-by-id", workspace.id],
+      });
+    },
+  });
   return (
     <div className={styles.stack}>
       <form
@@ -86,9 +112,29 @@ export function AgentDetails({
       >
         <fieldset
           className="fieldset-reset"
-          disabled={save.isPending || !can("agent.update")}
+          disabled={save.isPending || image.isPending || !can("agent.update")}
         >
           <div className={styles.stack}>
+            <div className="mb-2">
+              <ImagePicker
+                hasImage={!!agent.image_url}
+                editable={can("agent.update")}
+                pending={save.isPending || image.isPending}
+                onChange={(file) => image.mutate(file)}
+                description={
+                  image.isPending ? (
+                    <span role="status">{t("Saving…")}</span>
+                  ) : (
+                    t("PNG, JPEG, or WebP. Up to 5 MB.")
+                  )
+                }
+              >
+                <AgentAvatar
+                  url={agent.image_url}
+                  className="size-16 rounded-xl [&_svg]:size-7"
+                />
+              </ImagePicker>
+            </div>
             <FormField className="min-w-0 w-full" label={t("Name")}>
               <Input
                 required={true}
@@ -112,7 +158,7 @@ export function AgentDetails({
           </div>
           <FormActions pending={save.isPending} />
         </fieldset>
-        <ErrorNotice error={save.error} retry={reload} />
+        <ErrorNotice error={save.error ?? image.error} retry={reload} />
       </form>
     </div>
   );

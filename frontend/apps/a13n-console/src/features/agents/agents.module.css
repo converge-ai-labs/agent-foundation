@@ -1,3 +1,76 @@
+.listPage {
+  max-width: 1240px;
+}
+.listTable {
+  max-height: max(280px, calc(100dvh - 310px));
+  overflow: auto;
+  border-radius: 8px;
+}
+.listTable [data-slot="table-container"] {
+  overflow: visible;
+}
+.listTable table {
+  table-layout: fixed;
+  min-width: 680px;
+}
+.listTable thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  clip-path: inset(0 round 8px 8px 0 0);
+  background: color-mix(in srgb, var(--a13n-text) 3%, var(--a13n-canvas));
+}
+.listTable th:first-child {
+  width: 52%;
+}
+.listTable th:nth-child(2) {
+  width: 22%;
+}
+.listTable th:nth-child(3) {
+  width: 12%;
+}
+.listTable th:last-child {
+  width: 14%;
+}
+.listTable td {
+  height: 62px;
+}
+.listTable tbody tr:hover,
+.listTable tbody tr:focus-within {
+  background: var(--a13n-hover);
+}
+.listTable td:first-child a {
+  min-width: 0;
+  border-radius: 4px;
+}
+.listTable td:first-child a:focus-visible {
+  outline: 1px solid var(--a13n-focus);
+  outline-offset: 4px;
+}
+.listTable td:first-child a > span:first-child {
+  width: 32px;
+  height: 32px;
+  flex-basis: 32px;
+  border: 0;
+  background: transparent;
+  color: var(--a13n-secondary);
+}
+.listTable td:first-child strong,
+.listTable td:first-child small {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.listTable .modelName {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.listTable .modelName svg {
+  flex: none;
+}
 .listFilters {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 220px;
@@ -59,12 +132,8 @@
   width: 40px;
   height: 40px;
   flex: none;
-  color: var(--color-violet-500);
-  background: color-mix(
-    in srgb,
-    var(--color-violet-500) 10%,
-    var(--a13n-elevated)
-  );
+  color: var(--a13n-secondary);
+  background: var(--a13n-surface);
   border-radius: 12px;
 }
 .identity h1 {
@@ -355,4 +424,22 @@
   .saveStatus {
     width: 100%;
   }
+}
+
+.autoSaveNotice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  margin-top: 10px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--a13n-surface);
+  color: var(--a13n-text);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.autoSaveNotice svg {
+  flex: none;
 }

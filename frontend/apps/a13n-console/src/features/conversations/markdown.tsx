@@ -11,6 +11,12 @@ export function MessageMarkdown({ text }: { text: string }) {
         skipHtml
         remarkPlugins={[remarkGfm]}
         components={{
+          pre: ({ children }) => (
+            <pre className="a13n-scrollbar">{children}</pre>
+          ),
+          table: ({ children }) => (
+            <table className="a13n-scrollbar">{children}</table>
+          ),
           a: ({ href, children }) => (
             <a href={href} target="_blank" rel="noopener noreferrer">
               {children}

@@ -5,7 +5,7 @@
   align-items: center;
   justify-content: center;
   padding: 40px 20px;
-  background: var(--a13n-canvas);
+  background: var(--a13n-surface);
 }
 .brand {
   display: flex;
@@ -22,12 +22,10 @@
 
 .card {
   background: var(--a13n-elevated);
-  border: 1px solid var(--a13n-border);
   border-radius: 14px;
   padding: 40px;
   width: 100%;
   max-width: 440px;
-  box-shadow: var(--a13n-shadow-subtle);
 }
 
 .card h1 {

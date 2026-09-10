@@ -2,26 +2,21 @@
 
 from typing import Annotated
 
-from anyio import fail_after
 from fastapi import APIRouter, Depends, Header, Request, Response
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.etags import resource_etag
+from a13n_service.http_images import IMAGE_UPLOAD, image_body, image_response
 from a13n_service.iam.http.resource_dependencies import OrganizationId, WorkspaceId
 from a13n_service.request_runtime import get_process_runtime
 
-from ..management.images import MAX_IMAGE_BYTES, ImageOwner
+from ..management.images import ImageOwner
 from ..schemas import Organization, User, Workspace
 from ..service_common import identity_error
 from .dependencies import Actor, identity, private_response
 
 router = APIRouter(prefix="/api/v1", tags=["identity-images"], dependencies=[Depends(private_response)])
-IMAGE_UPLOAD = {
-    "requestBody": {
-        "required": True,
-        "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}},
-    }
-}
+
 
 IfMatch = Annotated[str, Header(alias="If-Match", min_length=1, max_length=256)]
 
@@ -31,18 +26,6 @@ def objects(request: Request):
     if runtime is None:
         raise identity_error("identity_unavailable", "Identity is unavailable.", ErrorCategory.unavailable)
     return runtime.shared.storage.objects
-
-
-async def image_body(request: Request) -> bytes:
-    content = bytearray()
-    with fail_after(30):
-        async for chunk in request.stream():
-            content.extend(chunk)
-            if len(content) > MAX_IMAGE_BYTES:
-                raise identity_error(
-                    "invalid_profile_image", "Images must be no larger than 5 MiB.", ErrorCategory.invalid_request
-                )
-    return bytes(content)
 
 
 async def change(
@@ -57,11 +40,7 @@ async def change(
 
 async def read(request: Request, actor: Actor, kind: ImageOwner, owner_id: str, image_id: str) -> Response:
     content = await identity(request).images.read(actor, kind, owner_id, image_id, objects(request))
-    return Response(
-        content,
-        media_type="image/webp",
-        headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
-    )
+    return image_response(content)
 
 
 @router.put("/users/me/avatar", response_model=User, openapi_extra=IMAGE_UPLOAD)

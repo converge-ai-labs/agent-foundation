@@ -82,7 +82,7 @@ export function SettingsLayout({
         </div>
         <aside
           id="settings-outline"
-          className={styles.outline}
+          className={`${styles.outline} a13n-scrollbar`}
           data-open={navigationOpen}
         >
           <Link className={styles.back} to="/">
