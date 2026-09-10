@@ -22,6 +22,7 @@ from pydantic_ai.usage import RunUsage
 from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError
 from a13n_harness_ui.live import HarnessUiSummaryHub
+from a13n_harness_ui.observation import UiObservation, finish_operation
 from a13n_harness_ui.root_execution import RootRunExecutor, RootRunOutcome
 from a13n_harness_ui.root_input import RootInputFiles, detach_input
 from a13n_harness_ui.storage import ThreadConfigurationMutation
@@ -81,9 +82,11 @@ class RootRunCoordinator:
         *,
         summary_hub: HarnessUiSummaryHub | None = None,
         terminal_retention: int = 256,
+        observation: UiObservation | None = None,
     ) -> None:
         if terminal_retention < 1:
             raise ValueError("terminal_retention must be positive")
+        self._observation = observation or UiObservation()
         self._executor = executor
         self._summary_hub = summary_hub
         self._lock = Lock()
@@ -354,6 +357,25 @@ class RootRunCoordinator:
             scope.cancel()
 
     async def _run_operation(
+        self,
+        operation: _RootOperation,
+        prompt: RunInputValue | None,
+        response: ThreadDeferredResponse | None,
+        mutation: ThreadConfigurationMutation | None,
+        model_overrides: RunModelOverrides | None,
+    ) -> None:
+        with self._observation.operation(
+            "root", thread_id=operation.receipt.thread_id, operation_id=operation.receipt.receipt_id
+        ) as span:
+            await self._execute_operation(operation, prompt, response, mutation, model_overrides)
+            finish_operation(
+                span,
+                status=operation.status.value,
+                run_id=operation.run_id,
+                error_code=operation.failure.code if operation.failure is not None else None,
+            )
+
+    async def _execute_operation(
         self,
         operation: _RootOperation,
         prompt: RunInputValue | None,

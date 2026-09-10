@@ -26,8 +26,9 @@ wheels/
 # Python environments
 .env
 .env.*
-!.env.example
 !.env.harness.example
+!/dev/harness/.env.example
+!/dev/harness-ui/.env.example
 .venv/
 env/
 venv/

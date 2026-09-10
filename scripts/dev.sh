@@ -22,12 +22,13 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 config_path="${1:-dev/service/local.toml}"
-echo "Starting a13n Service and Console (http://127.0.0.1:5173). Press Ctrl+C to stop both."
+uv run --locked python -m dev.service --config "$config_path" check-ports --console
+echo "Starting a13n Service and Console. Press Ctrl+C to stop both; infrastructure data is preserved."
 uv run --locked python -m dev.service --config "$config_path" serve &
 service_pids+=("$!")
 service_names+=("a13n Service")
 
-pnpm --dir frontend --filter a13n-console dev &
+uv run --locked python -m dev.service --config "$config_path" console &
 service_pids+=("$!")
 service_names+=("Console")
 
