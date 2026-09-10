@@ -23,13 +23,13 @@ Harness UI and a13n Service both embed Agent Harness, but they own different lif
 
 | Direct Agent use                                                                                | Managed Agent use                                                                                                               |
 | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| An application embeds `a13n-harness`, or a person runs `a13n-harness-ui`.                       | A client calls `a13n-service` through the `a13n` SDK or `a13n-service-cli`.                                                     |
+| An application embeds `a13n-harness`, or a person runs `a13n-harness-ui`.                       | A client uses Console, Native HTTP, or an implemented Service SDK operation.                                                    |
 | The application or UI owns execution, configuration, continuation storage, and recovery policy. | The Service owns managed resources and revisions, durable acceptance, scheduling, Runs and Attempts, permissions, and recovery. |
 | Models and execution Environments may still be remote.                                          | The Service may still run on the same machine as its client.                                                                    |
 
-`a13n` is the Service client SDK, not an umbrella package and not another Agent execution engine. A future Service management UI may use the conceptual name `a13n-service-ui`; this repository does not currently provide one.
+`a13n` identifies Service client packages, not an umbrella package or another Agent execution engine. [Console](docs/a13n-service/console.md) is the repository's Service management browser application. [SDK coverage](docs/a13n-service/sdks.md) differs by language: TypeScript covers Native HTTP and streams; Python, Go, and Rust currently cover Search Provider management. The companion `a13n-service-cli` currently exposes help/version only.
 
-Harness UI interaction is provided by the terminal CLI. Its optional `a13n-harness-ui webui` server retains the HTTP API, but the bundled browser page currently displays only Hello World; it is not a browser chat or management application.
+Harness UI interaction is provided by the terminal CLI. Its optional `a13n-harness-ui webui` server retains the HTTP API; the bundled browser page provides authentication, status, and version information, not browser chat or Service management. See [the browser-server guide](docs/a13n-harness-ui/webui.md).
 
 ## Highlights
 
@@ -56,7 +56,7 @@ For a shorter command, add `alias anui='a13n-harness-ui'` to your Bash or Zsh co
 
 ### Work from Source
 
-The documentation tracks `main` and the next 0.x releases. To work against the current source:
+The documentation tracks source `main`; match published packages to their release contracts. To work against the current source:
 
 ```bash
 git clone https://github.com/converge-ai-labs/agent-foundation.git

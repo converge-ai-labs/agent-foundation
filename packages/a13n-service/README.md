@@ -139,7 +139,7 @@ A13N_SERVICE_OBSERVABILITY_QUERY_LANGFUSE_SECRET_KEY='sk-lf-...'
 
 Product distributions can register additional trusted adapters through `TraceQueryProviderRegistry`; runtime configuration selects only one key already fixed into that artifact. Duplicate keys and selections absent from the artifact fail startup.
 
-`GET /api/v1/workspaces/{workspace}/traces` and `GET /api/v1/workspaces/{workspace}/traces/{trace_id}` remain present when querying is disabled and return the shared safe unavailable error. Backend correlation is never authorization evidence: a distribution must inject `Components.trace_access_authorizer` backed by its authoritative RunAttempt domain before results can be returned. The current repository does not yet contain that RunAttempt persistence domain, so configured querying fails closed until the owning implementation is composed.
+`GET /api/v1/workspaces/{workspace}/traces` and `GET /api/v1/workspaces/{workspace}/traces/{trace_id}` remain present when querying is disabled and return the shared safe unavailable error. Backend correlation is never authorization evidence: a distribution must inject `Components.trace_access_authorizer` backed by its authoritative RunAttempt domain before results can be returned. The default composition does not yet supply this authorizer, so configured querying fails closed until it is composed. Local Langfuse ingestion and its own UI remain available independently.
 
 Run `make langfuse-test` to start the repository's local Langfuse v4 stack and verify a real standard-OTLP write followed by input search and Observations v2 list/detail reads. The ordinary Python test suite keeps this integration test skipped so it does not require Docker.
 
@@ -231,8 +231,10 @@ Secrets may be injected through deployment environment variables or a protected,
 explicitly selected configuration file. Never commit real credentials. The
 repository's [local TOML](../../dev/service/local.toml) contains only public,
 fictional credentials; use [the local development guide](../../dev/service/README.md)
-for a complete resettable environment. `.env.example` lists optional environment
-overrides only and is not automatically loaded. Embedded callers construct
+for a complete resettable environment including local Langfuse. `make dev` and
+`make setup` need no `.env`: the development launcher wires standard OTEL export
+from the selected local project configuration. Production export and query
+configuration remain independent. Embedded callers construct
 `Settings` explicitly, or call `load_settings` from
 `a13n_service.configuration.sources` to select input sources.
 

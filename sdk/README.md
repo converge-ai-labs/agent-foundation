@@ -9,11 +9,19 @@ The a13n Service SDKs live under one standalone `sdk/` boundary. They are intent
 | Rust       | `a13n`                                                | `sdk/rust`       | `release/a13n/rust/<version>`       |
 | TypeScript | `@converge.ai/a13n`                                   | `sdk/typescript` | `release/a13n/typescript/<version>` |
 
-The `a13n-service-cli` remote CLI is a companion to these SDKs, not another SDK distribution. It is an independent Cargo project at `sdk/rust/a13n-service-cli` with package name `a13n-service-cli`, its own lock file, and no membership in the root Rust workspace or the Rust SDK project. Network commands use typed operations from `a13n`; they do not maintain a separate HTTP client. The CLI does not manage a13n Service processes or access service implementation internals.
+The `a13n-service-cli` remote CLI is a companion to these SDKs, not another SDK distribution. It is an independent Cargo project at `sdk/rust/a13n-service-cli` with package name `a13n-service-cli`, its own lock file, and no membership in the root Rust workspace or the Rust SDK project. Its current implementation has only help/version, with no network commands or authentication flags. Future network commands belong on typed Rust SDK operations, not a separate HTTP client. The CLI does not manage a13n Service processes or access service implementation internals.
 
 `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`. Python package metadata normalizes an RC to `X.Y.ZrcN`, and TypeScript RCs publish under the npm `rc` dist-tag rather than `latest`.
 
-All four SDKs currently provide publishable `0.0.x` package shells only. They reserve stable package identities without committing the project to a generator, transport, or service contract before the API is ready. SDK language versions are independent.
+SDK language versions and implemented coverage are independent:
+
+| Client           | Current coverage                                                                                                      |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------- |
+| TypeScript       | Complete checked Native HTTP API, Workspace binding, Run SSE, and notification WebSocket                              |
+| Python, Go, Rust | Search Provider type catalog, scoped create/list/get/update/test/references, and credential-context Workspace binding |
+| Companion CLI    | Help/version only                                                                                                     |
+
+The three Search clients also preserve search-only Agent configuration/Run override fields; they are not complete Agent validators or Run clients. See [Service SDKs](../docs/a13n-service/sdks.md) for examples, constructor options, timeouts, retries, errors, pagination, binary transfer, and shutdown boundaries.
 
 Run the fast standalone SDK checks while iterating and the complete release checks before publishing:
 
@@ -30,4 +38,4 @@ The CLI releases as six platform-specific binary archives plus `SHA256SUMS` thro
 
 Service Agent configuration uses `connector_tools` and `mcp_tools` arrays. Entries contain `connector_connection_id` or `mcp_connection_id`, optional `tools`, and `defer_loading` (default `false`). An omitted or null entry-level `tools` selects all tools; an empty array selects none. Run overrides inherit omitted categories and replace supplied arrays, including clearing with `[]`. Category-level null, aliases, `exposure`, and inline credentials are invalid.
 
-The package shells have no Agent client models to migrate. Future typed clients must preserve these distinctions and must not translate the removed alias-keyed shape. See [External tools](../docs/a13n-service/external-tools.md) for request examples and execution semantics.
+The TypeScript generated Native types preserve these distinctions. Python, Go, and Rust preserve unknown Service-owned fields in their search-only wrappers but do not locally validate the full external-tool configuration. Do not translate the removed alias-keyed shape. See [External tools](../docs/a13n-service/external-tools.md) for request examples and execution semantics.

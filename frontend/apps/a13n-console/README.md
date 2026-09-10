@@ -4,7 +4,7 @@ The private React and TypeScript web application for Agent Foundation Service. C
 
 ## Local development
 
-From the repository root, start local PostgreSQL and Redis, upgrade the schema, prepare frontend dependencies and the TypeScript SDK, and run Service and Console together:
+From the repository root, prepare local PostgreSQL, Redis and Langfuse, upgrade the schema, prepare frontend dependencies and the TypeScript SDK, and run Service and Console together. Configuration comes from `dev/service/local.toml`; no `.env` or manual Langfuse setup is required:
 
 ```bash
 make dev
