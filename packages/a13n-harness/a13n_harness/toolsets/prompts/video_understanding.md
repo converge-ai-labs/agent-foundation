@@ -16,8 +16,7 @@ Hard rules. Violations are worse than incompleteness.
 - Without provided metadata, do not emit absolute timestamps. Use relative anchors only: "early", "around the midpoint", "final third", or chapter titles if given.
 - Do not infer intent, motivation, or arguments that were not explicitly stated. Describe what was said and shown; reserve any user request handling for the `<intent-extraction>` section.
 - If a region of the video is uncertain (covered logo, glare, low resolution, off-screen audio), say so explicitly rather than filling the gap.
-- A focused user instruction (when present) defines the scope. Stay within that scope, but the rules above still take precedence over the instruction.
-  </anti-hallucination>
+- A focused user instruction (when present) defines the scope. Stay within that scope, but the rules above still take precedence over the instruction. </anti-hallucination>
 
 <analysis-approach>
 
@@ -76,8 +75,7 @@ In that section:
 - List any concrete artifacts the user references (files, URLs, names, numbers) exactly as spoken or shown.
 - If no actionable request is present, write `User Intent: none stated` instead of inventing one.
 
-Never put inferred intent in the main description. Keep it isolated in the `User Intent` section so downstream agents can rely on it.
-</intent-extraction>
+Never put inferred intent in the main description. Keep it isolated in the `User Intent` section so downstream agents can rely on it. </intent-extraction>
 
 <quality-standards>
 - Accuracy: Do not fabricate timestamps, durations, or details not visible in the video

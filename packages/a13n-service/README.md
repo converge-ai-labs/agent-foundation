@@ -202,17 +202,9 @@ a13n-service --config /path/to/service.toml db upgrade
 a13n-service --config /path/to/service.toml serve
 ```
 
-The precedence is defaults, then that TOML file, then `A13N_SERVICE_*`
-environment overrides, then explicit `serve --role` and `--host` overrides.
-Service never searches for `.env` or another configuration file. Invalid TOML,
-unknown fields and invalid effective values fail before startup. Configuration
-is immutable; restart the process after changing it. Relative storage paths use
-the selected file's directory (or the invocation directory with no file).
+The precedence is defaults, then that TOML file, then `A13N_SERVICE_*` environment overrides, then explicit `serve --role` and `--host` overrides. Service never searches for `.env` or another configuration file. Invalid TOML, unknown fields and invalid effective values fail before startup. Configuration is immutable; restart the process after changing it. Relative storage paths use the selected file's directory (or the invocation directory with no file).
 
-The nested `Settings` model groups fields by operational concern. Most
-configuration fields map to the uppercase section and field name, for example
-`[database] pool_size` becomes `A13N_SERVICE_DATABASE_POOL_SIZE`. Existing
-singular deployment prefixes remain supported for plural sections:
+The nested `Settings` model groups fields by operational concern. Most configuration fields map to the uppercase section and field name, for example `[database] pool_size` becomes `A13N_SERVICE_DATABASE_POOL_SIZE`. Existing singular deployment prefixes remain supported for plural sections:
 
 | TOML section                                                   | Environment prefix after `A13N_SERVICE_`                                               |
 | -------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
@@ -222,32 +214,13 @@ singular deployment prefixes remain supported for plural sections:
 | `logging`                                                      | `LOG_`                                                                                 |
 | `observability.query`                                          | `OBSERVABILITY_QUERY_`                                                                 |
 
-`[migration] auto_migrate` keeps `A13N_SERVICE_AUTO_MIGRATE`; `[gateway] a2a_*`
-keeps `A13N_SERVICE_A2A_*`. Arrays are native TOML arrays, or JSON arrays when
-supplied through the environment. Standard `OTEL_*` transport settings remain
-independent environment inputs.
+`[migration] auto_migrate` keeps `A13N_SERVICE_AUTO_MIGRATE`; `[gateway] a2a_*` keeps `A13N_SERVICE_A2A_*`. Arrays are native TOML arrays, or JSON arrays when supplied through the environment. Standard `OTEL_*` transport settings remain independent environment inputs.
 
-Secrets may be injected through deployment environment variables or a protected,
-explicitly selected configuration file. Never commit real credentials. The
-repository's [local TOML](../../dev/service/local.toml) contains only public,
-fictional credentials; use [the local development guide](../../dev/service/README.md)
-for a complete resettable environment including local Langfuse. `make dev` and
-`make setup` need no `.env`: the development launcher wires standard OTEL export
-from the selected local project configuration. Production export and query
-configuration remain independent. Embedded callers construct
-`Settings` explicitly, or call `load_settings` from
-`a13n_service.configuration.sources` to select input sources.
+Secrets may be injected through deployment environment variables or a protected, explicitly selected configuration file. Never commit real credentials. The repository's [local TOML](../../dev/service/local.toml) contains only public, fictional credentials; use [the local development guide](../../dev/service/README.md) for a complete resettable environment including local Langfuse. `make dev` and `make setup` need no `.env`: the development launcher wires standard OTEL export from the selected local project configuration. Production export and query configuration remain independent. Embedded callers construct `Settings` explicitly, or call `load_settings` from `a13n_service.configuration.sources` to select input sources.
 
-The executable owns role-aware schema preparation: `all` and `control` upgrade
-only when `migration.auto_migrate` is enabled; otherwise they check the current
-heads. `worker` and `connectivity` always check and never migrate. The container
-entrypoint simply executes the requested command, so CLI overrides and TOML
-selection cannot disagree with migration behavior.
+The executable owns role-aware schema preparation: `all` and `control` upgrade only when `migration.auto_migrate` is enabled; otherwise they check the current heads. `worker` and `connectivity` always check and never migrate. The container entrypoint simply executes the requested command, so CLI overrides and TOML selection cannot disagree with migration behavior.
 
-The image selects `/app/service.toml` explicitly in both its default command and
-health probe. Mount a deployment TOML at that path to configure both. If replacing
-the command to select another path, also replace the container health command
-with `a13n-service --config PATH config healthcheck` for that same file.
+The image selects `/app/service.toml` explicitly in both its default command and health probe. Mount a deployment TOML at that path to configure both. If replacing the command to select another path, also replace the container health command with `a13n-service --config PATH config healthcheck` for that same file.
 
 ## Relational Usage
 
