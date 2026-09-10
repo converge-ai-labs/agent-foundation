@@ -1,3 +1,4 @@
+import { ManageProvidersLink } from "../providers/manage-link";
 import { Badge, FormField, Input } from "a13n-ui";
 
 import { useQuery } from "@tanstack/react-query";
@@ -21,23 +22,16 @@ import styles from "../../shared/shared.module.css";
 import { modelApi, type ModelScope } from "./api";
 import { ModelEditor, ModelTest } from "./model-editor";
 import modelStyles from "./models.module.css";
-import { Providers } from "./providers";
 
-export function ModelsPage({ providers = false }: { providers?: boolean }) {
+export function ModelsPage() {
   const { t } = useTranslation(),
     { workspace } = useWorkspace();
   return (
     <Page
-      title={t(providers ? "Model providers" : "Models")}
-      description={t(
-        "Connect providers and choose the models your agents can use.",
-      )}
+      title={t("Models")}
+      description={t("Choose the models your agents can use.")}
     >
-      {providers ? (
-        <Providers scope={{ kind: "workspace", id: workspace.id }} />
-      ) : (
-        <Models scope={{ kind: "workspace", id: workspace.id }} />
-      )}
+      <Models scope={{ kind: "workspace", id: workspace.id }} />
     </Page>
   );
 }
@@ -69,6 +63,7 @@ export function Models({ scope }: { scope: ModelScope }) {
   return (
     <div className={styles.stack}>
       <PageActions>{manage && <ModelEditor scope={scope} />}</PageActions>
+      <ManageProvidersLink category="models" scope={scope.kind} />
       <div className={styles.filters}>
         <FormField
           className="min-w-0 w-full"

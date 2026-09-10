@@ -2,12 +2,14 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  focusManager,
+} from "@tanstack/react-query";
 import { ApiError } from "@converge.ai/a13n";
-import { useState } from "react";
 import { SearchProviderEditor, SearchProviderTest } from "./editor";
 import { AgentSearchSelection } from "./selection";
-import type { Schema } from "../../shared/api";
 
 const http = vi.hoisted(() => ({
   GET: vi.fn(),
@@ -16,7 +18,10 @@ const http = vi.hoisted(() => ({
 }));
 vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
 vi.mock("../../layout/workspace", () => ({
-  useWorkspace: () => ({ workspace: { id: "ws_test" }, can: () => true }),
+  useWorkspace: () => ({
+    workspace: { id: "ws_test", key: "research" },
+    can: () => true,
+  }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -83,11 +88,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("creates a saved account independently and clears its credential on close without caching mutation input", async () => {
+it("creates a saved provider independently and clears its credential on close without caching mutation input", async () => {
   const user = userEvent.setup(),
     saved = vi.fn(),
     cache = setup(<SearchProviderEditor scope={scope} onSaved={saved} />);
-  await user.click(screen.getByRole("button", { name: "Add search account" }));
+  await user.click(screen.getByRole("button", { name: "Add search provider" }));
   await user.type(
     await screen.findByRole("textbox", { name: "Name" }),
     "Research",
@@ -106,7 +111,7 @@ it("creates a saved account independently and clears its credential on close wit
         .map((item) => item.state),
     ),
   ).not.toContain("test-secret");
-  await user.click(screen.getByRole("button", { name: "Add search account" }));
+  await user.click(screen.getByRole("button", { name: "Add search provider" }));
   expect(await screen.findByLabelText("API key")).toHaveProperty("value", "");
 });
 
@@ -128,14 +133,14 @@ it("reconciles an uncertain create before allowing another attempt", async () =>
   const user = userEvent.setup();
   setup(<SearchProviderEditor scope={scope} />);
   http.POST.mockRejectedValue(new TypeError("Network unavailable"));
-  await user.click(screen.getByRole("button", { name: "Add search account" }));
+  await user.click(screen.getByRole("button", { name: "Add search provider" }));
   await user.type(
     await screen.findByRole("textbox", { name: "Name" }),
     "Research",
   );
   await user.type(screen.getByLabelText("API key"), "test-secret");
   await user.click(screen.getByRole("button", { name: "Save changes" }));
-  await screen.findByRole("button", { name: "Use this account" });
+  await screen.findByRole("button", { name: "Use this provider" });
   expect(
     http.GET.mock.calls.some(([path]) => path.endsWith("search-providers")),
   ).toBe(true);
@@ -147,44 +152,50 @@ it("tests only on explicit click and never automatically repeats an uncertain te
   setup(<SearchProviderTest scope={scope} providerId={provider.id} />);
   http.POST.mockRejectedValue(new TypeError("Network unavailable"));
   expect(http.POST).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: "Test account" }));
+  await user.click(screen.getByRole("button", { name: "Test provider" }));
   await screen.findByRole("alert");
   expect(http.POST).toHaveBeenCalledOnce();
   expect(http.POST.mock.calls[0][1].body).toEqual({});
 });
 
-it("selects an inline-created account in the draft without saving the agent", async () => {
-  function Draft() {
-    const [value, setValue] = useState<Schema["SearchSelection"] | null>(null);
-    return (
-      <>
-        <AgentSearchSelection value={value} onChange={setValue} />
-        <output>{JSON.stringify(value)}</output>
-      </>
-    );
-  }
+it("opens centralized provider setup without changing the agent draft and refreshes choices on return", async () => {
+  const draft = {
+    provider_id: provider.id,
+    max_results: 7,
+    include_domains: ["example.com"],
+  };
+  const changed = vi.fn();
   const user = userEvent.setup();
-  setup(<Draft />);
+  setup(<AgentSearchSelection value={draft} onChange={changed} />);
   await user.click(
     screen.getByRole("button", { name: /Configure web search/ }),
   );
-  await user.click(screen.getByRole("button", { name: "Add search account" }));
-  await user.type(
-    await screen.findByRole("textbox", { name: "Name" }),
-    "Research",
+  const link = screen.getByRole("link", { name: "Manage search providers" });
+  expect(link.getAttribute("href")).toBe(
+    "/providers?category=search&scope=workspace&workspace=research",
   );
-  await user.type(screen.getByLabelText("API key"), "test-secret");
-  await user.click(screen.getByRole("button", { name: "Save changes" }));
-  await waitFor(() =>
-    expect(screen.getByRole("status").textContent).toContain(
-      '"provider_id":"sp_test"',
-    ),
-  );
-  expect(http.POST).toHaveBeenCalledOnce();
-  expect(http.POST.mock.calls[0][0]).toContain("search-providers");
+  expect(link.getAttribute("target")).toBe("_blank");
+  expect(
+    screen.queryByRole("button", { name: "Add search provider" }),
+  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "Test provider" })).toBeNull();
+  expect(changed).not.toHaveBeenCalled();
+  expect(http.POST).not.toHaveBeenCalled();
+  await waitFor(() => expect(http.GET).toHaveBeenCalledOnce());
+  focusManager.setFocused(false);
+  focusManager.setFocused(true);
+  await waitFor(() => expect(http.GET).toHaveBeenCalledTimes(2));
+  expect(
+    screen.getByRole("spinbutton", { name: "Maximum results" }),
+  ).toHaveProperty("value", "7");
+  expect(
+    screen.getByRole("textbox", { name: "Include domains" }),
+  ).toHaveProperty("value", "example.com");
+  expect(changed).not.toHaveBeenCalled();
+  focusManager.setFocused(undefined);
 });
 
-it("retains the account draft across a stale ETag and requires loading the current version before resubmitting", async () => {
+it("retains the provider draft across a stale ETag and requires loading the current version before resubmitting", async () => {
   const user = userEvent.setup();
   setup(<SearchProviderEditor scope={scope} providerId={provider.id} />);
   http.PATCH.mockRejectedValueOnce(

@@ -1,3 +1,4 @@
+import { ManageProvidersLink } from "../providers/manage-link";
 import {
   Button,
   DisclosureSection,
@@ -51,6 +52,7 @@ export function ConnectorConnections() {
   });
   return (
     <div className={styles.stack}>
+      <ManageProvidersLink category="connectors" scope="workspace" />
       {cleanup && (
         <div role="status">
           <h3>{t("Cleanup result")}</h3>

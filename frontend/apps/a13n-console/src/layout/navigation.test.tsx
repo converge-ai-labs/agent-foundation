@@ -13,16 +13,17 @@ vi.mock("../auth/context", () => ({
   }),
 }));
 const access = vi.hoisted(() => ({ organizationAdmin: false }));
-vi.mock("./workspace", () => ({
-  useWorkspace: () => ({
+vi.mock("./workspace", () => {
+  const useAccess = () => ({
     basePath: "/workspace/design",
     workspace: { id: "workspace", key: "design", name: "Design" },
     organization: { key: "acme", name: "Organization" },
     workspaces: [{ id: "workspace", key: "design", name: "Design" }],
     organizationAdmin: access.organizationAdmin,
     can: () => true,
-  }),
-}));
+  });
+  return { useWorkspace: useAccess, useAccess };
+});
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string) => key,
@@ -121,19 +122,19 @@ it("keeps resource categories in sidebar links and restores the selected categor
   const user = userEvent.setup();
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <MemoryRouter initialEntries={["/workspace/design/models/providers"]}>
+      <MemoryRouter initialEntries={["/providers?workspace=design"]}>
         <Routes>
           <Route path="/workspace/:workspaceKey" element={<Shell />}>
             <Route path="models" element={<p>Model directory</p>} />
-            <Route
-              path="models/providers"
-              element={<p>Provider directory</p>}
-            />
+
             <Route path="environments" element={<p>Template directory</p>} />
             <Route
               path="environments/instances"
               element={<p>Instance directory</p>}
             />
+          </Route>
+          <Route element={<Shell />}>
+            <Route path="/providers" element={<p>Provider directory</p>} />
           </Route>
         </Routes>
       </MemoryRouter>
@@ -144,7 +145,7 @@ it("keeps resource categories in sidebar links and restores the selected categor
       .getByRole("link", { name: "Providers" })
       .getAttribute("aria-current"),
   ).toBe("page");
-  await user.click(screen.getByRole("link", { name: "All models" }));
+  await user.click(screen.getByRole("link", { name: "Models" }));
   expect(screen.getByText("Model directory")).toBeTruthy();
   await user.click(screen.getByRole("link", { name: "Environments" }));
   await user.click(screen.getByRole("link", { name: "Instances" }));

@@ -62,6 +62,14 @@ function mount(path: string) {
             }
           />
           <Route
+            path="/providers"
+            element={
+              <WorkspaceProvider>
+                <CurrentWorkspace />
+              </WorkspaceProvider>
+            }
+          />
+          <Route
             path="/"
             element={
               <WorkspaceProvider>
@@ -101,5 +109,12 @@ it("redirects the entry page using the current workspace key", async () => {
     await screen.findByText(
       /\/workspace\/(research|design)\/agents\|ws_(first|second)\|\/workspace\//,
     ),
+  ).toBeTruthy();
+});
+
+it("preserves the selected workspace when provider management opens in another tab", async () => {
+  mount("/providers?workspace=design");
+  expect(
+    await screen.findByText("/providers|ws_second|/workspace/design"),
   ).toBeTruthy();
 });

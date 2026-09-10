@@ -1,3 +1,4 @@
+import { ManageProvidersLink } from "../providers/manage-link";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -25,6 +26,7 @@ export function EnvironmentTemplates({ scope }: { scope: EnvironmentScope }) {
       : can("environment_template.manage");
   return (
     <div className={styles.stack}>
+      <ManageProvidersLink category="environments" scope={scope.kind} />
       <PageActions>{manage && <TemplateEditor scope={scope} />}</PageActions>
       <ErrorNotice error={query.error} />
       {query.isPending ? (
