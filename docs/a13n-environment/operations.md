@@ -26,6 +26,37 @@ The Provider package owns typed files, shell, process, retained-output, and port
 
 Agent Harness applies mount names, access ceilings, routing, operation timeouts, state aggregation, and optional model-facing tools. Adding an Environment does not automatically expose tools to the model. See [Use Environments from Agent Harness](../a13n-harness/environments.md) for Run inputs and `DynamicEnvironmentCapability` configuration.
 
+## File operation reference
+
+After `ensure_ready({"files"})`, use the optional `environment.operations.files` facet. Paths in this table are logical Provider paths, not native shell paths.
+
+| Method                                                                 | Inputs and result                                                               |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `read_text(path, line_offset=0, line_limit=200, max_line_length=2000)` | `FileTextResult` with text, lines read, `has_more`, and truncated-line evidence |
+| `read_bytes(path, offset=0, length=None)`                              | Bounded bytes, subject to the Provider's value limit                            |
+| `read_bytes_stream(path, chunk_size=65536)`                            | Async iterator for binary transfer; do not `await` the iterator itself          |
+| `write_bytes_stream(path, stream, mode=...)`                           | Async iterable of bytes, explicit write mode, and `FileWriteResult`             |
+| `write_text(path, text, mode=...)`                                     | Explicit write mode, bytes written, and mutation receipt                        |
+| `patch_text(path, patch)`                                              | Text patch and applied-hunk receipt                                             |
+| `stat(path)`                                                           | Kind, optional size, and writability                                            |
+| `list(path, max_results=..., offset=0, include_hidden=False)`          | Bounded shallow entries and `has_more`                                          |
+| `query(FileQueryRequest(...))`                                         | Bounded pattern-selected metadata                                               |
+| `search_text(FileTextSearchRequest(...))`                              | Bounded text matches with one-based line/context positions                      |
+| `mkdir(path, parents=False, exist_ok=False)`                           | Explicit parent/existence behavior                                              |
+| `move(source, destination, replace=False)`                             | Same-Environment move                                                           |
+| `copy(source, destination, replace=False)`                             | Same-Environment copy with bytes copied                                         |
+| `remove(path, recursive=False)`                                        | Explicit recursive deletion policy                                              |
+
+Write modes are `create` (new file), `replace` (existing file), `upsert` (create or replace), and `append`. There is no implicit default. A receipt reports the owning operation's outcome, not a general transaction across several file operations. Cross-mount copy is a Host/aggregate responsibility, not an invented second alias argument to `FileOperator.copy()`.
+
+`FileQueryRequest` requires `root`, `pattern`, and positive `max_results`; defaults are recursive true, hidden false, ignore mode `none`, no kind restriction, and offset zero. Choose `ignore_mode="git"` explicitly when repository ignores should apply.
+
+`FileTextSearchRequest` requires `root`, `pattern`, and positive `max_matches`. It defaults to literal, case-sensitive search; `include="**/*"`, hidden false, ignore mode `none`, no context, and offset zero. Optional `max_matches_per_file` and `max_files` are positive bounds; default file-size bound is 64 MiB and line length is 2,000. Context is bounded to 20 lines.
+
+Read `has_more` and advance the input offset by the number of returned entries/matches (or `lines_read` for text). Keep filters and filesystem stable across pages. A partial last line needs its truncation evidence; line count alone does not prove complete text.
+
+For commands and process observation, follow the complete [command example and typed reference](commands.md).
+
 ## File search patterns
 
 File query patterns and text-search `include` filters use the same path syntax on Direct Local, E2B, and envd-backed Providers:

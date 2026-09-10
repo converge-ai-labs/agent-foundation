@@ -136,3 +136,77 @@ def test_http_distinguishes_connection_loss_from_authentication_failure(status, 
                 await transport.close()
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("direction", ["read", "write"])
+@pytest.mark.parametrize("failure", ["response", "connection"])
+def test_failed_http_transfer_preserves_control_and_other_transfers(direction, failure):
+    import httpx2
+    from a13n_envd_client.eip.v1 import DataFrame, DataFrameKind
+    from a13n_envd_client.errors import EIPTransferError
+
+    async def scenario():
+        async def respond(request):
+            if request.url.path == "/eip/transfer":
+                if failure == "connection":
+                    raise httpx2.ReadError("Injected transfer connection loss")
+                return httpx2.Response(500, headers={"Content-Type": "application/octet-stream"})
+            message = json.loads(request.content)
+            return httpx2.Response(
+                200,
+                headers={"Content-Type": "application/json"},
+                json={
+                    "jsonrpc": "2.0",
+                    "id": message["id"],
+                    "error": {
+                        "code": -32040,
+                        "message": "process wait expired",
+                        "data": {"error_type": "timeout", "retry_hint": "never", "dispatch_stage": "pre_dispatch"},
+                    },
+                },
+            )
+
+        transport = HttpTransport("http://127.0.0.1", "test-token")
+        await transport._client.aclose()
+        transport._client = httpx2.AsyncClient(transport=httpx2.MockTransport(respond))
+        transport._session = "sess-test"
+        requester = RequestCoordinator(transport)
+        requester.configure_limits(
+            max_in_flight=4,
+            max_request_bytes=65536,
+            max_response_bytes=65536,
+            max_transfer_frame_bytes=65536,
+            max_concurrent_file_transfers=2,
+        )
+        failed = requester.register_transfer("writer-failed", direction=direction)
+        unrelated = requester.register_transfer("reader-unrelated")
+        try:
+            await requester.send_data_frame(failed, DataFrame(kind=DataFrameKind.ATTACH, handle=failed.handle))
+            if direction == "write":
+                assert (await failed.receive()).kind is DataFrameKind.ATTACHED
+                try:
+                    await requester.send_data_frame(failed, DataFrame(kind=DataFrameKind.END, handle=failed.handle))
+                except EIPTransferError:
+                    # The HTTP response may win the race with accepting END.
+                    pass
+            with pytest.raises(EIPTransferError) as captured:
+                await asyncio.wait_for(failed.receive(), 1)
+            assert captured.value.offset is None, "HTTP failure must not fabricate an acknowledged offset"
+            if direction == "write":
+                with pytest.raises(EIPTransferError):
+                    await requester.send_data_frame(failed, DataFrame(kind=DataFrameKind.END, handle=failed.handle))
+            with pytest.raises(EIPMethodError) as captured:
+                await EIPClient(requester).process_wait(
+                    ProcessWaitParams(
+                        context=EIPCallContext(operation_id="op-after-transfer"),
+                        handle="proc-test",
+                        condition="initial_terminal",
+                    )
+                )
+            assert captured.value.error.data.error_type == ErrorType.TIMEOUT
+            await transport._received.put(DataFrame(kind=DataFrameKind.ATTACHED, handle=unrelated.handle))
+            assert (await asyncio.wait_for(unrelated.receive(), 1)).kind is DataFrameKind.ATTACHED
+        finally:
+            await requester.close()
+
+    asyncio.run(scenario())

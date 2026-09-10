@@ -1,0 +1,1669 @@
+{
+  "$defs": {
+    "AssetsSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "tombstone_minimum_retention_days": {
+          "default": 30,
+          "maximum": 36500,
+          "minimum": 1,
+          "title": "Tombstone Minimum Retention Days",
+          "type": "integer"
+        },
+        "max_size_bytes": {
+          "default": 104857600,
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "title": "Max Size Bytes",
+          "type": "integer"
+        },
+        "cleanup_poll_interval_seconds": {
+          "default": 5,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Cleanup Poll Interval Seconds",
+          "type": "number"
+        },
+        "cleanup_lease_seconds": {
+          "default": 30,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Cleanup Lease Seconds",
+          "type": "number"
+        },
+        "cleanup_max_attempts": {
+          "default": 10,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Cleanup Max Attempts",
+          "type": "integer"
+        }
+      },
+      "title": "AssetsSettings",
+      "type": "object"
+    },
+    "ConnectivitySettings": {
+      "additionalProperties": false,
+      "properties": {
+        "provider_request_max_bytes": {
+          "default": 8388608,
+          "maximum": 8388608,
+          "minimum": 1,
+          "title": "Provider Request Max Bytes",
+          "type": "integer"
+        },
+        "workspace_pending_max_count": {
+          "default": 10000,
+          "maximum": 1000000,
+          "minimum": 1,
+          "title": "Workspace Pending Max Count",
+          "type": "integer"
+        },
+        "workspace_pending_max_bytes": {
+          "default": 1073741824,
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "title": "Workspace Pending Max Bytes",
+          "type": "integer"
+        },
+        "account_pending_max_count": {
+          "default": 1000,
+          "maximum": 100000,
+          "minimum": 1,
+          "title": "Account Pending Max Count",
+          "type": "integer"
+        },
+        "account_pending_max_bytes": {
+          "default": 134217728,
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "title": "Account Pending Max Bytes",
+          "type": "integer"
+        },
+        "batch_max_events": {
+          "default": 100,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Batch Max Events",
+          "type": "integer"
+        },
+        "batch_max_bytes": {
+          "default": 4194304,
+          "maximum": 67108864,
+          "minimum": 1,
+          "title": "Batch Max Bytes",
+          "type": "integer"
+        },
+        "batch_max_wait_seconds": {
+          "default": 300,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Batch Max Wait Seconds",
+          "type": "number"
+        },
+        "admission_poll_interval_seconds": {
+          "default": 1,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "title": "Admission Poll Interval Seconds",
+          "type": "number"
+        },
+        "admission_lease_seconds": {
+          "default": 30,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Admission Lease Seconds",
+          "type": "number"
+        },
+        "admission_backoff_steps": {
+          "default": 20,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Admission Backoff Steps",
+          "type": "integer"
+        },
+        "admission_max_backoff_seconds": {
+          "default": 300,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Admission Max Backoff Seconds",
+          "type": "number"
+        },
+        "dedup_horizon_seconds": {
+          "default": 604800,
+          "maximum": 2592000,
+          "minimum": 60,
+          "title": "Dedup Horizon Seconds",
+          "type": "integer"
+        },
+        "connect_timeout_seconds": {
+          "default": 5,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "title": "Connect Timeout Seconds",
+          "type": "number"
+        },
+        "read_timeout_seconds": {
+          "default": 30,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Read Timeout Seconds",
+          "type": "number"
+        },
+        "total_timeout_seconds": {
+          "default": 60,
+          "exclusiveMinimum": 0,
+          "maximum": 600,
+          "title": "Total Timeout Seconds",
+          "type": "number"
+        },
+        "response_max_bytes": {
+          "default": 1048576,
+          "maximum": 8388608,
+          "minimum": 1,
+          "title": "Response Max Bytes",
+          "type": "integer"
+        },
+        "max_redirects": {
+          "default": 3,
+          "maximum": 3,
+          "minimum": 0,
+          "title": "Max Redirects",
+          "type": "integer"
+        },
+        "oauth_setup_ttl_seconds": {
+          "default": 600,
+          "maximum": 900,
+          "minimum": 60,
+          "title": "Oauth Setup Ttl Seconds",
+          "type": "integer"
+        },
+        "public_origin": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Public Origin"
+        },
+        "oauth_client_name": {
+          "default": "Agent Foundation",
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Oauth Client Name",
+          "type": "string"
+        },
+        "private_endpoint_domains": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Private Endpoint Domains",
+          "type": "array"
+        },
+        "private_endpoint_cidrs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Private Endpoint Cidrs",
+          "type": "array"
+        },
+        "http_origins": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Http Origins",
+          "type": "array"
+        },
+        "provider_origins": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Provider Origins",
+          "type": "array"
+        },
+        "provider_token_expiry_skew_seconds": {
+          "default": 60,
+          "maximum": 600,
+          "minimum": 0,
+          "title": "Provider Token Expiry Skew Seconds",
+          "type": "integer"
+        },
+        "setup_correlation_secret": {
+          "anyOf": [
+            {
+              "format": "password",
+              "maxLength": 4096,
+              "minLength": 32,
+              "type": "string",
+              "writeOnly": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Setup Correlation Secret"
+        },
+        "connector_reconcile_poll_interval_seconds": {
+          "default": 2,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Connector Reconcile Poll Interval Seconds",
+          "type": "number"
+        },
+        "connector_reconcile_lease_seconds": {
+          "default": 60,
+          "maximum": 600,
+          "minimum": 10,
+          "title": "Connector Reconcile Lease Seconds",
+          "type": "integer"
+        },
+        "retention_poll_interval_seconds": {
+          "default": 60,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Retention Poll Interval Seconds",
+          "type": "number"
+        },
+        "retention_batch_size": {
+          "default": 25,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Retention Batch Size",
+          "type": "integer"
+        }
+      },
+      "title": "ConnectivitySettings",
+      "type": "object"
+    },
+    "ControlSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "recovery_poll_interval_seconds": {
+          "default": 1,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Recovery Poll Interval Seconds",
+          "type": "number"
+        },
+        "recovery_batch_limit": {
+          "default": 64,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Recovery Batch Limit",
+          "type": "integer"
+        },
+        "recovery_item_timeout_seconds": {
+          "default": 30,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Recovery Item Timeout Seconds",
+          "type": "number"
+        },
+        "collection_poll_interval_seconds": {
+          "default": 300,
+          "exclusiveMinimum": 0,
+          "maximum": 86400,
+          "title": "Collection Poll Interval Seconds",
+          "type": "number"
+        },
+        "collection_batch_limit": {
+          "default": 64,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Collection Batch Limit",
+          "type": "integer"
+        },
+        "collection_timeout_seconds": {
+          "default": 30,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Collection Timeout Seconds",
+          "type": "number"
+        }
+      },
+      "title": "ControlSettings",
+      "type": "object"
+    },
+    "DatabaseBackend": {
+      "enum": [
+        "postgresql",
+        "sqlite"
+      ],
+      "title": "DatabaseBackend",
+      "type": "string"
+    },
+    "DatabaseSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "$ref": "#/$defs/DatabaseBackend",
+          "default": "postgresql"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "format": "password",
+              "type": "string",
+              "writeOnly": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "**********",
+          "title": "Url"
+        },
+        "sqlite_path": {
+          "default": "var/a13n-service.sqlite3",
+          "format": "path",
+          "title": "Sqlite Path",
+          "type": "string"
+        },
+        "pool_size": {
+          "default": 10,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Pool Size",
+          "type": "integer"
+        },
+        "max_overflow": {
+          "default": 20,
+          "maximum": 1000,
+          "minimum": 0,
+          "title": "Max Overflow",
+          "type": "integer"
+        },
+        "pool_timeout_seconds": {
+          "default": 30,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Pool Timeout Seconds",
+          "type": "number"
+        },
+        "pool_recycle_seconds": {
+          "default": 3600,
+          "minimum": 0,
+          "title": "Pool Recycle Seconds",
+          "type": "integer"
+        },
+        "connect_timeout_seconds": {
+          "default": 10,
+          "maximum": 300,
+          "minimum": 1,
+          "title": "Connect Timeout Seconds",
+          "type": "integer"
+        },
+        "statement_timeout_seconds": {
+          "default": 30,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Statement Timeout Seconds",
+          "type": "number"
+        },
+        "sqlite_busy_timeout_seconds": {
+          "default": 5,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Sqlite Busy Timeout Seconds",
+          "type": "number"
+        },
+        "cleanup_timeout_seconds": {
+          "default": 5,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "title": "Cleanup Timeout Seconds",
+          "type": "number"
+        },
+        "readiness_timeout_seconds": {
+          "default": 3,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Readiness Timeout Seconds",
+          "type": "number"
+        }
+      },
+      "title": "DatabaseSettings",
+      "type": "object"
+    },
+    "EnvironmentsSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "provider_builtins": {
+          "default": [
+            "a13n.direct-local",
+            "a13n.local-envd",
+            "a13n.docker",
+            "a13n.e2b",
+            "a13n.http-envd"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "title": "Provider Builtins",
+          "type": "array"
+        },
+        "provider_extensions": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Provider Extensions",
+          "type": "array"
+        },
+        "maintenance_interval_seconds": {
+          "default": 5,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Maintenance Interval Seconds",
+          "type": "number"
+        },
+        "operation_timeout_seconds": {
+          "default": 60,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Operation Timeout Seconds",
+          "type": "number"
+        },
+        "max_targets_per_workspace": {
+          "default": 1000,
+          "minimum": 1,
+          "title": "Max Targets Per Workspace",
+          "type": "integer"
+        },
+        "max_active_per_workspace": {
+          "default": 100,
+          "minimum": 1,
+          "title": "Max Active Per Workspace",
+          "type": "integer"
+        },
+        "maintenance_batch_size": {
+          "default": 64,
+          "maximum": 10000,
+          "minimum": 1,
+          "title": "Maintenance Batch Size",
+          "type": "integer"
+        },
+        "maintenance_concurrency": {
+          "default": 4,
+          "maximum": 128,
+          "minimum": 1,
+          "title": "Maintenance Concurrency",
+          "type": "integer"
+        }
+      },
+      "title": "EnvironmentsSettings",
+      "type": "object"
+    },
+    "FilesystemSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "root": {
+          "default": "var/files",
+          "format": "path",
+          "title": "Root",
+          "type": "string"
+        },
+        "worker_limit": {
+          "default": 20,
+          "maximum": 256,
+          "minimum": 1,
+          "title": "Worker Limit",
+          "type": "integer"
+        }
+      },
+      "title": "FilesystemSettings",
+      "type": "object"
+    },
+    "GatewaySettings": {
+      "additionalProperties": false,
+      "properties": {
+        "stream_page_size": {
+          "default": 256,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Stream Page Size",
+          "type": "integer"
+        },
+        "stream_poll_interval_seconds": {
+          "default": 0.25,
+          "exclusiveMinimum": 0,
+          "maximum": 10,
+          "title": "Stream Poll Interval Seconds",
+          "type": "number"
+        },
+        "stream_heartbeat_interval_seconds": {
+          "default": 15,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Stream Heartbeat Interval Seconds",
+          "type": "number"
+        },
+        "stream_authorization_interval_seconds": {
+          "default": 30,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Stream Authorization Interval Seconds",
+          "type": "number"
+        },
+        "stream_maximum_lifetime_seconds": {
+          "default": 300,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Stream Maximum Lifetime Seconds",
+          "type": "number"
+        },
+        "notification_poll_interval_seconds": {
+          "default": 0.5,
+          "exclusiveMinimum": 0,
+          "maximum": 30,
+          "title": "Notification Poll Interval Seconds",
+          "type": "number"
+        },
+        "notification_heartbeat_interval_seconds": {
+          "default": 20,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Notification Heartbeat Interval Seconds",
+          "type": "number"
+        },
+        "notification_send_timeout_seconds": {
+          "default": 10,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "title": "Notification Send Timeout Seconds",
+          "type": "number"
+        },
+        "notification_max_frame_bytes": {
+          "default": 65536,
+          "maximum": 1048576,
+          "minimum": 1024,
+          "title": "Notification Max Frame Bytes",
+          "type": "integer"
+        },
+        "notification_max_subscriptions": {
+          "default": 64,
+          "maximum": 1024,
+          "minimum": 1,
+          "title": "Notification Max Subscriptions",
+          "type": "integer"
+        },
+        "notification_max_topics": {
+          "default": 128,
+          "maximum": 4096,
+          "minimum": 1,
+          "title": "Notification Max Topics",
+          "type": "integer"
+        },
+        "notification_poll_limit": {
+          "default": 100,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Notification Poll Limit",
+          "type": "integer"
+        },
+        "notification_maximum_lifetime_seconds": {
+          "default": 3600,
+          "exclusiveMinimum": 0,
+          "maximum": 86400,
+          "title": "Notification Maximum Lifetime Seconds",
+          "type": "number"
+        },
+        "run_execution_max_attempts": {
+          "default": 3,
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Run Execution Max Attempts",
+          "type": "integer"
+        },
+        "run_max_handoffs": {
+          "default": 2,
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Run Max Handoffs",
+          "type": "integer"
+        },
+        "run_queue_name": {
+          "default": "default",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$",
+          "title": "Run Queue Name",
+          "type": "string"
+        },
+        "run_priority": {
+          "default": 0,
+          "maximum": 1000000,
+          "minimum": -1000000,
+          "title": "Run Priority",
+          "type": "integer"
+        },
+        "a2a_enabled": {
+          "default": true,
+          "title": "A2A Enabled",
+          "type": "boolean"
+        },
+        "a2a_public_origin": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "A2A Public Origin"
+        },
+        "a2a_default_agent_id": {
+          "anyOf": [
+            {
+              "maxLength": 72,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "A2A Default Agent Id"
+        },
+        "a2a_poll_interval_seconds": {
+          "default": 0.5,
+          "exclusiveMinimum": 0,
+          "maximum": 30,
+          "title": "A2A Poll Interval Seconds",
+          "type": "number"
+        },
+        "a2a_maximum_wait_seconds": {
+          "default": 300,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "A2A Maximum Wait Seconds",
+          "type": "number"
+        }
+      },
+      "title": "GatewaySettings",
+      "type": "object"
+    },
+    "HooksSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "history_minimum_retention_days": {
+          "default": 30,
+          "maximum": 3650,
+          "minimum": 1,
+          "title": "History Minimum Retention Days",
+          "type": "integer"
+        }
+      },
+      "title": "HooksSettings",
+      "type": "object"
+    },
+    "IamSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "public_origin": {
+          "default": "http://127.0.0.1:8000",
+          "title": "Public Origin",
+          "type": "string"
+        },
+        "initial_admin_email": {
+          "anyOf": [
+            {
+              "format": "email",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Initial Admin Email"
+        },
+        "session_days": {
+          "default": 7,
+          "maximum": 90,
+          "minimum": 1,
+          "title": "Session Days",
+          "type": "integer"
+        },
+        "invitation_days": {
+          "default": 7,
+          "maximum": 30,
+          "minimum": 1,
+          "title": "Invitation Days",
+          "type": "integer"
+        },
+        "smtp_host": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Smtp Host"
+        },
+        "smtp_port": {
+          "default": 587,
+          "maximum": 65535,
+          "minimum": 1,
+          "title": "Smtp Port",
+          "type": "integer"
+        },
+        "smtp_username": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Smtp Username"
+        },
+        "smtp_password": {
+          "anyOf": [
+            {
+              "format": "password",
+              "type": "string",
+              "writeOnly": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Smtp Password"
+        },
+        "smtp_sender": {
+          "anyOf": [
+            {
+              "format": "email",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Smtp Sender"
+        },
+        "smtp_tls": {
+          "default": "starttls",
+          "enum": [
+            "starttls",
+            "tls"
+          ],
+          "title": "Smtp Tls",
+          "type": "string"
+        }
+      },
+      "title": "IamSettings",
+      "type": "object"
+    },
+    "LifecycleSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "retention_days": {
+          "default": 30,
+          "maximum": 3650,
+          "minimum": 1,
+          "title": "Retention Days",
+          "type": "integer"
+        },
+        "published_delivery_retention_days": {
+          "default": 7,
+          "maximum": 3650,
+          "minimum": 1,
+          "title": "Published Delivery Retention Days",
+          "type": "integer"
+        },
+        "dead_letter_retention_days": {
+          "default": 30,
+          "maximum": 3650,
+          "minimum": 1,
+          "title": "Dead Letter Retention Days",
+          "type": "integer"
+        },
+        "retention_poll_interval_seconds": {
+          "default": 300,
+          "exclusiveMinimum": 0,
+          "maximum": 86400,
+          "title": "Retention Poll Interval Seconds",
+          "type": "number"
+        },
+        "retention_batch_limit": {
+          "default": 200,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Retention Batch Limit",
+          "type": "integer"
+        },
+        "projection_poll_interval_seconds": {
+          "default": 1,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "title": "Projection Poll Interval Seconds",
+          "type": "number"
+        },
+        "projection_lease_seconds": {
+          "default": 60,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Projection Lease Seconds",
+          "type": "number"
+        },
+        "projection_retry_seconds": {
+          "default": 5,
+          "maximum": 3600,
+          "minimum": 0,
+          "title": "Projection Retry Seconds",
+          "type": "number"
+        },
+        "projection_max_attempts": {
+          "default": 20,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Projection Max Attempts",
+          "type": "integer"
+        },
+        "projection_claim_limit": {
+          "default": 16,
+          "maximum": 200,
+          "minimum": 1,
+          "title": "Projection Claim Limit",
+          "type": "integer"
+        }
+      },
+      "title": "LifecycleSettings",
+      "type": "object"
+    },
+    "LogFormat": {
+      "description": "Supported process log formats.",
+      "enum": [
+        "pretty",
+        "json"
+      ],
+      "title": "LogFormat",
+      "type": "string"
+    },
+    "LoggingSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "default": "INFO",
+          "title": "Level",
+          "type": "string"
+        },
+        "format": {
+          "$ref": "#/$defs/LogFormat",
+          "default": "pretty"
+        }
+      },
+      "title": "LoggingSettings",
+      "type": "object"
+    },
+    "MigrationSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "auto_migrate": {
+          "default": false,
+          "title": "Auto Migrate",
+          "type": "boolean"
+        },
+        "advisory_lock_timeout_seconds": {
+          "default": 900,
+          "exclusiveMinimum": 0,
+          "maximum": 86400,
+          "title": "Advisory Lock Timeout Seconds",
+          "type": "number"
+        },
+        "lock_timeout_seconds": {
+          "default": 3,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Lock Timeout Seconds",
+          "type": "number"
+        },
+        "statement_timeout_seconds": {
+          "default": 900,
+          "exclusiveMinimum": 0,
+          "maximum": 86400,
+          "title": "Statement Timeout Seconds",
+          "type": "number"
+        },
+        "idle_transaction_timeout_seconds": {
+          "default": 30,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Idle Transaction Timeout Seconds",
+          "type": "number"
+        }
+      },
+      "title": "MigrationSettings",
+      "type": "object"
+    },
+    "ModelsSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "private_endpoint_domains": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Private Endpoint Domains",
+          "type": "array"
+        },
+        "private_endpoint_cidrs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Private Endpoint Cidrs",
+          "type": "array"
+        },
+        "resolve_dns_on_save": {
+          "default": true,
+          "title": "Resolve Dns On Save",
+          "type": "boolean"
+        },
+        "connection_test_timeout_seconds": {
+          "default": 15,
+          "exclusiveMinimum": 0,
+          "maximum": 120,
+          "title": "Connection Test Timeout Seconds",
+          "type": "number"
+        }
+      },
+      "title": "ModelsSettings",
+      "type": "object"
+    },
+    "ObjectBackend": {
+      "enum": [
+        "s3",
+        "local"
+      ],
+      "title": "ObjectBackend",
+      "type": "string"
+    },
+    "ObjectsSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "publication_timeout_seconds": {
+          "default": 120,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Publication Timeout Seconds",
+          "type": "number"
+        },
+        "orphan_minimum_age_hours": {
+          "default": 24,
+          "maximum": 87600,
+          "minimum": 1,
+          "title": "Orphan Minimum Age Hours",
+          "type": "integer"
+        },
+        "backend": {
+          "$ref": "#/$defs/ObjectBackend",
+          "default": "local"
+        },
+        "local_root": {
+          "default": "var/objects",
+          "format": "path",
+          "title": "Local Root",
+          "type": "string"
+        },
+        "bucket": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bucket"
+        },
+        "region": {
+          "default": "us-east-1",
+          "minLength": 1,
+          "title": "Region",
+          "type": "string"
+        },
+        "endpoint_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Endpoint Url"
+        },
+        "force_path_style": {
+          "default": false,
+          "title": "Force Path Style",
+          "type": "boolean"
+        },
+        "connect_timeout_seconds": {
+          "default": 5,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Connect Timeout Seconds",
+          "type": "number"
+        },
+        "read_timeout_seconds": {
+          "default": 30,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Read Timeout Seconds",
+          "type": "number"
+        },
+        "compatibility_timeout_seconds": {
+          "default": 120,
+          "exclusiveMinimum": 0,
+          "maximum": 600,
+          "title": "Compatibility Timeout Seconds",
+          "type": "number"
+        },
+        "max_pool_connections": {
+          "default": 20,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Max Pool Connections",
+          "type": "integer"
+        },
+        "multipart_part_size": {
+          "default": 8388608,
+          "maximum": 67108864,
+          "minimum": 5242880,
+          "title": "Multipart Part Size",
+          "type": "integer"
+        },
+        "local_chunk_size": {
+          "default": 262144,
+          "maximum": 8388608,
+          "minimum": 4096,
+          "title": "Local Chunk Size",
+          "type": "integer"
+        }
+      },
+      "title": "ObjectsSettings",
+      "type": "object"
+    },
+    "ObservabilityQuerySettings": {
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "default": "none",
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Provider",
+          "type": "string"
+        },
+        "langfuse_base_url": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Langfuse Base Url"
+        },
+        "langfuse_public_key": {
+          "anyOf": [
+            {
+              "format": "password",
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string",
+              "writeOnly": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Langfuse Public Key"
+        },
+        "langfuse_secret_key": {
+          "anyOf": [
+            {
+              "format": "password",
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string",
+              "writeOnly": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Langfuse Secret Key"
+        }
+      },
+      "title": "ObservabilityQuerySettings",
+      "type": "object"
+    },
+    "ObservabilitySettings": {
+      "additionalProperties": false,
+      "properties": {
+        "tracing": {
+          "default": true,
+          "title": "Tracing",
+          "type": "boolean"
+        },
+        "trace_content": {
+          "$ref": "#/$defs/TraceContent",
+          "default": "none"
+        },
+        "query": {
+          "$ref": "#/$defs/ObservabilityQuerySettings"
+        }
+      },
+      "title": "ObservabilitySettings",
+      "type": "object"
+    },
+    "PluginsSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "keys": {
+          "default": [],
+          "items": {
+            "pattern": "^[a-z][a-z0-9_.-]{1,127}$",
+            "type": "string"
+          },
+          "maxItems": 128,
+          "title": "Keys",
+          "type": "array"
+        }
+      },
+      "title": "PluginsSettings",
+      "type": "object"
+    },
+    "PricingSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "auto_update": {
+          "default": true,
+          "title": "Auto Update",
+          "type": "boolean"
+        }
+      },
+      "title": "PricingSettings",
+      "type": "object"
+    },
+    "ProcessRole": {
+      "description": "Process roles supported by the shared service artifact.",
+      "enum": [
+        "all",
+        "control",
+        "worker",
+        "connectivity"
+      ],
+      "title": "ProcessRole",
+      "type": "string"
+    },
+    "RedisBackend": {
+      "enum": [
+        "redis",
+        "memory"
+      ],
+      "title": "RedisBackend",
+      "type": "string"
+    },
+    "RedisSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "$ref": "#/$defs/RedisBackend",
+          "default": "redis"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "format": "password",
+              "type": "string",
+              "writeOnly": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "**********",
+          "title": "Url"
+        },
+        "max_connections": {
+          "default": 20,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Max Connections",
+          "type": "integer"
+        },
+        "connect_timeout_seconds": {
+          "default": 5,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Connect Timeout Seconds",
+          "type": "number"
+        },
+        "command_timeout_seconds": {
+          "default": 10,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Command Timeout Seconds",
+          "type": "number"
+        },
+        "health_check_interval_seconds": {
+          "default": 30,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Health Check Interval Seconds",
+          "type": "number"
+        },
+        "cleanup_timeout_seconds": {
+          "default": 5,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "title": "Cleanup Timeout Seconds",
+          "type": "number"
+        }
+      },
+      "title": "RedisSettings",
+      "type": "object"
+    },
+    "RunsSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "stream_max_events": {
+          "default": 4096,
+          "maximum": 100000,
+          "minimum": 1,
+          "title": "Stream Max Events",
+          "type": "integer"
+        },
+        "stream_max_event_bytes": {
+          "default": 327680,
+          "maximum": 16777216,
+          "minimum": 1024,
+          "title": "Stream Max Event Bytes",
+          "type": "integer"
+        },
+        "stream_closed_ttl_seconds": {
+          "default": 86400,
+          "maximum": 31536000,
+          "minimum": 60,
+          "title": "Stream Closed Ttl Seconds",
+          "type": "integer"
+        },
+        "replay_max_events": {
+          "default": 4096,
+          "maximum": 100000,
+          "minimum": 1,
+          "title": "Replay Max Events",
+          "type": "integer"
+        },
+        "replay_max_items": {
+          "default": 2048,
+          "maximum": 100000,
+          "minimum": 1,
+          "title": "Replay Max Items",
+          "type": "integer"
+        },
+        "replay_max_bytes": {
+          "default": 16777216,
+          "maximum": 1073741824,
+          "minimum": 1024,
+          "title": "Replay Max Bytes",
+          "type": "integer"
+        }
+      },
+      "title": "RunsSettings",
+      "type": "object"
+    },
+    "SecretsSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "master_key_base64": {
+          "anyOf": [
+            {
+              "format": "password",
+              "type": "string",
+              "writeOnly": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Master Key Base64"
+        },
+        "encryption_key_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Encryption Key Id"
+        }
+      },
+      "title": "SecretsSettings",
+      "type": "object"
+    },
+    "ServiceSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "default": "a13n-service",
+          "title": "Name",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/ProcessRole",
+          "default": "all"
+        },
+        "host": {
+          "default": "127.0.0.1",
+          "title": "Host",
+          "type": "string"
+        },
+        "port": {
+          "default": 8000,
+          "maximum": 65535,
+          "minimum": 1,
+          "title": "Port",
+          "type": "integer"
+        },
+        "build_version": {
+          "default": "0.0.0",
+          "title": "Build Version",
+          "type": "string"
+        },
+        "deployment_environment_name": {
+          "default": "default",
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Deployment Environment Name",
+          "type": "string"
+        },
+        "instance_id": {
+          "anyOf": [
+            {
+              "maxLength": 1024,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Instance Id"
+        }
+      },
+      "title": "ServiceSettings",
+      "type": "object"
+    },
+    "SubagentsSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "reconcile_drain_seconds": {
+          "default": 30,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Reconcile Drain Seconds",
+          "type": "number"
+        },
+        "reconcile_poll_interval_seconds": {
+          "default": 1,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "title": "Reconcile Poll Interval Seconds",
+          "type": "number"
+        }
+      },
+      "title": "SubagentsSettings",
+      "type": "object"
+    },
+    "TraceContent": {
+      "description": "Deployment-level content selection mapped directly to Harness.",
+      "enum": [
+        "none",
+        "standard",
+        "full"
+      ],
+      "title": "TraceContent",
+      "type": "string"
+    },
+    "WebhooksSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "private_endpoint_domains": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Private Endpoint Domains",
+          "type": "array"
+        },
+        "private_endpoint_cidrs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Private Endpoint Cidrs",
+          "type": "array"
+        },
+        "poll_interval_seconds": {
+          "default": 1,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "title": "Poll Interval Seconds",
+          "type": "number"
+        },
+        "claim_lease_seconds": {
+          "default": 30,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Claim Lease Seconds",
+          "type": "number"
+        },
+        "claim_limit": {
+          "default": 25,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Claim Limit",
+          "type": "integer"
+        },
+        "max_attempts": {
+          "default": 10,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Max Attempts",
+          "type": "integer"
+        },
+        "retry_base_seconds": {
+          "default": 2,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Retry Base Seconds",
+          "type": "number"
+        },
+        "retry_max_seconds": {
+          "default": 300,
+          "exclusiveMinimum": 0,
+          "maximum": 86400,
+          "title": "Retry Max Seconds",
+          "type": "number"
+        },
+        "request_timeout_seconds": {
+          "default": 10,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Request Timeout Seconds",
+          "type": "number"
+        },
+        "max_response_bytes": {
+          "default": 65536,
+          "maximum": 16777216,
+          "minimum": 1,
+          "title": "Max Response Bytes",
+          "type": "integer"
+        }
+      },
+      "title": "WebhooksSettings",
+      "type": "object"
+    },
+    "WorkerSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "concurrency": {
+          "default": 8,
+          "maximum": 1024,
+          "minimum": 1,
+          "title": "Concurrency",
+          "type": "integer"
+        },
+        "poll_interval_seconds": {
+          "default": 1,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "title": "Poll Interval Seconds",
+          "type": "number"
+        },
+        "lease_seconds": {
+          "default": 30,
+          "maximum": 3600,
+          "minimum": 12,
+          "title": "Lease Seconds",
+          "type": "number"
+        },
+        "cleanup_seconds": {
+          "default": 10,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Cleanup Seconds",
+          "type": "number"
+        },
+        "drain_seconds": {
+          "default": 30,
+          "exclusiveMinimum": 0,
+          "maximum": 3600,
+          "title": "Drain Seconds",
+          "type": "number"
+        }
+      },
+      "title": "WorkerSettings",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Immutable effective configuration; input sources are resolved by load_settings.",
+  "properties": {
+    "service": {
+      "$ref": "#/$defs/ServiceSettings"
+    },
+    "iam": {
+      "$ref": "#/$defs/IamSettings"
+    },
+    "plugins": {
+      "$ref": "#/$defs/PluginsSettings"
+    },
+    "worker": {
+      "$ref": "#/$defs/WorkerSettings"
+    },
+    "subagents": {
+      "$ref": "#/$defs/SubagentsSettings"
+    },
+    "environments": {
+      "$ref": "#/$defs/EnvironmentsSettings"
+    },
+    "pricing": {
+      "$ref": "#/$defs/PricingSettings"
+    },
+    "observability": {
+      "$ref": "#/$defs/ObservabilitySettings"
+    },
+    "database": {
+      "$ref": "#/$defs/DatabaseSettings"
+    },
+    "models": {
+      "$ref": "#/$defs/ModelsSettings"
+    },
+    "webhooks": {
+      "$ref": "#/$defs/WebhooksSettings"
+    },
+    "lifecycle": {
+      "$ref": "#/$defs/LifecycleSettings"
+    },
+    "control": {
+      "$ref": "#/$defs/ControlSettings"
+    },
+    "assets": {
+      "$ref": "#/$defs/AssetsSettings"
+    },
+    "hooks": {
+      "$ref": "#/$defs/HooksSettings"
+    },
+    "objects": {
+      "$ref": "#/$defs/ObjectsSettings"
+    },
+    "runs": {
+      "$ref": "#/$defs/RunsSettings"
+    },
+    "gateway": {
+      "$ref": "#/$defs/GatewaySettings"
+    },
+    "secrets": {
+      "$ref": "#/$defs/SecretsSettings"
+    },
+    "connectivity": {
+      "$ref": "#/$defs/ConnectivitySettings"
+    },
+    "redis": {
+      "$ref": "#/$defs/RedisSettings"
+    },
+    "filesystem": {
+      "$ref": "#/$defs/FilesystemSettings"
+    },
+    "migration": {
+      "$ref": "#/$defs/MigrationSettings"
+    },
+    "logging": {
+      "$ref": "#/$defs/LoggingSettings"
+    }
+  },
+  "title": "Settings",
+  "type": "object"
+}

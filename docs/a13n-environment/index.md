@@ -4,16 +4,18 @@ Environment (`a13n-environment`) is a Python library for portable files, command
 
 ## Start here
 
-| Task                                                  | Guide                                                  |
-| ----------------------------------------------------- | ------------------------------------------------------ |
-| Read and write a file with no network dependencies    | [Getting started](getting-started.md)                  |
-| Choose local, sandbox, container, or remote execution | [Choose a backend](../environments/index.md)           |
-| Understand close, state, re-entry, and destruction    | [Lifecycle and state](lifecycle.md)                    |
-| Configure built-ins or implement a Provider           | [Providers](providers.md)                              |
-| Understand paths, search patterns, and output limits  | [Operations](operations.md)                            |
-| Run a complete built-in lifecycle                     | [Runnable examples](examples.md)                       |
-| Connect HTTP or reverse WebSocket Envd                | [Remote Envd](remote-envd.md)                          |
-| Expose Environment tools to an Agent                  | [Harness integration](../a13n-harness/environments.md) |
+| Task                                                        | Guide                                                  |
+| ----------------------------------------------------------- | ------------------------------------------------------ |
+| Read and write a file with no network dependencies          | [Getting started](getting-started.md)                  |
+| Choose local, sandbox, container, or remote execution       | [Choose a backend](../environments/index.md)           |
+| Understand close, state, re-entry, and destruction          | [Lifecycle and state](lifecycle.md)                    |
+| Configure built-ins, credentials, and runtime collaborators | [Provider configuration](configuration.md)             |
+| Implement a Provider or supply Host runtimes                | [Providers](providers.md)                              |
+| Run commands, inspect processes, and read retained output   | [Commands and processes](commands.md)                  |
+| Understand paths, search patterns, and output limits        | [Operations](operations.md)                            |
+| Run a complete built-in lifecycle                           | [Runnable examples](examples.md)                       |
+| Connect HTTP or reverse WebSocket Envd                      | [Remote Envd](remote-envd.md)                          |
+| Expose Environment tools to an Agent                        | [Harness integration](../a13n-harness/environments.md) |
 
 ## Three concepts
 

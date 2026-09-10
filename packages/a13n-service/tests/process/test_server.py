@@ -72,3 +72,64 @@ async def test_server_drains_application_before_waiting_for_active_http(local_se
             release.set()
             server.should_exit = True
             await asyncio.wait_for(serving, 5)
+
+
+@pytest.mark.parametrize("returns_normally", [False, True])
+async def test_critical_component_failure_after_readiness_stops_http(
+    local_settings, tmp_path, monkeypatch, returns_normally
+):
+    from a13n_service.environments.maintenance import EnvironmentMaintenanceLoop
+
+    fail_component = Event()
+
+    async def component(self):
+        try:
+            await fail_component.wait()
+            if not returns_normally:
+                raise RuntimeError("injected critical component failure")
+        finally:
+            self._stopped.set()
+
+    monkeypatch.setattr(EnvironmentMaintenanceLoop, "run", component)
+    app = create_app(local_settings(tmp_path))
+    server = ServiceServer(app)
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        origin = f"http://127.0.0.1:{listener.getsockname()[1]}"
+        serving = asyncio.create_task(server.serve(sockets=[listener]))
+        try:
+            with fail_after(10):
+                while not server.started:
+                    assert not serving.done(), "Server exited before startup"
+                    await asyncio.sleep(0.01)
+                async with httpx2.AsyncClient(base_url=origin, trust_env=False) as client:
+                    assert (await client.get("/readyz")).status_code == 200
+                    fail_component.set()
+                    await serving
+                    assert not app.state.runtime.status.startup_complete
+                    assert app.state.runtime.status.draining
+                    with pytest.raises(httpx2.ConnectError):
+                        await client.get("/healthz")
+        finally:
+            fail_component.set()
+            server.should_exit = True
+            await asyncio.wait_for(serving, 5)
+
+
+@pytest.mark.parametrize("failed", [False, True])
+async def test_entrypoint_exit_code_reports_lifespan_failure(local_settings, tmp_path, monkeypatch, failed):
+    from types import SimpleNamespace
+
+    from a13n_service.process.server import serve_app
+
+    def run(server):
+        server.lifespan = SimpleNamespace(error_occurred=failed)
+
+    monkeypatch.setattr(ServiceServer, "run", run)
+    app = create_app(local_settings(tmp_path))
+    if failed:
+        with pytest.raises(SystemExit) as caught:
+            serve_app(app)
+        assert caught.value.code == 1
+    else:
+        serve_app(app)

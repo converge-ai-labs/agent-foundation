@@ -139,6 +139,10 @@ live-test-local: sync ## Run first-round HTTP journeys with owned Docker depende
 live-test-round-two: sync ## Run isolated HTTP fault/recovery journeys with Docker dependencies
 	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests --live-round-two -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)
 
+.PHONY: live-test-performance
+live-test-performance: sync ## Measure long-session latency with disposable PG, Redis and S3
+	@uv run --locked python -m pytest dev/live_tests/test_36_long_session.py --live-performance -v --tb=short -o log_cli=true -o log_cli_level=INFO --log-disable=httpx2 $(LIVE_TEST_ARGS)
+
 live-test-management: sync ## Run isolated Service/Harness management journeys with Docker dependencies
 	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests --live-management -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)
 

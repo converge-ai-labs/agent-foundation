@@ -64,7 +64,7 @@ def listing():
 
 def assert_missing(observation, filename):
     result = last_tool_result(observation)
-    assert result["ok"] is True and result["has_more"] is False, result
+    assert result.get("ok") is True and result.get("has_more") is False, result
     assert filename not in {entry["path"].rsplit("/", 1)[-1] for entry in result["entries"]}, result
 
 

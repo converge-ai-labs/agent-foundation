@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -7,7 +8,7 @@ import pytest
 from a13n_harness import HarnessInstrumentation, HarnessTraceContent
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
-from a13n_harness_ui.observation import HarnessUiSpanProcessor, UiObservation, open_observation
+from a13n_harness_ui.observation import UiObservation, open_observation
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.surfaces import RootOperationStatus
 from opentelemetry import trace
@@ -31,7 +32,6 @@ def isolated_observation_environment(monkeypatch):
 def telemetry():
     exporter = InMemorySpanExporter()
     provider = TracerProvider(shutdown_on_exit=False)
-    provider.add_span_processor(HarnessUiSpanProcessor())
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     yield provider, exporter
     provider.shutdown()
@@ -87,6 +87,17 @@ async def test_app_trace_covers_real_harness_and_saved_continuation(tmp_path, mo
     assert any(span.attributes.get("gen_ai.operation.name") == "chat" for span in spans)
     assert all(span.attributes["langfuse.session.id"] == thread.thread_id for span in spans)
     assert "private test prompt" not in str(host.attributes)
+    captured = json.loads(host.attributes["a13n.ui.configuration"])
+    assert captured["agent"]["id"] == "agent-test"
+    assert captured["model"]["id"] == "model-test"
+    assert captured["model"]["route"] == "openai:gpt-5"
+    assert captured["model"]["authentication_kind"] == "api_key"
+    assert captured["capabilities"]["count"] > 0
+    assert "TEST_MODEL_KEY" not in host.attributes["a13n.ui.configuration"]
+    for descendant in spans:
+        if descendant is not host:
+            assert "a13n.ui.configuration" not in descendant.attributes
+            assert "langfuse.observation.metadata.configuration" not in descendant.attributes
     assert trace.get_tracer_provider() is original_global
     with provider.get_tracer("embedding").start_as_current_span("after-app"):
         pass
@@ -142,7 +153,9 @@ async def test_linked_child_starts_new_trace_and_retains_dispatch_link(telemetry
         with observation.operation(
             "subagent", thread_id="thread-child", operation_id="execution-child", linked=True
         ) as child:
-            with provider.get_tracer("a13n-harness").start_as_current_span("harness.run"):
+            with observation.instrumentation.get_tracer("a13n-harness").start_as_current_span(
+                "harness.run", attributes={"a13n.thread.id": "thread-child"}
+            ):
                 pass
     spans = exporter.get_finished_spans()
     child_span = next(span for span in spans if span.name == "harness_ui.subagent")
@@ -167,18 +180,21 @@ async def test_preparation_failure_is_visible_without_a_harness_run(tmp_path, mo
     async with open_harness_ui_app(
         settings,
         configuration_path=configuration(tmp_path),
-        instrumentation=HarnessInstrumentation(tracer_provider=provider),
+        instrumentation=HarnessInstrumentation(tracer_provider=provider, trace_content=HarnessTraceContent.NONE),
     ) as app:
         thread = await app.create_thread()
         receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="not captured")
         result = await app.wait_root_operation(receipt.receipt_id)
         assert result.status is RootOperationStatus.failed
     spans = exporter.get_finished_spans()
-    assert len(spans) == 1
-    assert spans[0].name == "harness_ui.root"
-    assert spans[0].status.status_code is StatusCode.ERROR
-    assert spans[0].attributes["a13n.ui.operation.status"] == "failed"
-    assert "not captured" not in str(spans[0].attributes)
+    assert [span.name for span in spans] == ["harness_ui.prepare", "harness_ui.root"]
+    preparation, root = spans
+    assert preparation.parent.span_id == root.context.span_id
+    assert preparation.attributes["a13n.phase.step"] == "configuration"
+    assert preparation.status.status_code is StatusCode.ERROR
+    assert root.status.status_code is StatusCode.ERROR
+    assert root.attributes["a13n.ui.operation.status"] == "failed"
+    assert "not captured" not in str(root.attributes)
 
 
 @pytest.mark.parametrize("selection", [None, "off"])
@@ -228,7 +244,7 @@ async def test_child_host_status_preserves_cancellation_and_reports_persistence_
     events = (RunErrorEvent(message="not exported", code=event_code),)
 
     async def consume(*args):
-        return SimpleNamespace(status=result_status, run_id="run-test"), None, events
+        return SimpleNamespace(status=result_status, run_id="run-test", output=None), None, events
 
     async def finish(*args):
         return events
@@ -291,3 +307,295 @@ async def test_exporter_shutdown_failure_does_not_replace_application_failure(mo
             raise ValueError("application error")
     assert "trace shutdown failed" in caplog.text
     assert "private exporter error" not in caplog.text
+
+
+async def test_child_resume_lineage_reaches_native_spans_without_merging_sessions(telemetry):
+    from a13n_harness import HarnessBuilder
+    from a13n_harness_ui.observation import finish_operation
+    from pydantic_ai.agent.spec import AgentSpec
+    from pydantic_ai.models.test import TestModel
+
+    provider, exporter = telemetry
+    instrumentation = HarnessInstrumentation(tracer_provider=provider, trace_content=HarnessTraceContent.NONE)
+    observation = UiObservation(instrumentation)
+    executable = HarnessBuilder(instrumentation=instrumentation).build(
+        AgentSpec(name="reviewer"), model=TestModel(), output_type=str
+    )
+    state = None
+    for index in range(2):
+        with observation.operation("root", thread_id="thread-root", operation_id=f"receipt-{index}") as parent:
+            with observation.operation(
+                "subagent",
+                thread_id=state.thread_id if state is not None else "thread_child",
+                operation_id=f"execution-{index}",
+                linked=True,
+                root_thread_id="thread-root",
+                parent_thread_id="thread-root",
+                subagent_role="reviewer",
+                segment_index=index,
+                resumed_from_execution_id="execution-0" if index else None,
+            ) as child:
+                # Use an actual stable Harness Thread for both execution segments.
+                from a13n_harness import HarnessState
+
+                if state is None:
+                    state = HarnessState.new(thread_id="thread_child")
+                result = await executable.run("fictional review", previous_state=state)
+                state = result.state
+                finish_operation(child, status="succeeded", run_id=result.run_id)
+            assert child.get_span_context().trace_id != parent.get_span_context().trace_id
+    child_spans = [span for span in exporter.get_finished_spans() if span.name == "harness_ui.subagent"]
+    assert len(child_spans) == 2
+    assert child_spans[0].context.trace_id != child_spans[1].context.trace_id
+    for index, root in enumerate(child_spans):
+        assert root.parent is None
+        assert len(root.links) == 1
+        descendants = [span for span in exporter.get_finished_spans() if span.context.trace_id == root.context.trace_id]
+        assert len(descendants) >= 4
+        for span in descendants:
+            attrs = span.attributes
+            assert attrs["langfuse.session.id"] == "thread_child"
+            assert attrs["langfuse.trace.tags"] == ("harness-ui", "subagent")
+            assert attrs["langfuse.observation.metadata.root_thread_id"] == "thread-root"
+            assert attrs["langfuse.observation.metadata.parent_thread_id"] == "thread-root"
+            assert attrs["langfuse.observation.metadata.subagent_role"] == "reviewer"
+            assert attrs["langfuse.observation.metadata.execution_id"] == f"execution-{index}"
+            assert attrs["langfuse.observation.metadata.segment_index"] == str(index)
+            if index:
+                assert attrs["langfuse.observation.metadata.resumed_from_execution_id"] == "execution-0"
+            else:
+                assert "langfuse.observation.metadata.resumed_from_execution_id" not in attrs
+            if span is not root:
+                assert "a13n.ui.operation.status" not in attrs
+
+
+async def test_external_task_cancellation_is_not_a_ui_operation_error(telemetry):
+    from anyio import get_cancelled_exc_class
+
+    provider, exporter = telemetry
+    observation = UiObservation(HarnessInstrumentation(tracer_provider=provider))
+    with pytest.raises(get_cancelled_exc_class()):
+        with observation.operation("root", thread_id="thread-test", operation_id="receipt-test"):
+            raise get_cancelled_exc_class()()
+    span = exporter.get_finished_spans()[0]
+    assert span.status.status_code is StatusCode.UNSET
+    assert span.attributes["a13n.ui.operation.status"] == "cancelled"
+    assert "error.type" not in span.attributes
+
+
+def captured_configuration():
+    from a13n_harness_ui.composition import ResolvedRunComposition
+
+    return ResolvedRunComposition.model_validate(
+        {
+            "package_prompt_revision": "test-prompt-revision",
+            "generation_digest": "a" * 64,
+            "thread_id": "thread-test",
+            "thread_configuration_version": 2,
+            "root": {
+                "source_kind": "agent",
+                "source_id": "agent-test",
+                "roster_name": "test",
+                "instructions": ["PRIVATE_INSTRUCTIONS"],
+                "global_guidance": ["PRIVATE_GUIDANCE"],
+                "model": {
+                    "model_id": "model-test",
+                    "route": "openai:gpt-5",
+                    "authentication": {"kind": "api_key", "env": "PRIVATE_CREDENTIAL_REFERENCE"},
+                    "settings": {
+                        "max_tokens": 1000,
+                        "temperature": 0.2,
+                        "parallel_tool_calls": False,
+                        "openai_reasoning_effort": "high",
+                        "extra_headers": {"Authorization": "PRIVATE_HEADER"},
+                        "extra_body": {"secret": "PRIVATE_BODY"},
+                        "stop_sequences": ["PRIVATE_STOP"],
+                    },
+                    "model_configuration": {"base_url": "https://PRIVATE_ENDPOINT", "api_key": "PRIVATE_KEY"},
+                },
+                "harness_plugins": [
+                    {"plugin_id": "plugin-test", "plugin_key": "test", "configuration": {"secret": "PRIVATE_PLUGIN"}}
+                ],
+            },
+            "environment_profile": {
+                "profile_id": "environment-test",
+                "behavior_digest": "b" * 64,
+                "provider_key": "Native",
+                "provider_schema_version": "1",
+                "adapter_key": "DirectLocal",
+                "provider_configuration": {"root": "/PRIVATE_ROOT"},
+                "adapter_configuration": {"token": "PRIVATE_ADAPTER"},
+            },
+        }
+    )
+
+
+async def test_configuration_snapshot_is_allowlisted_bounded_and_operation_local(telemetry):
+    from a13n_harness_ui.observation import record_configuration
+
+    provider, exporter = telemetry
+    instrumentation = HarnessInstrumentation(tracer_provider=provider, trace_content=HarnessTraceContent.NONE)
+    observation = UiObservation(instrumentation)
+    composition = captured_configuration()
+    with observation.operation("root", thread_id="thread-test", operation_id="receipt-test"):
+        record_configuration(composition, [f"capability-{index}" for index in range(128)])
+        # Disabling an inner operation cannot overwrite the recorded outer snapshot.
+        with UiObservation(None).operation("root", thread_id="thread-disabled", operation_id="receipt-disabled"):
+            record_configuration(composition, [])
+        with instrumentation.get_tracer("test").start_as_current_span(
+            "model", attributes={"gen_ai.operation.name": "chat"}
+        ):
+            pass
+        child_model = composition.root.model.model_copy(
+            update={"model_id": "model-child", "settings": {"temperature": 0.7}}
+        )
+        child = composition.model_copy(update={"root": composition.root.model_copy(update={"model": child_model})})
+        with observation.operation("subagent", thread_id="thread-child", operation_id="execution-child", linked=True):
+            record_configuration(child, ["child-capability"])
+    roots = {span.name: span for span in exporter.get_finished_spans()}
+    root_json = roots["harness_ui.root"].attributes["a13n.ui.configuration"]
+    assert "PRIVATE_" not in root_json
+    assert len(root_json.encode()) <= 8192
+    summary = json.loads(root_json)
+    assert summary["thread_configuration_version"] == 2
+    assert summary["model"]["settings"] == {
+        "max_tokens": 1000,
+        "temperature": 0.2,
+        "parallel_tool_calls": False,
+        "openai_reasoning_effort": "high",
+    }
+    assert summary["capabilities"]["count"] == 128
+    assert summary["capabilities"]["omitted"] == 112
+    assert summary["environment"] == {"profile": "environment-test", "provider": "Native", "adapter": "DirectLocal"}
+    assert json.loads(roots["harness_ui.subagent"].attributes["a13n.ui.configuration"])["model"]["id"] == "model-child"
+    assert "a13n.ui.configuration" not in roots["model"].attributes
+    assert "langfuse.observation.metadata.configuration" not in roots["model"].attributes
+
+
+async def test_disabled_and_unrecorded_operations_do_not_compute_configuration(monkeypatch):
+    from a13n_harness_ui import observation as module
+    from opentelemetry.sdk.trace.sampling import ALWAYS_OFF
+
+    def unexpected(*args):
+        pytest.fail("disabled operation computed a configuration snapshot")
+
+    monkeypatch.setattr(module, "_configuration_summary", unexpected)
+    for instrumentation in (None, HarnessInstrumentation(tracer_provider=TracerProvider(sampler=ALWAYS_OFF))):
+        with UiObservation(instrumentation).operation("root", thread_id="thread-test", operation_id="receipt-test"):
+            module.record_configuration(captured_configuration(), [])
+
+
+@pytest.mark.parametrize("content", list(HarnessTraceContent))
+async def test_root_io_and_host_phases_are_local_to_operation(tmp_path, monkeypatch, telemetry, content):
+    provider, exporter = telemetry
+    await install_model(monkeypatch)
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    async with open_harness_ui_app(
+        settings,
+        configuration_path=configuration(tmp_path),
+        instrumentation=HarnessInstrumentation(tracer_provider=provider, trace_content=content),
+    ) as app:
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="this turn input")
+        result = await app.wait_root_operation(receipt.receipt_id)
+        assert result.status is RootOperationStatus.completed
+    spans = exporter.get_finished_spans()
+    root = next(span for span in spans if span.name == "harness_ui.root")
+    prepare = next(span for span in spans if span.name == "harness_ui.prepare")
+    harness = next(span for span in spans if span.name == "harness.run")
+    finalize = next(span for span in spans if span.name == "harness_ui.finalize")
+    assert prepare.parent.span_id == harness.parent.span_id == finalize.parent.span_id == root.context.span_id
+    assert prepare.end_time <= harness.start_time < harness.end_time <= finalize.start_time
+    assert finalize.attributes["a13n.ui.continuation.status"] == "selected"
+    assert root.attributes["a13n.output.kind"] == "completed"
+    if content is HarnessTraceContent.NONE:
+        assert "a13n.input" not in root.attributes and "a13n.output" not in root.attributes
+    else:
+        assert json.loads(root.attributes["langfuse.observation.input"]) == "this turn input"
+        assert json.loads(root.attributes["langfuse.observation.output"]) == "observation test completed"
+    for span in spans:
+        if span is not root:
+            assert "langfuse.trace.input" not in span.attributes
+            assert "langfuse.trace.output" not in span.attributes
+
+
+async def test_root_preserves_answer_but_marks_failed_save(tmp_path, monkeypatch, telemetry):
+    from a13n_harness_ui.root_execution import RootContinuationSelection, RootRunExecutor
+
+    provider, exporter = telemetry
+    await install_model(monkeypatch)
+
+    async def fail_save(self, **kwargs):
+        return RootContinuationSelection(status="failed", error=ValueError("private save detail"))
+
+    monkeypatch.setattr(RootRunExecutor, "_select_state", fail_save)
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    async with open_harness_ui_app(
+        settings,
+        configuration_path=configuration(tmp_path),
+        instrumentation=HarnessInstrumentation(tracer_provider=provider),
+    ) as app:
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="hello")
+        result = await app.wait_root_operation(receipt.receipt_id)
+        assert result.status is RootOperationStatus.failed
+    spans = exporter.get_finished_spans()
+    root = next(span for span in spans if span.name == "harness_ui.root")
+    finalize = next(span for span in spans if span.name == "harness_ui.finalize")
+    assert json.loads(root.attributes["a13n.output"]) == "observation test completed"
+    assert root.attributes["a13n.output.kind"] == "failed"
+    assert finalize.status.status_code is StatusCode.ERROR
+    assert finalize.attributes["a13n.ui.continuation.status"] == "failed"
+    assert "private save detail" not in str(finalize.attributes)
+
+
+async def test_skill_summary_ignores_child_thread_and_unrelated_events(telemetry):
+    from datetime import UTC, datetime
+
+    from a13n_harness import HarnessEvent, HarnessExtensionEvent
+    from a13n_harness_ui.observation import record_skill_event
+
+    provider, exporter = telemetry
+
+    def event(thread, payload):
+        return HarnessEvent(
+            thread_id=thread,
+            run_id="run-test",
+            sequence=0,
+            occurred_at=datetime.now(UTC),
+            event=HarnessExtensionEvent(kind="context", payload=payload),
+        )
+
+    with UiObservation(HarnessInstrumentation(tracer_provider=provider)).operation(
+        "root", thread_id="thread-parent", operation_id="receipt-test"
+    ):
+        record_skill_event(
+            event("thread-parent", {"type": "skills_catalog_resolved", "skills": ["review"], "skill_count": 1})
+        )
+        record_skill_event(event("thread-child", {"type": "skill_accessed", "skill_name": "child-only"}))
+        record_skill_event(event("thread-parent", {"type": "skill_accessed", "skill_name": "review"}))
+        record_skill_event(event("thread-parent", "unrelated context payload"))
+        with UiObservation(None).operation("root", thread_id="thread-parent", operation_id="disabled"):
+            record_skill_event(event("thread-parent", {"type": "skill_accessed", "skill_name": "disabled"}))
+    attributes = exporter.get_finished_spans()[-1].attributes
+    assert attributes["a13n.skills.available"] == ("review",)
+    assert attributes["a13n.skills.accessed"] == ("review",)
+    assert attributes["a13n.skills.access_count"] == 1
+
+
+async def test_automatic_provider_uses_explicit_local_deployment_resource(monkeypatch):
+    exporter = InMemorySpanExporter()
+    monkeypatch.setattr(trace, "get_tracer_provider", lambda: ProxyTracerProvider())
+    monkeypatch.setattr("a13n_harness_ui.observation.OTLPSpanExporter", lambda: exporter)
+    monkeypatch.setenv("A13N_HARNESS_TRACE_LEVEL", "verbose")
+    monkeypatch.setenv("OTEL_TRACES_EXPORTER", "otlp")
+    monkeypatch.setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment.name=local")
+    async with open_observation() as observation:
+        with observation.operation("root", thread_id="thread-root", operation_id="receipt-test"):
+            with observation.operation(
+                "subagent", thread_id="thread-child", operation_id="execution-test", linked=True
+            ):
+                pass
+    assert all(
+        span.resource.attributes["deployment.environment.name"] == "local" for span in exporter.get_finished_spans()
+    )

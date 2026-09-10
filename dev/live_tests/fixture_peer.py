@@ -52,19 +52,30 @@ def certificate_context(config):
     return ssl.create_default_context(cafile=config["peer_ca_bundle"])
 
 
-def main():
-    config = load_config()
+def peer_app(config):
     app = FastAPI()
     app.include_router(
         connectivity_router(Path(config["workspace_root"]), {**config, "control_url": config["peer_url"]})
     )
+    if "run_faults" in config:
+        from .fixture_model import fixture_router
+        from .host import bearer_authenticator
+
+        # A bare upstream preserves abrupt streaming disconnects. Service's
+        # HTTP middleware can turn a generator error into a graceful HTTP EOF.
+        app.include_router(fixture_router(Path(config["workspace_root"]), bearer_authenticator(config)))
 
     @app.get("/readyz")
     async def ready():
         return {"status": "ready", "role": "test-peer"}
 
+    return app
+
+
+def main():
+    config = load_config()
     uvicorn.run(
-        app,
+        peer_app(config),
         host="127.0.0.1",
         port=urlsplit(config["peer_url"]).port,
         ssl_keyfile=config["peer_key"],

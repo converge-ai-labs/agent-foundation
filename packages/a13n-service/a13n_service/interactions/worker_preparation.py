@@ -35,6 +35,7 @@ from a13n_service.environments.runtime import prepare_run_environment, validate_
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.models.runtime import SnapshotRunModelResolver
+from a13n_service.observability import observe_input
 from a13n_service.search.runtime import SearchRuntime, graph_uses_search
 from a13n_service.secrets.agent_inputs import graph_secret_requirements
 from a13n_service.secrets.agent_runtime import AgentSecretRuntime, BoundAgentSecrets
@@ -246,6 +247,7 @@ class WorkerAttemptPreparer:
                 if run.input_object is None
                 else (await self._payloads.read(run.organization_id, run.input_object)).payload
             )
+            observe_input(payload)
             if run.input_kind is RunInputKind.agent_input:
                 accepted = AcceptedAgentInput.model_validate(payload)
             elif run.input_kind in {RunInputKind.waiting_feedback, RunInputKind.waiting_continue}:

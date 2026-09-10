@@ -9,6 +9,7 @@ on:
       - "packages/a13n-envd-client/**"
       - "packages/a13n-environment/**"
       - "packages/a13n-harness/**"
+      - "packages/a13n-logging/**"
       - "packages/a13n-stream-protocol/**"
       - "pyproject.toml"
       - "scripts/check-a13n-distributions.py"
@@ -22,6 +23,7 @@ on:
       - "packages/a13n-envd-client/**"
       - "packages/a13n-environment/**"
       - "packages/a13n-harness/**"
+      - "packages/a13n-logging/**"
       - "packages/a13n-stream-protocol/**"
       - "pyproject.toml"
       - "scripts/check-a13n-distributions.py"
@@ -79,6 +81,7 @@ jobs:
       - name: Build Harness libraries and local distribution dependencies
         run: |
           uv build --package a13n-envd-client --out-dir dist/harness
+          uv build --package a13n-logging --out-dir dist/harness
           uv build --package a13n-environment --out-dir dist/harness
           uv build --package a13n-harness --out-dir dist/harness
           uv build --package a13n-stream-protocol --out-dir dist/harness

@@ -51,6 +51,15 @@ root traces and a separately linked child trace, not one lifetime-long Thread
 trace. The local `.env` enables standard content capture of these fictional
 inputs.
 
+## Deployment environment
+
+The committed template sets `OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=local`.
+This labels new root and child traces as `local`; it is independent of execution
+Environment profiles, providers, and mount names. For an existing private `.env`,
+merge this attribute without replacing credentials or other resource attributes,
+then restart the CLI/App. Exported shell values take precedence. An embedding
+Host must set the resource on its own provider. Existing traces are not relabeled.
+
 ## Try Logfire
 
 The private `.env` template contains a commented working OTLP configuration for

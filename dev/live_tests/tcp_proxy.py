@@ -11,6 +11,7 @@ class TCPProxy:
         self.host, self.port = host, port
         self.blocked = False
         self.rejected = 0
+        self.connections = 0
         self.writers = set()
         self.tasks = set()
 
@@ -22,10 +23,12 @@ class TCPProxy:
             yield self
         finally:
             server.close()
-            await server.wait_closed()
             self.cut()
             if self.tasks:
+                for task in tuple(self.tasks):
+                    task.cancel()
                 await asyncio.gather(*self.tasks, return_exceptions=True)
+            await server.wait_closed()
 
     def cut(self):
         self.blocked = True
@@ -48,11 +51,12 @@ class TCPProxy:
             if self.blocked:
                 self.rejected += 1
                 return
-            upstream_reader, upstream = await asyncio.wait_for(asyncio.open_connection(self.host, self.port), 3)
+            upstream_reader, upstream = await asyncio.wait_for(self._open_upstream(), 3)
             self.writers.add(upstream)
             if self.blocked:
                 self.rejected += 1
                 return
+            self.connections += 1
             pumps = [
                 asyncio.create_task(self._copy(reader, upstream)),
                 asyncio.create_task(self._copy(upstream_reader, writer)),
@@ -71,9 +75,12 @@ class TCPProxy:
                     self.writers.discard(stream)
                     stream.close()
                     try:
-                        await stream.wait_closed()
-                    except (ConnectionError, OSError):
+                        await asyncio.wait_for(stream.wait_closed(), 2)
+                    except (ConnectionError, OSError, TimeoutError):
                         pass
+
+    async def _open_upstream(self):
+        return await asyncio.open_connection(self.host, self.port)
 
     @staticmethod
     async def _copy(reader, writer):

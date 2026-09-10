@@ -58,13 +58,13 @@ cd agent-foundation
 make a13n-harness-ui
 ```
 
-Follow the repository [contribution guide](https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md) for development prerequisites. The Make target synchronizes dependencies and disables the published-package startup check. After switching branches, run it again or use `make sync`.
+Follow the repository [contribution guide](https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md) for development prerequisites. The Make target synchronizes dependencies and disables the published-package startup check. After switching branches, run it again or use `make sync`. After editing UI documentation or navigation, run `make a13n-harness-ui-skills` to refresh the [bundled configuration Skill](skills-and-content-plugins.md#built-in-configuration-skill); the launch target already includes that dependency.
 
 Source documentation tracks `main`. When using a published wheel, consult the documentation and metadata for that release if an API or setting differs.
 
 ## Other interfaces
 
-The installed wheel also contains the browser assets. `a13n-harness-ui webui` runs a foreground HTTP server with an authentication/status page; browser conversation and management controls are not implemented. Container and listener configuration are covered under [Browser UI](automation-and-troubleshooting.md#browser-ui).
+The installed wheel also contains the browser assets. `a13n-harness-ui webui` runs a foreground HTTP server with an authentication/status page; browser conversation and management controls are not implemented. Container and listener configuration are covered under [Browser UI](webui.md).
 
 ## Next step
 

@@ -29,10 +29,29 @@ from a13n_environment import (
     EnvironmentState,
 )
 from a13n_environment.docker import provider as provider_module
+from a13n_environment.docker import runtime as runtime_module
 
 pytestmark = pytest.mark.anyio
 
 _IMAGE_ID = f"sha256:{'1' * 64}"
+
+
+@pytest.mark.parametrize("platform", ["darwin", "linux"])
+def test_native_mount_inspection_preserves_volume_identity_and_host_bind_paths(monkeypatch, platform):
+    monkeypatch.setattr(runtime_module.sys, "platform", platform)
+    assert (
+        runtime_module._mount_source(
+            {"Type": "volume", "Name": "external", "Source": "/var/lib/docker/volumes/external/_data"}
+        )
+        == "external"
+    )
+    assert runtime_module._mount_source({"Type": "volume", "Source": "/var/lib/docker/volumes/external/_data"}) == ""
+    assert (
+        runtime_module._mount_source({"Type": "bind", "Source": "/Users/owner/workspace"}) == "/Users/owner/workspace"
+    )
+    assert runtime_module._mount_source({"Type": "bind", "Source": "/host_mnt/Users/owner/workspace"}) == (
+        "/Users/owner/workspace" if platform == "darwin" else "/host_mnt/Users/owner/workspace"
+    )
 
 
 async def test_docker_retries_connection_failures_with_fresh_sources(monkeypatch) -> None:

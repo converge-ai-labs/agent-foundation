@@ -484,7 +484,7 @@ impl ResourceRegistry {
                     mount.create_dir(&prefix).map_err(map_mount_error)?;
                     created += 1;
                 }
-                Err(_) => return Err(ResourceError::Io),
+                Err(error) => return Err(map_mount_error(MountPathError::from_io(error))),
             }
         }
         let metadata = mount
@@ -1033,7 +1033,7 @@ fn read_children_counting(
     let reader = mount
         .root
         .read_dir(directory)
-        .map_err(|_| ResourceError::Io)?;
+        .map_err(|error| map_mount_error(MountPathError::from_io(error)))?;
     let mut children = Vec::new();
     let mut omitted = 0_u64;
     for entry in reader {

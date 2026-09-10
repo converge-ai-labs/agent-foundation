@@ -74,6 +74,12 @@ def connectivity_router(root, config):
             }
         elif method == "tools/call":
             assert body["params"]["name"] in {"live_echo", "live_forbidden"}
+            if "run_faults" in config:
+                from .run_fault_mcp import fault_result
+
+                fault = await fault_result(root, body)
+                if fault is not None:
+                    return {"jsonrpc": "2.0", "id": body["id"], "result": fault}
             result = {
                 "content": [{"type": "text", "text": "REMOTE:" + body["params"]["arguments"]["value"]}],
                 "isError": False,

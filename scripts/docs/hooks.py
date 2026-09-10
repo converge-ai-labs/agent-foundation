@@ -19,6 +19,9 @@ def on_files(files: Files, config: MkDocsConfig) -> Files:
         "assets/a13n/SpaceGrotesk-Bold.woff2": UI / "brand/SpaceGrotesk-Bold.woff2",
         "assets/a13n/SpaceGrotesk-OFL.txt": UI / "brand/SpaceGrotesk-OFL.txt",
         "assets/a13n/lucide-LICENSE": THEME / "lucide-LICENSE",
+        "assets/reference/service-openapi.json": ROOT / "sdk/typescript/openapi.json",
+        "assets/reference/harness-ui-openapi.json": ROOT / "frontend/apps/a13n-harness-ui/src/openapi.json",
+        "assets/reference/service-settings.json": THEME / "service-settings.schema.json",
     }
     stylesheet = (THEME / "theme.css").read_text(encoding="utf-8")
     for icon in sorted((THEME / "theme/.icons/lucide").glob("*.svg")):

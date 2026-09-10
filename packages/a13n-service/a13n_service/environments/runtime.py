@@ -19,6 +19,7 @@ from a13n_logging import get_logger
 from anyio import fail_after
 
 from a13n_service.interactions.models import RunRecord
+from a13n_service.observability import observe_phase
 from a13n_service.storage import short_session
 
 from .configuration import load_configuration
@@ -88,6 +89,23 @@ class RunEnvironment(Environment):
         return self._delegate.operations if self._delegate else EnvironmentOperations()
 
     async def _prepare(
+        self, *, thread_id: str, run_id: str, agent_instance_id: str, mount_id: str, host_refs: Mapping[str, str]
+    ) -> None:
+        # This boundary runs for eager preparation, first use, and target recovery.
+        with observe_phase("a13n.service.environment.prepare") as span:
+            if span is not None:
+                span.set_attribute("a13n.environment.id", self.environment_id)
+            await self._prepare_target(
+                thread_id=thread_id,
+                run_id=run_id,
+                agent_instance_id=agent_instance_id,
+                mount_id=mount_id,
+                host_refs=host_refs,
+            )
+            if span is not None:
+                span.set_attribute("a13n.environment.generation", self.backing_generation)
+
+    async def _prepare_target(
         self, *, thread_id: str, run_id: str, agent_instance_id: str, mount_id: str, host_refs: Mapping[str, str]
     ) -> None:
         delay = 0.1

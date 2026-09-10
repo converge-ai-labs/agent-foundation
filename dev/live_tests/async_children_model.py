@@ -11,16 +11,19 @@ from .round_two_model import tool_call
 
 async def gate(path, name, release):
     await anyio.Path(path / name).touch()
+    releases = (release,) if isinstance(release, str) else release
     with anyio.fail_after(180):
-        while not any((path / value).exists() for value in (release, "release")):
+        while not any((path / value).exists() for value in (*releases, "release")):
             await anyio.sleep(0.05)
 
 
 async def response(case, path, body, texts, tool_messages):
+    async with await anyio.Path(path / "observations.jsonl").open("a") as output:
+        await output.write(json.dumps({"body": body}) + "\n")
     child = next((match for text in texts if (match := re.search(r"^LIVE_CHILD ([01])$", text, re.MULTILINE))), None)
     if child:
         index = child[1]
-        await gate(path, f"child_{index}_started", "children_release")
+        await gate(path, f"child_{index}_started", (f"child_{index}_release", "children_release"))
         return None, f"CHILD_RESULT_{index}_{case.token}"
     deliveries = [
         json.loads(match)["child_run_id"]

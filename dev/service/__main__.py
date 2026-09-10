@@ -12,6 +12,7 @@ from a13n_service.configuration.sources import load_settings
 from a13n_service.database import DatabaseMigrator
 from a13n_service.log import configure_logging
 
+from .docker import ensure_docker
 from .environment import LOCAL_CONFIG, ROOT, Environment
 from .langfuse import USER_EMAIL, USER_PASSWORD, Langfuse, local_traces
 from .reset import reset
@@ -45,6 +46,7 @@ def setup(environment: Environment, langfuse: Langfuse, config: Path) -> None:
         if environment.incomplete.exists():
             raise ValueError("The previous reset did not complete; rerun make dev-reset with the intended STATE")
         langfuse.validate()
+        ensure_docker()
         environment.compose("up", "-d", "--wait")
         langfuse.start()
         DatabaseMigrator(environment.settings.database_config(), environment.settings.migration_config()).upgrade()

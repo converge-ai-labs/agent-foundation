@@ -6,14 +6,16 @@ It does not run an Agent, store conversations, or provide a browser API. Use [Ha
 
 ## Choose your path
 
-| Situation                                  | Start here                                                                          |
-| ------------------------------------------ | ----------------------------------------------------------------------------------- |
-| Using the terminal product                 | [Harness UI execution permissions](../a13n-harness-ui/environments-and-projects.md) |
-| Embedding an Agent with local isolation    | [Local Envd Provider example](#recommended-harness-path)                            |
-| Installing a matching native executable    | [Installation](installation.md)                                                     |
-| Operating your own daemon or EIP transport | [Configuration and transports](configuration.md)                                    |
-| Diagnosing isolation or missing methods    | [Isolation and troubleshooting](isolation.md)                                       |
-| Connecting to a remote daemon from Python  | [Remote Envd](../a13n-environment/remote-envd.md)                                   |
+| Situation                                                 | Start here                                                                          |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Using the terminal product                                | [Harness UI execution permissions](../a13n-harness-ui/environments-and-projects.md) |
+| Embedding an Agent with local isolation                   | [Local Envd Provider example](#recommended-harness-path)                            |
+| Installing a matching native executable                   | [Installation](installation.md)                                                     |
+| Operating your own daemon or EIP transport                | [Configuration and transports](configuration.md)                                    |
+| Diagnosing isolation or missing methods                   | [Isolation and troubleshooting](isolation.md)                                       |
+| Connecting through an Environment Provider                | [Remote Envd](../a13n-environment/remote-envd.md)                                   |
+| Implementing an EIP client or Provider                    | [Python EIP client](python-client.md)                                               |
+| Managing sessions, retained output, and uncertain results | [Sessions and output](operations.md)                                                |
 
 ## What it provides
 

@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from contextlib import AbstractAsyncContextManager
+from contextlib import AbstractAsyncContextManager, ExitStack
 from typing import Protocol
 
 from a13n_harness import SafeFailure
 from a13n_harness.errors import RunError
-from a13n_logging import get_logger
+from a13n_logging import exception_details, get_logger
 from anyio import TASK_STATUS_IGNORED, CancelScope, create_task_group, fail_after, sleep
 from anyio.abc import TaskStatus
 
 from a13n_service.agents.plugin_preparation import PluginSelectionError
 from a13n_service.agents.reconstruction import AgentDefinitionReconstructionError
+from a13n_service.observability import observe_phase
 from a13n_service.run_stream.domain import PublicationUnavailable
 from a13n_service.skills.runtime import SkillRuntimeError
 from a13n_service.storage.object_store import ObjectStoreUnavailable
@@ -142,18 +143,24 @@ class RunAttemptExecutor[OutputT]:
                 try:
                     await tasks.start(LeaseMonitor(self._context, self._control).run)
                     await tasks.start(ControlWatcher(self._context, self._control, self._wakeups).run)
-                    await self._activate_publication(self._control.current_context)
-                    await self._preparer.claim_state_writer()
-                    await self._preparer.validate_dependencies(self._control.current_context)
-                    decision = await self._control.commit_preparation()
-                    if isinstance(decision, AttemptPreparationRejected):
-                        finalization = decision
-                    else:
-                        await self._control.reconcile_recovery_state()
-                        if self._control.current_state.envelope.outcome_candidate is not None:
-                            finalization = await self._control.recover_outcome(self._committer)
-                        if finalization is None:
-                            finalization = await self._execute(decision)
+                    with ExitStack() as reconstruction:
+                        reconstruction.enter_context(observe_phase("a13n.service.reconstruct"))
+                        await self._activate_publication(self._control.current_context)
+                        await self._preparer.claim_state_writer()
+                        await self._preparer.validate_dependencies(self._control.current_context)
+                        decision = await self._control.commit_preparation()
+                        if isinstance(decision, AttemptPreparationRejected):
+                            finalization = decision
+                        else:
+                            await self._control.reconcile_recovery_state()
+                            if self._control.current_state.envelope.outcome_candidate is not None:
+                                reconstruction.close()
+                                with observe_phase("a13n.service.persist"):
+                                    finalization = await self._control.recover_outcome(self._committer)
+                                if finalization is None:
+                                    reconstruction.enter_context(observe_phase("a13n.service.reconstruct"))
+                            if finalization is None:
+                                finalization = await self._execute(decision, reconstruction)
                 except AttemptAuthorityError:
                     await self._control.authority_lost()
                     raise
@@ -166,6 +173,7 @@ class RunAttemptExecutor[OutputT]:
                             "run_id": self._context.run_id,
                             "attempt_number": self._context.attempt_number,
                             "error_type": type(error).__name__,
+                            "exception_chain": exception_details(error),
                         },
                     )
                     if isinstance(error, SkillRuntimeError):
@@ -185,7 +193,10 @@ class RunAttemptExecutor[OutputT]:
                         code = "attempt_dependency_unavailable"
                     else:
                         code = "attempt_execution_failed"
-                    with fail_after(self._context.reconciliation_timeout.total_seconds()):
+                    with (
+                        observe_phase("a13n.service.persist"),
+                        fail_after(self._context.reconciliation_timeout.total_seconds()),
+                    ):
                         finalization = await self._control.fail_execution(
                             self._committer,
                             SafeFailure(code=code, message="The RunAttempt could not complete execution."),
@@ -202,13 +213,18 @@ class RunAttemptExecutor[OutputT]:
         finally:
             self._capacity_slot.release()
 
-    async def _execute(self, decision: AttemptPreparationAccepted) -> AttemptOutcome | AttemptMutationReceipt:
+    async def _execute(
+        self, decision: AttemptPreparationAccepted, reconstruction: ExitStack
+    ) -> AttemptOutcome | AttemptMutationReceipt:
         async with self._preparer.open_runtime(self._control.current_context) as invocation:
+            # The invocation is ready. Harness must be a sibling, not a reconstruction child.
+            reconstruction.close()
             try:
                 candidate = await self._driver.run(invocation, preparation=decision)
             finally:
                 await self._control.close_delivery()
-        return await self._control.finalize(candidate, adapter=self._adapter(), committer=self._committer)
+        with observe_phase("a13n.service.persist"):
+            return await self._control.finalize(candidate, adapter=self._adapter(), committer=self._committer)
 
 
 __all__ = [

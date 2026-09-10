@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterable, AsyncIterator
 
 from a13n_envd_client import EIPSession
 from a13n_envd_client.eip import v1 as eip
+from pydantic import ValidationError
 
 from ..files import (
     FileCopyResult,
@@ -20,7 +22,7 @@ from ..files import (
     FileWriteResult,
 )
 from ..models import EnvironmentError
-from ._common import convert_receipt, invoke, new_context
+from ._common import convert_receipt, invoke, new_context, raise_converted, session_client
 
 
 class EIPFileOperator:
@@ -39,6 +41,10 @@ class EIPFileOperator:
         self._mounts = tuple(sorted(session.descriptor.mounts, key=lambda mount: len(mount.logical_root), reverse=True))
         self._mount_by_id = {mount.mount_id: mount for mount in self._mounts}
 
+    @property
+    def _client(self) -> eip.EIPClient:
+        return session_client(self._session)
+
     def to_eip_path(self, path: str) -> eip.EIPPath:
         if not isinstance(path, str) or not path.startswith("/") or "\x00" in path:
             raise EnvironmentError("Environment path is invalid", code="environment_request_invalid")
@@ -52,7 +58,10 @@ class EIPFileOperator:
                 relative = path[len(root) :]
             else:
                 continue
-            return eip.EIPPath(mount_id=mount.mount_id, path=relative)
+            try:
+                return eip.EIPPath(mount_id=mount.mount_id, path=relative)
+            except ValidationError:
+                raise EnvironmentError("Environment path is invalid", code="environment_request_invalid") from None
         raise EnvironmentError("Environment path is outside advertised mounts", code="environment_not_found")
 
     def from_eip_path(self, path: eip.EIPPath) -> str:
@@ -71,7 +80,7 @@ class EIPFileOperator:
         max_line_length: int = 2_000,
     ) -> FileTextResult:
         result = await invoke(
-            self._session.client.file_read_text(
+            self._client.file_read_text(
                 eip.FileReadTextParams(
                     context=new_context(),
                     path=self.to_eip_path(path),
@@ -97,28 +106,30 @@ class EIPFileOperator:
         offset: int = 0,
         length: int | None = None,
     ) -> bytes:
-        reader = self._session.open_reader(
-            self.to_eip_path(path),
-            byte_range=eip.FileByteRange(offset=offset, length=length),
-        )
         try:
+            self._require_transfer_method("file.open_reader")
+            reader = self._session.open_reader(
+                self.to_eip_path(path),
+                byte_range=eip.FileByteRange(offset=offset, length=length),
+            )
             async with reader:
                 return b"".join([chunk async for chunk in reader])
+        except asyncio.CancelledError:
+            raise
         except BaseException as error:
-            from ._common import raise_converted
-
             raise_converted(error)
 
     async def _read_bytes_stream(self, path: str, chunk_size: int) -> AsyncIterator[bytes]:
         del chunk_size
-        reader = self._session.open_reader(self.to_eip_path(path))
         try:
+            self._require_transfer_method("file.open_reader")
+            reader = self._session.open_reader(self.to_eip_path(path))
             async with reader:
                 async for chunk in reader:
                     yield chunk
+        except asyncio.CancelledError:
+            raise
         except BaseException as error:
-            from ._common import raise_converted
-
             raise_converted(error)
 
     def read_bytes_stream(self, path: str, *, chunk_size: int = 65_536) -> AsyncIterator[bytes]:
@@ -133,21 +144,26 @@ class EIPFileOperator:
         *,
         mode: FileWriteMode,
     ) -> FileWriteResult:
-        writer = self._session.open_writer(self.to_eip_path(path), mode=eip.FileWriteMode(mode))
         try:
+            self._require_transfer_method("file.open_writer")
+            writer = self._session.open_writer(self.to_eip_path(path), mode=eip.FileWriteMode(mode))
             async with writer:
                 async for chunk in stream:
                     await writer.write(chunk)
                 result = await writer.commit()
+        except asyncio.CancelledError:
+            raise
         except BaseException as error:
-            from ._common import raise_converted
-
             raise_converted(error)
         return FileWriteResult(
             path=self.from_eip_path(result.info.path),
             bytes_written=result.transferred_bytes,
             receipt=self._receipt(result.receipt),
         )
+
+    def _require_transfer_method(self, method: str) -> None:
+        if method not in self._session.descriptor.available_methods:
+            raise EnvironmentError("EIP file transfer is not supported", code="environment_unsupported")
 
     async def write_text(
         self,
@@ -157,7 +173,7 @@ class EIPFileOperator:
         mode: FileWriteMode,
     ) -> FileWriteResult:
         result = await invoke(
-            self._session.client.file_write_text(
+            self._client.file_write_text(
                 eip.FileWriteTextParams(
                     context=new_context(),
                     path=self.to_eip_path(path),
@@ -174,7 +190,7 @@ class EIPFileOperator:
 
     async def patch_text(self, path: str, patch: str) -> FilePatchResult:
         result = await invoke(
-            self._session.client.file_patch_text(
+            self._client.file_patch_text(
                 eip.FilePatchTextParams(
                     context=new_context(),
                     path=self.to_eip_path(path),
@@ -191,7 +207,9 @@ class EIPFileOperator:
 
     async def stat(self, path: str) -> FileMetadata:
         result = await invoke(
-            self._session.client.file_stat(eip.FileStatParams(context=new_context(), path=self.to_eip_path(path)))
+            self._client.file_stat(
+                eip.FileStatParams(context=new_context(), path=self.to_eip_path(path), follow_symlinks=False)
+            )
         )
         return self._metadata(result.info)
 
@@ -204,7 +222,7 @@ class EIPFileOperator:
         include_hidden: bool = False,
     ) -> FileEntriesResult:
         result = await invoke(
-            self._session.client.file_list(
+            self._client.file_list(
                 eip.FileListParams(
                     context=new_context(),
                     path=self.to_eip_path(path),
@@ -222,7 +240,7 @@ class EIPFileOperator:
 
     async def query(self, request: FileQueryRequest) -> FileEntriesResult:
         result = await invoke(
-            self._session.client.file_find(
+            self._client.file_find(
                 eip.FileFindParams(
                     context=new_context(),
                     root=self.to_eip_path(request.root),
@@ -244,7 +262,7 @@ class EIPFileOperator:
 
     async def search_text(self, request: FileTextSearchRequest) -> FileTextSearchResult:
         result = await invoke(
-            self._session.client.file_search(
+            self._client.file_search(
                 eip.FileSearchParams(
                     context=new_context(),
                     root=self.to_eip_path(request.root),
@@ -282,7 +300,7 @@ class EIPFileOperator:
 
     async def mkdir(self, path: str, *, parents: bool = False, exist_ok: bool = False) -> FileMutationResult:
         result = await invoke(
-            self._session.client.file_mkdir(
+            self._client.file_mkdir(
                 eip.FileMkdirParams(
                     context=new_context(),
                     path=self.to_eip_path(path),
@@ -301,7 +319,7 @@ class EIPFileOperator:
         replace: bool = False,
     ) -> FileMutationResult:
         result = await invoke(
-            self._session.client.file_move(
+            self._client.file_move(
                 eip.FileMoveParams(
                     context=new_context(),
                     source=self.to_eip_path(source),
@@ -318,7 +336,7 @@ class EIPFileOperator:
     async def remove(self, path: str, *, recursive: bool = False) -> FileMutationResult:
         target = await self.stat(path)
         result = await invoke(
-            self._session.client.file_remove(
+            self._client.file_remove(
                 eip.FileRemoveParams(
                     context=new_context(),
                     path=self.to_eip_path(path),
@@ -338,7 +356,7 @@ class EIPFileOperator:
         replace: bool = False,
     ) -> FileCopyResult:
         result = await invoke(
-            self._session.client.file_copy(
+            self._client.file_copy(
                 eip.FileCopyParams(
                     context=new_context(),
                     source=self.to_eip_path(source),

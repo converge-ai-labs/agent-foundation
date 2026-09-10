@@ -27,6 +27,7 @@ from a13n_environment import (
     WebSocketEnvdEnvironmentProvider,
     WebSocketEnvdProviderRuntime,
 )
+from a13n_environment.commands import PortTarget
 from a13n_environment.docker.provider import _open_docker_eip_session
 from a13n_environment.files import FileQueryRequest, FileTextSearchRequest
 from a13n_environment.models import EnvironmentError
@@ -273,6 +274,54 @@ async def test_http_provider_operations_identity_and_sequential_reentry(binary, 
             assert again.descriptor.generation == generation
         finally:
             await again.close()
+
+
+async def test_closed_eip_process_and_port_facets_raise_environment_errors(binary, tmp_path):
+    port = free_port()
+    provider = HttpEnvdEnvironmentProvider()
+    async with daemon(binary, tmp_path, "http", f"127.0.0.1:{port}"):
+        environment = provider.create_environment(
+            configuration=RemoteEnvdProviderConfiguration(),
+            environment_id=LOGICAL_ID,
+            state=state(provider),
+            runtime=http_runtime(f"http://127.0.0.1:{port}"),
+        )
+        try:
+            await environment.prepare()
+            processes, ports, shell = (
+                environment.operations.processes,
+                environment.operations.ports,
+                environment.operations.shell,
+            )
+            policy = EnvironmentOutputPolicy(max_inline_bytes=8, max_output_bytes=4096, overflow="retain")
+            request = CommandRequest(
+                command=ArgvCommand(executable=Path(sys.executable).resolve().name, arguments=("-c", "print('done')")),
+                output_policy=policy,
+            )
+            started = await processes.start(request)
+            handle = started.process.handle
+            await processes.wait(handle, condition="tree_cleaned", timeout_seconds=5)
+        finally:
+            await environment.close()
+        target = PortTarget(port=12345)
+        for operation in (
+            lambda: processes.inspect(handle),
+            lambda: processes.rebind(handle.identity, output_policy=policy),
+            lambda: processes.read_output(handle, policy=policy),
+            lambda: processes.write_stdin(handle, b"late"),
+            lambda: processes.close_stdin(handle),
+            lambda: processes.signal(handle, "terminate"),
+            lambda: processes.wait(handle, condition="tree_cleaned", timeout_seconds=1),
+            lambda: processes.kill(handle),
+            lambda: processes.release(handle),
+            lambda: processes.start(request),
+            lambda: shell.exec(request),
+            lambda: ports.inspect(target),
+            lambda: ports.wait(target, desired="listening", timeout_seconds=1),
+        ):
+            with pytest.raises(EnvironmentError) as error:
+                await operation()
+            assert error.value.code == "environment_unavailable"
 
 
 @pytest.mark.parametrize("failure", ["credential", "identity", "methods"])

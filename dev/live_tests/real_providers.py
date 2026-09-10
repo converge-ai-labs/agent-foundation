@@ -15,6 +15,16 @@ logger = logging.getLogger(__name__)
 
 
 async def provision_provider(journey, section, settings):
+    if section == "search":
+        return await journey.post(
+            journey.base + "/search-providers",
+            {
+                "name": "Configured live Search",
+                "type": settings.provider,
+                "configuration": {},
+                "credential": settings.api_key.get_secret_value(),
+            },
+        )
     if section == "environment":
         provider = await journey.post(
             journey.base + "/environment-providers",
@@ -101,6 +111,12 @@ async def cleanup_provider_lab(journey):
         if environment["status"] == "deleted":
             continue
         try:
+            provider = await live.request("GET", f"/api/v1/environment-providers/{environment['provider_id']}")
+            if provider["type"] == "a13n.direct-local":
+                # Direct Local owns no destroyable target. Keep its lab-owned directory
+                # with the private evidence; the outer lab removes its database record.
+                logger.info("Direct Local evidence retained in lab: %s", environment["id"])
+                continue
             result = await journey.environment_command(environment["id"], "delete")
             assert result["status"] == "deleted"
             logger.info("configured Environment deleted: %s", environment["id"])

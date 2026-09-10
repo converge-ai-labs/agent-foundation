@@ -15,7 +15,7 @@ from a13n_logging import get_logger
 from anyio import CancelScope
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from pydantic_ai import RunContext
-from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.capabilities import AbstractCapability, ValidatedToolArgs, WrapToolExecuteHandler
 from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import ToolDefinition
@@ -40,6 +40,7 @@ from a13n_harness.environment.models import EnvironmentError, EnvironmentPath
 from a13n_harness.environment.providers import BoundEnvironment, FileScopeSelection
 from a13n_harness.errors import DefinitionError
 from a13n_harness.events import HarnessExtensionEvent
+from a13n_harness.observation import observe_phase, observe_skill_access, observe_skill_catalog
 from a13n_harness.tools.metadata import HARNESS_TOOL_METADATA_KEY, normalize_harness_tool_metadata
 
 SKILLS_CAPABILITY_ID = "a13n.skills"
@@ -687,24 +688,26 @@ class SkillsCapability(AbstractCapability[AgentContext]):
             raise DefinitionError(
                 "SkillsCapability must originate from the Agent definition.", code="capability_scope_invalid"
             )
-        selected_names = _resolve_skill_selection(ctx)
-        catalog = await self.manager.scan_environment(environment=ctx.deps.environment)
-        if selected_names is not None:
-            discovered_names = frozenset(item.name for item in catalog.items)
-            unknown_names = sorted(selected_names - discovered_names)
-            if unknown_names:
-                raise DefinitionError(
-                    "The Host skill selection contains names absent from the discovered catalog.",
-                    code="skill_selection_unknown",
-                    details={
-                        "skills": cast(list[JsonValue], unknown_names[:128]),
-                        "truncated": len(unknown_names) > 128,
-                    },
-                )
-            catalog = catalog.select(selected_names)
-        catalog.require_current(ctx.deps.environment)
+        with observe_phase("skills.resolve"):
+            selected_names = _resolve_skill_selection(ctx)
+            catalog = await self.manager.scan_environment(environment=ctx.deps.environment)
+            if selected_names is not None:
+                discovered_names = frozenset(item.name for item in catalog.items)
+                unknown_names = sorted(selected_names - discovered_names)
+                if unknown_names:
+                    raise DefinitionError(
+                        "The Host skill selection contains names absent from the discovered catalog.",
+                        code="skill_selection_unknown",
+                        details={
+                            "skills": cast(list[JsonValue], unknown_names[:128]),
+                            "truncated": len(unknown_names) > 128,
+                        },
+                    )
+                catalog = catalog.select(selected_names)
+            catalog.require_current(ctx.deps.environment)
         replacement = _SkillsRunCapability(catalog, context=ctx.deps, manager=self.manager)
         ctx.deps._record_run_capability(SKILLS_CAPABILITY_ID, replacement)
+        observe_skill_catalog([item.name for item in catalog.items[:16]], count=len(catalog.items))
         await ctx.deps.events.emit(
             HarnessExtensionEvent(
                 kind="context",
@@ -786,16 +789,17 @@ class _SkillsRunCapability(SkillsCapability):
         self._require_current(ctx)
         return args
 
-    async def after_tool_execute(
+    async def wrap_tool_execute(
         self,
         ctx: RunContext[AgentContext],
         *,
         call: ToolCallPart,
         tool_def: ToolDefinition,
-        args: dict[str, Any],
-        result: Any,
+        args: ValidatedToolArgs,
+        handler: WrapToolExecuteHandler,
     ) -> Any:
         del call
+        result = await handler(args)
         self._require_current(ctx)
         metadata = tool_def.metadata or {}
         raw_harness_metadata = metadata.get(HARNESS_TOOL_METADATA_KEY)
@@ -819,6 +823,7 @@ class _SkillsRunCapability(SkillsCapability):
         item = self._access_keys.get((selected.mount_id, selected.path))
         if item is None:
             return result
+        observe_skill_access(item.name, source_id=item.source_id, tool_id=harness_metadata.tool_id)
         await ctx.deps.events.emit(
             HarnessExtensionEvent(
                 kind="context",

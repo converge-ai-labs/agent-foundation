@@ -56,9 +56,11 @@ These are component names, not alternative names for the same runtime. In partic
 
 ## Hosted services
 
-The optional **a13n Service** embeds Harness for managed execution. Its `a13n` SDKs call the hosted API; they are not the Harness SDK or an umbrella installation. The Service guides cover [identity](a13n-service/identity.md), [models](a13n-service/models.md), [external tools](a13n-service/external-tools.md), [search](a13n-service/search.md), and [background tasks](a13n-service/background-tasks.md).
+**[Service](a13n-service/index.md)** embeds Harness for managed execution, with **[Console](a13n-service/console.md)** for browser resource management and conversations. Follow [Agents, Threads, and Runs](a13n-service/agents-and-runs.md) to submit durable work, or [SDKs](a13n-service/sdks.md) to integrate an application. Client coverage differs by language; these SDKs are not the Harness SDK or an umbrella installation.
 
 For an application embedding Harness directly, start with [Embedding in a Host](a13n-harness/hosting.md) instead of deploying the Service unnecessarily.
+
+For the complete repository package map, including Service clients, logging, private frontends, and runnable examples, see the [package catalog](packages.md).
 
 ## Documentation and releases
 

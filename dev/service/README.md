@@ -18,6 +18,13 @@ Langfuse stack, verifies Langfuse project authentication, applies committed
 migrations, and runs Service, the scripted model and Console. No `.env`, manual
 Langfuse project creation, API-key copying or OTEL exports are needed.
 
+`make setup`, also used by `make dev` and `make service-dev`, checks Docker before
+starting the containers. If the selected daemon is already ready, it proceeds
+immediately. On macOS, an unavailable local Docker Desktop daemon triggers an
+attempt to open Docker Desktop and wait up to 120 seconds for readiness. Docker
+must already be installed. On Linux or with another Docker endpoint, start the
+selected daemon yourself; the tools preserve your Docker context and `DOCKER_HOST`.
+
 Use `make setup` to prepare Python dependencies, infrastructure and schema without
 starting an application listener. It preserves existing data and credentials.
 Use `make service-dev` for Service and the scripted model without Console or its
@@ -85,6 +92,13 @@ transcripts with at most eight concurrent requests, retaining pagination and
 relationship checks.
 
 ## Local traces
+
+`[service].deployment_environment_name = "local"` in `local.toml` is the
+single deployment label. Service exports it as `deployment.environment.name`;
+the dev launcher also uses that value for `OTEL_RESOURCE_ATTRIBUTES`. New
+Langfuse observations show `Env: local`. This is not an execution Environment
+or provider selection. Restart the local process after changing the label;
+previous observations retain their original environment.
 
 `local.toml` enables tracing with standard input/output content and selects the
 local Langfuse query project. The development launcher uses that same project to
