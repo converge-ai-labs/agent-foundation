@@ -34,6 +34,7 @@ from .domain import (
     EnvironmentCommand,
     EnvironmentCommandRequest,
     EnvironmentProvider,
+    EnvironmentProviderDefinition,
     EnvironmentTemplate,
     EnvironmentTemplateRevision,
     NewEnvironmentSelection,
@@ -66,7 +67,7 @@ class EnvironmentService:
         self.catalog = catalog
         self.protector = protector
 
-    async def provider_types(self, actor: AuthenticatedActor) -> Collection[dict]:
+    async def provider_types(self, actor: AuthenticatedActor) -> Collection[EnvironmentProviderDefinition]:
         async with short_session(self.sessions) as session:
             await authorize_environment_workspace(
                 session,
@@ -76,19 +77,20 @@ class EnvironmentService:
             )
         return Collection(
             items=tuple(
-                {
-                    "type": key,
-                    "configuration_versions": sorted(provider.configuration_versions),
-                    "configuration_schema": provider.provider_configuration_model.model_json_schema(),
-                    "credential_schema": provider.credential_model.model_json_schema()
+                EnvironmentProviderDefinition(
+                    type=provider.key,
+                    display_name=provider.display_name,
+                    configuration_versions=tuple(sorted(provider.configuration_versions)),
+                    configuration_schema=provider.provider_configuration_model.model_json_schema(),
+                    credential_schema=provider.credential_model.model_json_schema()
                     if provider.credential_model
                     else None,
-                    "supports_managed": provider.supports_managed,
-                    "supports_stop": provider.supports_stop,
-                    "supports_destroy": provider.supports_destroy,
-                    "requires_keepalive": provider.requires_keepalive,
-                }
-                for key, provider in self.catalog.items()
+                    supports_managed=provider.supports_managed,
+                    supports_stop=provider.supports_stop,
+                    supports_destroy=provider.supports_destroy,
+                    requires_keepalive=provider.requires_keepalive,
+                )
+                for provider in self.catalog.values()
             )
         )
 
@@ -149,18 +151,20 @@ class EnvironmentService:
                 row.name = request.name
             if request.enabled is not None:
                 row.enabled = request.enabled
+            if "credential" in request.model_fields_set:
+                row.replace_credential(self._credential(row.type, request.credential), self.protector)
             row.updated_at = utc_now()
             return row.to_resource()
 
     async def replace_credential(
         self, *, actor: AuthenticatedActor, provider_id: str, request: ReplaceCredentialRequest, if_match: str
     ) -> EnvironmentProvider:
-        async with transaction(self.sessions) as session:
-            row = await self._provider(session, actor, provider_id, manage=True, lock=True)
-            self._match(row.id, row.updated_at, if_match)
-            row.replace_credential(self._credential(row.type, request.credential), self.protector)
-            row.updated_at = utc_now()
-            return row.to_resource()
+        return await self.update_provider(
+            actor=actor,
+            provider_id=provider_id,
+            if_match=if_match,
+            request=UpdateProviderRequest(credential=request.credential),
+        )
 
     async def create_template(
         self,

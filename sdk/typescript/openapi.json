@@ -2190,6 +2190,32 @@
         "title": "ClientToolPolicy",
         "type": "object"
       },
+      "Collection_EnvironmentProviderDefinition_": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EnvironmentProviderDefinition"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": ["items"],
+        "title": "Collection[EnvironmentProviderDefinition]",
+        "type": "object"
+      },
       "Collection_EnvironmentProvider_": {
         "additionalProperties": false,
         "properties": {
@@ -2292,33 +2318,6 @@
         },
         "required": ["items"],
         "title": "Collection[Environment]",
-        "type": "object"
-      },
-      "Collection_dict_": {
-        "additionalProperties": false,
-        "properties": {
-          "items": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "next_cursor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Next Cursor"
-          }
-        },
-        "required": ["items"],
-        "title": "Collection[dict]",
         "type": "object"
       },
       "CompleteConnectorSetupRequest": {
@@ -4484,6 +4483,76 @@
           "updated_at"
         ],
         "title": "EnvironmentProvider",
+        "type": "object"
+      },
+      "EnvironmentProviderDefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "configuration_schema": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Configuration Schema",
+            "type": "object"
+          },
+          "configuration_versions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Configuration Versions",
+            "type": "array"
+          },
+          "credential_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Schema"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "requires_keepalive": {
+            "title": "Requires Keepalive",
+            "type": "boolean"
+          },
+          "supports_destroy": {
+            "title": "Supports Destroy",
+            "type": "boolean"
+          },
+          "supports_managed": {
+            "title": "Supports Managed",
+            "type": "boolean"
+          },
+          "supports_stop": {
+            "title": "Supports Stop",
+            "type": "boolean"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "display_name",
+          "configuration_versions",
+          "configuration_schema",
+          "credential_schema",
+          "supports_managed",
+          "supports_stop",
+          "supports_destroy",
+          "requires_keepalive"
+        ],
+        "title": "EnvironmentProviderDefinition",
         "type": "object"
       },
       "EnvironmentSelection": {
@@ -10398,6 +10467,17 @@
       "SessionPreview": {
         "additionalProperties": false,
         "properties": {
+          "agent_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Name"
+          },
           "input_text": {
             "anyOf": [
               {
@@ -10426,12 +10506,27 @@
             "title": "Run Id",
             "type": "string"
           },
+          "run_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
           "thread_id": {
             "title": "Thread Id",
             "type": "string"
+          },
+          "trigger_type": {
+            "title": "Trigger Type",
+            "type": "string"
           }
         },
-        "required": ["thread_id", "run_id", "input_text", "output_text"],
+        "required": [
+          "thread_id",
+          "run_id",
+          "input_text",
+          "output_text",
+          "agent_name",
+          "run_status",
+          "trigger_type"
+        ],
         "title": "SessionPreview",
         "type": "object"
       },
@@ -10457,6 +10552,18 @@
               }
             ]
           },
+          "run_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Count"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -10472,7 +10579,8 @@
           "workspace_id",
           "created_at",
           "updated_at",
-          "preview"
+          "preview",
+          "run_count"
         ],
         "title": "SessionResource",
         "type": "object"
@@ -12921,6 +13029,25 @@
       "UpdateConnectorProviderRequest": {
         "additionalProperties": false,
         "properties": {
+          "credentials": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "format": "password",
+                  "type": "string",
+                  "writeOnly": true
+                },
+                "maxProperties": 8,
+                "minProperties": 1,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credentials",
+            "writeOnly": true
+          },
           "expected_version": {
             "minimum": 1.0,
             "title": "Expected Version",
@@ -12938,6 +13065,16 @@
               }
             ],
             "title": "Name"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectorProviderStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": ["expected_version"],
@@ -13193,6 +13330,21 @@
       "UpdateProviderRequest": {
         "additionalProperties": false,
         "properties": {
+          "credential": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential",
+            "writeOnly": true
+          },
           "enabled": {
             "anyOf": [
               {
@@ -15968,7 +16120,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Collection_dict_"
+                  "$ref": "#/components/schemas/Collection_EnvironmentProviderDefinition_"
                 }
               }
             },
@@ -15998,9 +16150,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Provider Type Api V1 Environment Provider Types  Provider Type  Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/EnvironmentProviderDefinition"
                 }
               }
             },
@@ -27278,6 +27428,102 @@
             "schema": {
               "title": "Workspace",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 72,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "agent_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 72,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "$ref": "#/components/schemas/RunStatus"
+              },
+              "maxItems": 7,
+              "title": "Status",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "trigger_type",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 16,
+              "title": "Trigger Type",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "updated_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Updated After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "updated_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Updated Before"
             }
           },
           {

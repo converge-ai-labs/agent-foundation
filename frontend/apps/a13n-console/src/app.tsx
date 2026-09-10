@@ -181,7 +181,7 @@ function AppContent() {
     document.documentElement.lang = i18n.resolvedLanguage ?? "en";
   }, [i18n.resolvedLanguage]);
   return (
-    <div className="a13n-root isolate">
+    <div className="isolate">
       <a href="#main-content" className="skip-link">
         {i18n.t("Skip to content")}
       </a>

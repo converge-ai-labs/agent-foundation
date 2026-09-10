@@ -16,6 +16,7 @@ export function TextAreaField({
   required,
   code = false,
   hideLabel = false,
+  error,
 }: {
   label: string;
   value: string;
@@ -25,9 +26,15 @@ export function TextAreaField({
   required?: boolean;
   code?: boolean;
   hideLabel?: boolean;
+  error?: string;
 }) {
   return (
-    <FormField label={label} description={hint} hideLabel={hideLabel}>
+    <FormField
+      label={label}
+      description={hint}
+      hideLabel={hideLabel}
+      error={error}
+    >
       <Textarea
         className={code ? styles.code : ""}
         value={value}
@@ -113,8 +120,12 @@ export function Confirm({
       }
       open={open}
     >
-      {children}
-      <ErrorNotice error={mutation.error} />
+      {(children || mutation.error) && (
+        <>
+          {children}
+          <ErrorNotice error={mutation.error} />
+        </>
+      )}
     </ModalFrame>
   );
 }
@@ -138,7 +149,12 @@ export function FormActions({
   return (
     <footer data-a13n-form-actions className={styles.formActions}>
       {onCancel && (
-        <Button variant="outline" onClick={onCancel} type="button">
+        <Button
+          variant="outline"
+          disabled={pending}
+          onClick={onCancel}
+          type="button"
+        >
           {t("Cancel")}
         </Button>
       )}

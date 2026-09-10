@@ -1,6 +1,6 @@
+import { ResourceEditorButton } from "../../shared/resource-editor-button";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Button,
   FormField,
   Input,
   Label,
@@ -53,13 +53,11 @@ export function TemplateEditor({
     <ModalFrame
       onOpenChange={setOpen}
       trigger={
-        <Button
-          size={templateId ? "sm" : "default"}
-          variant={templateId ? "outline" : "default"}
-          type="button"
-        >
-          {t(templateId ? "Details" : "Create template")}
-        </Button>
+        <ResourceEditorButton
+          editing={!!templateId}
+          createLabel="Create template"
+          editLabel="Details"
+        />
       }
       size={"lg"}
       title={t(

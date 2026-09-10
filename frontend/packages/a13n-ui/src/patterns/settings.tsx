@@ -47,15 +47,23 @@ export function SettingsRow({
   label,
   description,
   controlId,
+  stackOnNarrow = true,
   children,
 }: {
   label: string;
   description?: ReactNode;
   controlId?: string;
+  stackOnNarrow?: boolean;
   children: ReactNode;
 }) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-6 py-4 @max-[420px]:flex-col @max-[420px]:items-stretch @max-[420px]:gap-2.5">
+    <div
+      className={cn(
+        "flex min-w-0 items-center justify-between gap-6 py-4",
+        stackOnNarrow &&
+          "@max-[420px]:flex-col @max-[420px]:items-stretch @max-[420px]:gap-2.5",
+      )}
+    >
       <div className="min-w-0 wrap-anywhere">
         {controlId ? (
           <label htmlFor={controlId}>{label}</label>
@@ -71,7 +79,12 @@ export function SettingsRow({
           </p>
         )}
       </div>
-      <div className="flex max-w-[55%] shrink-0 items-center justify-end @max-[420px]:max-w-full @max-[420px]:justify-start">
+      <div
+        className={cn(
+          "flex max-w-[55%] shrink-0 items-center justify-end",
+          stackOnNarrow && "@max-[420px]:max-w-full @max-[420px]:justify-start",
+        )}
+      >
         {children}
       </div>
     </div>

@@ -22,6 +22,7 @@ type ControlProps = {
 /** Associates one control with its label, hint, and validation message. */
 export function FormField({
   label,
+  labelAction,
   description,
   error,
   hideLabel,
@@ -31,6 +32,7 @@ export function FormField({
   ...props
 }: Omit<ComponentProps<typeof Field>, "children"> & {
   label: ReactNode;
+  labelAction?: ReactNode;
   description?: ReactNode;
   error?: ReactNode;
   hideLabel?: boolean;
@@ -54,9 +56,21 @@ export function FormField({
       disabled={disabled || children.props.disabled}
       className={className ?? "w-full min-w-0"}
     >
-      <FieldLabel htmlFor={id} className={hideLabel ? "sr-only" : undefined}>
-        {label}
-      </FieldLabel>
+      {labelAction ? (
+        <div className="flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-1">
+          <FieldLabel
+            htmlFor={id}
+            className={hideLabel ? "sr-only" : undefined}
+          >
+            {label}
+          </FieldLabel>
+          {labelAction}
+        </div>
+      ) : (
+        <FieldLabel htmlFor={id} className={hideLabel ? "sr-only" : undefined}>
+          {label}
+        </FieldLabel>
+      )}
       {cloneElement(children, {
         id,
         disabled: disabled || children.props.disabled,

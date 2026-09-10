@@ -1,10 +1,11 @@
+import { ResourceEditorButton } from "../../shared/resource-editor-button";
 import { Button, ChoiceField, FormField, Input, ModalFrame } from "a13n-ui";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { PageActions } from "../../shared/page-actions";
 
-import { ArrowLeftIcon, PlusIcon } from "@phosphor-icons/react";
+import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -193,14 +194,11 @@ function AccountEditor({ account }: { account?: Schema["ServiceAccount"] }) {
         }
       }}
       trigger={
-        <Button
-          size={account ? "sm" : "default"}
-          variant={account ? "outline" : "default"}
-          type="button"
-        >
-          {!account && <PlusIcon size={14} />}
-          {t(account ? "Edit" : "Create account")}
-        </Button>
+        <ResourceEditorButton
+          editing={!!account}
+          createLabel="Create account"
+          editLabel="Edit"
+        />
       }
       size={"md"}
       title={t(account ? "Edit service account" : "Create service account")}

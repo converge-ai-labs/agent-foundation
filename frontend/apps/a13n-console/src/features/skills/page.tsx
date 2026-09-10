@@ -75,8 +75,12 @@ export function SkillsPage() {
         )
       }
     >
-      <div className="mb-6">
-        <FormField label={t("Search skills")} hideLabel>
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <FormField
+          label={t("Search skills")}
+          hideLabel
+          className="min-w-48 flex-1"
+        >
           <Input
             type="search"
             placeholder={t("Search by name or key…")}
@@ -94,11 +98,7 @@ export function SkillsPage() {
             page.reset();
           }}
         >
-          <TabsList
-            variant="underline"
-            className="mt-3"
-            aria-label={t("Skill source")}
-          >
+          <TabsList aria-label={t("Skill source")}>
             <TabsTab value="all">{t("All")}</TabsTab>
             <TabsTab value="github">GitHub</TabsTab>
             <TabsTab value="zip">{t("ZIP upload")}</TabsTab>
@@ -201,7 +201,7 @@ export function SkillDetail() {
           setSearch(next);
         }}
       >
-        <TabsList variant="underline" aria-label={t("Skill details")}>
+        <TabsList aria-label={t("Skill details")}>
           <TabsTab value="files">{t("Files")}</TabsTab>
           <TabsTab value="versions">{t("Versions")}</TabsTab>
           <TabsTab value={"references"}>{t("Used by agents")}</TabsTab>

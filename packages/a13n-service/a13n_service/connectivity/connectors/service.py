@@ -349,6 +349,10 @@ class ConnectorProviderService:
                 if request.name is not None:
                     record.name = request.name
                     record.normalized_name = request.name.casefold()
+                if request.credentials is not None:
+                    self._replace_credentials(record, clear_credentials(request.credentials))
+                if request.status is not None:
+                    record.status = request.status.value
                 record.version += 1
                 record.updated_at = self._clock()
                 session.add(
@@ -366,6 +370,24 @@ class ConnectorProviderService:
         except IntegrityError as error:
             raise ConnectorError(
                 "connector_conflict", "ConnectorProvider name already exists.", category=ErrorCategory.conflict
+            ) from error
+
+    def _replace_credentials(self, record: ConnectorProviderRecord, credentials: dict[str, str]) -> None:
+        adapter = require_implementation(self._adapters, record.type)
+        try:
+            validated = adapter.validate_credentials(credentials)
+            record.replace_credential(canonical_json(validated), self._protector)
+        except SecretProtectionError as error:
+            raise ConnectorError(
+                "credential_conflict",
+                "ConnectorProvider credentials could not be replaced.",
+                category=ErrorCategory.conflict,
+            ) from error
+        except ValueError as error:
+            raise ConnectorError(
+                "invalid_credentials",
+                "ConnectorProvider credentials are invalid.",
+                category=ErrorCategory.invalid_request,
             ) from error
 
     async def replace_credentials(
@@ -399,24 +421,7 @@ class ConnectorProviderService:
             if replay:
                 return replay.restore(ConnectorProvider)
             _require_version(record.version, request.expected_version)
-            adapter = require_implementation(self._adapters, record.type)
-            try:
-                credentials = adapter.validate_credentials(
-                    credentials,
-                )
-                record.replace_credential(canonical_json(credentials), self._protector)
-            except SecretProtectionError as error:
-                raise ConnectorError(
-                    "credential_conflict",
-                    "ConnectorProvider credentials could not be replaced.",
-                    category=ErrorCategory.conflict,
-                ) from error
-            except ValueError as error:
-                raise ConnectorError(
-                    "invalid_credentials",
-                    "ConnectorProvider credentials are invalid.",
-                    category=ErrorCategory.invalid_request,
-                ) from error
+            self._replace_credentials(record, credentials)
 
             record.version += 1
             record.updated_at = self._clock()

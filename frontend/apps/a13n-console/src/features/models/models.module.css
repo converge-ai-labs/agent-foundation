@@ -1,84 +1,80 @@
-.providerGroup > header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
+.listTable {
+  max-height: max(280px, calc(100dvh - 280px));
+  overflow: auto;
+  border-radius: 8px;
 }
-.providerGroup h2 {
-  font-size: 13px;
-  font-weight: 500;
-  margin: 0;
+.listTable [data-slot="table-container"] {
+  overflow: visible;
 }
-.providerGroup > header > span {
-  color: var(--a13n-secondary);
-  font-size: 11px;
+.listTable table {
+  min-width: 680px;
+  table-layout: fixed;
 }
-.providerIcon {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border: 1px solid var(--a13n-border-soft);
-  border-radius: 5px;
+.listTable thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--a13n-canvas);
 }
-.providerState {
-  margin-left: 4px;
+.listTable th:nth-child(1) {
+  width: 40%;
 }
-.modelGrid {
-  composes: grid from "../../shared/resource-cards.module.css";
+.listTable th:nth-child(2) {
+  width: 32%;
 }
-.modelCard {
-  composes: card from "../../shared/resource-cards.module.css";
+.listTable th:nth-child(3) {
+  width: 14%;
 }
-.modelCard > header {
+.listTable th:nth-child(4) {
+  width: 14%;
+}
+.listTable td {
+  height: 68px;
+}
+.listTable strong,
+.listTable small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.flowHeading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  color: var(--a13n-secondary);
-  margin-bottom: 12px;
+  gap: 16px;
 }
-.modelCard h3 {
+.flowHeading h3 {
+  margin: 0;
   font-size: 14px;
   font-weight: 500;
-  margin: 0;
-  flex: 1;
-  overflow-wrap: anywhere;
 }
-.modelCard p {
-  font-size: 12px;
-  line-height: 1.7;
-  color: var(--a13n-secondary);
-  margin: 0 0 12px;
-  overflow-wrap: anywhere;
+.backButton {
+  align-self: flex-start;
+  justify-self: start;
 }
-.modelDetails {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  font-size: 11px;
-  color: var(--a13n-secondary);
-  margin-top: auto;
-  overflow-wrap: anywhere;
-}
-.modelCard footer {
+.connectionSummary {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-  padding-top: 12px;
-  margin-top: 14px;
-  border-top: 1px solid var(--a13n-border-soft);
+  gap: 16px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--a13n-border-soft);
 }
-.modelCard code {
-  font: 10px var(--a13n-mono);
+.connectionSummary > div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.connectionSummary small,
+.connectionSummary span {
   color: var(--a13n-secondary);
+  font-size: 11px;
   overflow-wrap: anywhere;
 }
-@media (max-width: 760px) {
-  .providerGroup > header {
-    flex-wrap: wrap;
-  }
+.connectionSummary strong {
+  font-size: 13px;
+  font-weight: 500;
 }

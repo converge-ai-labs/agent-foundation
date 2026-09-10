@@ -1,6 +1,6 @@
+import { ResourceEditorButton } from "../../shared/resource-editor-button";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Button,
   FormField,
   Input,
   ModalFrame,
@@ -58,13 +58,11 @@ export function MCPEditor({
         if (!value) setCreated(undefined);
       }}
       trigger={
-        <Button
-          size={connectionId ? "sm" : "default"}
-          variant={connectionId ? "outline" : "default"}
-          type="button"
-        >
-          {t(connectionId ? "Details" : "Connect MCP server")}
-        </Button>
+        <ResourceEditorButton
+          editing={!!connectionId}
+          createLabel="Connect MCP server"
+          editLabel="Details"
+        />
       }
       size={"md"}
       title={t(id ? "MCP connection" : "Connect MCP server")}

@@ -92,12 +92,12 @@ it("creates a saved provider independently and clears its credential on close wi
   const user = userEvent.setup(),
     saved = vi.fn(),
     cache = setup(<SearchProviderEditor scope={scope} onSaved={saved} />);
-  await user.click(screen.getByRole("button", { name: "Add search provider" }));
+  await user.click(screen.getByRole("button", { name: "Add provider" }));
   await user.type(
     await screen.findByRole("textbox", { name: "Name" }),
     "Research",
   );
-  await user.type(screen.getByLabelText("API key"), "test-secret");
+  await user.type(screen.getByLabelText("API Key"), "test-secret");
   expect(http.POST).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(saved).toHaveBeenCalledOnce());
@@ -111,15 +111,15 @@ it("creates a saved provider independently and clears its credential on close wi
         .map((item) => item.state),
     ),
   ).not.toContain("test-secret");
-  await user.click(screen.getByRole("button", { name: "Add search provider" }));
-  expect(await screen.findByLabelText("API key")).toHaveProperty("value", "");
+  await user.click(screen.getByRole("button", { name: "Add provider" }));
+  expect(await screen.findByLabelText("API Key")).toHaveProperty("value", "");
 });
 
 it("keeps the existing credential write-only and sends If-Match for edits", async () => {
   const user = userEvent.setup();
   setup(<SearchProviderEditor scope={scope} providerId={provider.id} />);
   await user.click(screen.getByRole("button", { name: "Edit" }));
-  expect(await screen.findByLabelText("API key")).toHaveProperty("value", "");
+  expect(await screen.findByLabelText("API Key")).toHaveProperty("value", "");
   await user.type(screen.getByRole("textbox", { name: "Name" }), " renamed");
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(http.PATCH).toHaveBeenCalledOnce());
@@ -133,12 +133,12 @@ it("reconciles an uncertain create before allowing another attempt", async () =>
   const user = userEvent.setup();
   setup(<SearchProviderEditor scope={scope} />);
   http.POST.mockRejectedValue(new TypeError("Network unavailable"));
-  await user.click(screen.getByRole("button", { name: "Add search provider" }));
+  await user.click(screen.getByRole("button", { name: "Add provider" }));
   await user.type(
     await screen.findByRole("textbox", { name: "Name" }),
     "Research",
   );
-  await user.type(screen.getByLabelText("API key"), "test-secret");
+  await user.type(screen.getByLabelText("API Key"), "test-secret");
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await screen.findByRole("button", { name: "Use this provider" });
   expect(
@@ -152,7 +152,7 @@ it("tests only on explicit click and never automatically repeats an uncertain te
   setup(<SearchProviderTest scope={scope} providerId={provider.id} />);
   http.POST.mockRejectedValue(new TypeError("Network unavailable"));
   expect(http.POST).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: "Test provider" }));
+  await user.click(screen.getByRole("button", { name: "Check connection" }));
   await screen.findByRole("alert");
   expect(http.POST).toHaveBeenCalledOnce();
   expect(http.POST.mock.calls[0][1].body).toEqual({});
@@ -175,10 +175,8 @@ it("opens centralized provider setup without changing the agent draft and refres
     "/workspace/research/settings?section=providers&category=search",
   );
   expect(link.getAttribute("target")).toBe("_blank");
-  expect(
-    screen.queryByRole("button", { name: "Add search provider" }),
-  ).toBeNull();
-  expect(screen.queryByRole("button", { name: "Test provider" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Add provider" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Check connection" })).toBeNull();
   expect(changed).not.toHaveBeenCalled();
   expect(http.POST).not.toHaveBeenCalled();
   await waitFor(() => expect(http.GET).toHaveBeenCalledOnce());
@@ -206,7 +204,7 @@ it("retains the provider draft across a stale ETag and requires loading the curr
     await screen.findByRole("textbox", { name: "Name" }),
     " draft",
   );
-  await user.type(screen.getByLabelText("API key"), "replacement-secret");
+  await user.type(screen.getByLabelText("API Key"), "replacement-secret");
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   const reload = await screen.findByRole("button", {
     name: "Load current version and keep my draft",
@@ -226,7 +224,7 @@ it("retains the provider draft across a stale ETag and requires loading the curr
       }),
     ).toBeNull(),
   );
-  expect(screen.getByLabelText("API key")).toHaveProperty(
+  expect(screen.getByLabelText("API Key")).toHaveProperty(
     "value",
     "replacement-secret",
   );

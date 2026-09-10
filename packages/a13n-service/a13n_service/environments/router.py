@@ -22,6 +22,7 @@ from .domain import (
     EnvironmentCommand,
     EnvironmentCommandRequest,
     EnvironmentProvider,
+    EnvironmentProviderDefinition,
     EnvironmentTemplate,
     EnvironmentTemplateRevision,
     ReplaceCredentialRequest,
@@ -47,15 +48,15 @@ def _service(request: Request) -> EnvironmentService:
 
 
 @router.get("/environment-provider-types")
-async def provider_types(request: Request, actor: Actor) -> Collection[dict]:
+async def provider_types(request: Request, actor: Actor) -> Collection[EnvironmentProviderDefinition]:
     return await _service(request).provider_types(actor)
 
 
 @router.get("/environment-provider-types/{provider_type}")
-async def get_provider_type(request: Request, actor: Actor, provider_type: str) -> dict:
+async def get_provider_type(request: Request, actor: Actor, provider_type: str) -> EnvironmentProviderDefinition:
     catalog = await _service(request).provider_types(actor)
     for item in catalog.items:
-        if item["type"] == provider_type:
+        if item.type == provider_type:
             return item
     raise EnvironmentManagementError(
         "environment_provider_type_not_found", "Provider type was not found", category=ErrorCategory.not_found

@@ -152,6 +152,7 @@ class ThreadRecord(Base):
         ),
         Index("ix_threads_session_created", "organization_id", "session_id", "created_at", "id"),
         Index("ix_threads_session_updated", "organization_id", "session_id", "updated_at", "id"),
+        Index("ix_threads_selected_run", "organization_id", text("coalesce(current_run_id, head_run_id)")),
         Index("ix_threads_origin_run", "organization_id", "origin_run_id", "id"),
         Index("ix_threads_origin_thread", "organization_id", "origin_thread_id", "id"),
     )
@@ -393,6 +394,9 @@ class RunRecord(Base):
             sqlite_where=text("status = 'accepted' OR (status = 'running' AND current_run_attempt_id IS NULL)"),
         ),
         Index("ix_runs_session_created", "organization_id", "session_id", "created_at", "id"),
+        Index("ix_runs_agent_session", "organization_id", "agent_id", "session_id", "id"),
+        Index("ix_runs_status_session", "organization_id", "status", "session_id", "id"),
+        Index("ix_runs_trigger_session", "organization_id", "trigger_type", "session_id", "id"),
         Index("ix_runs_thread_created", "organization_id", "thread_id", "created_at", "id"),
         Index("ix_runs_parent", "organization_id", "parent_run_id", "id"),
         Index("ix_runs_retry", "organization_id", "retry_of_run_id", "id"),

@@ -38,7 +38,7 @@ function Showcase() {
     return () => window.removeEventListener("hashchange", change);
   }, []);
   return (
-    <div className="a13n-root min-h-svh bg-background">
+    <div className="min-h-svh bg-background">
       <header className="sticky top-0 z-10 flex flex-wrap items-center gap-4 border-b bg-background px-4 py-3 sm:px-8">
         <a href="#settings" className="flex items-center gap-2">
           <Logo alt="" width={28} height={28} />

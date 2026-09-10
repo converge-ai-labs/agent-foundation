@@ -8,10 +8,10 @@ import { PageActionsTarget } from "../../shared/page-actions";
 
 import { useTranslation } from "react-i18next";
 import { useSettingsNavigation, type SettingsScope } from "./navigation";
+import { providerCategory } from "../providers/categories";
 import styles from "./settings.module.css";
 
 const descriptions: Record<string, string> = {
-  providers: "Manage the services and credentials your agents use.",
   preferences: "Choose how Console looks and feels.",
   profile: "Manage your name and image.",
   security: "Manage how you sign in and keep your account secure.",
@@ -149,8 +149,10 @@ export function SettingsLayout({
                 {selected.value !== "profile" && (
                   <p>
                     {t(
-                      descriptions[selected.value] ??
-                        "Manage settings for this space.",
+                      selected.value === "providers"
+                        ? providerCategory(search.get("category")).description
+                        : (descriptions[selected.value] ??
+                            "Manage settings for this space."),
                     )}
                   </p>
                 )}

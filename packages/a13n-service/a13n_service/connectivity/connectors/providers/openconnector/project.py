@@ -47,10 +47,18 @@ class ProjectConfiguration(StrictModel):
 
 class ProjectCredentials(StrictModel):
     project_api_key: str = Field(
-        min_length=1, max_length=4096, repr=False, json_schema_extra={"writeOnly": True, "format": "password"}
+        title="Project API Key",
+        min_length=1,
+        max_length=4096,
+        repr=False,
+        json_schema_extra={"writeOnly": True, "format": "password"},
     )
     catalog_api_key: str = Field(
-        min_length=1, max_length=4096, repr=False, json_schema_extra={"writeOnly": True, "format": "password"}
+        title="Catalog API Key",
+        min_length=1,
+        max_length=4096,
+        repr=False,
+        json_schema_extra={"writeOnly": True, "format": "password"},
     )
 
 

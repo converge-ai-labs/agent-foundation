@@ -188,7 +188,7 @@ it.each(cases)(
     ).toBe("");
     expect(
       screen.getByRole("combobox", { name: "Provider type" }).textContent,
-    ).toContain("Select provider type");
+    ).toContain("Search providers…");
   },
 );
 
@@ -198,11 +198,10 @@ it.each(cases)(
     const user = userEvent.setup();
     const { connector, detailPath, provider } = setup(kind, surface);
     await screen.findByText("Existing provider");
-    await user.click(
-      screen.getByRole("button", {
-        name: connector ? "Manage" : "Edit",
-      }),
-    );
+    expect(screen.queryByRole("columnheader", { name: "Actions" })).toBeNull();
+    const row = screen.getByRole("row", { name: /Existing provider/ });
+    row.focus();
+    await user.keyboard("{Enter}");
     const name = await screen.findByRole("textbox", { name: "Name" });
     expect((name as HTMLInputElement).value).toBe(provider.name);
     expect(
@@ -225,7 +224,9 @@ it.each(cases)(
           }),
           body: {
             name: "Renamed provider",
-            ...(connector ? { expected_version: 3 } : { enabled: true }),
+            ...(connector
+              ? { expected_version: 3, status: "active" }
+              : { enabled: true }),
           },
         }),
       ),
@@ -233,3 +234,39 @@ it.each(cases)(
     expect(http.POST).not.toHaveBeenCalled();
   },
 );
+
+it("saves connector name, credentials and enabled state in one atomic update", async () => {
+  const user = userEvent.setup();
+  const { provider } = setup("workspace", "connector");
+  const response = new Response(null);
+  http.PATCH.mockResolvedValue({
+    data: { ...provider, name: "Renamed", version: 4 },
+    response,
+  });
+  await user.click(await screen.findByText("Existing provider"));
+  const name = await screen.findByRole("textbox", { name: "Name" });
+  await user.clear(name);
+  await user.type(name, "Renamed");
+  await user.type(screen.getByLabelText("project_api_key"), "new-project");
+  await user.type(screen.getByLabelText("catalog_api_key"), "new-catalog");
+  await user.click(screen.getByRole("switch", { name: "Enabled" }));
+  expect(http.POST).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(http.PATCH).toHaveBeenCalledTimes(1));
+  expect(http.PATCH).toHaveBeenCalledWith(
+    "/api/v1/connector-providers/{connector_provider_id}",
+    expect.objectContaining({
+      body: {
+        name: "Renamed",
+        expected_version: 3,
+        status: "disabled",
+        credentials: {
+          project_api_key: "new-project",
+          catalog_api_key: "new-catalog",
+        },
+      },
+    }),
+  );
+  expect(http.POST).not.toHaveBeenCalled();
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+});

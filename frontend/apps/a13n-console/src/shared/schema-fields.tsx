@@ -58,11 +58,13 @@ export function SchemaFields({
   value,
   onChange,
   secret = false,
+  descriptions = true,
 }: {
   schema: Record<string, unknown>;
   value: Record<string, unknown>;
   onChange: (value: Record<string, unknown>) => void;
   secret?: boolean;
+  descriptions?: boolean;
 }) {
   const { t } = useTranslation();
   const properties = object(schema.properties) ? schema.properties : {};
@@ -80,7 +82,7 @@ export function SchemaFields({
           required =
             Array.isArray(schema.required) && schema.required.includes(key);
         const description =
-          typeof field.description === "string"
+          descriptions && typeof field.description === "string"
             ? t(field.description)
             : undefined;
         if (Object.hasOwn(field, "const")) return null;
@@ -142,7 +144,11 @@ export function SchemaFields({
             >
               <Input
                 required={required}
-
+                placeholder={
+                  typeof field["x-placeholder"] === "string"
+                    ? field["x-placeholder"]
+                    : undefined
+                }
                 type={
                   secret || field.format === "password"
                     ? "password"

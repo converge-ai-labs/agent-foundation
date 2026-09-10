@@ -1,24 +1,33 @@
+import {
+  useResourceEditorState,
+  useResourceRows,
+} from "../../shared/resource-modal";
+import { ResourceEditorButton } from "../../shared/resource-editor-button";
+import { ResourceIdentity } from "../../shared/collection";
+import { ScopeBadge } from "../../shared/scope-badge";
 import { useQuery } from "@tanstack/react-query";
-import { Badge, Button, ModalFrame } from "a13n-ui";
-import { PlugChargingIcon, PlusIcon } from "@phosphor-icons/react";
+import { ModalFrame } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useAccess } from "../../layout/workspace";
-import { data } from "../../shared/api";
+import { data, type Schema } from "../../shared/api";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
 import { PageActions } from "../../shared/page-actions";
 import styles from "../../shared/shared.module.css";
 import { modelApi, type ModelScope } from "./api";
-import { Discovery, ProviderTest } from "./provider-discovery";
+import { requiresProviderCredential } from "./provider-credentials";
 import { ProviderForm } from "./provider-form";
+import { ProviderIcon } from "../../shared/provider-icon";
 
 export function Providers({ scope }: { scope: ModelScope }) {
   const client = useClient(),
     { t } = useTranslation(),
     { can, organization, organizationAdmin } = useAccess(),
     page = useCursor();
+  const rows = useResourceRows<Schema["ModelProvider"]>();
+  const { selected } = rows;
   const api = modelApi(client, scope);
   const query = useQuery({
     queryKey: ["model-providers", scope.kind, scope.id, page.cursor],
@@ -34,6 +43,18 @@ export function Providers({ scope }: { scope: ModelScope }) {
   return (
     <div className={styles.stack}>
       <PageActions>{manage && <ProviderEditor scope={scope} />}</PageActions>
+      {selected && (
+        <ProviderEditor
+          key={selected.id}
+          scope={
+            selected.workspace_id
+              ? { kind: "workspace", id: selected.workspace_id }
+              : { kind: "organization", id: organization.id }
+          }
+          providerId={selected.id}
+          {...rows.control}
+        />
+      )}
       {query.isPending ? (
         <Loading />
       ) : query.error ? (
@@ -42,31 +63,44 @@ export function Providers({ scope }: { scope: ModelScope }) {
         <>
           <ResourceTable
             items={query.data.items}
+            canActivateRow={(item) =>
+              item.workspace_id ? manage : organizationAdmin
+            }
+            onRowActivate={rows.activate}
             columns={[
               {
                 label: t("Provider"),
                 render: (item) => (
-                  <>
-                    <PlugChargingIcon size={14} /> {item.name}
-                    <small>{item.type}</small>
-                  </>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <ProviderIcon key={item.type} type={item.type} />
+                    <ResourceIdentity
+                      name={item.name}
+                      description={item.type}
+                    />
+                  </div>
                 ),
               },
               {
                 label: t("Scope"),
                 render: (item) => (
-                  <Badge variant={"secondary"}>
-                    {t(item.workspace_id ? "Workspace" : "Organization")}
-                  </Badge>
+                  <ScopeBadge workspaceId={item.workspace_id} />
                 ),
               },
               {
                 label: t("Credentials"),
                 render: (item) =>
                   t(
-                    item.credential_configured
-                      ? "Configured"
-                      : "Not configured",
+                    !requiresProviderCredential(
+                      item.type,
+                      item.configuration,
+                      definitions.data?.items.find(
+                        (definition) => definition.type === item.type,
+                      ),
+                    )
+                      ? "No credentials required"
+                      : item.credential_configured
+                        ? "Configured"
+                        : "Not configured",
                   ),
               },
               {
@@ -74,28 +108,6 @@ export function Providers({ scope }: { scope: ModelScope }) {
                 render: (item) => (
                   <StateBadge state={item.enabled ? "enabled" : "disabled"} />
                 ),
-              },
-              {
-                label: t("Actions"),
-                align: "right",
-                render: (item) => {
-                  const owner: ModelScope = item.workspace_id
-                    ? { kind: "workspace", id: item.workspace_id }
-                    : { kind: "organization", id: organization.id };
-                  return (
-                    (item.workspace_id ? manage : organizationAdmin) && (
-                      <div className={styles.actions}>
-                        <ProviderEditor scope={owner} providerId={item.id} />
-                        <ProviderTest scope={owner} providerId={item.id} />
-                        {definitions.data?.items.find(
-                          (definition) => definition.type === item.type,
-                        )?.supports_model_discovery && (
-                          <Discovery scope={scope} provider={item} />
-                        )}
-                      </div>
-                    )
-                  );
-                },
               },
             ]}
           />
@@ -116,14 +128,25 @@ export function Providers({ scope }: { scope: ModelScope }) {
 export function ProviderEditor({
   scope,
   providerId,
+  controlledOpen,
+  onClose,
+  finalFocus,
 }: {
   scope: ModelScope;
   providerId?: string;
+  controlledOpen?: boolean;
+  onClose?: () => void;
+  finalFocus?: React.RefObject<HTMLElement | null>;
 }) {
   const client = useClient(),
     { t } = useTranslation(),
-    [open, setOpen] = useState(false),
     [generation, setGeneration] = useState(0);
+  const { open, setOpen, modalProps } = useResourceEditorState({
+    controlledOpen,
+    onClose,
+    finalFocus,
+  });
+
   const api = modelApi(client, scope);
   const definitions = useQuery({
     queryKey: ["model-provider-types"],
@@ -137,16 +160,15 @@ export function ProviderEditor({
   });
   return (
     <ModalFrame
-      onOpenChange={setOpen}
+      {...modalProps}
       trigger={
-        <Button
-          size={providerId ? "sm" : "default"}
-          variant={providerId ? "outline" : "default"}
-          type="button"
-        >
-          {!providerId && <PlusIcon size={14} />}
-          {t(providerId ? "Edit" : "Add provider")}
-        </Button>
+        controlledOpen === undefined ? (
+          <ResourceEditorButton
+            editing={!!providerId}
+            createLabel="Add provider"
+            editLabel="Edit"
+          />
+        ) : undefined
       }
       size={"md"}
       title={t(providerId ? "Edit provider" : "Add provider")}
@@ -154,7 +176,6 @@ export function ProviderEditor({
         "Credentials are stored securely and never returned by the service.",
       )}
       closeLabel={t("Close")}
-      open={open}
     >
       {open &&
         (definitions.isPending || (providerId && resource.isPending) ? (

@@ -1,4 +1,4 @@
-import type { Client } from "@converge.ai/a13n";
+import type { Client, operations } from "@converge.ai/a13n";
 import { ApiError } from "@converge.ai/a13n";
 import { queryOptions, type QueryClient } from "@tanstack/react-query";
 import {
@@ -7,6 +7,13 @@ import {
   workspaceHeaders,
   type Schema,
 } from "../../shared/api";
+
+export type SessionFilters = Omit<
+  NonNullable<
+    operations["list_sessions_api_v1_workspaces__workspace__sessions_get"]["parameters"]["query"]
+  >,
+  "limit" | "cursor"
+>;
 
 export function conversationKeys(workspaceId: string) {
   const root = ["conversations", workspaceId] as const;
@@ -32,15 +39,15 @@ export function conversationQueries(client: Client, workspaceId: string) {
   const headers = workspaceHeaders(workspaceId),
     keys = conversationKeys(workspaceId);
   return {
-    sessions: (cursor?: string) =>
+    sessions: (cursor?: string, filters: SessionFilters = {}) =>
       queryOptions({
-        queryKey: [...keys.sessions(), cursor],
+        queryKey: [...keys.sessions(), filters, cursor],
         queryFn: ({ signal }) =>
           client.http
             .GET("/api/v1/workspaces/{workspace}/sessions", {
               params: {
                 path: { workspace: workspaceId },
-                query: { cursor, limit: 20 },
+                query: { ...filters, cursor, limit: 20 },
               },
               signal,
             })

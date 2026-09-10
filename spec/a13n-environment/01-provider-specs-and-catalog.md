@@ -46,6 +46,9 @@ class EnvironmentProvider(ABC):
     def key(self) -> str: ...
 
     @property
+    def display_name(self) -> str: ...
+
+    @property
     def configuration_versions(self) -> frozenset[str]: ...
 
     @property
@@ -85,6 +88,7 @@ class EnvironmentProvider(ABC):
 The exact language API may use typed generic runtime values, but these semantics are fixed:
 
 - The Provider is inert after construction.
+- `display_name` is provider-owned presentation metadata. The default is `key`; built-in Providers declare their human-readable name. Hosts read it directly without a parallel registry of names.
 - `validate_configuration()` performs pure parsing, normalization, and deterministic validation.
 - `create_environment()` performs no external I/O and returns a fresh single-use adapter.
 - The state is either `None` or has the same `provider_key`. Provider-specific codec validation can occur during construction, but target validation and external observation occur only during explicit Environment operations.

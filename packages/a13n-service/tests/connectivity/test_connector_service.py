@@ -9,6 +9,7 @@ from a13n_service.connectivity.connectors.domain import (
     CreateConnectorConnectionRequest,
     CreateConnectorProviderRequest,
     ReplaceConnectorProviderCredentialsRequest,
+    UpdateConnectorProviderRequest,
 )
 from a13n_service.connectivity.connectors.errors import ConnectorError
 from a13n_service.connectivity.connectors.models import (
@@ -971,3 +972,35 @@ async def test_reconnect_cannot_reenable_a_previous_verified_generation(connecto
             idempotency_key="enable",
             enabled=True,
         )
+
+
+@pytest.mark.anyio
+async def test_provider_update_is_atomic(connector_services):
+    providers, _ = connector_services
+    original = await create_connector(providers)
+    with pytest.raises(ConnectorError, match="invalid"):
+        await providers.update(
+            actor=actor(),
+            connector_provider_id=original.id,
+            request=UpdateConnectorProviderRequest(
+                expected_version=original.version, name="Renamed", status="disabled", credentials={"api_key": "wrong"}
+            ),
+        )
+    assert await providers.get(actor=actor(), connector_provider_id=original.id) == original
+    updated = await providers.update(
+        actor=actor(),
+        connector_provider_id=original.id,
+        request=UpdateConnectorProviderRequest(
+            expected_version=original.version, name="Renamed", status="disabled", credentials={"api_key": "secret"}
+        ),
+    )
+    assert updated.name == "Renamed" and updated.status == "disabled"
+    assert updated.version == original.version + 1
+    assert updated.credential_generation == original.credential_generation + 1
+    with pytest.raises(ConnectorError):
+        await providers.update(
+            actor=actor(),
+            connector_provider_id=original.id,
+            request=UpdateConnectorProviderRequest(expected_version=original.version, name="Stale"),
+        )
+    assert await providers.get(actor=actor(), connector_provider_id=original.id) == updated

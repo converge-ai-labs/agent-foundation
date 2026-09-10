@@ -62,16 +62,21 @@ from .queries import (
     RunCollection,
     RunLineage,
     RunResource,
-    SessionCollection,
     ThreadCollection,
     ThreadResource,
 )
 from .requests import ContinueRunRequest, ForkRunRequest, RetryRunRequest, StartRunRequest
+from .session_queries import SessionCollection, SessionFilters
 
 NOTIFICATION_SUBPROTOCOL = "a13n.service.notifications.v1"
 
 router = APIRouter(tags=["protocol-gateway"])
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
+
+
+class SessionListQuery(SessionFilters):
+    limit: int = Field(default=50, ge=1, le=200)
+    cursor: str | None = Field(default=None, max_length=2048)
 
 
 class SubscribeFrame(BaseModel):
@@ -486,14 +491,14 @@ async def list_sessions(
     request: Request,
     actor: Actor,
     workspace_id: WorkspaceId,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    cursor: Annotated[str | None, Query(max_length=2048)] = None,
+    query: Annotated[SessionListQuery, Query()],
 ) -> SessionCollection:
     return await _queries(request).list_sessions(
         actor=actor,
         workspace_id=workspace_id,
-        limit=limit,
-        cursor=cursor,
+        limit=query.limit,
+        cursor=query.cursor,
+        filters=SessionFilters.model_validate(query.model_dump(exclude={"limit", "cursor"})),
     )
 
 

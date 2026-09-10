@@ -1,3 +1,8 @@
+import { useResourceRows } from "../../shared/resource-modal";
+import type { Schema } from "../../shared/api";
+import { ProviderIcon } from "../../shared/provider-icon";
+import { ResourceIdentity } from "../../shared/collection";
+import { ScopeBadge } from "../../shared/scope-badge";
 import { useQuery } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
 import { useState } from "react";
@@ -16,6 +21,7 @@ export function SearchProviders({ scope }: { scope: SearchScope }) {
     { t } = useTranslation(),
     { can, organizationAdmin } = useAccess(),
     page = useCursor();
+  const rows = useResourceRows<Schema["SearchProvider"]>();
   const query = useQuery({
     queryKey: ["search-providers", scope.kind, scope.id, page.cursor],
     queryFn: ({ signal }) =>
@@ -30,6 +36,33 @@ export function SearchProviders({ scope }: { scope: SearchScope }) {
       <PageActions>
         {manage && <SearchProviderEditor scope={scope} />}
       </PageActions>
+      {rows.selected && (
+        <SearchProviderEditor
+          key={rows.selected.id}
+          scope={scope}
+          providerId={rows.selected.id}
+          readOnly={
+            !(
+              manage &&
+              (scope.kind === "organization" ||
+                rows.selected.workspace_id === scope.id)
+            )
+          }
+          {...rows.control}
+          extra={
+            <div className={styles.actions}>
+              {manage && (
+                <SearchProviderTest
+                  scope={scope}
+                  providerId={rows.selected.id}
+                  disabled={!rows.selected.enabled}
+                />
+              )}
+              <SearchReferences scope={scope} providerId={rows.selected.id} />
+            </div>
+          }
+        />
+      )}
       {query.isPending ? (
         <Loading />
       ) : query.error ? (
@@ -38,20 +71,25 @@ export function SearchProviders({ scope }: { scope: SearchScope }) {
         <>
           <ResourceTable
             items={query.data.items}
+            onRowActivate={rows.activate}
             columns={[
               {
                 label: t("Provider"),
                 render: (item) => (
-                  <>
-                    <strong>{item.name}</strong>
-                    <small>{item.type}</small>
-                  </>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <ProviderIcon key={item.type} type={item.type} />
+                    <ResourceIdentity
+                      name={item.name}
+                      description={item.type}
+                    />
+                  </div>
                 ),
               },
               {
                 label: t("Scope"),
-                render: (item) =>
-                  t(item.workspace_id ? "Workspace" : "Organization"),
+                render: (item) => (
+                  <ScopeBadge workspaceId={item.workspace_id} />
+                ),
               },
               {
                 label: t("Credentials"),
@@ -66,29 +104,6 @@ export function SearchProviders({ scope }: { scope: SearchScope }) {
                 label: t("Status"),
                 render: (item) => (
                   <StateBadge state={item.enabled ? "enabled" : "disabled"} />
-                ),
-              },
-              {
-                label: t("Actions"),
-                render: (item) => (
-                  <div className={styles.actions}>
-                    {manage &&
-                      (scope.kind === "organization" ||
-                        item.workspace_id === scope.id) && (
-                        <SearchProviderEditor
-                          scope={scope}
-                          providerId={item.id}
-                        />
-                      )}
-                    {manage && (
-                      <SearchProviderTest
-                        scope={scope}
-                        providerId={item.id}
-                        disabled={!item.enabled}
-                      />
-                    )}
-                    <SearchReferences scope={scope} providerId={item.id} />
-                  </div>
                 ),
               },
             ]}

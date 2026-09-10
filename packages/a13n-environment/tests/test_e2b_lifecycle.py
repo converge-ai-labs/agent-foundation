@@ -41,9 +41,11 @@ class API:
         self.calls: list[str] = []
         self.fail: Exception | None = None
         self.created_then_lost = False
+        self.options = []
 
     async def create(self, *, metadata, **kwargs):
         self.calls.append("create")
+        self.options.append(kwargs)
         if self.fail:
             raise self.fail
         identifier = f"sandbox-{len(self.targets) + 1}"
@@ -302,3 +304,39 @@ def test_observer_limits_do_not_change_target_fingerprint():
         ).fingerprint
     )
     assert original.fingerprint != original.model_copy(update={"template": "other"}).fingerprint
+
+
+@pytest.mark.parametrize(
+    "api_url",
+    [None, "https://api.cn-beijing.e2b.fc.aliyuncs.com", "https://api.vefaas-e2b.sandbox-cn-beijing.volcapig.com"],
+)
+async def test_custom_api_endpoint_reaches_sdk(api, monkeypatch, api_url):
+    monkeypatch.setenv("E2B_API_URL", "https://ambient.invalid")
+    provider = E2BEnvironmentProvider()
+    runtime = await provider.create_runtime(
+        configuration=E2BBackendConfiguration(domain="sandbox.example", api_url=api_url),
+        credential=E2BCredential(api_key=SecretStr("test-key")),
+        context=ProviderRuntimeContext(environment_id="env-test", operation_id=None, storage_root=Path("/unused")),
+    )
+    env = provider.create_environment(
+        configuration=E2BProviderConfiguration(), environment_id="env-test", state=None, runtime=runtime
+    )
+    await env.prepare()
+    assert api.options[0]["api_url"] == (api_url or "https://api.sandbox.example")
+    assert api.options[0]["domain"] == "sandbox.example"
+    await env.close()
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "not-a-url",
+        "ftp://example.com",
+        "https://user:secret@example.com",
+        "https://example.com?key=secret",
+        "https://example.com/#fragment",
+    ],
+)
+def test_invalid_api_endpoint_is_rejected(url):
+    with pytest.raises(ValueError):
+        E2BBackendConfiguration(api_url=url)

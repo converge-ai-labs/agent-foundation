@@ -1,6 +1,18 @@
+import { ProviderEnabled } from "../../shared/provider-enabled";
+import { ProviderIcon } from "../../shared/provider-icon";
+import {
+  useResourceEditorState,
+  useResourceRows,
+  type ResourceEditorControl,
+} from "../../shared/resource-modal";
+import { ResourceEditorButton } from "../../shared/resource-editor-button";
+import { ResourceIdentity } from "../../shared/collection";
+import { ScopeBadge } from "../../shared/scope-badge";
 import {
   Button,
-  ChoiceField,
+  SearchPicker,
+  SettingsSection,
+  SettingsRow,
   DisclosureSection,
   FormField,
   Input,
@@ -17,7 +29,7 @@ import { useAccess } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
-import { Confirm, FormActions, JsonView } from "../../shared/form";
+import { FormActions, JsonView } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
 import { SchemaFields } from "../../shared/schema-fields";
 import styles from "../../shared/shared.module.css";
@@ -34,6 +46,7 @@ export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
     { can, organizationAdmin } = useAccess(),
     { t } = useTranslation(),
     page = useCursor();
+  const rows = useResourceRows<Schema["ConnectorProvider"]>();
   const query = useQuery({
     queryKey: [
       "connector-providers",
@@ -52,6 +65,19 @@ export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
   return (
     <div className={styles.stack}>
       <PageActions>{manage && <ProviderEditor scope={scope} />}</PageActions>
+      {rows.selected && (
+        <ProviderEditor
+          key={rows.selected.id}
+          scope={
+            rows.selected.workspace_id
+              ? { kind: "workspace", id: rows.selected.workspace_id }
+              : { kind: "organization", id: rows.selected.organization_id }
+          }
+          providerId={rows.selected.id}
+          readOnly={!(rows.selected.workspace_id ? manage : organizationAdmin)}
+          {...rows.control}
+        />
+      )}
       <ErrorNotice error={query.error} />
       {query.isPending ? (
         <Loading />
@@ -59,44 +85,36 @@ export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
         <>
           <ResourceTable
             items={query.data.items}
+            canActivateRow={(item) =>
+              (item.workspace_id ? manage : organizationAdmin) ||
+              (scope.kind === "workspace" && item.status === "active")
+            }
+            onRowActivate={rows.activate}
             columns={[
               {
                 label: t("Provider"),
                 render: (item) => (
-                  <>
-                    <strong>{item.name}</strong>
-                    <small>{item.type}</small>
-                  </>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <ProviderIcon type={item.type} />
+                    <ResourceIdentity
+                      name={item.name}
+                      description={item.type}
+                    />
+                  </div>
                 ),
               },
               {
                 label: t("Scope"),
-                render: (item) =>
-                  t(item.workspace_id ? "Workspace" : "Organization"),
+                render: (item) => (
+                  <ScopeBadge workspaceId={item.workspace_id} />
+                ),
               },
               {
                 label: t("Status"),
-                render: (item) => <StateBadge state={item.status} />,
-              },
-              {
-                label: t("Actions"),
-                align: "right",
                 render: (item) => (
-                  <div className={styles.actions}>
-                    {(item.workspace_id ? manage : organizationAdmin) && (
-                      <ProviderEditor
-                        scope={
-                          item.workspace_id
-                            ? { kind: "workspace", id: item.workspace_id }
-                            : { kind: "organization", id: item.organization_id }
-                        }
-                        providerId={item.id}
-                      />
-                    )}
-                    {scope.kind === "workspace" && item.status === "active" && (
-                      <ConnectorCatalog provider={item} />
-                    )}
-                  </div>
+                  <StateBadge
+                    state={item.status === "active" ? "enabled" : "disabled"}
+                  />
                 ),
               },
             ]}
@@ -119,14 +137,24 @@ export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
 function ProviderEditor({
   scope,
   providerId,
-}: {
+  controlledOpen,
+  onClose,
+  finalFocus,
+  readOnly = false,
+}: ResourceEditorControl & {
   scope: ConnectorScope;
   providerId?: string;
+  readOnly?: boolean;
 }) {
   const client = useClient(),
     { t } = useTranslation(),
-    [open, setOpen] = useState(false),
     [generation, setGeneration] = useState(0);
+  const { open, setOpen, modalProps } = useResourceEditorState({
+    controlledOpen,
+    onClose,
+    finalFocus,
+  });
+
   const definitions = useQuery({
     queryKey: ["connector-provider-types"],
     queryFn: ({ signal }) =>
@@ -157,29 +185,38 @@ function ProviderEditor({
   }
   return (
     <ModalFrame
-      onOpenChange={setOpen}
+      {...modalProps}
       trigger={
-        <Button
-          size={providerId ? "sm" : "default"}
-          variant={providerId ? "outline" : "default"}
-          type="button"
-        >
-          {t(providerId ? "Manage" : "Add provider")}
-        </Button>
+        controlledOpen === undefined ? (
+          <ResourceEditorButton
+            editing={!!providerId}
+            createLabel="Add provider"
+            editLabel="Edit"
+          />
+        ) : undefined
       }
       size={"md"}
-      title={t(providerId ? "Connector provider" : "Add connector provider")}
+      title={t(
+        readOnly ? "Provider" : providerId ? "Edit provider" : "Add provider",
+      )}
       description={t(
-        "Provider credentials authenticate the integration service. External account authorization happens separately.",
+        "Credentials are stored securely and never returned by the service.",
       )}
       closeLabel={t("Close")}
-      open={open}
     >
       {open &&
         (definitions.isPending || (providerId && resource.isPending) ? (
           <Loading />
         ) : definitions.error || resource.error ? (
           <ErrorNotice error={definitions.error ?? resource.error} />
+        ) : readOnly && resource.data ? (
+          <div className={styles.stack}>
+            <ResourceIdentity
+              name={resource.data.name}
+              description={resource.data.type}
+            />
+            <ConnectorCatalog provider={resource.data} />
+          </div>
         ) : (
           <ProviderForm
             key={generation}
@@ -212,6 +249,7 @@ function ProviderForm({
     key = useIdempotency(),
     [basis] = useState(initial),
     [name, setName] = useState(initial?.name ?? ""),
+    [enabled, setEnabled] = useState(initial?.status === "active"),
     [type, setType] = useState(initial?.type ?? ""),
     [configuration, setConfiguration] = useState<Record<string, unknown>>(
       initial?.configuration ?? {},
@@ -224,13 +262,25 @@ function ProviderForm({
   }
   const save = useMutation({
     mutationFn: async () => {
-      if (basis)
+      if (basis) {
+        if (Object.keys(credentials).length) {
+          if (!definition) throw new Error(t("Provider unavailable."));
+          validateSettings(definition.credential_schema, credentials);
+        }
         return client.http
           .PATCH("/api/v1/connector-providers/{connector_provider_id}", {
             params: { path: { connector_provider_id: basis.id } },
-            body: { name, expected_version: basis.version },
+            body: {
+              name,
+              status: enabled ? "active" : "disabled",
+              expected_version: basis.version,
+              ...(Object.keys(credentials).length
+                ? { credentials: stringValues(credentials) }
+                : {}),
+            },
           })
           .then(data);
+      }
       if (!definition) throw new Error(t("Select a provider type."));
       validateSettings(definition.configuration_schema, configuration);
       validateSettings(definition.credential_schema, credentials);
@@ -241,32 +291,6 @@ function ProviderForm({
         credentials: stringValues(credentials),
       };
       return connectorApi(client, scope).create(body, key.forBody(body));
-    },
-    onSuccess: done,
-  });
-  const rotate = useMutation({
-    mutationFn: () => {
-      if (!basis || !definition) throw new Error(t("Provider unavailable."));
-      validateSettings(definition.credential_schema, credentials);
-      const body = {
-        expected_version: basis.version,
-        credentials: stringValues(credentials),
-      };
-      return client.http
-        .POST(
-          "/api/v1/connector-providers/{connector_provider_id}/credentials",
-          {
-            params: {
-              path: { connector_provider_id: basis.id },
-              header: commandHeaders(
-                scope.kind === "workspace" ? scope.id : undefined,
-                key.forBody(body),
-              ),
-            },
-            body,
-          },
-        )
-        .then(data);
     },
     onSuccess: done,
   });
@@ -306,27 +330,41 @@ function ProviderForm({
           />
         </FormField>
         {basis ? (
-          <DisclosureSection title={<>{t("Configuration")}</>}>
-            <JsonView value={configuration} />
-          </DisclosureSection>
+          <>
+            <FormField label={t("Provider type")}>
+              <Input readOnly value={definition?.display_name ?? type} />
+            </FormField>
+            {Object.keys(configuration).length > 0 && (
+              <DisclosureSection title={t("Configuration")}>
+                <JsonView value={configuration} />
+              </DisclosureSection>
+            )}
+          </>
         ) : (
           <>
-            <ChoiceField
-              placeholder={t("Select provider type")}
-              value={type}
-              className="min-w-0"
-              required
-              onValueChange={(value) => {
-                setType(value);
-                setConfiguration({});
-                setCredentials({});
-              }}
-              label={t("Provider type")}
-              options={definitions.map((item) => ({
-                value: item.type,
-                label: item.display_name,
-              }))}
-            />
+            <FormField label={t("Provider type")}>
+              <SearchPicker
+                placeholder={t("Search providers…")}
+                emptyMessage={t("No matching providers")}
+                value={type}
+                onValueChange={(value) => {
+                  setType(value);
+                  setConfiguration({});
+                  setCredentials({});
+                }}
+                label={t("Provider type")}
+                groups={[
+                  {
+                    label: "",
+                    options: definitions.map((item) => ({
+                      value: item.type,
+                      label: item.display_name,
+                      icon: <ProviderIcon type={item.type} />,
+                    })),
+                  },
+                ]}
+              />
+            </FormField>
             {definition && (
               <>
                 <SchemaFields
@@ -336,89 +374,70 @@ function ProviderForm({
                   onChange={setConfiguration}
                 />
                 <SchemaFields
+                  secret
                   key={`${type}-credentials`}
                   schema={definition.credential_schema}
                   value={credentials}
                   onChange={setCredentials}
-                  secret
                 />
               </>
             )}
           </>
         )}
+        {basis && definition && (
+          <>
+            <p className={styles.muted}>
+              {t("Leave empty to keep the current credential.")}
+            </p>
+            <SchemaFields
+              secret
+              schema={{ ...definition.credential_schema, required: [] }}
+              value={credentials}
+              onChange={setCredentials}
+            />
+          </>
+        )}
+        {basis && (
+          <SettingsSection>
+            <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
+            <SettingsRow
+              stackOnNarrow={false}
+              label={t("Connection")}
+              description={t(
+                "Check the saved connection. May consume provider quota.",
+              )}
+            >
+              <Button
+                size="sm"
+                variant="outline"
+                loading={test.isPending}
+                disabled={
+                  save.isPending ||
+                  name !== basis.name ||
+                  enabled !== (basis.status === "active") ||
+                  Object.keys(credentials).length > 0
+                }
+                onClick={() => test.mutate()}
+                type="button"
+              >
+                {t("Check connection")}
+              </Button>
+            </SettingsRow>
+            <ErrorNotice error={test.error} retry={() => void reload()} />
+            {test.data && <JsonView value={test.data} />}
+            {scope.kind === "workspace" && basis.status === "active" && (
+              <SettingsRow label={t("Connectors")}>
+                <ConnectorCatalog provider={basis} />
+              </SettingsRow>
+            )}
+          </SettingsSection>
+        )}
         <ErrorNotice
           error={save.error}
           retry={basis ? () => void reload() : undefined}
         />
-        <FormActions pending={save.isPending} />
+        <FormActions pending={save.isPending} onCancel={close} />
       </form>
-      {basis && (
-        <>
-          <div className={styles.actions}>
-            <Button
-              variant="outline"
-              loading={test.isPending}
-              onClick={() => test.mutate()}
-              type="button"
-            >
-              {t("Test connection")}
-            </Button>
-            <Confirm
-              title={t(
-                basis.status === "active"
-                  ? "Disable provider"
-                  : "Enable provider",
-              )}
-              description={t(
-                "This changes eligibility for setup, discovery, and new agent calls.",
-              )}
-              trigger={t(basis.status === "active" ? "Disable" : "Enable")}
-              action={async () => {
-                const action = basis.status === "active" ? "disable" : "enable",
-                  body = { expected_version: basis.version };
-                await client.http.POST(
-                  "/api/v1/connector-providers/{connector_provider_id}/{action}",
-                  {
-                    params: {
-                      path: { connector_provider_id: basis.id, action },
-                      header: commandHeaders(
-                        scope.kind === "workspace" ? scope.id : undefined,
-                        key.forBody({ action, ...body }),
-                      ),
-                    },
-                    body,
-                  },
-                );
-                done();
-              }}
-            />
-          </div>
-          <ErrorNotice error={test.error} retry={() => void reload()} />
-          {test.data && <JsonView value={test.data} />}
-          {definition && (
-            <form
-              className={styles.form}
-              onSubmit={(event) => {
-                event.preventDefault();
-                rotate.mutate();
-              }}
-            >
-              <h3>{t("Replace credentials")}</h3>
-              <SchemaFields
-                schema={definition.credential_schema}
-                value={credentials}
-                onChange={setCredentials}
-                secret
-              />
-              <ErrorNotice error={rotate.error} retry={() => void reload()} />
-              <FormActions
-                pending={rotate.isPending}
-                label={t("Replace credentials")}
-              />
-            </form>
-          )}
-        </>
-      )}
     </div>
   );
 }

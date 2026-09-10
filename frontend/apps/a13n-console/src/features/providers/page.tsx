@@ -1,49 +1,20 @@
 import { Tabs, TabsList, TabsTab, TabsPanel } from "a13n-ui";
-import {
-  CubeIcon,
-  MagnifyingGlassIcon,
-  MonitorIcon,
-  PlugIcon,
-} from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router";
 import { useAccess } from "../../layout/workspace";
+import { providerCategories, providerCategory } from "./categories";
 import { Empty } from "../../shared/feedback";
 import { Providers } from "../models/providers";
 import { SearchProviders } from "../search/page";
 import { EnvironmentProviders } from "../environments/providers";
 import { ConnectorProviders } from "../connectors/providers";
 
-const categories = [
-  {
-    value: "models",
-    label: "Model",
-    icon: CubeIcon,
-    component: Providers,
-    description: "Connect model services and manage their credentials.",
-  },
-  {
-    value: "search",
-    label: "Search",
-    icon: MagnifyingGlassIcon,
-    component: SearchProviders,
-    description: "Connect search services for your agents' web tools.",
-  },
-  {
-    value: "environments",
-    label: "Environment",
-    icon: MonitorIcon,
-    component: EnvironmentProviders,
-    description: "Configure where your agents' environments run.",
-  },
-  {
-    value: "connectors",
-    label: "Connector",
-    icon: PlugIcon,
-    component: ConnectorProviders,
-    description: "Connect integration services for external accounts.",
-  },
-];
+const components = {
+  models: Providers,
+  search: SearchProviders,
+  environments: EnvironmentProviders,
+  connectors: ConnectorProviders,
+};
 export function ProvidersPage({
   scope,
 }: {
@@ -52,9 +23,7 @@ export function ProvidersPage({
   const { t } = useTranslation();
   const { organizationAdmin } = useAccess();
   const [params, setParams] = useSearchParams();
-  const category =
-    categories.find((item) => item.value === params.get("category")) ??
-    categories[0];
+  const category = providerCategory(params.get("category"));
   const kind = scope.kind;
   function update(key: string, value: string) {
     setParams((current) => {
@@ -72,35 +41,30 @@ export function ProvidersPage({
         aria-label={t("Provider category")}
         className="flex h-auto flex-wrap justify-start"
       >
-        {categories.map(({ value, label, icon: Icon }) => (
+        {providerCategories.map(({ value, label, icon: Icon }) => (
           <TabsTab key={value} value={value}>
             <Icon className="size-4" />
             {t(label)}
           </TabsTab>
         ))}
       </TabsList>
-      <p className="my-4 text-sm text-muted-foreground">
-        {t(category.description)}{" "}
-        {t(
-          kind === "organization"
-            ? "Organization providers are shared across workspaces."
-            : "Includes shared organization providers. New providers belong to this workspace.",
-        )}
-      </p>
-      {categories.map(({ value, component: Component }) => (
-        <TabsPanel key={value} value={value}>
-          {kind === "organization" && !organizationAdmin ? (
-            <Empty
-              title={t("Access unavailable")}
-              description={t(
-                "An organization administrator can manage these settings.",
-              )}
-            />
-          ) : (
-            <Component key={`${scope.kind}:${scope.id}`} scope={scope} />
-          )}
-        </TabsPanel>
-      ))}
+      {providerCategories.map(({ value }) => {
+        const Component = components[value];
+        return (
+          <TabsPanel key={value} value={value} className="mt-4">
+            {kind === "organization" && !organizationAdmin ? (
+              <Empty
+                title={t("Access unavailable")}
+                description={t(
+                  "An organization administrator can manage these settings.",
+                )}
+              />
+            ) : (
+              <Component key={`${scope.kind}:${scope.id}`} scope={scope} />
+            )}
+          </TabsPanel>
+        );
+      })}
     </Tabs>
   );
 }

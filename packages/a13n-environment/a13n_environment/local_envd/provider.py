@@ -61,6 +61,10 @@ class LocalEnvdEnvironmentProvider(EnvironmentProvider):
     provider_configuration_model = HostLocalProviderConfiguration
 
     @property
+    def display_name(self) -> str:
+        return "Local Envd"
+
+    @property
     def key(self) -> str:
         return _PROVIDER_KEY
 

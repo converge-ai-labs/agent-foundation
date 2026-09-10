@@ -5,10 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
-from sqlalchemy import and_, func, or_, select
+from pydantic import BaseModel, ConfigDict, JsonValue
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from sqlalchemy.orm import aliased
 
 from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.collection_cursors import (
@@ -33,6 +32,8 @@ from a13n_service.run_stream import RetainedReplayUnavailable, RunReplayIntegrit
 from a13n_service.storage import ObjectStoreError, short_session
 from a13n_service.temporal import assume_utc, optional_assume_utc
 
+from .session_queries import SessionCollection, SessionFilters, collect_sessions
+
 
 class NativeQueryError(ApplicationError):
     """Safe Native interaction query failure."""
@@ -40,21 +41,6 @@ class NativeQueryError(ApplicationError):
 
 class _Resource(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class SessionPreview(_Resource):
-    thread_id: str
-    run_id: str
-    input_text: str | None = Field(max_length=256)
-    output_text: str | None = Field(max_length=512)
-
-
-class SessionResource(_Resource):
-    id: str
-    workspace_id: str
-    created_at: datetime
-    updated_at: datetime
-    preview: SessionPreview | None
 
 
 class ThreadResource(_Resource):
@@ -157,11 +143,6 @@ class RunLineage(_Resource):
     items: tuple[RunLineageEntry, ...]
 
 
-class SessionCollection(_Resource):
-    items: tuple[SessionResource, ...]
-    next_cursor: str | None
-
-
 class ThreadCollection(_Resource):
     items: tuple[ThreadResource, ...]
     next_cursor: str | None
@@ -200,52 +181,29 @@ class NativeInteractionQueries:
         workspace_id: str,
         limit: int,
         cursor: str | None,
+        filters: SessionFilters | None = None,
     ) -> SessionCollection:
-        scope = _scope(actor, "sessions", workspace_id)
+        filters = filters or SessionFilters()
+        scope = {**_scope(actor, "sessions", workspace_id), "filters": filters.model_dump(mode="json")}
         boundary = _cursor_boundary(cursor, scope=scope, kind="sessions")
         async with short_session(self._sessions) as database:
             authorization = await _authorize_collection(
-                database, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.session_read
-            )
-            query = (
-                select(SessionRecord)
-                .where(
-                    SessionRecord.organization_id == authorization.workspace.organization_id,
-                    SessionRecord.workspace_id == workspace_id,
-                )
-                .order_by(SessionRecord.updated_at.desc(), SessionRecord.id.desc())
-                .limit(limit + 1)
-            )
-            if authorization.visible_agent_ids is not None:
-                query = query.where(
-                    select(RunRecord.id)
-                    .where(
-                        RunRecord.organization_id == SessionRecord.organization_id,
-                        RunRecord.session_id == SessionRecord.id,
-                        RunRecord.agent_id.in_(authorization.visible_agent_ids),
-                    )
-                    .exists()
-                )
-            if boundary is not None:
-                updated_at, resource_id = boundary
-                query = query.where(
-                    or_(
-                        SessionRecord.updated_at < updated_at,
-                        and_(SessionRecord.updated_at == updated_at, SessionRecord.id < resource_id),
-                    )
-                )
-            records = tuple((await database.scalars(query)).all())
-            page, next_cursor = _page(records, limit=limit, scope=scope, kind="sessions")
-            previews = await _session_previews(
                 database,
                 actor=actor,
                 workspace_id=workspace_id,
-                organization_id=authorization.workspace.organization_id,
-                session_ids=tuple(item.id for item in page),
+                action=WorkspaceAction.session_read,
             )
-            return SessionCollection(
-                items=tuple(_session(item, previews.get(item.id)) for item in page), next_cursor=next_cursor
+            records = await collect_sessions(
+                database,
+                actor=actor,
+                workspace_id=workspace_id,
+                authorization=authorization,
+                filters=filters,
+                boundary=boundary,
+                limit=limit,
             )
+        page, next_cursor = _page(records, limit=limit, scope=scope, kind="sessions")
+        return SessionCollection(items=page, next_cursor=next_cursor)
 
     async def get_thread(self, *, actor: AuthenticatedActor, thread_id: str) -> ThreadResource:
         async with short_session(self._sessions) as database:
@@ -655,90 +613,6 @@ async def _authorize_collection(database: AsyncSession, **kwargs):
         raise _not_found() from error
 
 
-async def _session_previews(
-    database: AsyncSession,
-    *,
-    actor: AuthenticatedActor,
-    workspace_id: str,
-    organization_id: str,
-    session_ids: tuple[str, ...],
-) -> dict[str, SessionPreview]:
-    if not session_ids:
-        return {}
-    try:
-        threads = await authorize_agent_scoped_collection(
-            database, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.thread_read
-        )
-        runs = await authorize_agent_scoped_collection(
-            database, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.run_read
-        )
-    except AuthorizationError:
-        return {}
-
-    current_run = aliased(RunRecord)
-    visible_threads = (
-        select(
-            ThreadRecord.session_id,
-            ThreadRecord.id.label("thread_id"),
-            func.coalesce(ThreadRecord.current_run_id, ThreadRecord.head_run_id).label("run_id"),
-            func.row_number()
-            .over(
-                partition_by=ThreadRecord.session_id,
-                order_by=(ThreadRecord.updated_at.desc(), ThreadRecord.id.desc()),
-            )
-            .label("position"),
-        )
-        .outerjoin(
-            current_run,
-            and_(
-                current_run.organization_id == ThreadRecord.organization_id,
-                current_run.id == ThreadRecord.current_run_id,
-            ),
-        )
-        .where(ThreadRecord.organization_id == organization_id, ThreadRecord.session_id.in_(session_ids))
-    )
-    if threads.visible_agent_ids is not None:
-        visible_threads = visible_threads.where(current_run.agent_id.in_(threads.visible_agent_ids))
-    latest = visible_threads.subquery()
-    # Select the latest visible Thread before checking its Run. An empty or
-    # unreadable selection must not fall back to an older conversation preview.
-    query = (
-        select(
-            latest.c.session_id,
-            latest.c.thread_id,
-            RunRecord.id,
-            func.substr(RunRecord.input_text, 1, 256),
-            func.substr(RunRecord.output_text, 1, 512),
-        )
-        .join(
-            RunRecord,
-            and_(
-                RunRecord.organization_id == organization_id,
-                RunRecord.session_id == latest.c.session_id,
-                RunRecord.thread_id == latest.c.thread_id,
-                RunRecord.id == latest.c.run_id,
-            ),
-        )
-        .where(latest.c.position == 1)
-    )
-    if runs.visible_agent_ids is not None:
-        query = query.where(RunRecord.agent_id.in_(runs.visible_agent_ids))
-    return {
-        session_id: SessionPreview(thread_id=thread_id, run_id=run_id, input_text=input_text, output_text=output_text)
-        for session_id, thread_id, run_id, input_text, output_text in (await database.execute(query)).tuples()
-    }
-
-
-def _session(record: SessionRecord, preview: SessionPreview | None) -> SessionResource:
-    return SessionResource(
-        id=record.id,
-        workspace_id=record.workspace_id,
-        created_at=assume_utc(record.created_at),
-        updated_at=assume_utc(record.updated_at),
-        preview=preview,
-    )
-
-
 def _thread(record: ThreadRecord) -> ThreadResource:
     return ThreadResource(
         id=record.id,
@@ -897,7 +771,6 @@ __all__ = [
     "RunCollection",
     "RunLineage",
     "RunResource",
-    "SessionCollection",
     "ThreadCollection",
     "ThreadResource",
 ]

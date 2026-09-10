@@ -158,6 +158,8 @@ Every input-bearing Run command and terminal Retry can select one exact Run-scop
 
 `GET /api/v1/workspaces/{workspace}/sessions?limit=...&cursor=...` returns an authorized Session page in `updated_at desc, id desc` order. Every Session includes a nullable `preview` so clients can render a conversation list without fetching each Session's Threads and Run separately. Session visibility and cursor boundaries remain governed by `session.read` and the caller's current Agent scope.
 
+Optional filters are `q` (a trimmed exact Session ID or readable Thread ID, at most 72 characters), `agent_id`, repeated `status` and `trigger_type`, and timezone-aware `updated_after` / `updated_before`. Time bounds are inclusive at the start and exclusive at the end; when both exist the start must precede the end. Values within one repeated filter are ORed, and different filters are ANDed. Agent, status, and trigger filters apply to the exact authorized Run selected by the preview rules below, before pagination; no historical Run or older Thread substitutes for a nonmatching selection. A caller without the required Thread and Run read authority receives no matches for these Run filters. Exact Thread lookup also respects Thread authorization and Workspace scope. Cursor scope includes the normalized filters, so changing filters requires a new first page.
+
 The preview has this wire shape:
 
 ```python
@@ -166,11 +168,16 @@ class SessionPreview:
     run_id: str
     input_text: str | None  # At most 256 Unicode characters.
     output_text: str | None  # At most 512 Unicode characters.
+    agent_name: str | None  # Current Agent display name, subject to agent.read.
+    run_status: RunStatus
+    trigger_type: str
 ```
 
 Service first selects the latest `thread.read`-visible Thread in each returned Session, ordered by `updated_at desc, id desc`, using the same Agent-scope filtering as the Thread collection. It selects that Thread's `current_run_id`, or `head_run_id` when the current reference is null, then separately requires `run.read` for that exact Run. A readable Session whose selected Thread has no Run, whose selected Run is unreadable, or whose caller lacks Thread or Run read authority has `preview=null`. An empty Session also has no preview. None of these cases selects an older Thread or historical Run as a fallback, and a null preview exposes no Thread or Run identifiers.
 
-Non-null previews copy only the selected Run's bounded `input_text` and `output_text` prefixes, preserving Unicode characters and null values without adding markup or an ellipsis. They do not read exact input/output bodies, payload objects, replay, or Run state. The page and its previews use a bounded number of relational queries independent of page length; authorization and latest-Thread selection apply before text projection. Preview text and identifiers are presentation data, not new stored authority, lifecycle state, or permission grants.
+Non-null previews include the selected Run's status and trigger type, and the current Agent display name when permitted by `agent.read` (otherwise null). These fields refer to the same Run as the request summary, not a separate timestamp-based latest Run. Previews copy the selected Run's bounded `input_text` and `output_text` prefixes, preserving Unicode characters and null values without adding markup or an ellipsis. They do not read exact input/output bodies, payload objects, replay, or checkpoint state. The page and its previews use a bounded number of relational queries independent of page length; authorization and latest-Thread selection apply before text projection. Preview text and identifiers are presentation data, not new stored authority, lifecycle state, or permission grants.
+
+Each Session also returns nullable `run_count`: the count of `run.read`-visible Runs across all its Threads, including child Threads and explicit Retry Runs, but counting replacement RunAttempts only through their one owning Run. The count is zero when no visible Runs exist and null when Run-read authority is unavailable. Counts and Agent names are batched for the current Session page; their relational query count does not grow with page length.
 
 ## Thread Reads
 

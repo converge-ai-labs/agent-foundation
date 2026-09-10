@@ -19,6 +19,10 @@ class E2BEnvironmentProvider(EnvironmentProvider):
     requires_keepalive = True
 
     @property
+    def display_name(self) -> str:
+        return "E2B"
+
+    @property
     def key(self) -> str:
         return PROVIDER_KEY
 
@@ -42,6 +46,7 @@ class E2BEnvironmentProvider(EnvironmentProvider):
         return E2BProviderRuntime(
             api_key=credential.api_key,
             domain=configuration.domain,
+            api_url=configuration.api_url,
             managed=context.managed,
             operation_id=context.operation_id,
         )

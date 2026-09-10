@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import PurePosixPath
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
@@ -13,13 +14,42 @@ PROVIDER_KEY = "a13n.e2b"
 class E2BBackendConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    domain: str = Field(default="e2b.dev", pattern=r"^[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$")
+    domain: str = Field(
+        default="e2b.dev",
+        title="Sandbox Domain",
+        description="Sandbox domain without https:// or a path. Use the domain supplied by your sandbox service.",
+        pattern=r"^[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$",
+    )
+    api_url: str | None = Field(
+        default=None,
+        title="API URL",
+        json_schema_extra={"x-placeholder": "https://api.e2b.dev"},
+        description="Optional control API endpoint, including https://. Leave empty to use https://api.<domain>.",
+    )
+
+    @field_validator("api_url")
+    @classmethod
+    def _api_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        url = urlsplit(value)
+        if (
+            url.scheme not in {"http", "https"}
+            or not url.hostname
+            or url.username
+            or url.password
+            or url.query
+            or url.fragment
+        ):
+            raise ValueError("API URL must be an HTTP(S) URL without credentials, query, or fragment")
+        _ = url.port
+        return value
 
 
 class E2BCredential(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    api_key: SecretStr = Field(min_length=1)
+    api_key: SecretStr = Field(min_length=1, title="API Key")
 
 
 class E2BProviderConfiguration(BaseModel):

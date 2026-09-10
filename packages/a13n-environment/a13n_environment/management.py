@@ -337,6 +337,11 @@ class EnvironmentProvider(ABC):
     def key(self) -> str: ...
 
     @property
+    def display_name(self) -> str:
+        """Human-readable identity; custom providers may use their registration key."""
+        return self.key
+
+    @property
     @abstractmethod
     def configuration_versions(self) -> frozenset[str]: ...
 

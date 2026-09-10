@@ -100,10 +100,20 @@ class CreateConnectorProviderRequest(StrictModel):
 class UpdateConnectorProviderRequest(StrictModel):
     expected_version: int = Field(ge=1)
     name: DisplayName | None = None
+    status: ConnectorProviderStatus | None = None
+    credentials: dict[str, SecretStr] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=8,
+        repr=False,
+        json_schema_extra={"writeOnly": True},
+    )
 
     @model_validator(mode="after")
     def validate_change(self) -> UpdateConnectorProviderRequest:
-        if self.name is None:
+        if "credentials" in self.model_fields_set and self.credentials is None:
+            raise ValueError("ConnectorProvider credentials cannot be removed")
+        if self.name is None and self.status is None and self.credentials is None:
             raise ValueError("ConnectorProvider update must change at least one field")
         return self
 

@@ -39,6 +39,7 @@
     "ui/tooltip.tsx"
   ],
   "localChanges": [
+    "Combobox selection checks sit at the trailing edge, leaving leading space for option icons.",
     "Fieldset legends and dialog, sheet, popover, and empty-state titles use medium font weight.",
     "Repository-relative imports and repository formatting.",
     "Sidebar accepts translated title and description for its mobile sheet.",
@@ -49,7 +50,8 @@
     "Sidebar selection preserves the default font weight and size.",
     "Sidebar stays expanded on desktop; collapse controls, state, persistence, shortcuts, and icon-only styling are removed. Navigation spacing is compact while mobile retains its drawer.",
     "Submenu highlight backgrounds align with the parent menu at the trailing edge.",
-    "Phosphor icons replace Lucide icons, including disclosure indicators and loading spinners."
+    "Phosphor icons replace Lucide icons, including disclosure indicators and loading spinners.",
+    "Dialogs use centered viewport insets, a neutral unblurred backdrop, medium titles, aligned generous padding, and bounded internal scrolling; bottom sheets are opt-in."
   ],
   "themeSource": "apps/ui/registry/registry-styles.ts"
 }

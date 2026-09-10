@@ -1,10 +1,10 @@
-import { Button, ChoiceField, FormField, Input, ModalFrame } from "a13n-ui";
+import { ResourceEditorButton } from "../../shared/resource-editor-button";
+import { ChoiceField, FormField, Input, ModalFrame } from "a13n-ui";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { PageActions } from "../../shared/page-actions";
 
-import { PlusIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { data, type Schema } from "../../shared/api";
@@ -200,14 +200,11 @@ function InvitationEditor({
         }
       }}
       trigger={
-        <Button
-          variant={invitation ? "outline" : "default"}
-          size={invitation ? "sm" : "default"}
-          type="button"
-        >
-          {!invitation && <PlusIcon size={14} />}
-          {t(invitation ? "Resend" : "Invite member")}
-        </Button>
+        <ResourceEditorButton
+          editing={!!invitation}
+          createLabel="Invite member"
+          editLabel="Resend"
+        />
       }
       size={"md"}
       title={t(invitation ? "Resend invitation" : "Invite member")}

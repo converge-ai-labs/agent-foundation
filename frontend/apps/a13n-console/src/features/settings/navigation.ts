@@ -33,7 +33,7 @@ const sections: Record<SettingsScope, Section[]> = {
     { value: "preferences", label: "Preferences", icon: SlidersHorizontalIcon },
     { value: "profile", label: "Profile", icon: UserIcon },
     { value: "security", label: "Security", icon: ShieldCheckIcon },
-    { value: "sessions", label: "Sessions", icon: MonitorIcon },
+    { value: "sessions", label: "Login sessions", icon: MonitorIcon },
     { value: "activity", label: "Activity", icon: PulseIcon },
   ],
   workspace: [

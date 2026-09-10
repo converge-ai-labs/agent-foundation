@@ -90,7 +90,10 @@ export function SearchPicker({
         aria-describedby={describedBy}
         render={<SelectButton />}
       >
-        <ComboboxValue placeholder={placeholder} />
+        <span className="flex min-w-0 items-center gap-2">
+          {selected?.icon}
+          <ComboboxValue placeholder={placeholder} />
+        </span>
       </ComboboxTrigger>
       <ComboboxPopup aria-label={label}>
         <div className="border-b p-2">

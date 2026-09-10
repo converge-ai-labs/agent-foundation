@@ -80,6 +80,7 @@ function BrowserSessions() {
             },
             {
               label: t("Actions"),
+              align: "right",
               render: (item) =>
                 !item.revoked_at && (
                   <Confirm

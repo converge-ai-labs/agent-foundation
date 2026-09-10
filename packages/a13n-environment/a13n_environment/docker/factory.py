@@ -34,6 +34,10 @@ class DockerEnvironmentProvider(EnvironmentProvider):
     supports_destroy = True
 
     @property
+    def display_name(self) -> str:
+        return "Docker"
+
+    @property
     def key(self) -> str:
         return _PROVIDER_KEY
 

@@ -96,9 +96,7 @@ it("allows an organization administrator to manage providers without a workspace
   state.hasWorkspace = false;
   mount("section=providers&category=search", "organization");
   await screen.findByText("No search providers yet");
-  expect(
-    screen.getByRole("button", { name: "Add search provider" }),
-  ).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Add provider" })).toBeTruthy();
   expect(
     state.GET.mock.calls.every(([path]) => !path.includes("/workspaces/")),
   ).toBe(true);
@@ -108,16 +106,12 @@ it("does not query organization resources when organization access is unavailabl
   mount("section=providers&category=search", "organization");
   expect(screen.getByText("Access unavailable")).toBeTruthy();
   expect(state.GET).not.toHaveBeenCalled();
-  expect(
-    screen.queryByRole("button", { name: "Add search provider" }),
-  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "Add provider" })).toBeNull();
 });
 it("shows workspace providers without offering mutations to a read-only member", async () => {
   state.organizationAdmin = false;
   state.manage = false;
   mount();
   await screen.findByText("No search providers yet");
-  expect(
-    screen.queryByRole("button", { name: "Add search provider" }),
-  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "Add provider" })).toBeNull();
 });

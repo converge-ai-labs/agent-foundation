@@ -1,3 +1,5 @@
+import { ResourceIdentity } from "../../shared/collection";
+import { ScopeBadge } from "../../shared/scope-badge";
 import { ManageProvidersLink } from "../providers/manage-link";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -41,16 +43,17 @@ export function EnvironmentTemplates({ scope }: { scope: EnvironmentScope }) {
               {
                 label: t("Name"),
                 render: (item) => (
-                  <>
-                    <strong>{item.name}</strong>
-                    <small>{item.description}</small>
-                  </>
+                  <ResourceIdentity
+                    name={item.name}
+                    description={item.description}
+                  />
                 ),
               },
               {
                 label: t("Scope"),
-                render: (item) =>
-                  t(item.workspace_id ? "Workspace" : "Organization"),
+                render: (item) => (
+                  <ScopeBadge workspaceId={item.workspace_id} />
+                ),
               },
               { label: t("Version"), render: (item) => `v${item.version}` },
               {

@@ -1,12 +1,23 @@
+import { ProviderEnabled } from "../../shared/provider-enabled";
+import {
+  useResourceEditorState,
+  useResourceRows,
+  type ResourceEditorControl,
+} from "../../shared/resource-modal";
+import { ProviderIcon } from "../../shared/provider-icon";
+import { ProviderKeyLink } from "../../shared/provider-key-link";
+import { ResourceEditorButton } from "../../shared/resource-editor-button";
+import { ResourceIdentity } from "../../shared/collection";
+import { ScopeBadge } from "../../shared/scope-badge";
 import {
   Button,
-  ChoiceField,
+  SearchPicker,
   DisclosureSection,
   FormField,
   Input,
-  Label,
+  SettingsSection,
+  SettingsRow,
   ModalFrame,
-  Switch,
 } from "a13n-ui";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -50,11 +61,13 @@ function schema(value: unknown): Record<string, unknown> {
     : {};
 }
 export function EnvironmentProviders({ scope }: { scope: EnvironmentScope }) {
+  const providerTypes = useEnvironmentTypes();
   const client = useClient(),
     { can, organizationAdmin } = useAccess(),
     { t } = useTranslation(),
     page = useCursor(),
     api = environmentApi(client, scope);
+  const rows = useResourceRows<Schema["EnvironmentProvider"]>();
   const query = useQuery({
     queryKey: [
       "environment-providers",
@@ -72,6 +85,18 @@ export function EnvironmentProviders({ scope }: { scope: EnvironmentScope }) {
   return (
     <div className={styles.stack}>
       <PageActions>{manage && <ProviderEditor scope={scope} />}</PageActions>
+      {rows.selected && (
+        <ProviderEditor
+          key={rows.selected.id}
+          scope={
+            rows.selected.workspace_id
+              ? { kind: "workspace", id: rows.selected.workspace_id }
+              : { kind: "organization", id: rows.selected.organization_id }
+          }
+          providerId={rows.selected.id}
+          {...rows.control}
+        />
+      )}
       <ErrorNotice error={query.error} />
       {query.isPending ? (
         <Loading />
@@ -79,25 +104,31 @@ export function EnvironmentProviders({ scope }: { scope: EnvironmentScope }) {
         <>
           <ResourceTable
             items={query.data.items}
+            canActivateRow={(item) =>
+              item.workspace_id ? manage : organizationAdmin
+            }
+            onRowActivate={rows.activate}
             columns={[
               {
-                label: t("Name"),
+                label: t("Provider"),
                 render: (item) => (
-                  <>
-                    <strong>{item.name}</strong>
-                    <small>{item.type}</small>
-                  </>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <ProviderIcon key={item.type} type={item.type} />
+                    <ResourceIdentity
+                      name={item.name}
+                      description={String(
+                        providerTypes.data?.items.find(
+                          (entry) => entry.type === item.type,
+                        )?.display_name ?? item.type,
+                      )}
+                    />
+                  </div>
                 ),
               },
               {
                 label: t("Scope"),
-                render: (item) =>
-                  t(item.workspace_id ? "Workspace" : "Organization"),
-              },
-              {
-                label: t("Status"),
                 render: (item) => (
-                  <StateBadge state={item.enabled ? "enabled" : "disabled"} />
+                  <ScopeBadge workspaceId={item.workspace_id} />
                 ),
               },
               {
@@ -110,19 +141,10 @@ export function EnvironmentProviders({ scope }: { scope: EnvironmentScope }) {
                   ),
               },
               {
-                label: t("Actions"),
-                align: "right",
-                render: (item) =>
-                  (item.workspace_id ? manage : organizationAdmin) && (
-                    <ProviderEditor
-                      scope={
-                        item.workspace_id
-                          ? { kind: "workspace", id: item.workspace_id }
-                          : { kind: "organization", id: item.organization_id }
-                      }
-                      providerId={item.id}
-                    />
-                  ),
+                label: t("Status"),
+                render: (item) => (
+                  <StateBadge state={item.enabled ? "enabled" : "disabled"} />
+                ),
               },
             ]}
           />
@@ -144,15 +166,23 @@ export function EnvironmentProviders({ scope }: { scope: EnvironmentScope }) {
 function ProviderEditor({
   scope,
   providerId,
-}: {
+  controlledOpen,
+  onClose,
+  finalFocus,
+}: ResourceEditorControl & {
   scope: EnvironmentScope;
   providerId?: string;
 }) {
   const client = useClient(),
     { t } = useTranslation(),
-    [open, setOpen] = useState(false),
     [generation, setGeneration] = useState(0),
     definitions = useEnvironmentTypes();
+  const { open, setOpen, modalProps } = useResourceEditorState({
+    controlledOpen,
+    onClose,
+    finalFocus,
+  });
+
   const query = useQuery({
     queryKey: [
       "environment-providers",
@@ -172,25 +202,22 @@ function ProviderEditor({
   });
   return (
     <ModalFrame
-      onOpenChange={setOpen}
+      {...modalProps}
       trigger={
-        <Button
-          size={providerId ? "sm" : "default"}
-          variant={providerId ? "outline" : "default"}
-          type="button"
-        >
-          {t(providerId ? "Edit" : "Add provider")}
-        </Button>
+        controlledOpen === undefined ? (
+          <ResourceEditorButton
+            editing={!!providerId}
+            createLabel="Add provider"
+            editLabel="Edit"
+          />
+        ) : undefined
       }
       size={"md"}
-      title={t(
-        providerId ? "Edit environment provider" : "Add environment provider",
-      )}
+      title={t(providerId ? "Edit provider" : "Add provider")}
       description={t(
-        "The backend type and configuration are fixed after creation.",
+        "Credentials are stored securely and never returned by the service.",
       )}
       closeLabel={t("Close")}
-      open={open}
     >
       {open &&
         (definitions.isPending || (providerId && query.isPending) ? (
@@ -222,7 +249,7 @@ function ProviderForm({
 }: {
   scope: EnvironmentScope;
   initial?: ReturnType<typeof representation<Schema["EnvironmentProvider"]>>;
-  definitions: Record<string, unknown>[];
+  definitions: Schema["EnvironmentProviderDefinition"][];
   close: () => void;
   reload: () => Promise<void>;
 }) {
@@ -236,6 +263,7 @@ function ProviderForm({
     [configuration, setConfiguration] = useState<Record<string, unknown>>(
       initial?.value.configuration ?? {},
     ),
+    [removeCredential, setRemoveCredential] = useState(false),
     [credential, setCredential] = useState<Record<string, unknown>>({});
   const definition = definitions.find((item) => item.type === type),
     configSchema = schema(definition?.configuration_schema),
@@ -246,16 +274,27 @@ function ProviderForm({
   }
   const save = useMutation({
     mutationFn: async () => {
-      if (basis)
+      if (basis) {
+        if (!removeCredential && Object.keys(credential).length)
+          validateSettings(credentialSchema, credential);
         return client.http
           .PATCH("/api/v1/environment-providers/{provider_id}", {
             params: {
               path: { provider_id: basis.value.id },
               header: { "If-Match": basis.etag ?? "" },
             },
-            body: { name, enabled },
+            body: {
+              name,
+              enabled,
+              ...(removeCredential
+                ? { credential: null }
+                : Object.keys(credential).length
+                  ? { credential: jsonObject(JSON.stringify(credential)) }
+                  : {}),
+            },
           })
           .then(data);
+      }
       validateSettings(configSchema, configuration);
       if (Object.keys(credential).length)
         validateSettings(credentialSchema, credential);
@@ -267,24 +306,6 @@ function ProviderForm({
           credential: jsonObject(JSON.stringify(credential)),
         }),
       });
-    },
-    onSuccess: done,
-  });
-  const rotate = useMutation({
-    mutationFn: async (remove: boolean) => {
-      if (!basis) return;
-      if (!remove) validateSettings(credentialSchema, credential);
-      return client.http
-        .PUT("/api/v1/environment-providers/{provider_id}/credential", {
-          params: {
-            path: { provider_id: basis.value.id },
-            header: { "If-Match": basis.etag ?? "" },
-          },
-          body: {
-            credential: remove ? null : jsonObject(JSON.stringify(credential)),
-          },
-        })
-        .then(data);
     },
     onSuccess: done,
   });
@@ -307,33 +328,51 @@ function ProviderForm({
         </FormField>
         {basis ? (
           <>
-            <Label className="flex items-center gap-2">
-              <Switch checked={enabled} onCheckedChange={setEnabled} />
-              {t("Enabled")}
-            </Label>
-            <DisclosureSection title={<>{t("Configuration")}</>}>
-              <JsonView value={configuration} />
-            </DisclosureSection>
+            <FormField label={t("Provider type")}>
+              <Input
+                readOnly
+                value={String(definition?.display_name ?? type)}
+              />
+            </FormField>
+            {Object.keys(configuration).length > 0 && (
+              <DisclosureSection title={t("Configuration")}>
+                <JsonView value={configuration} />
+              </DisclosureSection>
+            )}
           </>
         ) : (
           <>
-            <ChoiceField
-              placeholder={t("Select provider type")}
-              value={type}
-              className="min-w-0"
-              required
-              onValueChange={(value) => {
-                setType(value);
-                setConfiguration({});
-                setCredential({});
-              }}
+            <FormField
               label={t("Provider type")}
-              options={definitions.flatMap((item) =>
-                typeof item.type === "string"
-                  ? [{ value: item.type, label: item.type }]
-                  : [],
-              )}
-            />
+              labelAction={
+                type === "a13n.e2b" && (
+                  <ProviderKeyLink href="https://e2b.dev/dashboard?tab=keys" />
+                )
+              }
+            >
+              <SearchPicker
+                placeholder={t("Search providers…")}
+                emptyMessage={t("No matching providers")}
+                value={type}
+                onValueChange={(value) => {
+                  setType(value);
+                  setConfiguration({});
+                  setCredential({});
+                }}
+                label={t("Provider type")}
+                groups={[
+                  {
+                    label: "",
+                    options: definitions.map((item) => ({
+                      value: item.type,
+                      label: item.display_name,
+                      keywords: [item.type],
+                      icon: <ProviderIcon type={item.type} />,
+                    })),
+                  },
+                ]}
+              />
+            </FormField>
             <SchemaFields
               key={type}
               schema={configSchema}
@@ -341,58 +380,63 @@ function ProviderForm({
               onChange={setConfiguration}
             />
             <SchemaFields
+              secret
               key={`${type}-credential`}
               schema={credentialSchema}
               value={credential}
               onChange={setCredential}
-              secret
             />
+          </>
+        )}
+        {basis && (
+          <>
+            {!!Object.keys(schema(credentialSchema.properties)).length &&
+              !removeCredential && (
+                <>
+                  <p className={styles.muted}>
+                    {t("Leave empty to keep the current credential.")}
+                  </p>
+                  <SchemaFields
+                    secret
+                    schema={{ ...credentialSchema, required: [] }}
+                    value={credential}
+                    onChange={setCredential}
+                  />
+                </>
+              )}
+            <SettingsSection>
+              <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
+              {basis.value.credential_configured && (
+                <SettingsRow
+                  stackOnNarrow={false}
+                  label={t("Saved credentials")}
+                  description={t(
+                    removeCredential
+                      ? "Credentials will be removed when you save."
+                      : "Replace them above, or remove the saved credentials.",
+                  )}
+                >
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={
+                      removeCredential ? undefined : "text-destructive"
+                    }
+                    onClick={() => setRemoveCredential(!removeCredential)}
+                  >
+                    {t(removeCredential ? "Undo" : "Remove")}
+                  </Button>
+                </SettingsRow>
+              )}
+            </SettingsSection>
           </>
         )}
         <ErrorNotice
           error={save.error}
           retry={basis ? () => void reload() : undefined}
         />
-        <FormActions pending={save.isPending} />
+        <FormActions pending={save.isPending} onCancel={close} />
       </form>
-      {basis && Object.keys(credentialSchema).length > 0 && (
-        <form
-          className={styles.form}
-          onSubmit={(event) => {
-            event.preventDefault();
-            rotate.mutate(false);
-          }}
-        >
-          <h3>{t("Replace credentials")}</h3>
-          <p className={styles.muted}>
-            {t(
-              "Existing credentials are never displayed. Supply a complete replacement.",
-            )}
-          </p>
-          <SchemaFields
-            schema={credentialSchema}
-            value={credential}
-            onChange={setCredential}
-            secret
-          />
-          <ErrorNotice error={rotate.error} retry={() => void reload()} />
-          <div className={styles.actions}>
-            <Button type="submit" variant="default" loading={rotate.isPending}>
-              {t("Replace credentials")}
-            </Button>
-            {basis.value.credential_configured && (
-              <Button
-                variant="destructive"
-                loading={rotate.isPending}
-                onClick={() => rotate.mutate(true)}
-                type="button"
-              >
-                {t("Remove credentials")}
-              </Button>
-            )}
-          </div>
-        </form>
-      )}
     </div>
   );
 }

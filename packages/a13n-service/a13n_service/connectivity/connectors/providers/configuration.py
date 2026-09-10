@@ -24,5 +24,9 @@ ConnectorKeys = Annotated[
 
 class ApiKeyCredentials(StrictModel):
     api_key: str = Field(
-        min_length=1, max_length=4096, repr=False, json_schema_extra={"writeOnly": True, "format": "password"}
+        title="API Key",
+        min_length=1,
+        max_length=4096,
+        repr=False,
+        json_schema_extra={"writeOnly": True, "format": "password"},
     )

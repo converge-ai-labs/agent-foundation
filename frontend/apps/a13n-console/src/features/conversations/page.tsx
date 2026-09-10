@@ -12,13 +12,13 @@ import {
   useSearchParams,
 } from "react-router";
 
-import { ArrowLeftIcon, ChatIcon, PlusIcon } from "@phosphor-icons/react";
+import { ChatIcon, PlusIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { allPages, commandHeaders, data, type Schema } from "../../shared/api";
-import { Pagination, useCursor } from "../../shared/collection";
-import { Empty, ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
+import { allPages, commandHeaders, data } from "../../shared/api";
+import { Empty, ErrorNotice, Loading } from "../../shared/feedback";
+import { SessionList } from "./list";
 import { useIdempotency } from "../../shared/idempotency";
 import { conversationQueries, invalidateConversation, runPath } from "./api";
 import { Composer } from "./composer";
@@ -29,106 +29,23 @@ import { OptionsComposer, RunOptions, useRunOptions } from "./options";
 import { ThreadQueue } from "./queue";
 
 export function ConversationsPage() {
-  const { t } = useTranslation(),
-    { workspace, can, basePath } = useWorkspace(),
-    client = useClient(),
-    page = useCursor(),
-    navigate = useNavigate();
-  const notifications = useConversationNotifications();
-  const sessions = useQuery(
-    conversationQueries(client, workspace.id).sessions(page.cursor),
-  );
   const { sessionId } = useParams();
   const location = useLocation();
   const nested = !!sessionId || /\/sessions\/new\/?$/.test(location.pathname);
-  return (
-    <div className={styles.sessionsLayout} data-detail={nested}>
-      <aside className={styles.sessionSidebar}>
-        <Link className={styles.workspaceBack} to={`${basePath}/agents`}>
-          <ArrowLeftIcon size={14} />
-          {t("Back to workspace")}
-        </Link>
-        <header>
-          <h1>{t("Sessions")}</h1>
-          {can("agent.invoke") && (
-            <Button
-              variant="ghost"
-              aria-label={t("New session")}
-              onClick={() => navigate("new")}
-              size="icon-sm"
-              type="button"
-            >
-              {<PlusIcon size={16} />}
-            </Button>
-          )}
-        </header>
-        <ErrorNotice
-          error={notifications.error}
-          retry={notifications.reconnect}
-        />
-        <ErrorNotice
-          error={sessions.error}
-          retry={() => void sessions.refetch()}
-        />
-        <nav aria-label={t("Sessions")}>
-          {sessions.isPending ? (
-            <Loading />
-          ) : (
-            sessions.data?.items.map((session) => (
-              <SessionLink
-                key={session.id}
-                session={session}
-                selected={session.id === sessionId}
-              />
-            ))
-          )}
-          {!sessions.isPending && !sessions.data?.items.length && (
-            <p className={styles.sessionHint}>
-              {t("Your sessions will appear here.")}
-            </p>
-          )}
-        </nav>
-        {sessions.data && (
-          <Pagination page={page} next={sessions.data.next_cursor} />
-        )}
-      </aside>
-      <div
-        className={`${styles.sessionStage} a13n-scrollbar`}
-        data-session-stage
-      >
-        {nested ? <Outlet /> : <NewConversation />}
-      </div>
+  const notifications = useConversationNotifications();
+  return nested ? (
+    <div className={`${styles.sessionStage} a13n-scrollbar`} data-session-stage>
+      <ErrorNotice
+        error={notifications.error}
+        retry={notifications.reconnect}
+      />
+      <Outlet />
     </div>
-  );
-}
-function SessionLink({
-  session,
-  selected,
-}: {
-  session: Schema["SessionResource"];
-  selected: boolean;
-}) {
-  const { t } = useTranslation();
-  const preview = session.preview;
-  return (
-    <Link
-      to={session.id}
-      className={styles.sessionLink}
-      aria-current={selected ? "page" : undefined}
-      title={preview?.input_text || t("Untitled session")}
-    >
-      <div>
-        <strong>{preview?.input_text || t("Untitled session")}</strong>
-        <small>
-          <Timestamp value={session.updated_at} relative />
-        </small>
-      </div>
-      <p>
-        {preview?.output_text
-          ? preview.output_text.replace(/[`#*_>]/g, "").replace(/\s+/g, " ")
-          : t("Open session")}
-      </p>
-    </Link>
+  ) : (
+    <SessionList
+      notificationError={notifications.error}
+      reconnect={notifications.reconnect}
+    />
   );
 }
 

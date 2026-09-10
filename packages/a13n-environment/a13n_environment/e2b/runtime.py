@@ -13,7 +13,8 @@ class E2BProviderRuntime:
     domain: str = "e2b.dev"
     managed: bool = True
     operation_id: str | None = None
+    api_url: str | None = None
 
     def __post_init__(self) -> None:
         E2BCredential(api_key=self.api_key)
-        E2BBackendConfiguration(domain=self.domain)
+        E2BBackendConfiguration(domain=self.domain, api_url=self.api_url)

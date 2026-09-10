@@ -54,6 +54,18 @@ class EnvironmentProvider(DomainModel):
     updated_at: datetime
 
 
+class EnvironmentProviderDefinition(DomainModel):
+    type: str
+    display_name: str
+    configuration_versions: tuple[str, ...]
+    configuration_schema: JsonObject
+    credential_schema: JsonObject | None
+    supports_managed: bool
+    supports_stop: bool
+    supports_destroy: bool
+    requires_keepalive: bool
+
+
 class EnvironmentConfiguration(DomainModel):
     configuration_schema_version: str = "1"
     configuration: JsonObject
@@ -134,6 +146,7 @@ class CreateProviderRequest(DomainModel):
 class UpdateProviderRequest(DomainModel):
     name: EnvironmentName | None = None
     enabled: bool | None = None
+    credential: JsonObject | None = Field(default=None, repr=False, json_schema_extra={"writeOnly": True})
 
 
 class ReplaceCredentialRequest(DomainModel):
