@@ -6,7 +6,7 @@ Python SDK package for a13n Service.
 
 This SDK implements Search Provider management for Native `/api/v1`: the type catalog, Workspace/Organization account create/list/get/update, saved-account tests, and authorized references. Responses preserve ETags, and mutations are never automatically replayed after an uncertain outcome.
 
-Other Service operations are not implemented yet. `AgentConfig` and `AgentRunOverride` type the search selection while preserving other Service-owned configuration fields; they are not complete local validators for Agent configuration. Source compatibility is with the repository's current `/api/v1` Search Provider contract.
+The generated low-level API covers every ordinary Native `/api/v1` HTTP operation in the shared Service OpenAPI contract. The existing Search facade stays compatible; its `AgentConfig` and `AgentRunOverride` remain search-focused wrappers, while complete request/resource models live in `generated`. Generated HTTP bindings do not implement Run SSE or notification WebSocket recovery.
 
 ## Installation
 
@@ -41,6 +41,22 @@ replace = AgentRunOverride(search=SearchSelection(provider_id="sprov_example")).
 ```
 
 Use `CreateSearchProviderRequest` / `UpdateSearchProviderRequest` and `pydantic.SecretStr` for write-only credential input. Ordinary model diagnostics redact the key; the client reveals it only while serializing an authorized request. `test_search_provider` sends one quota-consuming probe only when called. Use `aclose()` or an async context manager to release the transport.
+
+## Generated HTTP operations
+
+```python
+from a13n import Client
+from a13n.generated.api.identity import get_auth_context
+
+
+async def context(base_url: str, token: str):
+    async with Client(base_url, token) as client:
+        return await client.execute(lambda api: get_auth_context.asyncio_detailed(client=api))
+```
+
+`Response.parsed` is a typed success/error union; `status_code`, `headers`, and `content` retain HTTP evidence. Models use attrs rather than the Search facade's Pydantic models. Use generated enums when constructing requests; `UNSET` means omitted and `None` means JSON null. `Client.execute` shares authentication, timeout, cancellation, and the existing httpx2 pool; it does not apply the Search facade's 1 MiB response limit or exception mapping.
+
+For uploads, generated methods accept `a13n.generated.types.File` with a caller-owned binary file and stream bounded chunks through the async transport. For downloads, use `async with client.stream(operation.build_request(...)) as response` and iterate `response.aiter_bytes()`. Do not use buffered generated `asyncio_detailed` downloads for large files. Low-level generated synchronous clients are separately owned, not another mode of the async facade.
 
 ## Development
 

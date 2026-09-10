@@ -501,10 +501,16 @@ sdk/typescript/node_modules/.package-lock.json: sdk/typescript/package.json sdk/
 .PHONY: sdk-typescript-sync
 sdk-typescript-sync: sdk/typescript/node_modules/.package-lock.json ## Install locked TypeScript SDK dependencies
 
+.PHONY: sdk-generate
+sdk-generate: sync sdk-typescript-sync ## Regenerate all SDKs from the live Service OpenAPI contract
+	@uv run --locked python sdk/codegen/generate.py
+
+.PHONY: sdk-generated-check
+sdk-generated-check: sync sdk-typescript-sync ## Verify shared OpenAPI and all generated SDK files without changing them
+	@uv run --locked python sdk/codegen/generate.py --check
+
 .PHONY: sdk-typescript-generate
-sdk-typescript-generate: sync sdk-typescript-sync ## Regenerate the Native TypeScript API contract
-	@uv run python scripts/export-a13n-service-openapi.py
-	@node sdk/typescript/generate.mjs
+sdk-typescript-generate: sdk-generate ## Regenerate shared SDK contracts (compatibility alias)
 
 .PHONY: sdk-typescript-contract-check
 sdk-typescript-contract-check: sync sdk-typescript-sync ## Check Native TypeScript contract drift
@@ -530,7 +536,7 @@ sdk-build: sdk-python-build sdk-go-build sdk-rust-build sdk-typescript-build ## 
 sdk-check: sdk-python-check sdk-go-check sdk-rust-check sdk-typescript-check ## Run all standalone SDK lint and type checks
 
 .PHONY: sdk-check-all
-sdk-check-all: sdk-python-check-all sdk-go-check-all sdk-rust-check-all sdk-typescript-check-all ## Run all complete standalone SDK gates
+sdk-check-all: sdk-generated-check sdk-python-check-all sdk-go-check-all sdk-rust-check-all sdk-typescript-check-all ## Run all complete standalone SDK gates
 
 .PHONY: build
 build: frontend-build python-build rust-build sdk-build a13n-service-cli-build ## Build all workspace, application, SDK, and CLI artifacts

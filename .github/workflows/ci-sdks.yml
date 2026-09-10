@@ -72,21 +72,45 @@ jobs:
         with:
           filters: |
             go:
+              - 'packages/**'
+              - 'sdk/openapi.json'
+              - 'sdk/codegen/**'
+              - 'sdk/fixtures/**'
+              - 'scripts/export-a13n-service-openapi.py'
+              - 'Makefile'
+              - 'uv.lock'
               - '.github/workflows/ci-sdks.yml'
               - '.github/workflows/release-a13n-go.yml'
               - 'sdk/go/**'
             python:
+              - 'packages/**'
+              - 'sdk/openapi.json'
+              - 'sdk/codegen/**'
+              - 'sdk/fixtures/**'
+              - 'scripts/export-a13n-service-openapi.py'
+              - 'Makefile'
+              - 'uv.lock'
               - '.github/workflows/ci-sdks.yml'
               - '.github/workflows/release-a13n-python.yml'
               - 'pyproject.toml'
               - 'sdk/python/**'
             rust:
+              - 'packages/**'
+              - 'sdk/openapi.json'
+              - 'sdk/codegen/**'
+              - 'sdk/fixtures/**'
+              - 'scripts/export-a13n-service-openapi.py'
+              - 'Makefile'
+              - 'uv.lock'
               - '.github/workflows/ci-sdks.yml'
               - '.github/workflows/release-a13n-rust.yml'
               - 'Cargo.toml'
               - 'sdk/rust/**'
               - '!sdk/rust/a13n-service-cli/**'
             typescript:
+              - 'sdk/openapi.json'
+              - 'sdk/codegen/**'
+              - 'sdk/fixtures/**'
               - '.github/workflows/ci-sdks.yml'
               - '.github/workflows/release-a13n-typescript.yml'
               - 'sdk/typescript/**'
@@ -96,6 +120,13 @@ jobs:
               - 'uv.lock'
               - 'pyproject.toml'
             a13n_service_cli:
+              - 'packages/**'
+              - 'sdk/openapi.json'
+              - 'sdk/codegen/**'
+              - 'sdk/fixtures/**'
+              - 'scripts/export-a13n-service-openapi.py'
+              - 'Makefile'
+              - 'uv.lock'
               - '.github/workflows/ci-sdks.yml'
               - '.github/workflows/release-a13n-service-cli.yml'
               - '.pre-commit-config.yaml'
@@ -103,6 +134,41 @@ jobs:
               - 'sdk/rust/Cargo.lock'
               - 'sdk/rust/src/**'
               - 'sdk/rust/a13n-service-cli/**'
+
+  generated:
+    name: Generated SDK consistency
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: sdk/go/go.mod
+          cache: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Check generated files against the live Service contract
+        run: make sdk-generated-check
+      - name: Test generation and representative Service integration
+        run: >-
+          uv run --locked python -m pytest
+          scripts/tests/test_sdk_codegen.py
+          packages/a13n-service/tests/process/test_openapi.py
+          packages/a13n-service/tests/search/test_sdk.py
 
   python:
     name: Python SDK

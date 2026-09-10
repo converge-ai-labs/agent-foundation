@@ -1,0 +1,70 @@
+{
+  "patch": [
+    {},
+    {
+      "name": null
+    },
+    {
+      "name": "new"
+    }
+  ],
+  "actor": [
+    {
+      "principal_id": "usr_example",
+      "principal_type": "user"
+    },
+    {
+      "principal_id": "sa_example",
+      "principal_type": "service_account"
+    },
+    {
+      "principal_id": "system",
+      "principal_type": "system"
+    }
+  ],
+  "environment": [
+    {
+      "environment_id": "env_example"
+    },
+    {
+      "template_id": "etpl_example",
+      "version": null
+    }
+  ],
+  "user_message": [
+    {
+      "id": "m1",
+      "content": "hello"
+    },
+    {
+      "id": "m1",
+      "content": [
+        {
+          "type": "text",
+          "text": "hello"
+        }
+      ]
+    }
+  ],
+  "cost": [
+    1.5,
+    "1.50"
+  ],
+  "run_status": [
+    "running",
+    "future_status"
+  ],
+  "null_cursor": [
+    {
+      "items": []
+    },
+    {
+      "items": [],
+      "next_cursor": null
+    }
+  ],
+  "credential_context": {
+    "organization_id": "org_example",
+    "workspace_id": "ws_example"
+  }
+}

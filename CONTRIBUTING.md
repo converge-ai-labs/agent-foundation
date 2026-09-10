@@ -25,7 +25,7 @@ Requirements:
 - [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
 - Make
 - Node.js 24 with npm (standalone TypeScript SDK) and pnpm (frontend workspace)
-- Go
+- Go 1.25 or newer
 - A stable Rust toolchain with `rustfmt` and Clippy
 - Docker when generating PostgreSQL migrations, running container-backed integration tests, or validating images
 
@@ -88,6 +88,8 @@ Use the Makefile as the stable development interface:
 | `make examples-check-all`     | Build and run the complete independent examples gate               |
 | `make eip-check`              | Verify generated EIP artifacts and shared Python/Rust wire models  |
 | `make rust-check`             | Format-check and lint the root Rust workspace                      |
+| `make sdk-generate`           | Regenerate all Native SDK bindings from Service OpenAPI            |
+| `make sdk-generated-check`    | Check shared OpenAPI and generated bindings without modifying them |
 | `make sdk-check`              | Lint and type-check the standalone SDKs                            |
 | `make a13n-service-cli-check` | Format-check and lint the standalone a13n Service CLI              |
 | `make frontend-sync`          | Install the locked frontend workspace dependencies                 |
@@ -99,6 +101,8 @@ Use the Makefile as the stable development interface:
 | `make check-all`              | Run the complete component gates, including tests and builds       |
 
 This section owns validation policy; agent guides and skills refer here rather than adding separate gates. Select checks from changes since the last successful validation and their dependency impact. Without prior results, cover the complete intended change. For merge or rebase updates, include incoming changes and interactions between both branches, not just textual conflicts.
+
+The SDK pre-commit hook regenerates on potential Service contract changes and leaves changed files unstaged for review. Commit `sdk/openapi.json` and generated outputs together. `make sdk-generated-check` regenerates in temporary directories and fails on stale or removed output; CI runs it independently of the language checks. See [Native SDK generation](sdk/codegen/README.md) for pinned tools and owned outputs.
 
 Start with the fastest relevant Make targets and add meaningful tests for behavior changes. Use `make check` for repository-wide fast validation. Run `make check-all` before handoff when the affected scope is broad, such as changes spanning multiple component boundaries or shared build tooling, or cannot be bounded confidently. Complete applicable [migration checks](#database-changes), [image checks](DEVELOPMENT.md#container-image), and `make docs-build` for changes to `docs/`, navigation, or site configuration. Instruction-only changes need formatting, link checks, and structural validation of changed skills; they do not require unrelated application suites.
 

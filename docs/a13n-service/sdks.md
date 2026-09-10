@@ -7,12 +7,12 @@ Service SDKs call a running Service. They do not run a Harness Agent in your pro
 | Client        | Distribution                                          | Implemented surface                                                              |
 | ------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------- |
 | TypeScript    | `@converge.ai/a13n`                                   | Complete checked Native HTTP contract, Workspace binding, Run SSE, notifications |
-| Python        | `a13n`                                                | Search Provider management and credential-context Workspace binding              |
-| Go            | `github.com/converge-ai-labs/agent-foundation/sdk/go` | Search Provider management and credential-context Workspace binding              |
-| Rust          | `a13n`                                                | Search Provider management and credential-context Workspace binding              |
+| Python        | `a13n`                                                | Generated Native HTTP plus Search Provider facade and Workspace binding          |
+| Go            | `github.com/converge-ai-labs/agent-foundation/sdk/go` | Generated Native HTTP plus Search Provider facade and Workspace binding          |
+| Rust          | `a13n`                                                | Generated Native HTTP plus Search Provider facade and Workspace binding          |
 | Companion CLI | `a13n-service-cli`                                    | Help/version only; no resource or network commands yet                           |
 
-Python, Go, and Rust implement the Search Provider type catalog, scoped create/list/get/update/test/references operations. Their `AgentConfig` and `AgentRunOverride` wrappers type **search selection**, preserve other Service-owned fields, and are not complete Agent configuration validators. None of these three clients currently implements Agent CRUD, Run submission, binary transfer, SSE, or notifications.
+Python, Go, and Rust implement the Search Provider type catalog, scoped create/list/get/update/test/references operations. Their `AgentConfig` and `AgentRunOverride` wrappers type **search selection**, preserve other Service-owned fields, and are not complete Agent configuration validators. Their generated low-level bindings now also cover Agent CRUD, Run submission, and binary HTTP operations. Run SSE recovery and notification WebSocket helpers are still TypeScript-only.
 
 The TypeScript generated `paths`, `components`, and `operations` types follow the [Native OpenAPI contract](../assets/reference/service-openapi.json). The generator does not create an alternative Service implementation. AG-UI, A2A, and provider ingress are outside this Native client.
 
@@ -94,7 +94,7 @@ async def search_accounts(base_url: str, token: str):
         return page.items, page.next_cursor
 ```
 
-`Client(base_url, token, *, timeout=30, transport=None)` owns its supplied `httpx2.AsyncBaseTransport`. It does not follow redirects or trust environment proxy configuration. Responses are bounded to 1 MiB. Lists default to 100 unless you supply a limit; follow returned cursors explicitly.
+`Client(base_url, token, *, timeout=30, transport=None)` owns its supplied `httpx2.AsyncBaseTransport`. It does not follow redirects or trust environment proxy configuration. Search facade responses are bounded to 1 MiB. Lists default to 100 unless you supply a limit; follow returned cursors explicitly.
 
 Detail/create/update return `Representation(value, etag, request_id)`. Collection/probe operations return their own values. Updates require a non-weak ETag. `ApiError` carries status/code/message/details/request ID/retry guidance; `ProtocolError` covers invalid, oversized, or schema-invalid responses; `TransportError` can leave mutation outcome unknown. No automatic SDK retries occur.
 
@@ -102,18 +102,18 @@ Use `aclose()` or an async context manager. Closing cancels local requests, clea
 
 ## Go and Rust
 
-| Behavior           | Go                                                                  | Rust                                             |
-| ------------------ | ------------------------------------------------------------------- | ------------------------------------------------ |
-| Constructor        | `NewClient(baseURL, Secret, http.RoundTripper)`                     | `Client::new(base_url, Secret)`                  |
-| Credentials        | `NewSecret(value)`                                                  | `Secret::new(value)`                             |
-| Injected transport | Owned supplied RoundTripper; nil clones the default                 | No public injection/transport builder            |
-| Timeout            | 30 seconds; per-call context also applies                           | 30 seconds; dropping a request future cancels it |
-| Retry policy       | No SDK retry loop; underlying transport behavior is separate        | Explicit retry-never policy                      |
-| Redirects          | Not followed                                                        | Not followed                                     |
-| Proxy behavior     | Cloned Go default transport retains its normal environment handling | Explicit `no_proxy()`                            |
-| Response bound     | 1 MiB                                                               | 1 MiB                                            |
-| List default       | Zero option omits limit; Service default 50                         | `None` omits limit; Service default 50           |
-| Close              | `Close()` cancels lifetime and closes idle connections              | `close()` cancels requests and releases the pool |
+| Behavior              | Go                                                                  | Rust                                             |
+| --------------------- | ------------------------------------------------------------------- | ------------------------------------------------ |
+| Constructor           | `NewClient(baseURL, Secret, http.RoundTripper)`                     | `Client::new(base_url, Secret)`                  |
+| Credentials           | `NewSecret(value)`                                                  | `Secret::new(value)`                             |
+| Injected transport    | Owned supplied RoundTripper; nil clones the default                 | No public injection/transport builder            |
+| Timeout               | 30 seconds; per-call context also applies                           | 30 seconds; dropping a request future cancels it |
+| Retry policy          | No SDK retry loop; underlying transport behavior is separate        | Explicit retry-never policy                      |
+| Redirects             | Not followed                                                        | Not followed                                     |
+| Proxy behavior        | Cloned Go default transport retains its normal environment handling | Explicit `no_proxy()`                            |
+| Search response bound | 1 MiB                                                               | 1 MiB                                            |
+| List default          | Zero option omits limit; Service default 50                         | `None` omits limit; Service default 50           |
+| Close                 | `Close()` cancels lifetime and closes idle connections              | `close()` cancels requests and releases the pool |
 
 Go operations take `context.Context`; Workspace binding shares the parent lifetime. `Representation[T]` preserves `ETag` and `RequestID`. Handle `ApiError`, `ErrTransport`, `ErrProtocol`, and `ErrClosed`; caller cancellation propagates its context error.
 
@@ -121,10 +121,20 @@ Rust returns typed representations and `Error::{Api, Transport, Protocol, Invali
 
 See the source package READMEs for language-native examples: [Python](https://github.com/converge-ai-labs/agent-foundation/tree/main/sdk/python), [Go](https://github.com/converge-ai-labs/agent-foundation/tree/main/sdk/go), [Rust](https://github.com/converge-ai-labs/agent-foundation/tree/main/sdk/rust), and [TypeScript](https://github.com/converge-ai-labs/agent-foundation/tree/main/sdk/typescript).
 
+## Generated low-level HTTP
+
+Python imports models and operation modules from `a13n.generated`. Run `await client.execute(lambda api: operation.asyncio_detailed(..., client=api))`. The returned response retains status, headers, raw content and the typed success/error union. Request models are attrs classes, separate from the stable Pydantic Search facade. Use generated enums in constructors; `UNSET` omits a field and `None` sends null. For binary upload, `File(payload=binary_file)` is sent in bounded async chunks. For download, use `async with client.stream(operation.build_request(...))` and consume `aiter_bytes()` inside the context.
+
+Go imports full schemas from the module's `generated` package. `client.API()` returns the generated operations over the same transport. `WithResponse` methods decode typed status-specific bodies and retain the underlying response headers. Raw methods return `*http.Response` for streaming; callers close its body. Nullable fields use `nullable.Nullable[T]`, and generated union methods expose typed branches.
+
+Rust imports `a13n::generated::{apis, models}` and uses `client.execute(async |api| operation(api, ...).await).await`. Ordinary JSON results contain `data`, `status` and `headers`; generated operation errors preserve their response evidence. Optional nullable fields use `Option<Option<T>>`. Binary response bodies must be consumed inside the closure to stay within owner cancellation.
+
+These entry points share the Search client's authentication, pool and lifetime, but retain low-level result types rather than the Search facade's error mapping or 1 MiB JSON response bound. They perform no automatic mutation retries. Low-level generated bindings are not complete JSON Schema validators, pagination workflows, SSE reconnectors, or WebSocket clients. `RunStatus` preserves unknown strings in Python/Rust without opening closed union discriminator tags. Use the actual returned status and the documented schema's error union rather than assuming that completion implies success.
+
 ## Compatibility and development
 
 Use an SDK built for the Service contract you deploy. Documentation describes the checked source contract, not a claim about the newest package on a registry. SDK directories have standalone manifests and lockfiles outside the root Python/Rust workspaces. Release versions are independent.
 
-From the repository root, `make sdk-check` runs fast checks and `make sdk-check-all` runs full SDK gates. `make sdk-typescript-generate` refreshes the checked Service schema and generated TypeScript models; the generation check detects drift. The companion CLI has its own `make a13n-service-cli-check` and `make a13n-service-cli-check-all` targets.
+From the repository root, `make sdk-check` runs fast checks and `make sdk-check-all` runs full SDK gates. `make sdk-generate` exports the shared Service schema and regenerates all four language bindings. The pre-commit hook reruns it on relevant source changes without staging files. `make sdk-generated-check` verifies the live schema and regenerates into temporary directories to detect changed or stale files without modifying committed output. SDK CI runs this consistency check and every affected language gate. The companion CLI has its own `make a13n-service-cli-check` and `make a13n-service-cli-check-all` targets.
 
 The process/operator executable is **`a13n-service`**. Its serve, database, identity, and config commands are not remote SDK operations. The **`a13n-service-cli`** scaffold currently exposes only help/version; use Native HTTP or an implemented SDK for actual remote work.

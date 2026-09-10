@@ -1,0 +1,18 @@
+#![allow(unused_imports)]
+// Upstream template style only; compiler and correctness lints remain enabled.
+#![allow(clippy::too_many_arguments, clippy::needless_return, clippy::derivable_impls, clippy::empty_docs, clippy::manual_map)]
+
+extern crate serde_repr;
+extern crate serde;
+extern crate serde_json;
+extern crate url;
+{{#hyper}}
+extern crate hyper;
+extern crate futures;
+{{/hyper}}
+{{#reqwest}}
+extern crate reqwest;
+{{/reqwest}}
+
+pub mod apis;
+pub mod models;

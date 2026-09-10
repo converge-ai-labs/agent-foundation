@@ -34,6 +34,7 @@ from a13n_service.interactions.threads import router as thread_router
 from a13n_service.lifecycle.router import router as lifecycle_router
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.router import router as model_router
+from a13n_service.openapi import install_openapi
 from a13n_service.process.components import Components, snapshot_components
 from a13n_service.process.lifecycle import open_process_runtime
 from a13n_service.process.roles import owns_connectivity_data, owns_control
@@ -185,6 +186,7 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
             del api_path
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API route not found")
 
+    install_openapi(app)
     return app
 
 

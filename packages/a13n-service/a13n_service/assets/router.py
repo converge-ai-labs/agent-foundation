@@ -13,6 +13,7 @@ from a13n_service.application_errors import ErrorCategory
 from a13n_service.http_types import IdempotencyKey
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.iam.http.resource_dependencies import WorkspaceId
+from a13n_service.openapi import BINARY_RESPONSE
 from a13n_service.request_runtime import get_control_runtime, get_process_runtime
 
 from .catalog import AssetCatalog, PreparedAssetContent
@@ -100,7 +101,7 @@ async def get_asset(request: Request, actor: Actor, asset_id: str) -> Asset:
     return await _assets(request).get(actor=actor, asset_id=asset_id)
 
 
-@router.get("/assets/{asset_id}/content")
+@router.get("/assets/{asset_id}/content", response_class=StreamingResponse, responses=BINARY_RESPONSE)
 async def get_asset_content(request: Request, actor: Actor, asset_id: str) -> Response:
     prepared = await _assets(request).prepare_content(actor=actor, asset_id=asset_id)
     return StreamingResponse(

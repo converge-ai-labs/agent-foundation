@@ -53,3 +53,21 @@ export async function scopedHttpContract(client: Client) {
   // @ts-expect-error Workspace is supplied by the credential, never by this caller.
   await http.GET("/agents", { params: { path: { workspace: "other" } } });
 }
+
+export const actor: Schema["ActorRef"] = {
+  principal_id: "system",
+  principal_type: "system",
+};
+export const environment: Schema["EnvironmentSelection"] = {
+  template_id: "etpl_example",
+  version: null,
+};
+export const patchStates: Schema["UpdateAgentRequest"][] = [
+  {},
+  { name: null },
+  { name: "new" },
+];
+// @ts-expect-error Structured patch fields cannot degrade to arbitrary JSON.
+export const invalidPatch: Schema["UpdateAgentRequest"] = { name: 42 };
+// @ts-expect-error Message content is a typed string-or-multimodal union.
+export const invalidMessage: Schema["UserMessage"] = { id: "m1", content: 42 };
