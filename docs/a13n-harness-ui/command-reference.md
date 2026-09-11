@@ -34,12 +34,13 @@ The following command paths are literal shell subcommands. Positional arguments 
 
 Run one foreground WebUI server with bundled browser assets.
 
-| Parameter                                                       | Type / choices   | Parser default     | Meaning                                                                           |
-| --------------------------------------------------------------- | ---------------- | ------------------ | --------------------------------------------------------------------------------- |
-| `--host`                                                        | text             | `"127.0.0.1"`      | Listener IPv4 or IPv6 address.                                                    |
-| `--port`                                                        | integer 1..65535 | `8765`             |                                                                                   |
-| `--apikey, --api-key`                                           | text             | `"Sentinel.UNSET"` | Listener API key; overrides A13N_HARNESS_UI_API_KEY (visible in shell arguments). |
-| `--dangerous-skip-permissions, --dangerously-bypass-permission` | boolean          | `false`            | Disable Web authentication only; does not change Agent permissions.               |
+| Parameter                                                       | Type / choices   | Parser default     | Meaning                                                                              |
+| --------------------------------------------------------------- | ---------------- | ------------------ | ------------------------------------------------------------------------------------ |
+| `--host`                                                        | text             | `"127.0.0.1"`      | Listener IPv4 or IPv6 address.                                                       |
+| `--port`                                                        | integer 1..65535 | `8765`             |                                                                                      |
+| `--apikey, --api-key`                                           | text             | `"Sentinel.UNSET"` | Listener API key; overrides A13N_HARNESS_UI_API_KEY (visible in shell arguments).    |
+| `--dangerous-skip-permissions, --dangerously-bypass-permission` | boolean          | `false`            | Disable Web authentication only; does not change Agent permissions.                  |
+| `--share-computer`                                              | boolean          | `false`            | Enable native Host Files as the server OS account, independent of Agent permissions. |
 
 ### `update`
 

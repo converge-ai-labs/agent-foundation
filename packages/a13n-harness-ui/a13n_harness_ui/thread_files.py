@@ -19,6 +19,8 @@ from anyio import CancelScope, Lock, to_thread
 from filelock import FileLock, Timeout
 from pydantic import BaseModel, ConfigDict
 
+from a13n_harness_ui.file_context import FileContextSource
+
 logger = logging.getLogger(__name__)
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 MAX_INPUT_BYTES = 20 * 1024 * 1024
@@ -34,6 +36,7 @@ class ThreadAttachment(BaseModel):
     name: str
     media_type: str
     size: int
+    source: FileContextSource | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +44,7 @@ class AttachmentUpload:
     name: str
     data: bytes
     media_type: str | None = None
+    source: FileContextSource | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,7 +192,11 @@ class ThreadFiles:
             assert image.media_type is not None
             media_type = image.media_type
         attachment = ThreadAttachment(
-            attachment_id=f"attachment-{uuid4().hex}", name=name, media_type=media_type, size=len(upload.data)
+            attachment_id=f"attachment-{uuid4().hex}",
+            name=name,
+            media_type=media_type,
+            size=len(upload.data),
+            source=upload.source,
         )
         directory = await self.touch(thread_id)
         await to_thread.run_sync(self._stage, directory, attachment, upload.data)

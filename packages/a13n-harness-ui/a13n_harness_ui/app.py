@@ -75,6 +75,22 @@ from a13n_harness_ui.extensions import (
     EnvironmentProjectAdapter,
     HarnessUiExtensionCatalog,
 )
+from a13n_harness_ui.file_context import context_text
+from a13n_harness_ui.host_files import (
+    DirectoryCreateRequest,
+    DirectoryPage,
+    FileCapture,
+    FileCaptureRequest,
+    FileDeleteRequest,
+    FileDeletion,
+    FileEntry,
+    FileMoveRequest,
+    FileReadRequest,
+    FileSnapshot,
+    FileText,
+    FileWriteRequest,
+    HostFiles,
+)
 from a13n_harness_ui.live import (
     HarnessUiLiveHub,
     HarnessUiSummaryHub,
@@ -246,6 +262,7 @@ class HarnessUiApp:
         codex_login: CodexLoginCallback | None,
         grok_login: GrokLoginCallback | None,
         candidate_error: HarnessUiError | None = None,
+        share_computer: bool = False,
     ) -> None:
         self._settings = settings
         self._store = store
@@ -259,6 +276,7 @@ class HarnessUiApp:
         self._projections = projections
         self._terminal_projections = terminal_projections
         self._thread_files = thread_files
+        self._host_files = HostFiles(enabled=share_computer)
         self._root_runs = root_runs
         self._subagent_operator = subagent_operator
         self._live_hub = live_hub
@@ -927,6 +945,68 @@ class HarnessUiApp:
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
             return await self._projections.get_thread(thread_id)
 
+    @property
+    def shares_computer(self) -> bool:
+        return self._host_files.enabled
+
+    def require_host_files(self) -> None:
+        self._host_files.require_enabled()
+
+    async def host_file_metadata(self, path: str) -> FileEntry:
+        async with self._operation():
+            return await self._host_files.metadata(path)
+
+    async def browse_host_files(
+        self, path: str, *, offset: int = 0, limit: int = 200, revision: str | None = None
+    ) -> DirectoryPage:
+        async with self._operation():
+            return await self._host_files.browse(path, offset=offset, limit=limit, revision=revision)
+
+    async def read_host_file(self, request: FileReadRequest) -> FileText:
+        async with self._operation():
+            return await self._host_files.read_text(request)
+
+    async def download_host_file(self, request: FileReadRequest) -> FileSnapshot:
+        async with self._operation():
+            return await self._host_files.download(request)
+
+    async def write_host_file(self, request: FileWriteRequest) -> FileEntry:
+        async with self._operation():
+            self.require_host_files()
+            return await self._host_files.write_text(request)
+
+    async def upload_host_file(self, path: str, data: bytes, *, expected_revision: str | None = None) -> FileEntry:
+        async with self._operation():
+            return await self._host_files.write(path, data, expected_revision=expected_revision)
+
+    async def create_host_directory(self, request: DirectoryCreateRequest) -> FileEntry:
+        async with self._operation():
+            return await self._host_files.create_directory(request)
+
+    async def move_host_file(self, request: FileMoveRequest) -> FileEntry:
+        async with self._operation():
+            return await self._host_files.move(request)
+
+    async def delete_host_file(self, request: FileDeleteRequest) -> FileDeletion:
+        async with self._operation():
+            return await self._host_files.delete(request)
+
+    async def capture_host_file(self, *, thread_id: str, request: FileCaptureRequest) -> FileCapture:
+        async with self._operation():
+            self.require_host_files()
+            await self._threads.get(thread_id)
+            selected = await self._host_files.capture(request)
+            attachment = await self._thread_files.stage(
+                thread_id,
+                AttachmentUpload(
+                    name=Path(selected.source.path).name,
+                    data=selected.data,
+                    media_type="application/octet-stream",
+                    source=selected.source,
+                ),
+            )
+            return FileCapture(attachment=attachment, prompt_text=context_text(selected.source, selected.data))
+
     async def stage_thread_attachment(self, *, thread_id: str, upload: AttachmentUpload) -> ThreadAttachment:
         async with self._operation():
             await self._threads.get(thread_id)
@@ -971,12 +1051,19 @@ class HarnessUiApp:
             await self._thread_files.retain(thread_id, item.attachment_id)
             path = f"attachments/{item.attachment_id}/content"
             metadata = {"harness_ui": {"attachment": item.model_dump(), "mount": "thread-files", "path": path}}
+            source_description = (
+                "" if item.source is None else f" Selected Host source: {item.source.model_dump_json()}."
+            )
             parts.append(
                 TextContent(
-                    f"Attachment {item.name!r} ({item.media_type}): {path} on the thread-files Environment mount.",
+                    f"Attachment {item.name!r} ({item.media_type}): {path} on the thread-files Environment mount.{source_description}",
                     metadata=metadata,
                 )
             )
+            if item.source is not None:
+                captured_text = context_text(item.source, data)
+                if captured_text is not None:
+                    parts.append(TextContent(captured_text, metadata=metadata))
             if item.media_type.startswith("image/"):
                 parts.append(BinaryContent(data=data, media_type=item.media_type, vendor_metadata=metadata))
         await self._thread_files.touch(thread_id)
@@ -1565,6 +1652,7 @@ async def open_harness_ui_app(
     *,
     configuration_path: Path | None = None,
     host_mode: Literal["local", "webui"] = "local",
+    share_computer: bool = False,
     configuration_error: ConfigurationError | None = None,
     codex_login: CodexLoginCallback | None = None,
     grok_scope: str | None = None,
@@ -1770,6 +1858,7 @@ async def open_harness_ui_app(
                 codex_login=codex_login,
                 grok_login=grok_login,
                 candidate_error=candidate_error,
+                share_computer=share_computer,
             )
             if host_mode == "webui":
                 thread_tools = ThreadToolController(

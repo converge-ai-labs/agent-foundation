@@ -92,3 +92,4 @@ jobs:
           uv run --locked --no-sync python -m pytest
           packages/a13n-harness-ui/tests/test_webui.py
           packages/a13n-harness-ui/tests/test_webui_startup.py
+          packages/a13n-harness-ui/tests/test_host_files_webui.py
