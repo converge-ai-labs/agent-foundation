@@ -16,6 +16,7 @@ import {
 } from "../../shared/feedback";
 import { ConnectionDetails } from "../connectors/connections";
 import { MCPEditor } from "../mcp/editor";
+import { MCPStatusBadge } from "../mcp/status";
 import { ManageProvidersLink } from "../providers/manage-link";
 import { connectorApi } from "../connectors/api";
 import { NewConnection } from "./new";
@@ -192,9 +193,12 @@ export function ConnectionsPage() {
             },
             {
               label: t("Status"),
-              render: ({ connection }) => (
-                <StateBadge state={connection.status} />
-              ),
+              render: ({ connection }) =>
+                "endpoint_url" in connection ? (
+                  <MCPStatusBadge connection={connection} />
+                ) : (
+                  <StateBadge state={connection.status} />
+                ),
             },
           ]}
         />

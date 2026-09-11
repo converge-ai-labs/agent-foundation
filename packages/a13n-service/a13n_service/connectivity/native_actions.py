@@ -28,7 +28,7 @@ def action[Arguments: BaseModel](
         return value
 
     return NativeAction(
-        Tool(name=name, description=name.replace(".", " "), inputSchema=model.model_json_schema()), invoke
+        Tool(name=name, description=name.replace(".", " "), input_schema=model.model_json_schema()), invoke
     )
 
 

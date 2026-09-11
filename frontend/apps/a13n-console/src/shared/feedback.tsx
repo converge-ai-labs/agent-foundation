@@ -157,7 +157,13 @@ export function Empty({
     </EmptyRoot>
   );
 }
-export function StateBadge({ state }: { state: string }) {
+export function StateBadge({
+  state,
+  label,
+}: {
+  state: string;
+  label?: string;
+}) {
   const { t } = useTranslation();
   const tone = [
     "completed",
@@ -174,7 +180,8 @@ export function StateBadge({ state }: { state: string }) {
         : "secondary";
   return (
     <Badge variant={tone} data-state={state}>
-      {t(`state.${state}`, { defaultValue: state.replaceAll("_", " ") })}
+      {label ??
+        t(`state.${state}`, { defaultValue: state.replaceAll("_", " ") })}
     </Badge>
   );
 }

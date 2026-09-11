@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 import anyio
 from sqlalchemy import and_, or_, select
@@ -14,6 +14,7 @@ from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
 from a13n_service.connectivity.management import CommandReceipt, fingerprint, record_command, replay_command
+from a13n_service.credentials import CredentialSnapshot
 from a13n_service.digests import digest_request
 from a13n_service.durable_operations.idempotency import (
     IdempotencyConflict,
@@ -57,6 +58,8 @@ from .management import (
     require_version,
 )
 from .models import MCPConnectionOAuthClientRecord, MCPConnectionRecord, MCPOAuthSessionRecord
+
+_RegistrationCleanupStatus = Literal["succeeded", "failed", "unknown"]
 
 
 class ConnectionDiscovery(Protocol):
@@ -474,6 +477,8 @@ class MCPConnectionService:
             record.clear_credential()
             client_configuration = await session.get(MCPConnectionOAuthClientRecord, connection_id)
             if client_configuration is not None:
+                if client_configuration.ciphertext is not None:
+                    credentials.append(client_configuration.credential_snapshot())
                 await session.delete(client_configuration)
             now = self._clock()
             record.status = "disabled"
@@ -520,11 +525,23 @@ class MCPConnectionService:
             session.add(audit(actor, record, action="mcp_connection.delete", now=now))
         if not credentials:
             return receipt
-        outcomes = []
+        outcome = await self._cleanup_registrations(credentials)
+        receipt = ConnectionCleanupReceipt(connection_id=connection_id, local_status="deleted", remote_status=outcome)
+        async with transaction(self._sessions) as session:
+            command = await session.get(IdempotencyEvidenceRecord, command_id, with_for_update=True)
+            if command is not None and command.receipt_json is not None:
+                command.receipt_json = {
+                    "version": command.receipt_json["version"],
+                    "resource": receipt.model_dump(mode="json"),
+                }
+        return receipt
+
+    async def _cleanup_registrations(self, credentials: list[CredentialSnapshot]) -> _RegistrationCleanupStatus:
+        outcomes: list[_RegistrationCleanupStatus] = []
         # Each owned registration gets one bounded attempt; command replay uses
         # the stored aggregate receipt and cannot repeat these side effects.
         for credential in credentials:
-            outcome = "unknown"
+            outcome: _RegistrationCleanupStatus = "unknown"
             try:
                 bundle = json.loads(credential.decrypt(self._protector))
                 if isinstance(bundle, dict) and self._registration_cleaner is not None:
@@ -536,16 +553,7 @@ class MCPConnectionService:
             except Exception:
                 outcome = "unknown"
             outcomes.append(outcome)
-        outcome = "unknown" if "unknown" in outcomes else "failed" if "failed" in outcomes else "succeeded"
-        receipt = ConnectionCleanupReceipt(connection_id=connection_id, local_status="deleted", remote_status=outcome)
-        async with transaction(self._sessions) as session:
-            command = await session.get(IdempotencyEvidenceRecord, command_id, with_for_update=True)
-            if command is not None and command.receipt_json is not None:
-                command.receipt_json = {
-                    "version": command.receipt_json["version"],
-                    "resource": receipt.model_dump(mode="json"),
-                }
-        return receipt
+        return "unknown" if "unknown" in outcomes else "failed" if "failed" in outcomes else "succeeded"
 
     async def _replay(
         self,

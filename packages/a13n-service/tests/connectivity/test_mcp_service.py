@@ -7,16 +7,20 @@ from urllib.parse import parse_qs, urlsplit
 
 import httpx2
 import pytest
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.mcp.discovery import MCPDiscoveryService
 from a13n_service.connectivity.mcp.domain import (
+    ConfigureMCPOAuthClientRequest,
     CreateMCPConnectionRequest,
     MCPAuthMode,
+    MCPOAuthClientInput,
     ReplaceMCPCredentialsRequest,
     UpdateMCPConnectionRequest,
 )
 from a13n_service.connectivity.mcp.errors import MCPConnectionError
 from a13n_service.connectivity.mcp.management import invalidate_refresh_claim, require_connection
 from a13n_service.connectivity.mcp.models import (
+    MCPConnectionOAuthClientRecord,
     MCPConnectionRecord,
     MCPOAuthSessionRecord,
 )
@@ -53,6 +57,8 @@ class RemoteServer:
         self.use_dcr = False
         self.registration_deleted = False
         self.refresh_error: str | None = None
+        self.machine_error: str | None = None
+        self.machine_token_count = 0
 
     def __call__(self, request: httpx2.Request) -> httpx2.Response:
         self.requests.append(request)
@@ -79,6 +85,7 @@ class RemoteServer:
                     "code_challenge_methods_supported": ["S256"],
                     "authorization_response_iss_parameter_supported": True,
                     "token_endpoint_auth_methods_supported": ["none", "client_secret_basic", "client_secret_post"],
+                    "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
                     **client_registration,
                 },
             )
@@ -119,6 +126,25 @@ class RemoteServer:
                         "expires_in": 3600,
                     },
                 )
+            if values["grant_type"] == ["client_credentials"]:
+                self.machine_token_count += 1
+                assert request.headers["authorization"].startswith("Basic ")
+                assert values["scope"] == ["tools"]
+                if self.machine_error is not None:
+                    return httpx2.Response(
+                        400,
+                        headers={"content-type": "application/json"},
+                        json={"error": self.machine_error},
+                    )
+                return httpx2.Response(
+                    200,
+                    headers={"content-type": "application/json"},
+                    json={
+                        "access_token": f"machine-oauth-secret-{self.machine_token_count}",
+                        "token_type": "Bearer",
+                        "expires_in": 1,
+                    },
+                )
             assert values["code_verifier"][0]
             if self.use_dcr:
                 assert values["client_secret"] == ["dynamic-secret"]
@@ -155,6 +181,7 @@ class RemoteServer:
                         "Bearer oauth-secret",
                         "Bearer refreshed-oauth-secret",
                     }
+                    or request.headers.get("authorization", "").startswith("Bearer machine-oauth-secret-")
                     or request.headers.get("x-api-key") == "static-secret"
                 )
             return _rpc(
@@ -439,6 +466,55 @@ async def test_oauth_state_is_bound_single_use_and_callback_validates_connection
 
 
 @pytest.mark.anyio
+async def test_oauth_callback_preserves_credentials_when_verification_is_temporarily_unavailable(
+    mcp_services, monkeypatch
+) -> None:
+    connections, oauth, remote = mcp_services
+    created = await connections.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-verification-retry",
+        request=CreateMCPConnectionRequest(
+            name="OAuth verification retry",
+            endpoint_url=MCP_ENDPOINT,
+            auth_mode=MCPAuthMode.oauth,
+        ),
+    )
+    launch = await oauth.authorize(
+        actor=actor(),
+        connection_id=created.id,
+        idempotency_key="authorize-verification-retry",
+        expected_version=created.version,
+    )
+    state = parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
+    receipt = await capture_receipt(oauth, state)
+    original = oauth._discovery.discover
+
+    async def unavailable(*args, **kwargs):
+        raise MCPConnectionError(
+            "mcp_discovery_unavailable",
+            "Remote tool discovery failed.",
+            category=ErrorCategory.unavailable,
+        )
+
+    monkeypatch.setattr(oauth._discovery, "discover", unavailable)
+    pending = await oauth.callback(actor=actor(), state=state, receipt=receipt)
+    assert pending.status == "pending"
+    assert pending.credential_configured is True
+    assert sum(request.url.path == "/token" for request in remote.requests) == 1
+
+    monkeypatch.setattr(oauth._discovery, "discover", original)
+    ready = await connections.reconnect(
+        actor=actor(),
+        connection_id=pending.id,
+        idempotency_key="retry-verification",
+        expected_version=pending.version,
+    )
+    assert ready.status == "ready"
+    assert sum(request.url.path == "/token" for request in remote.requests) == 1
+
+
+@pytest.mark.anyio
 async def test_none_connection_discovers_immediately_and_lifecycle_is_versioned(mcp_services) -> None:
     connections, _oauth, remote = mcp_services
     remote.allow_anonymous = True
@@ -557,6 +633,103 @@ async def test_oauth_refresh_rotates_bundle_without_coupling_readiness_to_discov
 
 
 @pytest.mark.anyio
+async def test_client_credentials_acquires_and_renews_without_browser_authorization(
+    mcp_services, oauth_refresh, connectivity_sessions, credential_protector
+) -> None:
+    connections, oauth, remote = mcp_services
+    machine_oauth = MCPOAuthService(
+        connectivity_sessions,
+        oauth._oauth,
+        credential_protector,
+        oauth._discovery,
+        public_origin=None,
+        client_name="Service Test",
+        instance_id="machine-test",
+        clock=lambda: NOW,
+    )
+    created = await connections.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-machine-oauth",
+        request=CreateMCPConnectionRequest(
+            name="Machine OAuth MCP",
+            endpoint_url=MCP_ENDPOINT,
+            auth_mode=MCPAuthMode.oauth,
+        ),
+    )
+    machine_client = MCPOAuthClientInput(
+        issuer_url=ISSUER,
+        client_id="machine-client",
+        client_secret="machine-secret",
+        token_endpoint_auth_method="client_secret_basic",
+        grant_type="client_credentials",
+    )
+    configured = await machine_oauth.configuration.configure(
+        actor=actor(),
+        connection_id=created.id,
+        request=ConfigureMCPOAuthClientRequest(
+            expected_version=created.version,
+            client=machine_client,
+        ),
+    )
+
+    ready = await machine_oauth.authenticate_client_credentials(
+        actor=actor(),
+        connection_id=configured.id,
+        idempotency_key="authenticate-machine-oauth",
+        expected_version=configured.version,
+    )
+    assert ready.status == "ready"
+    assert remote.machine_token_count == 1
+    assert not any(request.url.path == "/authorize" for request in remote.requests)
+    assert not any(request.url.path == "/register" for request in remote.requests)
+    async with connectivity_sessions() as session:
+        connection = await session.get(MCPConnectionRecord, ready.id)
+        client = await session.get(MCPConnectionOAuthClientRecord, ready.id)
+        assert connection is not None
+        assert client is not None
+        token = json.loads(connection.credential_snapshot().decrypt(credential_protector))
+        protected_client = json.loads(client.credential_snapshot().decrypt(credential_protector))
+        assert token["grant_type"] == "client_credentials"
+        assert not {"client_id", "client_secret", "token_endpoint"}.intersection(token)
+        assert client.configuration_json["client_id"] == "machine-client"
+        assert protected_client["client_secret"] == "machine-secret"
+
+    replayed = await machine_oauth.authenticate_client_credentials(
+        actor=actor(),
+        connection_id=configured.id,
+        idempotency_key="authenticate-machine-oauth",
+        expected_version=configured.version,
+    )
+    assert replayed == ready
+    assert remote.machine_token_count == 1
+
+    assert await oauth_refresh.ensure_current(ready.id) is True
+    renewed = await connections.get(actor=actor(), connection_id=ready.id)
+    assert renewed.status == "ready"
+    assert renewed.credential_generation == ready.credential_generation + 1
+    assert remote.machine_token_count == 2
+
+    reconfigured = await machine_oauth.configuration.configure(
+        actor=actor(),
+        connection_id=renewed.id,
+        request=ConfigureMCPOAuthClientRequest(
+            expected_version=renewed.version,
+            client=machine_client,
+        ),
+    )
+    remote.machine_error = "invalid_client"
+    with pytest.raises(MCPConnectionError) as rejected:
+        await machine_oauth.authenticate_client_credentials(
+            actor=actor(),
+            connection_id=reconfigured.id,
+            idempotency_key="authenticate-rejected-machine-oauth",
+            expected_version=reconfigured.version,
+        )
+    assert rejected.value.code == "mcp_oauth_rejected"
+
+
+@pytest.mark.anyio
 async def test_oauth_invalid_grant_requires_reauthorization(mcp_services, oauth_refresh) -> None:
     connections, oauth, remote = mcp_services
     created = await connections.create(
@@ -618,7 +791,7 @@ async def test_oauth_refresh_lost_race_does_not_replace_newer_credentials(
     started = Event()
     proceed = Event()
 
-    async def delayed_refresh(bundle: dict[str, object]) -> dict[str, object]:
+    async def delayed_refresh(bundle: dict[str, object], _client) -> dict[str, object]:
         started.set()
         await proceed.wait()
         return {**bundle, "access_token": "stale-candidate", "expires_in": 3600}
@@ -676,6 +849,7 @@ async def test_new_oauth_authorization_expires_and_cleans_prior_dcr_session(
         idempotency_key="authorize-second",
         expected_version=2,
     )
+    assert sum(request.url.path == "/register" for request in remote.requests) == 1
     async with connectivity_sessions() as session:
         expired = await session.scalar(
             select(MCPOAuthSessionRecord)
@@ -741,11 +915,11 @@ async def test_postgresql_cross_pod_callback_and_single_refresh(
         original_refresh = pod_a._oauth.refresh
         calls = []
 
-        async def delayed(bundle):
+        async def delayed(bundle, client):
             calls.append(bundle)
             entered.set()
             await release.wait()
-            return await original_refresh(bundle)
+            return await original_refresh(bundle, client)
 
         monkeypatch.setattr(pod_a._oauth, "refresh", delayed)
         first = OAuthCredentialRefresh(

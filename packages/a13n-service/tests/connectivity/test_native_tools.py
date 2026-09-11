@@ -31,7 +31,7 @@ async def test_slack_native_reply_hides_target_and_preserves_typed_unknown_outco
             EndpointPolicy(),
         )
         reply = actions["slack.reply"]
-        schema = reply.definition.inputSchema
+        schema = reply.definition.input_schema
         assert set(schema["properties"]) == {"text"}
         assert "C-bound" not in json.dumps(schema) and "secret" not in json.dumps(schema)
         selected_tools([item.definition for item in actions.values()], ("slack.reply",))
@@ -55,7 +55,7 @@ async def test_native_auto_reply_only_adds_placement_choice():
             http,
             EndpointPolicy(),
         )
-        assert set(actions["slack.reply"].definition.inputSchema["properties"]) == {"text", "placement"}
+        assert set(actions["slack.reply"].definition.input_schema["properties"]) == {"text", "placement"}
 
 
 async def test_lark_inbound_replies_use_distinct_effect_ids_and_reuse_token():

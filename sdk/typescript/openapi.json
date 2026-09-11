@@ -6620,10 +6620,20 @@
             "title": "Client Id",
             "type": "string"
           },
+          "grant_type": {
+            "enum": ["authorization_code", "client_credentials"],
+            "title": "Grant Type",
+            "type": "string"
+          },
           "issuer_url": {
             "maxLength": 2048,
             "minLength": 1,
             "title": "Issuer Url",
+            "type": "string"
+          },
+          "source": {
+            "enum": ["pre_registered", "dynamic", "metadata_document"],
+            "title": "Source",
             "type": "string"
           },
           "token_endpoint_auth_method": {
@@ -6632,7 +6642,13 @@
             "type": "string"
           }
         },
-        "required": ["issuer_url", "client_id", "token_endpoint_auth_method"],
+        "required": [
+          "issuer_url",
+          "client_id",
+          "token_endpoint_auth_method",
+          "grant_type",
+          "source"
+        ],
         "title": "MCPOAuthClientConfiguration",
         "type": "object"
       },
@@ -6660,6 +6676,12 @@
             ],
             "title": "Client Secret"
           },
+          "grant_type": {
+            "default": "authorization_code",
+            "enum": ["authorization_code", "client_credentials"],
+            "title": "Grant Type",
+            "type": "string"
+          },
           "issuer_url": {
             "maxLength": 2048,
             "minLength": 1,
@@ -6683,6 +6705,19 @@
             "title": "Authorization Response Iss Parameter Supported",
             "type": "boolean"
           },
+          "client_registration": {
+            "enum": ["metadata_document", "dynamic", "manual"],
+            "title": "Client Registration",
+            "type": "string"
+          },
+          "grant_types_supported": {
+            "items": {
+              "enum": ["authorization_code", "client_credentials"],
+              "type": "string"
+            },
+            "title": "Grant Types Supported",
+            "type": "array"
+          },
           "issuer_url": {
             "maxLength": 2048,
             "minLength": 1,
@@ -6690,10 +6725,17 @@
             "type": "string"
           },
           "redirect_uri": {
-            "maxLength": 2048,
-            "minLength": 1,
-            "title": "Redirect Uri",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redirect Uri"
           },
           "token_endpoint_auth_methods_supported": {
             "items": {
@@ -6708,6 +6750,8 @@
           "issuer_url",
           "redirect_uri",
           "token_endpoint_auth_methods_supported",
+          "grant_types_supported",
+          "client_registration",
           "authorization_response_iss_parameter_supported"
         ],
         "title": "MCPOAuthDiscovery",
@@ -20607,6 +20651,111 @@
           }
         ],
         "summary": "Update Mcp Connection",
+        "tags": ["connectivity-management"]
+      }
+    },
+    "/api/v1/mcp-connections/{connection_id}/authenticate": {
+      "post": {
+        "operationId": "post_mcp_connections_connection_id_authenticate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPConnectionCommandRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPConnection"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Authenticate Mcp Connection",
         "tags": ["connectivity-management"]
       }
     },

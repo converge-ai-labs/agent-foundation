@@ -864,6 +864,23 @@ export interface paths {
     patch: operations["patch_mcp_connections_connection_id"];
     trace?: never;
   };
+  "/api/v1/mcp-connections/{connection_id}/authenticate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Authenticate Mcp Connection */
+    post: operations["post_mcp_connections_connection_id_authenticate"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/mcp-connections/{connection_id}/authorize": {
     parameters: {
       query?: never;
@@ -5599,8 +5616,18 @@ export interface components {
     MCPOAuthClientConfiguration: {
       /** Client Id */
       client_id: string;
+      /**
+       * Grant Type
+       * @enum {string}
+       */
+      grant_type: "authorization_code" | "client_credentials";
       /** Issuer Url */
       issuer_url: string;
+      /**
+       * Source
+       * @enum {string}
+       */
+      source: "pre_registered" | "dynamic" | "metadata_document";
       /**
        * Token Endpoint Auth Method
        * @enum {string}
@@ -5614,6 +5641,12 @@ export interface components {
       client_id: string;
       /** Client Secret */
       client_secret?: string | null;
+      /**
+       * Grant Type
+       * @default authorization_code
+       * @enum {string}
+       */
+      grant_type?: "authorization_code" | "client_credentials";
       /** Issuer Url */
       issuer_url: string;
       /**
@@ -5627,10 +5660,17 @@ export interface components {
     MCPOAuthDiscovery: {
       /** Authorization Response Iss Parameter Supported */
       authorization_response_iss_parameter_supported: boolean;
+      /**
+       * Client Registration
+       * @enum {string}
+       */
+      client_registration: "metadata_document" | "dynamic" | "manual";
+      /** Grant Types Supported */
+      grant_types_supported: ("authorization_code" | "client_credentials")[];
       /** Issuer Url */
       issuer_url: string;
       /** Redirect Uri */
-      redirect_uri: string;
+      redirect_uri: string | null;
       /** Token Endpoint Auth Methods Supported */
       token_endpoint_auth_methods_supported: (
         "none" | "client_secret_basic" | "client_secret_post"
@@ -11222,6 +11262,56 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": components["schemas"]["UpdateMCPConnectionRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MCPConnection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_mcp_connections_connection_id_authenticate: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+      };
+      path: {
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MCPConnectionCommandRequest"];
       };
     };
     responses: {

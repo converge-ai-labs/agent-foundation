@@ -221,6 +221,25 @@ async def authorize_mcp_connection(
     )
 
 
+@router.post("/api/v1/mcp-connections/{connection_id}/authenticate", response_model=MCPConnection)
+async def authenticate_mcp_connection(
+    request: Request,
+    response: Response,
+    actor: Actor,
+    connection_id: str,
+    body: MCPConnectionCommandRequest,
+    idempotency_key: IdempotencyKey,
+) -> MCPConnection:
+    resource = await _oauth(request).authenticate_client_credentials(
+        actor=actor,
+        connection_id=connection_id,
+        idempotency_key=idempotency_key,
+        expected_version=body.expected_version,
+    )
+    _etag(response, resource)
+    return resource
+
+
 @router.post("/api/v1/oauth/mcp/complete", response_model=MCPConnection)
 async def complete_mcp_oauth(
     request: Request,

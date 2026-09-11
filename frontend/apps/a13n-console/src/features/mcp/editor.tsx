@@ -21,11 +21,12 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
-import { ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
+import { ErrorNotice, Loading } from "../../shared/feedback";
 import { Confirm } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
 import { MCPAuthorization } from "./authorization";
+import { MCPStatusBadge } from "./status";
 import { MCPTools } from "./tools";
 
 export function MCPEditor({
@@ -90,7 +91,7 @@ export function MCPEditor({
         query.data && (
           <span className="flex flex-wrap items-center gap-2">
             <span className="min-w-0 break-all">{query.data.endpoint_url}</span>
-            <StateBadge state={query.data.status} />
+            <MCPStatusBadge connection={query.data} />
           </span>
         )
       }

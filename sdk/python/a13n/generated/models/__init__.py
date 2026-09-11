@@ -239,12 +239,17 @@ from .mcp_tool_collection import MCPToolCollection
 from .mcp_tool_input_schema import MCPToolInputSchema
 from .mcp_tool_output_schema_type_0 import MCPToolOutputSchemaType0
 from .mcpo_auth_client_configuration import MCPOAuthClientConfiguration
+from .mcpo_auth_client_configuration_grant_type import MCPOAuthClientConfigurationGrantType
+from .mcpo_auth_client_configuration_source import MCPOAuthClientConfigurationSource
 from .mcpo_auth_client_configuration_token_endpoint_auth_method import (
     MCPOAuthClientConfigurationTokenEndpointAuthMethod,
 )
 from .mcpo_auth_client_input import MCPOAuthClientInput
+from .mcpo_auth_client_input_grant_type import MCPOAuthClientInputGrantType
 from .mcpo_auth_client_input_token_endpoint_auth_method import MCPOAuthClientInputTokenEndpointAuthMethod
 from .mcpo_auth_discovery import MCPOAuthDiscovery
+from .mcpo_auth_discovery_client_registration import MCPOAuthDiscoveryClientRegistration
+from .mcpo_auth_discovery_grant_types_supported_item import MCPOAuthDiscoveryGrantTypesSupportedItem
 from .mcpo_auth_discovery_token_endpoint_auth_methods_supported_item import (
     MCPOAuthDiscoveryTokenEndpointAuthMethodsSupportedItem,
 )
@@ -741,10 +746,15 @@ __all__ = (
     "MCPConnectionStatusReason",
     "MCPConnectionToolSelection",
     "MCPOAuthClientConfiguration",
+    "MCPOAuthClientConfigurationGrantType",
+    "MCPOAuthClientConfigurationSource",
     "MCPOAuthClientConfigurationTokenEndpointAuthMethod",
     "MCPOAuthClientInput",
+    "MCPOAuthClientInputGrantType",
     "MCPOAuthClientInputTokenEndpointAuthMethod",
     "MCPOAuthDiscovery",
+    "MCPOAuthDiscoveryClientRegistration",
+    "MCPOAuthDiscoveryGrantTypesSupportedItem",
     "MCPOAuthDiscoveryTokenEndpointAuthMethodsSupportedItem",
     "MCPTool",
     "MCPToolAnnotations",

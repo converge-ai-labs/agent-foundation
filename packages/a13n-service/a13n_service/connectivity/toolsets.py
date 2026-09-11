@@ -61,27 +61,27 @@ def selected_tools(tools: Sequence[Tool], allowed: tuple[str, ...] | None) -> tu
 def _bound_tool(definition: Tool, handler: ToolHandler) -> FunctionTool[AgentContext]:
     async def invoke(**arguments: JsonValue) -> JsonValue:
         try:
-            await to_thread.run_sync(Draft202012Validator(definition.inputSchema).validate, arguments)
+            await to_thread.run_sync(Draft202012Validator(definition.input_schema).validate, arguments)
         except ValidationError:
             raise ValueError("tool_arguments_invalid") from None
         result = await handler(definition.name, arguments)
         await to_thread.run_sync(validate_result, result)
-        if definition.outputSchema is not None:
+        if definition.output_schema is not None:
             try:
-                await to_thread.run_sync(Draft202012Validator(definition.outputSchema).validate, result)
+                await to_thread.run_sync(Draft202012Validator(definition.output_schema).validate, result)
             except ValidationError:
                 raise ValueError("tool_output_invalid") from None
         return result
 
     tool = FunctionTool[AgentContext].from_schema(
-        invoke, name=definition.name, description=definition.description, json_schema=definition.inputSchema
+        invoke, name=definition.name, description=definition.description, json_schema=definition.input_schema
     )
     tool.metadata = {
         "meta": definition.meta,
         "annotations": definition.annotations.model_dump(by_alias=True) if definition.annotations else None,
         "task": False,
     }
-    tool.function_schema.return_schema = definition.outputSchema or {}
+    tool.function_schema.return_schema = definition.output_schema or {}
     return tool
 
 

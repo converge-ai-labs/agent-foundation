@@ -16,11 +16,17 @@ pub struct McpoAuthDiscovery {
     #[serde(rename = "authorization_response_iss_parameter_supported")]
     pub authorization_response_iss_parameter_supported: bool,
 
+    #[serde(rename = "client_registration")]
+    pub client_registration: ClientRegistration,
+
+    #[serde(rename = "grant_types_supported")]
+    pub grant_types_supported: Vec<GrantTypesSupported>,
+
     #[serde(rename = "issuer_url")]
     pub issuer_url: String,
 
-    #[serde(rename = "redirect_uri")]
-    pub redirect_uri: String,
+    #[serde(rename = "redirect_uri", deserialize_with = "Option::deserialize")]
+    pub redirect_uri: Option<String>,
 
     #[serde(rename = "token_endpoint_auth_methods_supported")]
     pub token_endpoint_auth_methods_supported: Vec<TokenEndpointAuthMethodsSupported>,
@@ -29,16 +35,50 @@ pub struct McpoAuthDiscovery {
 impl McpoAuthDiscovery {
     pub fn new(
         authorization_response_iss_parameter_supported: bool,
+        client_registration: ClientRegistration,
+        grant_types_supported: Vec<GrantTypesSupported>,
         issuer_url: String,
-        redirect_uri: String,
+        redirect_uri: Option<String>,
         token_endpoint_auth_methods_supported: Vec<TokenEndpointAuthMethodsSupported>,
     ) -> McpoAuthDiscovery {
         McpoAuthDiscovery {
             authorization_response_iss_parameter_supported,
+            client_registration,
+            grant_types_supported,
             issuer_url,
             redirect_uri,
             token_endpoint_auth_methods_supported,
         }
+    }
+}
+///
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum ClientRegistration {
+    #[serde(rename = "metadata_document")]
+    MetadataDocument,
+    #[serde(rename = "dynamic")]
+    Dynamic,
+    #[serde(rename = "manual")]
+    Manual,
+}
+
+impl Default for ClientRegistration {
+    fn default() -> ClientRegistration {
+        Self::MetadataDocument
+    }
+}
+///
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum GrantTypesSupported {
+    #[serde(rename = "authorization_code")]
+    AuthorizationCode,
+    #[serde(rename = "client_credentials")]
+    ClientCredentials,
+}
+
+impl Default for GrantTypesSupported {
+    fn default() -> GrantTypesSupported {
+        Self::AuthorizationCode
     }
 }
 ///

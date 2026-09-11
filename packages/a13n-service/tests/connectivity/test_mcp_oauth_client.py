@@ -6,11 +6,33 @@ from urllib.parse import parse_qs
 
 import httpx2
 import pytest
-from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient, MCPOAuthError, OAuthPreparation, issuer_key
+from a13n_service.connectivity.mcp.domain import OAuthTokenAuthMethod
+from a13n_service.connectivity.mcp.oauth_client import (
+    MCPOAuthClient,
+    MCPOAuthError,
+    OAuthClientContext,
+    OAuthPreparation,
+    issuer_key,
+)
 from a13n_service.endpoint_policy import EndpointPolicy
 
 RESOURCE = "https://8.8.8.8/mcp"
 ISSUER = "https://8.8.4.4"
+
+
+def refresh_context(
+    auth_method: OAuthTokenAuthMethod = "none",
+) -> OAuthClientContext:
+    return OAuthClientContext(
+        resource_url=RESOURCE,
+        issuer_url=ISSUER,
+        token_endpoint=f"{ISSUER}/token",
+        client_id="client",
+        client_secret=None if auth_method == "none" else "secret",
+        token_endpoint_auth_method=auth_method,
+        scope=None,
+        grant_type="authorization_code",
+    )
 
 
 @pytest.mark.anyio
@@ -75,6 +97,64 @@ async def test_dcr_fallback_is_discovered_and_cleanup_uses_exact_registration() 
 
 
 @pytest.mark.anyio
+async def test_machine_only_authorization_server_does_not_require_pkce() -> None:
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        if request.url.path == "/mcp":
+            return httpx2.Response(401)
+        if request.url.path == "/.well-known/oauth-protected-resource/mcp":
+            return _json({"resource": RESOURCE, "authorization_servers": [ISSUER]})
+        if request.url.path == "/.well-known/oauth-authorization-server":
+            return _json(
+                {
+                    "issuer": ISSUER,
+                    "authorization_endpoint": f"{ISSUER}/authorize",
+                    "token_endpoint": f"{ISSUER}/token",
+                    "grant_types_supported": ["client_credentials"],
+                    "token_endpoint_auth_methods_supported": ["client_secret_basic"],
+                }
+            )
+        raise AssertionError(str(request.url))
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as http_client:
+        discovered = await MCPOAuthClient(http_client, EndpointPolicy()).discover(RESOURCE)
+
+    assert discovered.grant_types == ("client_credentials",)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("methods", "registration_endpoint", "expected"),
+    [
+        (["none"], None, "metadata_document"),
+        (["client_secret_basic"], f"{ISSUER}/register", "dynamic"),
+        (["private_key_jwt"], f"{ISSUER}/register", "manual"),
+    ],
+)
+async def test_discovery_reports_only_usable_automatic_registration(methods, registration_endpoint, expected) -> None:
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        if request.method == "POST":
+            return httpx2.Response(401)
+        if request.url.path == "/.well-known/oauth-protected-resource/mcp":
+            return _json({"resource": RESOURCE, "authorization_servers": [ISSUER]})
+        metadata = {
+            "issuer": ISSUER,
+            "authorization_endpoint": f"{ISSUER}/authorize",
+            "token_endpoint": f"{ISSUER}/token",
+            "code_challenge_methods_supported": ["S256"],
+            "client_id_metadata_document_supported": True,
+            "token_endpoint_auth_methods_supported": methods,
+        }
+        if registration_endpoint is not None:
+            metadata["registration_endpoint"] = registration_endpoint
+        return _json(metadata)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as http_client:
+        discovered = await MCPOAuthClient(http_client, EndpointPolicy()).discover(RESOURCE)
+
+    assert discovered.client_registration == expected
+
+
+@pytest.mark.anyio
 async def test_token_exchange_never_follows_origin_changing_redirect_with_code_or_secret() -> None:
     requests: list[httpx2.Request] = []
 
@@ -115,7 +195,7 @@ def _json(value: dict[str, object], *, status_code: int = 200) -> httpx2.Respons
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("auth_method", ["none", "client_secret_basic", "client_secret_post"])
-async def test_authlib_exchange_and_refresh_share_bounded_cookie_free_pool(auth_method: str) -> None:
+async def test_authlib_exchange_and_refresh_share_bounded_cookie_free_pool(auth_method: OAuthTokenAuthMethod) -> None:
     requests: list[httpx2.Request] = []
 
     def handle(request: httpx2.Request) -> httpx2.Response:
@@ -154,7 +234,7 @@ async def test_authlib_exchange_and_refresh_share_bounded_cookie_free_pool(auth_
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle), cookies={"old": "cookie"}) as pool:
         oauth = MCPOAuthClient(pool, EndpointPolicy())
         bundle = await oauth.exchange_code(preparation, code="code", verifier="v" * 64)
-        refreshed = await oauth.refresh(bundle)
+        refreshed = await oauth.refresh(bundle, refresh_context(auth_method))
         assert refreshed["refresh_token"] == "refresh"
         assert not pool.is_closed
         assert not pool.cookies
@@ -181,11 +261,8 @@ async def test_authlib_token_boundary_rejects_invalid_response(response: httpx2.
             await oauth.refresh(
                 {
                     "refresh_token": "refresh",
-                    "token_endpoint": f"{ISSUER}/token",
-                    "client_id": "client",
-                    "resource": RESOURCE,
-                    "token_endpoint_auth_method": "none",
-                }
+                },
+                refresh_context(),
             )
 
 
@@ -207,11 +284,8 @@ async def test_compressed_oauth_response_is_decoded_once() -> None:
         token = await MCPOAuthClient(pool, EndpointPolicy()).refresh(
             {
                 "refresh_token": "refresh",
-                "token_endpoint": f"{ISSUER}/token",
-                "client_id": "client",
-                "resource": RESOURCE,
-                "token_endpoint_auth_method": "none",
-            }
+            },
+            refresh_context(),
         )
     assert token["access_token"] == "a"
 

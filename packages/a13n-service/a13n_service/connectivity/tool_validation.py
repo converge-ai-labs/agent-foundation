@@ -44,7 +44,7 @@ def validate_tools(tools: Sequence[Tool]) -> int:
             or len((tool.description or "").encode()) > TOOL_DESCRIPTION_MAX_BYTES
         ):
             raise ValueError("tool_definition_too_large")
-        schemas = {"input": tool.inputSchema, "output": tool.outputSchema}
+        schemas = {"input": tool.input_schema, "output": tool.output_schema}
         if len(canonical_json(schemas).encode()) > TOOL_SCHEMA_MAX_BYTES:
             raise ValueError("tool_schema_too_large")
         for schema in schemas.values():
