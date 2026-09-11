@@ -55,27 +55,30 @@ Each trusted Provider implementation owns one strongly typed configuration model
 
 The initial registry follows the native Model implementations supported and tested against the locked Pydantic AI release:
 
-| Provider type          | Allowed calling API keys                                                          | Native Pydantic AI Model binding                                |
-| ---------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `openai`               | `openai.responses`, `openai.chat_completions`                                     | `OpenAIResponsesModel`, `OpenAIChatModel`                       |
-| `anthropic`            | `anthropic.messages`                                                              | `AnthropicModel`                                                |
-| `google_gemini`        | `google.generate_content`                                                         | `GoogleModel` with `GoogleProvider`                             |
-| `google_vertex`        | `google.generate_content`                                                         | `GoogleModel` with `GoogleCloudProvider`                        |
-| `azure_openai`         | `openai.responses`, `openai.chat_completions`                                     | OpenAI Models with `AzureProvider`                              |
-| `aws_bedrock`          | `bedrock.converse`, `bedrock_mantle.responses`, `bedrock_mantle.chat_completions` | Bedrock Converse and Mantle Models                              |
-| `openrouter`           | `openrouter.chat_completions`                                                     | `OpenRouterModel`                                               |
-| `ollama`               | `ollama.chat_completions`                                                         | `OllamaModel`                                                   |
-| `alibaba_model_studio` | `openai.chat_completions`                                                         | `OpenAIChatModel` with `AlibabaProvider`                        |
-| `deepseek`             | `openai.chat_completions`                                                         | `OpenAIChatModel` with `DeepSeekProvider`                       |
-| `moonshot`             | `openai.chat_completions`                                                         | `OpenAIChatModel` with `MoonshotAIProvider`                     |
-| `zhipu`                | `openai.chat_completions`                                                         | `OpenAIChatModel` with `ZaiProvider`                            |
-| `openai_compatible`    | `openai.responses`, `openai.chat_completions`                                     | OpenAI Models with a bounded generic OpenAI-compatible provider |
+| Provider type                 | Allowed calling API keys                                                          | Native Pydantic AI Model binding                                   |
+| ----------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `openai`                      | `openai.responses`, `openai.chat_completions`                                     | `OpenAIResponsesModel`, `OpenAIChatModel`                          |
+| `anthropic`                   | `anthropic.messages`                                                              | `AnthropicModel`                                                   |
+| `google_gemini`               | `google.generate_content`                                                         | `GoogleModel` with `GoogleProvider`                                |
+| `google_vertex`               | `google.generate_content`                                                         | `GoogleModel` with `GoogleCloudProvider`                           |
+| `azure_openai`                | `openai.responses`, `openai.chat_completions`                                     | OpenAI Models with `AzureProvider`                                 |
+| `aws_bedrock`                 | `bedrock.converse`, `bedrock_mantle.responses`, `bedrock_mantle.chat_completions` | Bedrock Converse and Mantle Models                                 |
+| `openrouter`                  | `openrouter.chat_completions`                                                     | `OpenRouterModel`                                                  |
+| `ollama`                      | `ollama.chat_completions`                                                         | `OllamaModel`                                                      |
+| `alibaba_model_studio`        | `openai.chat_completions`                                                         | `OpenAIChatModel` with `AlibabaProvider`                           |
+| `deepseek`                    | `openai.chat_completions`                                                         | `OpenAIChatModel` with `DeepSeekProvider`                          |
+| `moonshot`                    | `openai.chat_completions`                                                         | `OpenAIChatModel` with `MoonshotAIProvider`                        |
+| `zhipu`                       | `openai.chat_completions`                                                         | `OpenAIChatModel` with `ZaiProvider`                               |
+| `openai_compatible`           | `openai.responses`, `openai.chat_completions`                                     | OpenAI Models with a bounded generic OpenAI-compatible provider    |
+| `openai_responses_compatible` | `openai.responses`                                                                | `OpenAIResponsesModel` with the generic OpenAI-compatible provider |
 
 The table is an executable compatibility registry, not a claim about everything an upstream service documents. For example, this version does not advertise OpenRouter Responses or Anthropic Messages through OpenRouter because the locked Pydantic AI integration does not expose those combinations as supported Model bindings. A new combination requires a trusted registry addition and execution tests.
 
 Provider configuration contains endpoint and authentication mechanics but never an instance-level calling-API choice. The Provider definition's `default_model_api` is one member of `supported_model_apis`. The registry defaults are `openai.responses` for OpenAI and Azure OpenAI, `bedrock.converse` for Bedrock, `openai.chat_completions` for the generic OpenAI-compatible type, and the sole allowed API for each other type above. Trusted model-specific information can suggest another allowed API, for example a Mantle binding for an applicable Bedrock model. Defaults are authoring suggestions: every saved Model contains one explicit `model_api`, which runtime never silently changes or replaces with another API.
 
-Official direct Provider types use fixed or typed derived endpoints. The generic `openai_compatible` type accepts a bounded `base_url` and an explicit `none`, `bearer`, or named API-key-header authentication mode. Provider-specific values such as Azure resource endpoint/API version, Vertex project and location, Bedrock region, or Ollama base URL remain Provider configuration.
+Official direct Provider types use fixed or typed derived endpoints. The generic `openai_compatible` and Responses-only `openai_responses_compatible` types accept a bounded `base_url` and an explicit `none`, `bearer`, or named API-key-header authentication mode. `openai_responses_compatible` is displayed as OpenAI Responses-Compatible and defaults to its sole allowed API, `openai.responses`. Both compatible types use OpenAI-style model discovery when the endpoint exposes `/models`; manual model creation remains available when it does not. Existing `openai_compatible` Providers retain both APIs and their Chat Completions default.
+
+Provider-specific values such as Azure resource endpoint/API version, Vertex project and location, Bedrock region, or Ollama base URL remain Provider configuration.
 
 ## Model Provider
 

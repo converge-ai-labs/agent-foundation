@@ -34,6 +34,28 @@ Content-Type: application/json
 
 Keep the returned Provider `id`. Reads expose `credential_configured`, never the credential itself. A successful save validates configuration; use the Provider's `/test` endpoint to check its current connection and authentication. A list-based test reads only the first page. If the integration has no safe Provider-level probe, the result is `connection_test_unsupported`; test a saved Model to check inference instead.
 
+### Custom Responses endpoints
+
+Choose **OpenAI Responses-Compatible** (`openai_responses_compatible`) for a custom endpoint that implements the OpenAI Responses API:
+
+```json
+{
+  "type": "openai_responses_compatible",
+  "name": "My Responses Endpoint",
+  "configuration": {
+    "base_url": "https://models.example.com/v1",
+    "auth_mode": "bearer"
+  },
+  "credential": "<provider-api-key>"
+}
+```
+
+Supply the base URL without `/responses`; the client appends the API path. Models under this Provider use `model_api: "openai.responses"`. Console selects it automatically without an API picker.
+
+Authentication also supports `auth_mode: "none"` with no credential, or `auth_mode: "api_key_header"` with `api_key_header_name` and a separate credential. Discovery and Provider connection tests use the endpoint's OpenAI-style `/models` route. If that route is unavailable, enter the model ID manually and test the saved Model instead.
+
+The existing **OpenAI-Compatible** (`openai_compatible`) type continues to support both Chat Completions and Responses, with Chat Completions as its default. Availability of optional Responses features depends on the custom endpoint.
+
 ## Discover candidates or enter an ID
 
 If the Provider supports discovery, request the complete catalog:

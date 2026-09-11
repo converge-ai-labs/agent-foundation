@@ -121,66 +121,132 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.resetAllMocks();
 });
-it("connects an OpenAI-compatible provider and continues to a manual model without leaving the flow", async () => {
-  const user = userEvent.setup();
-  mount();
-  await user.click(
-    await screen.findByRole("button", { name: "Connect provider" }),
-  );
-  await user.type(
-    await screen.findByRole("textbox", { name: "Name" }),
-    "My endpoint",
-  );
-  await user.type(
-    screen.getByRole("textbox", { name: "Base URL" }),
-    "https://example.com/v1/responses",
-  );
-  await user.click(
-    screen.getByRole("button", { name: "Use base URL without the API path" }),
-  );
-  await user.type(screen.getByLabelText("API key"), "test-key");
-  await user.click(screen.getByRole("button", { name: "Connect provider" }));
-  await screen.findByRole("tab", { name: "Enter model ID" });
-  expect(state.POST).toHaveBeenCalledWith(
-    "/api/v1/workspaces/{workspace}/model-providers",
-    expect.objectContaining({
-      body: expect.objectContaining({
-        type: "openai_compatible",
-        configuration: { base_url: "https://example.com/v1" },
-        credential: "test-key",
+it.each([
+  { type: "openai_compatible", path: "responses", mode: "bearer" },
+  { type: "openai_responses_compatible", path: "responses", mode: "bearer" },
+  {
+    type: "openai_responses_compatible",
+    path: "chat/completions",
+    mode: "none",
+  },
+  {
+    type: "openai_responses_compatible",
+    path: "responses",
+    mode: "api_key_header",
+  },
+])(
+  "connects $type with $mode using /$path and saves a Responses model",
+  async ({ type, path, mode }) => {
+    const responsesOnly = type === "openai_responses_compatible";
+    const selectedDefinition = responsesOnly
+      ? {
+          ...definition,
+          type,
+          display_name: "OpenAI Responses-Compatible",
+          default_model_api: "openai.responses",
+          supported_model_apis: ["openai.responses"],
+        }
+      : definition;
+    state.GET.mockImplementation(async (path: string) => ({
+      data: {
+        items: path.endsWith("model-provider-types")
+          ? [selectedDefinition]
+          : [{ ...provider, type }],
+        next_cursor: null,
+      },
+    }));
+    const previous = state.POST.getMockImplementation()!;
+    state.POST.mockImplementation(async (path: string, args: unknown) => {
+      if (path.endsWith("model-providers"))
+        return { data: { ...provider, type } };
+      return previous(path, args);
+    });
+    const user = userEvent.setup();
+    mount();
+    await user.click(
+      await screen.findByRole("button", { name: "Connect provider" }),
+    );
+    await user.type(
+      await screen.findByRole("textbox", { name: "Name" }),
+      "My endpoint",
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Base URL" }),
+      `https://example.com/v1/${path}`,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Use base URL without the API path" }),
+    );
+    await user.type(screen.getByLabelText("API key"), "test-key");
+    if (mode !== "bearer") {
+      await user.click(screen.getByRole("button", { name: "Authentication" }));
+      await user.click(
+        screen.getByRole("combobox", { name: "Authentication" }),
+      );
+      await user.click(
+        await screen.findByRole("option", {
+          name: mode === "none" ? "None" : "Custom header",
+        }),
+      );
+      if (mode === "none")
+        expect(screen.queryByLabelText("API key")).toBeNull();
+      else
+        await user.type(
+          screen.getByRole("textbox", { name: "Header name" }),
+          "x-model-key",
+        );
+    }
+    await user.click(screen.getByRole("button", { name: "Connect provider" }));
+    await screen.findByRole("tab", { name: "Enter model ID" });
+    expect(state.POST).toHaveBeenCalledWith(
+      "/api/v1/workspaces/{workspace}/model-providers",
+      expect.objectContaining({
+        body: expect.objectContaining({
+          type,
+          configuration: {
+            base_url: "https://example.com/v1",
+            ...(mode !== "bearer" ? { auth_mode: mode } : {}),
+            ...(mode === "api_key_header"
+              ? { api_key_header_name: "x-model-key" }
+              : {}),
+          },
+          credential: mode === "none" ? null : "test-key",
+        }),
       }),
-    }),
-  );
-  expect(screen.queryByLabelText("API key")).toBeNull();
-  await user.click(screen.getByRole("tab", { name: "Enter model ID" }));
-  await user.type(
-    await screen.findByRole("textbox", { name: "Upstream model" }),
-    "custom-model",
-  );
-  expect(
-    (screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value,
-  ).toBe("custom-model");
-  expect(
-    (screen.getByRole("textbox", { name: "Model key" }) as HTMLInputElement)
-      .value,
-  ).toBe("custom-model");
-  await user.click(screen.getByRole("button", { name: "Add model" }));
-  await waitFor(() => expect(state.close).toHaveBeenCalled());
-  expect(state.POST).toHaveBeenCalledWith(
-    "/api/v1/workspaces/{workspace}/models",
-    expect.objectContaining({
-      body: expect.objectContaining({
-        provider_id: "mp_test",
-        upstream_model: "custom-model",
-        model_api: "openai.responses",
-        settings: {},
+    );
+    expect(screen.queryByLabelText("API key")).toBeNull();
+    await user.click(screen.getByRole("tab", { name: "Enter model ID" }));
+    await user.type(
+      await screen.findByRole("textbox", { name: "Upstream model" }),
+      "custom-model",
+    );
+    expect(
+      (screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value,
+    ).toBe("custom-model");
+    expect(
+      (screen.getByRole("textbox", { name: "Model key" }) as HTMLInputElement)
+        .value,
+    ).toBe("custom-model");
+    if (responsesOnly)
+      expect(screen.queryByRole("combobox", { name: "API" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Add model" }));
+    await waitFor(() => expect(state.close).toHaveBeenCalled());
+    expect(state.POST).toHaveBeenCalledWith(
+      "/api/v1/workspaces/{workspace}/models",
+      expect.objectContaining({
+        body: expect.objectContaining({
+          provider_id: "mp_test",
+          upstream_model: "custom-model",
+          model_api: "openai.responses",
+          settings: {},
+        }),
       }),
-    }),
-  );
-  expect(state.POST.mock.calls.some(([path]) => path.endsWith("/test"))).toBe(
-    false,
-  );
-});
+    );
+    expect(state.POST.mock.calls.some(([path]) => path.endsWith("/test"))).toBe(
+      false,
+    );
+  },
+);
 it("prefills a catalog model and preserves JSON overrides when switching APIs", async () => {
   const user = userEvent.setup();
   mount("mp_test");

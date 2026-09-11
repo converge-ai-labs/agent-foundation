@@ -114,6 +114,23 @@ def test_provider_registry_projects_integration_discovery_support() -> None:
             "https://models.example/v1/models",
             {"x-model-key": "secret"},
         ),
+        (
+            RuntimeProvider(
+                "openai_responses_compatible",
+                {
+                    "base_url": "https://models.example/v1",
+                    "auth_mode": "api_key_header",
+                    "api_key_header_name": "x-model-key",
+                },
+                "https://models.example/v1",
+                "secret",
+            ),
+            {"data": [{"id": "custom-next"}]},
+            "custom-next",
+            False,
+            "https://models.example/v1/models",
+            {"x-model-key": "secret"},
+        ),
     ],
 )
 async def test_provider_native_discovery_is_advisory(

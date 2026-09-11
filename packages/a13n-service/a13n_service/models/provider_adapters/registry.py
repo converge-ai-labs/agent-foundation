@@ -12,6 +12,7 @@ from . import (
     ollama,
     openai,
     openai_compatible,
+    openai_responses_compatible,
     openrouter,
     zhipu,
 )
@@ -31,4 +32,5 @@ BUILT_IN_PROVIDER_INTEGRATIONS: tuple[ProviderIntegration, ...] = (
     moonshot.INTEGRATION,
     zhipu.INTEGRATION,
     openai_compatible.INTEGRATION,
+    openai_responses_compatible.INTEGRATION,
 )

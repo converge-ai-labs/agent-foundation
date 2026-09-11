@@ -345,20 +345,22 @@ export function ModelForm({
       )}
       {!!upstream && (
         <>
-          <ChoiceField
-            label={t("API")}
-            value={callingApi}
-            onValueChange={(value) => {
-              setModelApiKey(value);
-              setApiEdited(true);
-            }}
-            options={
-              definition?.supported_model_apis.map((value) => ({
-                value,
-                label: apiLabel(value),
-              })) ?? []
-            }
-          />
+          {(definition?.supported_model_apis.length ?? 0) > 1 && (
+            <ChoiceField
+              label={t("API")}
+              value={callingApi}
+              onValueChange={(value) => {
+                setModelApiKey(value);
+                setApiEdited(true);
+              }}
+              options={
+                definition?.supported_model_apis.map((value) => ({
+                  value,
+                  label: apiLabel(value),
+                })) ?? []
+              }
+            />
+          )}
           <div className={styles.twoColumns}>
             <FormField label={t("Name")}>
               <Input

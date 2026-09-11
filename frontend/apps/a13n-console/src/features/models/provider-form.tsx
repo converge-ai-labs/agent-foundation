@@ -2,7 +2,10 @@ import { ProviderTypeField } from "../../shared/provider-type-field";
 import { ProviderEnabled } from "../../shared/provider-enabled";
 import { ProviderKeyLink } from "../../shared/provider-key-link";
 import { providerKeyUrls } from "./provider-key-urls";
-import { requiresProviderCredential } from "./provider-credentials";
+import {
+  isOpenAICompatibleProvider,
+  requiresProviderCredential,
+} from "./provider-credentials";
 import { ConnectionTest } from "./connection-test";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -151,7 +154,7 @@ export function ProviderForm({
           )
         }
       />
-      {type === "openai_compatible" ? (
+      {isOpenAICompatibleProvider(type) ? (
         <>
           <FormField label={t("Base URL")}>
             <Input
@@ -185,10 +188,15 @@ export function ProviderForm({
               variant="outline"
               size="sm"
               onClick={() => {
+                const api = /\/responses\/?$/.test(
+                  String(configuration.base_url),
+                )
+                  ? "openai.responses"
+                  : "openai.chat_completions";
                 setSuggestedApi(
-                  /\/responses\/?$/.test(String(configuration.base_url))
-                    ? "openai.responses"
-                    : "openai.chat_completions",
+                  definition?.supported_model_apis.includes(api)
+                    ? api
+                    : definition?.default_model_api,
                 );
                 setConfiguration({
                   ...configuration,
@@ -240,7 +248,7 @@ export function ProviderForm({
           />
         </FormField>
       )}
-      {type === "openai_compatible" && (
+      {isOpenAICompatibleProvider(type) && (
         <DisclosureSection title={t("Authentication")}>
           <ChoiceField
             label={t("Authentication")}

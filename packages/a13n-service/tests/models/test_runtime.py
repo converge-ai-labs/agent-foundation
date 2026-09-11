@@ -296,6 +296,12 @@ def _runtime_providers() -> dict[str, RuntimeProvider]:
         "deepseek": RuntimeProvider("deepseek", {}, "https://api.deepseek.com", "secret"),
         "moonshot": RuntimeProvider("moonshot", {}, "https://api.moonshot.cn/v1", "secret"),
         "zhipu": RuntimeProvider("zhipu", {}, "https://open.bigmodel.cn/api/paas/v4", "secret"),
+        "openai_responses_compatible": RuntimeProvider(
+            "openai_responses_compatible",
+            {"base_url": "https://models.example/v1", "auth_mode": "bearer"},
+            "https://models.example/v1",
+            "secret",
+        ),
         "openai_compatible": RuntimeProvider(
             "openai_compatible",
             {"base_url": "https://models.example/v1", "auth_mode": "bearer"},
