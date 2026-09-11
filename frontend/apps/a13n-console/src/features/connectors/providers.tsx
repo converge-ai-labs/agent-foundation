@@ -93,6 +93,7 @@ export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
             columns={[
               {
                 label: t("Provider"),
+                tone: "primary",
                 render: (item) => (
                   <div className="flex min-w-0 items-center gap-3">
                     <ProviderIcon type={item.type} />
@@ -105,6 +106,7 @@ export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
               },
               {
                 label: t("Scope"),
+                tone: "muted",
                 render: (item) => (
                   <ScopeBadge workspaceId={item.workspace_id} />
                 ),
@@ -200,7 +202,7 @@ function ProviderEditor({
         readOnly ? "Provider" : providerId ? "Edit provider" : "Add provider",
       )}
       description={t(
-        "Credentials are stored securely and never returned by the service.",
+        "Configure the service used to discover connectors and authorize external accounts. Credentials are never returned.",
       )}
       closeLabel={t("Close")}
     >
@@ -332,7 +334,7 @@ function ProviderForm({
         <ProviderTypeField
           definitions={definitions}
           value={type}
-          disabled={!!basis}
+          readOnly={!!basis}
           onValueChange={(value) => {
             setType(value);
             setConfiguration({});

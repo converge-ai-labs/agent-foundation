@@ -5,11 +5,20 @@
   gap: 4px;
   max-width: 100%;
 }
-.identifier code {
+.identifierText {
+  display: inline-block;
   min-width: 0;
-  font: 11px/18px var(--a13n-mono);
+  max-width: min(100%, 32ch);
+  font: 400 12px/18px var(--a13n-font);
   color: var(--a13n-secondary);
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.identifierText[data-primary] {
+  font-size: 13px;
+  color: var(--a13n-text-supporting);
 }
 .control {
   position: relative;

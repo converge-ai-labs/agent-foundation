@@ -39,6 +39,9 @@ export function RenameSkill({ resource }: { resource: SkillResource }) {
       open={open}
       onOpenChange={setOpen}
       title={t("Rename skill")}
+      description={t(
+        "Change the display name without changing the skill key or its published versions.",
+      )}
       closeLabel={t("Close")}
       trigger={
         <Button

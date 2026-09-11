@@ -1,7 +1,7 @@
 "use client";
 
 import { Combobox as ComboboxPrimitive } from "@base-ui/react/combobox";
-import { CaretUpDownIcon, XIcon } from "@phosphor-icons/react";
+import { CaretDownIcon, XIcon } from "@phosphor-icons/react";
 import * as React from "react";
 import { cn } from "../lib/utils";
 import { Input } from "./input";
@@ -62,6 +62,7 @@ export function ComboboxInput({
   className,
   showTrigger = true,
   showClear = false,
+  unstyled = false,
   startAddon,
   size,
   triggerProps,
@@ -70,6 +71,7 @@ export function ComboboxInput({
 }: Omit<ComboboxPrimitive.Input.Props, "size"> & {
   showTrigger?: boolean;
   showClear?: boolean;
+  unstyled?: boolean;
   startAddon?: React.ReactNode;
   size?: "sm" | "default" | "lg" | number;
   ref?: React.Ref<HTMLInputElement>;
@@ -106,6 +108,7 @@ export function ComboboxInput({
           <Input
             className="has-disabled:opacity-100"
             nativeInput
+            unstyled={unstyled}
             size={sizeValue}
           />
         }
@@ -120,7 +123,7 @@ export function ComboboxInput({
           {...triggerProps}
         >
           <ComboboxPrimitive.Icon data-slot="combobox-icon">
-            <CaretUpDownIcon />
+            <CaretDownIcon />
           </ComboboxPrimitive.Icon>
         </ComboboxTrigger>
       )}
@@ -214,7 +217,7 @@ export function ComboboxItem({
   return (
     <ComboboxPrimitive.Item
       className={cn(
-        "grid min-h-8 in-data-[side=none]:min-w-[calc(var(--anchor-width)+1.25rem)] cursor-default grid-cols-[minmax(0,1fr)_1rem] items-center gap-2 rounded-sm py-1 ps-2 pe-4 text-base outline-none data-disabled:pointer-events-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:opacity-64 sm:min-h-7 sm:text-sm [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        "grid min-h-8 in-data-[side=none]:min-w-[calc(var(--anchor-width)+1.25rem)] cursor-default grid-cols-[minmax(0,1fr)_1rem] items-center gap-2 rounded-md py-1.5 px-2.5 text-base outline-none data-disabled:pointer-events-none data-selected:bg-accent data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:opacity-64 sm:min-h-8 sm:text-sm [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
         className,
       )}
       data-slot="combobox-item"

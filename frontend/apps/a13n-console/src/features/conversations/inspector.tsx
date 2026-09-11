@@ -35,7 +35,9 @@ export function RunInspector({ run }: { run: Schema["RunResource"] }) {
       }
       size={"md"}
       title={t("Run details")}
-      description={run.id}
+      description={t(
+        "Inspect the configuration, execution attempts, and related runs.",
+      )}
       closeLabel={t("Close")}
       open={open}
     >
@@ -50,6 +52,8 @@ export function RunInspector({ run }: { run: Schema["RunResource"] }) {
         </p>
       )}
       <dl className={styles.metadata}>
+        <dt>{t("Run")}</dt>
+        <dd>{run.id}</dd>
         <dt>{t("Agent revision")}</dt>
         <dd>
           <AgentLink agentId={run.agent_id}>{run.agent_revision_id}</AgentLink>

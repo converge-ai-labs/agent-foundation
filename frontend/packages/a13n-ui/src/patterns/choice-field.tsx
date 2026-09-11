@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ReadOnlyField } from "./read-only-field";
 import { FormField } from "./form-field";
 import {
   Select,
@@ -22,8 +23,10 @@ export function ChoiceField({
   value,
   onValueChange,
   disabled,
+  readOnly,
   required,
   hideLabel,
+  variant = "default",
   description,
   error,
   id,
@@ -36,21 +39,42 @@ export function ChoiceField({
   value?: string;
   onValueChange?: (value: string) => void;
   disabled?: boolean;
+  readOnly?: boolean;
   required?: boolean;
   hideLabel?: boolean;
+  variant?: "default" | "filter";
   description?: ReactNode;
   error?: ReactNode;
   id?: string;
   className?: string;
   "aria-describedby"?: string;
 }) {
+  if (readOnly) {
+    const selected = options.find((option) => option.value === value);
+    return (
+      <ReadOnlyField
+        label={label}
+        hideLabel={hideLabel}
+        description={description}
+        className={className}
+      >
+        <span className="flex items-center gap-2">
+          {selected?.icon}
+          {selected?.label ?? value ?? "—"}
+        </span>
+      </ReadOnlyField>
+    );
+  }
   return (
     <FormField
       label={label}
-      hideLabel={hideLabel}
+      hideLabel={hideLabel || variant === "filter"}
       description={description}
       error={error}
-      className={className}
+      className={
+        className ??
+        (variant === "filter" ? "w-auto min-w-0 max-w-full" : undefined)
+      }
     >
       <ChoiceControl
         id={id}
@@ -61,6 +85,7 @@ export function ChoiceField({
         onValueChange={onValueChange}
         required={required}
         placeholder={placeholder}
+        inlineLabel={variant === "filter" ? label : undefined}
       />
     </FormField>
   );
@@ -74,6 +99,7 @@ function ChoiceControl({
   disabled,
   required,
   placeholder,
+  inlineLabel,
   ...props
 }: Pick<
   React.ComponentProps<typeof ChoiceField>,
@@ -85,7 +111,7 @@ function ChoiceControl({
   | "required"
   | "placeholder"
   | "aria-describedby"
-> & { "aria-invalid"?: boolean }) {
+> & { "aria-invalid"?: boolean; inlineLabel?: string }) {
   return (
     <Select
       items={options}
@@ -97,6 +123,11 @@ function ChoiceControl({
       required={required}
     >
       <SelectTrigger id={id} {...props} className="w-full">
+        {inlineLabel && (
+          <span aria-hidden="true" className="shrink-0 text-muted-foreground">
+            {inlineLabel}
+          </span>
+        )}
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectPopup>

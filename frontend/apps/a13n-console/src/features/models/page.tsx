@@ -128,6 +128,7 @@ export function Models({ scope }: { scope: ModelScope }) {
               columns={[
                 {
                   label: t("Model"),
+                  tone: "primary",
                   render: (item) => (
                     <ResourceIdentity name={item.name} description={item.key} />
                   ),
@@ -160,6 +161,7 @@ export function Models({ scope }: { scope: ModelScope }) {
                 },
                 {
                   label: t("Scope"),
+                  tone: "muted",
                   render: (item) => (
                     <ScopeBadge workspaceId={item.workspace_id} />
                   ),

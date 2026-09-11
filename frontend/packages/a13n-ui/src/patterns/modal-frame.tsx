@@ -91,7 +91,7 @@ const ModalSurface = memo(
   }) {
     return (
       <DialogPopup
-        className={cn(size === "lg" && "sm:max-w-2xl")}
+        className={cn(size === "lg" && "sm:max-w-[45rem]")}
         finalFocus={finalFocus}
         closeProps={{ "aria-label": closeLabel }}
       >
@@ -102,7 +102,7 @@ const ModalSurface = memo(
         {children != null && children !== false && (
           <DialogPanel
             scrollFade={false}
-            className="has-[[data-a13n-form-actions]]:pb-0 [&_form]:gap-6 [&_[data-slot=input-control][data-size=default]_[data-slot=input]]:h-9 [&_[data-slot=select-trigger]]:min-h-9 [&_[data-slot=select-button]]:min-h-9 [&_[data-a13n-form-actions]]:pt-4 [&_[data-a13n-form-actions]]:pb-6 sm:[&_[data-a13n-form-actions]]:pb-8 [&_[data-a13n-form-actions]]:z-10 [&_[data-a13n-form-actions]]:sticky [&_[data-a13n-form-actions]]:bottom-0 [&_[data-a13n-form-actions]]:bg-popover"
+            className="has-[[data-a13n-form-actions]]:pb-0 [&_form]:gap-4 [&_[data-a13n-form-actions]]:pt-4 [&_[data-a13n-form-actions]]:pb-6 [&_[data-a13n-form-actions]]:z-10 [&_[data-a13n-form-actions]]:sticky [&_[data-a13n-form-actions]]:bottom-0 [&_[data-a13n-form-actions]]:bg-popover"
           >
             {children}
           </DialogPanel>

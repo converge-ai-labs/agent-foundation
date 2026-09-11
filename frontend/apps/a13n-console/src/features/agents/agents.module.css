@@ -71,25 +71,12 @@
 .listTable .modelName svg {
   flex: none;
 }
-.listFilters {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 220px;
-  align-items: end;
-  gap: 16px;
-  margin-bottom: 24px;
-}
-@media (max-width: 600px) {
-  .listFilters {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 12px;
-  }
-}
 .modelName {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  color: var(--a13n-secondary);
-  font-size: 12px;
+  color: var(--a13n-text-supporting);
+  font-size: 13px;
 }
 
 .editorPage {

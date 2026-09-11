@@ -272,16 +272,23 @@ function ProfileForm({
             />
           </ImagePicker>
         </SettingsRow>
-        <SettingsRow label={nameLabel} controlId={nameId}>
+        <SettingsRow
+          label={nameLabel}
+          controlId={editable ? nameId : undefined}
+        >
           <div className={styles.nameControl}>
-            <Input
-              required
-              id={nameId}
-              value={name}
-              disabled={!editable || pending}
-              onChange={(event) => setName(event.target.value)}
-              maxLength={128}
-            />
+            {editable ? (
+              <Input
+                required
+                id={nameId}
+                value={name}
+                disabled={pending}
+                onChange={(event) => setName(event.target.value)}
+                maxLength={128}
+              />
+            ) : (
+              <span className="select-text text-sm">{name}</span>
+            )}
           </div>
         </SettingsRow>
         {"key" in current.value && (
@@ -289,7 +296,8 @@ function ProfileForm({
             <ResourceKeyField
               value={key}
               onChange={setKey}
-              disabled={!editable || pending}
+              disabled={pending}
+              readOnly={!editable}
             />
           </div>
         )}

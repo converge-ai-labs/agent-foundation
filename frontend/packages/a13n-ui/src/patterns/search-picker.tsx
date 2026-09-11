@@ -1,3 +1,4 @@
+import { MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { useState, type ReactNode } from "react";
 
 import {
@@ -96,11 +97,13 @@ export function SearchPicker({
         </span>
       </ComboboxTrigger>
       <ComboboxPopup aria-label={label}>
-        <div className="border-b p-2">
+        <div className="border-b px-1 py-1 focus-within:border-ring">
           <ComboboxInput
             aria-label={label}
             placeholder={placeholder}
             showTrigger={false}
+            unstyled
+            startAddon={<MagnifyingGlassIcon />}
           />
         </div>
         <ComboboxEmpty>{emptyMessage}</ComboboxEmpty>
@@ -122,7 +125,7 @@ export function SearchPicker({
                       <span className="min-w-0">
                         <span className="block">{item.label}</span>
                         {item.description && (
-                          <span className="block text-xs text-muted-foreground">
+                          <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
                             {item.description}
                           </span>
                         )}

@@ -1,3 +1,4 @@
+import styles from "./resource-table.module.css";
 import {
   Table,
   TableBody,
@@ -13,6 +14,7 @@ import { useTranslation } from "react-i18next";
 export interface ResourceColumn<T> {
   label: string;
   align?: "left" | "right";
+  tone?: "primary" | "secondary" | "muted";
   render: (item: T) => ReactNode;
 }
 export function ResourceTable<T extends { id: string }>({
@@ -30,7 +32,7 @@ export function ResourceTable<T extends { id: string }>({
 }) {
   const { t } = useTranslation();
   return (
-    <Table>
+    <Table className={styles.table}>
       <TableCaption className="sr-only">
         {caption ?? t("Resources")}
       </TableCaption>
@@ -85,7 +87,9 @@ export function ResourceTable<T extends { id: string }>({
             {columns.map((column) => (
               <TableCell
                 key={column.label}
-                className="leading-normal [&_small]:mt-1 [&_small]:block [&_small]:text-muted-foreground"
+                className={styles.cell}
+                data-tone={column.tone ?? "secondary"}
+                data-align={column.align}
               >
                 <div
                   className={

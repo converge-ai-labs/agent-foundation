@@ -116,7 +116,7 @@ export function SessionFilterBar({
     <>
       <div className="mb-5 flex flex-wrap items-center gap-2">
         <form
-          className="flex min-w-64 flex-1 items-center gap-1"
+          className="flex w-full min-w-0 items-center gap-1 sm:w-80"
           onSubmit={(event) => {
             event.preventDefault();
             update({ q: [query.trim()] });
@@ -227,10 +227,8 @@ function MultiFilter({
   return (
     <Menu>
       <MenuTrigger render={<Button variant="outline" />}>
-        {label}
-        {values.length > 0 && (
-          <span className="text-muted-foreground">{values.length}</span>
-        )}
+        <span className="text-muted-foreground">{label}</span>
+        {values.length > 0 && <span>{values.length}</span>}
         <CaretDownIcon />
       </MenuTrigger>
       <MenuPopup align="start" aria-label={label}>

@@ -6,14 +6,17 @@ export function ResourceKeyField({
   value,
   onChange,
   disabled = false,
+  readOnly = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  readOnly?: boolean;
 }) {
   const { t } = useTranslation();
   return (
     <FormField
+      readOnly={readOnly}
       label={t("URL key")}
       description={t(
         "Lowercase letters, numbers, and hyphens. Changing this key invalidates existing links.",

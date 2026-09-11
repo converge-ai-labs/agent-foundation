@@ -116,18 +116,20 @@ it("edits capabilities inline and preserves pinned versions, hidden configuratio
   );
 });
 
-it("keeps inline capability controls inert for readers", async () => {
-  const user = userEvent.setup(),
-    { submit } = editor(true);
-  await user.click(screen.getByRole("button", { name: "Add MCP connections" }));
-  expect(screen.queryByRole("checkbox", { name: "Web tools" })).toBeNull();
+it("shows configuration as readable values for readers", () => {
+  const { submit } = editor(true);
   expect(
-    (
-      screen.getByRole("button", {
-        name: "Remove Source verification",
-      }) as HTMLButtonElement
-    ).matches(":disabled"),
-  ).toBe(true);
+    screen.queryByRole("button", { name: "Add MCP connections" }),
+  ).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Remove Source verification" }),
+  ).toBeNull();
+  expect(
+    screen.queryByRole("textbox", { name: "System instructions" }),
+  ).toBeNull();
+  expect(
+    screen.getByRole("group", { name: "System instructions" }).textContent,
+  ).toContain("Check the evidence.");
   expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
   expect(submit).not.toHaveBeenCalled();
 });

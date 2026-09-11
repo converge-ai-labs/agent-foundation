@@ -66,7 +66,7 @@ export function ApplicationAccountsPage() {
             size={"lg"}
             title={t("Add application account")}
             description={t(
-              "Configure one concrete external identity and its reception settings.",
+              "Connect an external account and choose how incoming events reach your agents.",
             )}
             closeLabel={t("Close")}
             open={open}
@@ -93,6 +93,7 @@ export function ApplicationAccountsPage() {
             columns={[
               {
                 label: t("Account"),
+                tone: "primary",
                 render: (item) => (
                   <Link to={item.id}>
                     <strong>{item.name}</strong>

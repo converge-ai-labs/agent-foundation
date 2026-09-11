@@ -24,11 +24,7 @@
   font-weight: 500;
   overflow-wrap: anywhere;
 }
-.card code {
-  font: 12px var(--a13n-mono);
-  color: var(--a13n-secondary);
-  overflow-wrap: anywhere;
-}
+
 .card footer {
   display: flex;
   flex-wrap: wrap;
@@ -156,7 +152,6 @@
   gap: 12px;
   padding: 12px 20px;
   border-bottom: 1px solid var(--a13n-border);
-  font-family: var(--a13n-mono);
   font-size: 12px;
 }
 .fileHeading span {

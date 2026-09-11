@@ -75,6 +75,7 @@ export function MCPPage() {
             columns={[
               {
                 label: t("Connection"),
+                tone: "primary",
                 render: (item) => (
                   <ResourceIdentity
                     name={item.name}

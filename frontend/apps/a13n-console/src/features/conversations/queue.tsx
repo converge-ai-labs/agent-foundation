@@ -289,7 +289,7 @@ function QueueEditor({
       size={"md"}
       title={t("Edit queued message")}
       description={t(
-        "Changes retain the queued agent configuration and authority.",
+        "Edit the message before it runs. Its agent configuration and permissions stay the same.",
       )}
       closeLabel={t("Close")}
       open={open}

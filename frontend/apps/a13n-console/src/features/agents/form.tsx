@@ -1,4 +1,10 @@
-import { Button, DisclosureSection, FormField, Input } from "a13n-ui";
+import {
+  Button,
+  DisclosureSection,
+  FormField,
+  ReadOnlyField,
+  Input,
+} from "a13n-ui";
 
 import { SearchPicker } from "a13n-ui";
 
@@ -208,7 +214,7 @@ export function AgentForm({
           </div>
         </header>
         <div className={styles.main}>
-          <fieldset disabled={pending || readonly} className="fieldset-reset">
+          <fieldset disabled={pending} className="fieldset-reset">
             <EditorSection
               title={t(creating ? "General" : "Model")}
               description={t(
@@ -244,31 +250,38 @@ export function AgentForm({
                 {creating && (
                   <span className={styles.fieldLabel}>{t("Model")}</span>
                 )}
-                <SearchPicker
-                  label={t("Model")}
-                  placeholder={t("Choose a model…")}
-                  emptyMessage={t(
-                    "No models available. Configure a provider and model first.",
-                  )}
-                  value={model}
-                  groups={[
-                    {
-                      label: t("Available models"),
-                      options:
-                        choices.data?.models.map((item) => ({
-                          value: item.key,
-                          label: item.name,
-                          icon: <StackIcon size={14} />,
-                          description: [
-                            ...new Set([item.key, item.upstream_model]),
-                          ]
-                            .filter((value) => value !== item.name)
-                            .join(" · "),
-                        })) ?? [],
-                    },
-                  ]}
-                  onValueChange={setModel}
-                />
+                {readonly ? (
+                  <ReadOnlyField label={t("Model")}>
+                    {choices.data?.models.find((item) => item.key === model)
+                      ?.name ?? model}
+                  </ReadOnlyField>
+                ) : (
+                  <SearchPicker
+                    label={t("Model")}
+                    placeholder={t("Choose a model…")}
+                    emptyMessage={t(
+                      "No models available. Configure a provider and model first.",
+                    )}
+                    value={model}
+                    groups={[
+                      {
+                        label: t("Available models"),
+                        options:
+                          choices.data?.models.map((item) => ({
+                            value: item.key,
+                            label: item.name,
+                            icon: <StackIcon size={14} />,
+                            description: [
+                              ...new Set([item.key, item.upstream_model]),
+                            ]
+                              .filter((value) => value !== item.name)
+                              .join(" · "),
+                          })) ?? [],
+                      },
+                    ]}
+                    onValueChange={setModel}
+                  />
+                )}
               </div>
               <DisclosureSection
                 title={t("Model settings")}
@@ -277,6 +290,7 @@ export function AgentForm({
                 onOpenChange={setModelExpanded}
               >
                 <TextAreaField
+                  readOnly={readonly}
                   label={t("Model settings")}
                   hideLabel
                   hint={t(
@@ -292,7 +306,7 @@ export function AgentForm({
           </fieldset>
           {environment}
           <fieldset
-            disabled={pending || readonly}
+            disabled={pending}
             className={`fieldset-reset ${styles.configurationSections}`}
           >
             <EditorSection
@@ -303,6 +317,7 @@ export function AgentForm({
             >
               <div className={styles.instructions}>
                 <TextAreaField
+                  readOnly={readonly}
                   label={t("System instructions")}
                   hideLabel
                   value={instructions}
@@ -312,6 +327,7 @@ export function AgentForm({
               </div>
             </EditorSection>
             <AgentCapabilities
+              readOnly={readonly}
               choices={choices}
               skills={skills}
               setSkills={setSkills}
@@ -326,7 +342,11 @@ export function AgentForm({
                 "Search the web and read pages with a connected account.",
               )}
             >
-              <AgentSearchSelection value={search} onChange={setSearch} />
+              <AgentSearchSelection
+                readOnly={readonly}
+                value={search}
+                onChange={setSearch}
+              />
             </EditorSection>
             <EditorSection
               title={t("Advanced configuration")}
@@ -337,10 +357,11 @@ export function AgentForm({
               <DisclosureSection
                 open={expanded}
                 onOpenChange={setExpanded}
-                title={t("Edit configuration")}
+                title={t(readonly ? "Configuration" : "Edit configuration")}
               >
                 <div>
                   <TextAreaField
+                    readOnly={readonly}
                     label={t("Configuration JSON")}
                     hint={t(
                       "Input adapter, protocol, structured output, retries, subagents, and client tools.",

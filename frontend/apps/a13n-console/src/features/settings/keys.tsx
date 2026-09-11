@@ -81,6 +81,7 @@ export function ApiKeys({
             columns={[
               {
                 label: t("Name"),
+                tone: "primary",
                 render: (item) => (
                   <>
                     <KeyIcon size={13} /> {item.name}
@@ -94,6 +95,7 @@ export function ApiKeys({
                 ? [
                     {
                       label: t("Owner"),
+                      tone: "muted" as const,
                       render: (
                         item: NonNullable<typeof query.data>["items"][number],
                       ) => <CopyableId value={item.principal_id} />,
@@ -102,10 +104,12 @@ export function ApiKeys({
                 : []),
               {
                 label: t("Created"),
+                tone: "muted",
                 render: (item) => <Timestamp value={item.created_at} />,
               },
               {
                 label: t("Expires"),
+                tone: "muted",
                 render: (item) =>
                   item.expires_at ? (
                     <Timestamp value={item.expires_at} />
@@ -134,6 +138,7 @@ export function ApiKeys({
                 render: (item) =>
                   !item.revoked_at && (
                     <Confirm
+                      triggerVariant="ghost"
                       title={t("Revoke API key")}
                       description={t(
                         "Applications using this key will lose access immediately.",

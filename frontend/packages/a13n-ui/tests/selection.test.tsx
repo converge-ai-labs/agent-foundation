@@ -23,6 +23,31 @@ const groups = [
   },
 ];
 describe("selection", () => {
+  it("keeps an inline filter named and updates its selected value", async () => {
+    const user = userEvent.setup();
+    function Filter() {
+      const [value, setValue] = useState("all");
+      return (
+        <ChoiceField
+          label="Status"
+          variant="filter"
+          value={value}
+          onValueChange={setValue}
+          options={[
+            { value: "all", label: "All" },
+            { value: "ready", label: "Ready" },
+          ]}
+        />
+      );
+    }
+    render(<Filter />);
+    const trigger = screen.getByRole("combobox", { name: "Status" });
+    expect(trigger.textContent).toBe("StatusAll");
+    await user.click(trigger);
+    await user.click(await screen.findByRole("option", { name: "Ready" }));
+    expect(trigger.textContent).toBe("StatusReady");
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
   it("keeps field semantics separate from the standalone control", () => {
     render(
       <ChoiceField
