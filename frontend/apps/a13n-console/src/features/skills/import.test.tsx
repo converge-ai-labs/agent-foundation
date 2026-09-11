@@ -53,8 +53,10 @@ it("uses source tabs with keyboard selection and retains the GitHub draft", asyn
       dialog.queryByRole("textbox", { name: "Repository URL" }),
     ).toBeNull(),
   );
-  await user.click(dialog.getByRole("button", { name: "Import skill" }));
-  await dialog.findByText("Validate your ZIP file before publishing.");
+  expect(
+    (dialog.getByRole("button", { name: "Import skill" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
   expect(http.POST).not.toHaveBeenCalled();
   await user.click(dialog.getByRole("tab", { name: "GitHub" }));
   expect(
@@ -108,4 +110,47 @@ it("publishes a new version using the chosen GitHub source and current version",
     "ws_test",
   );
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+});
+
+it("requires validation of the currently selected ZIP before publishing", async () => {
+  http.POST.mockResolvedValue({
+    data: {
+      upload_id: "upload_test",
+      manifest: {
+        skill_name: "Review documents",
+        description: "Review a document for clarity.",
+        files: [{ path: "SKILL.md" }],
+        total_size_bytes: 100,
+      },
+    },
+    response: new Response(null, { status: 201 }),
+  });
+  const user = userEvent.setup();
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <ImportSkill />
+    </QueryClientProvider>,
+  );
+  await user.click(screen.getByRole("button", { name: "Import skill" }));
+  const publish = screen
+    .getByRole("dialog")
+    .querySelector<HTMLButtonElement>('button[type="submit"]')!;
+  expect(publish.disabled).toBe(true);
+  const input = screen
+    .getByRole("dialog")
+    .querySelector<HTMLInputElement>('input[type="file"]')!;
+  await user.upload(
+    input,
+    new File(["test"], "review.zip", { type: "application/zip" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Validate package" }));
+  await screen.findByText("Review documents");
+  await waitFor(() => expect(publish.disabled).toBe(false));
+  await user.upload(
+    input,
+    new File(["changed"], "updated.zip", { type: "application/zip" }),
+  );
+  expect(publish.disabled).toBe(true);
+  expect(screen.queryByText("Review documents")).toBeNull();
+  expect(http.POST).toHaveBeenCalledTimes(1);
 });

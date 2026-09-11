@@ -1,3 +1,4 @@
+import { ResourceModalTitle } from "../../shared/resource-modal-title";
 import { ResourceEditorButton } from "../../shared/resource-editor-button";
 import {
   useResourceEditorState,
@@ -20,8 +21,7 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { data, representation, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
-import { ResourceIdentity } from "../../shared/collection";
-import { FormActions, JsonView, TextAreaField } from "../../shared/form";
+import { FormActions, TextAreaField } from "../../shared/form";
 import styles from "../../shared/shared.module.css";
 import { type EnvironmentScope } from "./api";
 import { TemplateRecipe } from "./template-recipe";
@@ -74,14 +74,23 @@ export function TemplateEditor({
         ) : undefined
       }
       size={"lg"}
-      title={t(
-        templateId ? "Environment template" : "Create environment template",
-      )}
-      description={t(
-        templateId
-          ? "New revisions apply to newly allocated environments. Existing environments keep their original recipe."
-          : "Choose a provider and define the environment recipe.",
-      )}
+      title={
+        templateId && query.data ? (
+          <ResourceModalTitle
+            name={query.data.value.name}
+            id={query.data.value.id}
+          />
+        ) : (
+          t(templateId ? "Environment template" : "Create environment template")
+        )
+      }
+      description={
+        templateId && query.data
+          ? t("Environment template · Version {{version}}", {
+              version: query.data.value.version,
+            })
+          : t("Choose a provider and define the environment recipe.")
+      }
       closeLabel={t("Close")}
     >
       {open &&
@@ -93,21 +102,33 @@ export function TemplateEditor({
           <TemplateRecipe scope={scope} close={() => setOpen(false)} />
         ) : (
           query.data && (
-            <Tabs key={generation} defaultValue="settings">
-              <TabsList aria-label={t("Environment template")}>
-                <TabsTab value={"settings"}>{t("Settings")}</TabsTab>
-              </TabsList>
-              <TabsPanel value={"settings"}>
-                {
-                  <TemplateSettings
-                    initial={query.data}
+            <div className={styles.stack}>
+              <Tabs key={generation} defaultValue="recipe">
+                <TabsList aria-label={t("Environment template")}>
+                  <TabsTab value="recipe">{t("Recipe")}</TabsTab>
+                  <TabsTab value={"settings"}>{t("Settings")}</TabsTab>
+                </TabsList>
+                <TabsPanel value="recipe">
+                  <CurrentRecipe
+                    template={query.data.value}
+                    scope={scope}
                     editable={editable}
                     close={() => setOpen(false)}
                     reload={reload}
                   />
-                }
-              </TabsPanel>
-            </Tabs>
+                </TabsPanel>
+                <TabsPanel value={"settings"}>
+                  {
+                    <TemplateSettings
+                      initial={query.data}
+                      editable={editable}
+                      close={() => setOpen(false)}
+                      reload={reload}
+                    />
+                  }
+                </TabsPanel>
+              </Tabs>
+            </div>
           )
         ))}
     </ModalFrame>
@@ -143,18 +164,16 @@ export function CurrentRecipe({
   ) : query.error ? (
     <ErrorNotice error={query.error} />
   ) : (
-    query.data &&
-    (editable ? (
+    query.data && (
       <TemplateRecipe
         scope={scope}
         template={template}
         revision={query.data}
         close={close}
         reload={reload}
+        readOnly={!editable}
       />
-    ) : (
-      <JsonView value={query.data} />
-    ))
+    )
   );
 }
 
@@ -200,14 +219,13 @@ export function TemplateSettings({
         if (editable) save.mutate();
       }}
     >
-      <ResourceIdentity name={basis.value.name} resourceId={basis.value.id} />
       <FormField className="min-w-0 w-full" label={t("Name")}>
         <Input
           required={true}
           value={name}
           onChange={(event) => setName(event.target.value)}
           maxLength={128}
-          disabled={!editable}
+          readOnly={!editable}
         />
       </FormField>
       <TextAreaField

@@ -99,7 +99,7 @@ it("creates a saved provider independently and clears its credential on close wi
   );
   await user.type(screen.getByLabelText("API Key"), "test-secret");
   expect(http.POST).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await user.click(screen.getByRole("button", { name: "Add provider" }));
   await waitFor(() => expect(saved).toHaveBeenCalledOnce());
   expect(http.POST).toHaveBeenCalledOnce();
   expect(http.POST.mock.calls[0][1].body.credential).toBe("test-secret");
@@ -111,6 +111,7 @@ it("creates a saved provider independently and clears its credential on close wi
         .map((item) => item.state),
     ),
   ).not.toContain("test-secret");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await user.click(screen.getByRole("button", { name: "Add provider" }));
   expect(await screen.findByLabelText("API Key")).toHaveProperty("value", "");
 });
@@ -139,7 +140,7 @@ it("reconciles an uncertain create before allowing another attempt", async () =>
     "Research",
   );
   await user.type(screen.getByLabelText("API Key"), "test-secret");
-  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await user.click(screen.getByRole("button", { name: "Add provider" }));
   await screen.findByRole("button", { name: "Use this provider" });
   expect(
     http.GET.mock.calls.some(([path]) => path.endsWith("search-providers")),

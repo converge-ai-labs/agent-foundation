@@ -65,8 +65,8 @@
   min-width: 0;
   overflow: hidden;
   color: var(--a13n-text);
-  font-family: var(--a13n-mono);
-  font-size: 10.5px;
+  font-family: inherit;
+  font-size: 12px;
   line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;

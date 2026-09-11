@@ -168,8 +168,10 @@ export function FormActions({
   pending,
   label,
   onCancel,
+  disabled = false,
 }: {
   pending: boolean;
+  disabled?: boolean;
   label?: string;
   onCancel?: () => void;
 }) {
@@ -186,7 +188,12 @@ export function FormActions({
           {t("Cancel")}
         </Button>
       )}
-      <Button type="submit" variant="default" loading={pending}>
+      <Button
+        type="submit"
+        variant="default"
+        loading={pending}
+        disabled={disabled}
+      >
         {label ?? t("Save changes")}
       </Button>
     </footer>

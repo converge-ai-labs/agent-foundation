@@ -1,8 +1,11 @@
+import { ResourceModalTitle } from "../../shared/resource-modal-title";
 import { ResourceEditorButton } from "../../shared/resource-editor-button";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   FormField,
+  Button,
   Input,
+  ReadOnlyField,
   ModalFrame,
   Tabs,
   TabsList,
@@ -15,8 +18,7 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
-import { ResourceIdentity } from "../../shared/collection";
-import { Confirm, FormActions, JsonView } from "../../shared/form";
+import { Confirm } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
 import { MCPAuthorization } from "./authorization";
@@ -66,10 +68,21 @@ export function MCPEditor({
         />
       }
       size={"md"}
-      title={t(id ? "MCP connection" : "Connect MCP server")}
-      description={t(
-        "Endpoint and authentication mode are fixed after creation. Credentials are never returned.",
-      )}
+      title={
+        query.data ? (
+          <ResourceModalTitle name={query.data.name} id={query.data.id} />
+        ) : (
+          t(id ? "MCP connection" : "Connect MCP server")
+        )
+      }
+      description={
+        query.data && (
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="min-w-0 break-all">{query.data.endpoint_url}</span>
+            <StateBadge state={query.data.status} />
+          </span>
+        )
+      }
       closeLabel={t("Close")}
       open={open}
     >
@@ -81,37 +94,58 @@ export function MCPEditor({
         ) : query.error ? (
           <ErrorNotice error={query.error} />
         ) : (
-          query.data &&
-          (can("mcp_connection.manage") ? (
-            <Tabs
-              key={generation}
-              defaultValue={created ? "authorization" : "details"}
-            >
-              <TabsList aria-label={t("MCP connection")}>
-                <TabsTab value={"details"}>{t("Details")}</TabsTab>
-                <TabsTab value={"authorization"}>{t("Authorization")}</TabsTab>
-                <TabsTab value={"tools"}>{t("Tools")}</TabsTab>
-              </TabsList>
-              <TabsPanel value={"details"}>
-                {
-                  <MCPSettings
-                    onCleanup={onCleanup}
-                    initial={query.data}
-                    reload={reload}
-                    close={() => setOpen(false)}
-                  />
-                }
-              </TabsPanel>
-              <TabsPanel value={"authorization"}>
-                {<MCPAuthorization initial={query.data} reload={reload} />}
-              </TabsPanel>
-              <TabsPanel value={"tools"}>
-                {<MCPTools connection={query.data} />}
-              </TabsPanel>
-            </Tabs>
-          ) : (
-            <JsonView value={query.data} />
-          ))
+          query.data && (
+            <div className={styles.stack}>
+              {query.data.status_reason && (
+                <p className={styles.muted}>
+                  {t(`state.${query.data.status_reason}`)}
+                </p>
+              )}
+              {can("mcp_connection.manage") ? (
+                <Tabs
+                  key={generation}
+                  defaultValue={created ? "authorization" : "details"}
+                >
+                  <TabsList aria-label={t("MCP connection")}>
+                    <TabsTab value={"details"}>{t("Details")}</TabsTab>
+                    <TabsTab value={"authorization"}>
+                      {t("Authorization")}
+                    </TabsTab>
+                    <TabsTab value={"tools"}>{t("Tools")}</TabsTab>
+                  </TabsList>
+                  <TabsPanel value={"details"}>
+                    {
+                      <MCPSettings
+                        onCleanup={onCleanup}
+                        initial={query.data}
+                        reload={reload}
+                        close={() => setOpen(false)}
+                      />
+                    }
+                  </TabsPanel>
+                  <TabsPanel value={"authorization"}>
+                    {<MCPAuthorization initial={query.data} reload={reload} />}
+                  </TabsPanel>
+                  <TabsPanel value={"tools"}>
+                    {<MCPTools connection={query.data} />}
+                  </TabsPanel>
+                </Tabs>
+              ) : (
+                <div className={styles.stack}>
+                  <ReadOnlyField label={t("Authentication")}>
+                    {t(`auth.${query.data.auth_mode}`)}
+                  </ReadOnlyField>
+                  <ReadOnlyField label={t("Credentials")}>
+                    {t(
+                      query.data.credential_configured
+                        ? "Configured"
+                        : "Not configured",
+                    )}
+                  </ReadOnlyField>{" "}
+                </div>
+              )}
+            </div>
+          )
         ))}
     </ModalFrame>
   );
@@ -151,9 +185,6 @@ export function MCPSettings({
   });
   return (
     <div className={styles.stack}>
-      <ResourceIdentity name={basis.name} resourceId={basis.id} />
-      <p className={styles.muted}>{basis.endpoint_url}</p>
-      <StateBadge state={basis.status} />
       <form
         className={styles.form}
         onSubmit={(event) => {
@@ -161,76 +192,98 @@ export function MCPSettings({
           save.mutate();
         }}
       >
-        <FormField className="min-w-0 w-full" label={t("Name")}>
-          <Input
-            required={true}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            maxLength={128}
-          />
-        </FormField>
+        <div className="flex items-end gap-3">
+          <FormField className="min-w-0 w-full" label={t("Name")}>
+            <Input
+              required={true}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              maxLength={128}
+            />
+          </FormField>
+          <Button
+            type="submit"
+            variant="outline"
+            loading={save.isPending}
+            disabled={name === basis.name}
+          >
+            {t("Save")}
+          </Button>
+        </div>
         <ErrorNotice error={save.error} retry={() => void reload()} />
-        <FormActions pending={save.isPending} />
       </form>
-      <div className={styles.actions}>
-        <Confirm
-          title={t(
-            basis.status === "disabled"
-              ? "Enable connection"
-              : "Disable connection",
-          )}
-          description={t(
-            "This changes whether new agent calls can use the connection.",
-          )}
-          trigger={t(basis.status === "disabled" ? "Enable" : "Disable")}
-          action={async () => {
-            const action = basis.status === "disabled" ? "enable" : "disable",
-              body = { expected_version: basis.version };
-            await client.http.POST(
-              "/api/v1/mcp-connections/{connection_id}/{action}",
-              {
-                params: {
-                  path: { connection_id: basis.id, action },
-                  header: commandHeaders(
-                    workspace.id,
-                    key.forBody({ action, ...body }),
-                  ),
-                },
-                body,
-              },
-            );
-            done();
-          }}
-        />
-        <Confirm
-          title={t("Delete MCP connection")}
-          description={t(
-            "This clears local credentials and removes the connection. Remote registration cleanup is best effort.",
-          )}
-          trigger={t("Delete")}
-          danger
-          action={async () => {
-            const query = { expected_version: basis.version };
-            const result = data(
-              await client.http.DELETE(
-                "/api/v1/mcp-connections/{connection_id}",
+      <ReadOnlyField
+        label={t("Authentication")}
+        description={t(
+          "Endpoint and authentication mode are fixed after creation.",
+        )}
+      >
+        {t(`auth.${basis.auth_mode}`)}
+      </ReadOnlyField>
+
+      <section className="grid gap-3 border-t border-border pt-4">
+        <h3 className="text-sm font-medium">{t("Connection actions")}</h3>
+        <div className={styles.actions}>
+          <Confirm
+            title={t(
+              basis.status === "disabled"
+                ? "Enable connection"
+                : "Disable connection",
+            )}
+            description={t(
+              "This changes whether new agent calls can use the connection.",
+            )}
+            trigger={t(basis.status === "disabled" ? "Enable" : "Disable")}
+            action={async () => {
+              const action = basis.status === "disabled" ? "enable" : "disable",
+                body = { expected_version: basis.version };
+              await client.http.POST(
+                "/api/v1/mcp-connections/{connection_id}/{action}",
                 {
                   params: {
-                    path: { connection_id: basis.id },
-                    query,
+                    path: { connection_id: basis.id, action },
                     header: commandHeaders(
                       workspace.id,
-                      key.forBody({ delete: basis.id, ...query }),
+                      key.forBody({ action, ...body }),
                     ),
                   },
+                  body,
                 },
-              ),
-            );
-            onCleanup(result);
-            done();
-          }}
-        />
-      </div>
+              );
+              done();
+            }}
+          />
+          <Confirm
+            title={t("Delete MCP connection")}
+            description={t(
+              "This clears local credentials and removes the connection. Remote registration cleanup is best effort.",
+            )}
+            trigger={t("Delete")}
+            danger
+            triggerVariant="outline"
+            action={async () => {
+              const query = { expected_version: basis.version };
+              const result = data(
+                await client.http.DELETE(
+                  "/api/v1/mcp-connections/{connection_id}",
+                  {
+                    params: {
+                      path: { connection_id: basis.id },
+                      query,
+                      header: commandHeaders(
+                        workspace.id,
+                        key.forBody({ delete: basis.id, ...query }),
+                      ),
+                    },
+                  },
+                ),
+              );
+              onCleanup(result);
+              done();
+            }}
+          />
+        </div>
+      </section>
     </div>
   );
 }

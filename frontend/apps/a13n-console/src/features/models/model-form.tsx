@@ -1,3 +1,4 @@
+import { ResourceReference } from "../../shared/resource-reference";
 import { ConnectionTest } from "./connection-test";
 import { ProviderIcon } from "../../shared/provider-icon";
 import { apiLabel, suggestedKey } from "./model-options";
@@ -5,7 +6,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
   ChoiceField,
-  DisclosureSection,
   FormField,
   Input,
   SearchPicker,
@@ -21,7 +21,6 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { allPages, data, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
-import { ResourceIdentity } from "../../shared/collection";
 import { FormActions } from "../../shared/form";
 import styles from "../../shared/shared.module.css";
 import { jsonObject, validateSettings } from "../../shared/validation";
@@ -244,119 +243,160 @@ export function ModelForm({
         save.mutate();
       }}
     >
-      {original && (
-        <ResourceIdentity
-          name={original.value.name}
-          resourceId={original.value.id}
-          resourceKey={original.value.key}
-        />
-      )}
-      <div className={modelStyles.connectionSummary}>
-        {selectedProvider && (
-          <ProviderIcon
-            key={selectedProvider.type}
-            type={selectedProvider.type}
-          />
-        )}
-        <div>
-          <small>{selectedProvider?.type ?? t("Provider")}</small>
-          <strong>{selectedProvider?.name ?? t("Loading…")}</strong>
-          {typeof selectedProvider?.configuration.base_url === "string" && (
-            <span>{selectedProvider.configuration.base_url}</span>
-          )}
-        </div>
-        {!original && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => setChoosingProvider(true)}
+      {(original || !!upstream) && (
+        <div className={original ? styles.stack : styles.twoColumns}>
+          <FormField
+            label={t("Name")}
+            labelAction={
+              original && (
+                <ResourceReference
+                  id={original.value.id}
+                  resourceKey={original.value.key}
+                />
+              )
+            }
           >
-            {t("Change")}
-          </Button>
-        )}
-      </div>
-      {!original && definition?.supports_model_discovery && (
-        <Tabs
-          value={manual ? "manual" : "catalog"}
-          onValueChange={(value) => setManual(value === "manual")}
-        >
-          <TabsList aria-label={t("Model source")}>
-            <TabsTab value="catalog">{t("From catalog")}</TabsTab>
-            <TabsTab value="manual">{t("Enter model ID")}</TabsTab>
-          </TabsList>
-        </Tabs>
-      )}
-      {!original && !manual && definition?.supports_model_discovery ? (
-        <div className={styles.stack}>
-          {catalog.isPending ? (
-            <Loading />
-          ) : catalog.data?.items.length ? (
-            <FormField label={t("Model")}>
-              <SearchPicker
-                label={t("Model")}
-                placeholder={t("Search models…")}
-                emptyMessage={t(
-                  "No models found. You can still add a model manually.",
-                )}
-                value={upstream}
-                onValueChange={(value) =>
-                  chooseUpstream(
-                    value,
-                    catalog.data?.items.find(
-                      (item) => item.upstream_model === value,
-                    ),
-                  )
-                }
-                groups={[
-                  {
-                    label: t("Models"),
-                    options: catalog.data.items.map((item) => ({
-                      value: item.upstream_model,
-                      label: item.display_name ?? item.upstream_model,
-                      description:
-                        item.display_name &&
-                        item.display_name !== item.upstream_model
-                          ? item.upstream_model
-                          : undefined,
-                    })),
-                  },
-                ]}
+            <Input
+              required
+              maxLength={128}
+              value={name}
+              onChange={(event) => {
+                setName(event.target.value);
+                setNameEdited(true);
+              }}
+            />
+          </FormField>
+          {!original && (
+            <FormField
+              label={t("Model key")}
+              description={t(
+                "Agents use this key to reference the model. It cannot be changed after creation.",
+              )}
+            >
+              <Input
+                required
+                maxLength={128}
+                value={key}
+                onChange={(event) => {
+                  setKey(event.target.value);
+                  setKeyEdited(true);
+                }}
               />
             </FormField>
-          ) : (
-            <p className={styles.muted}>
-              {t("Catalog unavailable. Enter a model ID to continue.")}
-            </p>
-          )}
-          {(catalog.error ||
-            (!catalog.data?.items.length && !catalog.isPending)) && (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setManual(true)}
-            >
-              {t("Enter model ID")}
-            </Button>
           )}
         </div>
-      ) : (
-        <FormField
-          label={t("Upstream model")}
-          description={t("Use the exact model ID expected by the provider.")}
-        >
+      )}
+      {(original || !!upstream) && (
+        <FormField label={t("Description")}>
           <Input
-            required
-            value={upstream}
-            placeholder="e.g. gpt-4.1"
-            maxLength={256}
-            onChange={(event) => chooseUpstream(event.target.value)}
+            value={description}
+            placeholder={t("Optional")}
+            onChange={(event) => setDescription(event.target.value)}
           />
         </FormField>
       )}
-      {!!upstream && (
-        <>
-          {(definition?.supported_model_apis.length ?? 0) > 1 && (
+      <section className={modelStyles.modelConnection}>
+        <div className={modelStyles.connectionSummary}>
+          {selectedProvider && (
+            <ProviderIcon
+              key={selectedProvider.type}
+              type={selectedProvider.type}
+            />
+          )}
+          <div>
+            <strong>{selectedProvider?.name ?? t("Loading…")}</strong>
+            {typeof selectedProvider?.configuration.base_url === "string" && (
+              <span>{selectedProvider.configuration.base_url}</span>
+            )}
+          </div>
+          {!original && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setChoosingProvider(true)}
+            >
+              {t("Change")}
+            </Button>
+          )}
+        </div>
+        {!original && definition?.supports_model_discovery && (
+          <Tabs
+            value={manual ? "manual" : "catalog"}
+            onValueChange={(value) => setManual(value === "manual")}
+          >
+            <TabsList aria-label={t("Model source")}>
+              <TabsTab value="catalog">{t("From catalog")}</TabsTab>
+              <TabsTab value="manual">{t("Enter model ID")}</TabsTab>
+            </TabsList>
+          </Tabs>
+        )}
+        <div className={styles.twoColumns}>
+          {!original && !manual && definition?.supports_model_discovery ? (
+            <div className={styles.stack}>
+              {catalog.isPending ? (
+                <Loading />
+              ) : catalog.data?.items.length ? (
+                <FormField label={t("Model")}>
+                  <SearchPicker
+                    label={t("Model")}
+                    placeholder={t("Search models…")}
+                    emptyMessage={t(
+                      "No models found. You can still add a model manually.",
+                    )}
+                    value={upstream}
+                    onValueChange={(value) =>
+                      chooseUpstream(
+                        value,
+                        catalog.data?.items.find(
+                          (item) => item.upstream_model === value,
+                        ),
+                      )
+                    }
+                    groups={[
+                      {
+                        label: t("Models"),
+                        options: catalog.data.items.map((item) => ({
+                          value: item.upstream_model,
+                          label: item.display_name ?? item.upstream_model,
+                          description:
+                            item.display_name &&
+                            item.display_name !== item.upstream_model
+                              ? item.upstream_model
+                              : undefined,
+                        })),
+                      },
+                    ]}
+                  />
+                </FormField>
+              ) : (
+                <p className={styles.muted}>
+                  {t("Catalog unavailable. Enter a model ID to continue.")}
+                </p>
+              )}
+              {(catalog.error ||
+                (!catalog.data?.items.length && !catalog.isPending)) && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setManual(true)}
+                >
+                  {t("Enter model ID")}
+                </Button>
+              )}
+            </div>
+          ) : (
+            <FormField label={t("Upstream model")}>
+              <Input
+                required
+                value={upstream}
+                placeholder="e.g. gpt-4.1"
+                maxLength={256}
+                onChange={(event) => chooseUpstream(event.target.value)}
+              />
+            </FormField>
+          )}
+          {!!upstream && (definition?.supported_model_apis.length ?? 0) > 1 && (
             <ChoiceField
               label={t("API")}
               value={callingApi}
@@ -372,62 +412,33 @@ export function ModelForm({
               }
             />
           )}
-          <div className={styles.twoColumns}>
-            <FormField label={t("Name")}>
-              <Input
-                required
-                maxLength={128}
-                value={name}
-                onChange={(event) => {
-                  setName(event.target.value);
-                  setNameEdited(true);
-                }}
-              />
-            </FormField>
-            <FormField
-              label={t("Model key")}
-              description={t(
-                "Agents use this key to reference the model. It cannot be changed after creation.",
-              )}
-            >
-              <Input
-                required
-                maxLength={128}
-                value={key}
-                readOnly={!!original}
-                onChange={(event) => {
-                  setKey(event.target.value);
-                  setKeyEdited(true);
-                }}
-              />
-            </FormField>
-          </div>
-          <ModelParameters
-            text={settingsText}
-            onChange={(next) => {
-              setSettingsText(next);
-              setParameterError(undefined);
-            }}
-            error={parameterError}
-            schema={
-              metadata?.settings_schema ??
-              catalog.data?.settings_schemas[callingApi]
-            }
-            support={metadata?.parameter_support}
+        </div>
+        {!!upstream && (
+          <>
+            <ModelParameters
+              text={settingsText}
+              onChange={(next) => {
+                setSettingsText(next);
+                setParameterError(undefined);
+              }}
+              error={parameterError}
+              schema={
+                metadata?.settings_schema ??
+                catalog.data?.settings_schemas[callingApi]
+              }
+              support={metadata?.parameter_support}
+            />
+          </>
+        )}
+        {original && (
+          <ConnectionTest
+            action={() => api.testModel(original.value.id)}
+            dirty={dirty || save.isPending}
+            description="This makes a model request and may consume quota or incur cost."
           />
-          <DisclosureSection title={t("More options")}>
-            <div className={styles.stack}>
-              <FormField label={t("Description")}>
-                <Input
-                  value={description}
-                  onChange={(event) => setDescription(event.target.value)}
-                />
-              </FormField>
-            </div>
-          </DisclosureSection>
-        </>
-      )}
-      <SettingsSection>
+        )}
+      </section>
+      <SettingsSection variant="plain">
         <SettingsRow
           label={t("Enabled")}
           controlId="model-enabled"
@@ -439,13 +450,6 @@ export function ModelForm({
             onCheckedChange={setEnabled}
           />
         </SettingsRow>
-        {original && (
-          <ConnectionTest
-            action={() => api.testModel(original.value.id)}
-            dirty={dirty || save.isPending}
-            description="This makes a model request and may consume quota or incur cost."
-          />
-        )}
       </SettingsSection>
       <ErrorNotice
         error={parameterError ? undefined : save.error}

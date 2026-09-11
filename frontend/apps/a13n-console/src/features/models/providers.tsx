@@ -175,9 +175,9 @@ export function ProviderEditor({
       }
       size={"md"}
       title={t(providerId ? "Edit provider" : "Add provider")}
-      description={t(
-        "Connect a model service so you can add its models. Credentials are never returned by the service.",
-      )}
+      description={
+        providerId ? undefined : t("Connect a model service to add its models.")
+      }
       closeLabel={t("Close")}
     >
       {open &&

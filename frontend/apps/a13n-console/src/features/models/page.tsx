@@ -1,4 +1,5 @@
 import { useResourceRows } from "../../shared/resource-modal";
+import { CopyableResourceKey } from "../../shared/copy";
 import { ScopeBadge } from "../../shared/scope-badge";
 import { ManageProvidersLink } from "../providers/manage-link";
 import { Button, FormField, Input, SearchPicker } from "a13n-ui";
@@ -263,6 +264,7 @@ export function Models({ scope }: { scope: ModelScope }) {
                       name={item.name}
                       resourceId={item.id}
                       resourceKey={item.key}
+                      description={<CopyableResourceKey value={item.key} />}
                     />
                   ),
                 },

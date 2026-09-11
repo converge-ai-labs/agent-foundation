@@ -1,3 +1,4 @@
+import { ResourceReference } from "../../shared/resource-reference";
 import { Identifier } from "../../shared/copy";
 import { ProviderTypeField } from "../../shared/provider-type-field";
 import {
@@ -13,6 +14,7 @@ import {
   Button,
   FormField,
   Input,
+  ReadOnlyField,
   SettingsSection,
   SettingsRow,
   ModalFrame,
@@ -69,9 +71,9 @@ export function SearchProviderEditor({
       title={t(
         readOnly ? "Provider" : providerId ? "Edit provider" : "Add provider",
       )}
-      description={t(
-        "Configure a search service for your agents\u2019 web tools. Credentials are never returned by the service.",
-      )}
+      description={
+        providerId ? undefined : t("Connect a search service for your agents.")
+      }
       closeLabel={t("Close")}
       trigger={
         controlledOpen === undefined ? (
@@ -97,6 +99,25 @@ export function SearchProviderEditor({
                   name={resource.data.value.name}
                   resourceId={resource.data.value.id}
                 />
+              )}
+              {resource.data && (
+                <div className={styles.twoColumns}>
+                  <ReadOnlyField label={t("Provider type")}>
+                    {definitions.data.items.find(
+                      (item) => item.type === resource.data?.value.type,
+                    )?.display_name ?? resource.data.value.type}
+                  </ReadOnlyField>
+                  <ReadOnlyField label={t("Status")}>
+                    {t(resource.data.value.enabled ? "Enabled" : "Disabled")}
+                  </ReadOnlyField>
+                  <ReadOnlyField label={t("Credentials")}>
+                    {t(
+                      resource.data.value.credential_configured
+                        ? "Configured"
+                        : "Not configured",
+                    )}
+                  </ReadOnlyField>
+                </div>
               )}
               {extra}
             </div>
@@ -226,32 +247,31 @@ export function SearchProviderForm({
         save.mutate();
       }}
     >
-      {original && (
-        <ResourceIdentity
-          name={original.value.name}
-          resourceId={original.value.id}
+      <div className={styles.twoColumns}>
+        <FormField
+          label={t("Name")}
+          labelAction={original && <ResourceReference id={original.value.id} />}
+        >
+          <Input
+            required
+            maxLength={128}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </FormField>
+        <ProviderTypeField
+          definitions={definitions}
+          value={type}
+          readOnly={!!original}
+          onValueChange={(value) => {
+            setType(value);
+            setCredential("");
+          }}
+          labelAction={
+            definition && <ProviderKeyLink href={definition.setup_url} />
+          }
         />
-      )}
-      <FormField label={t("Name")}>
-        <Input
-          required
-          maxLength={128}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-        />
-      </FormField>
-      <ProviderTypeField
-        definitions={definitions}
-        value={type}
-        readOnly={!!original}
-        onValueChange={(value) => {
-          setType(value);
-          setCredential("");
-        }}
-        labelAction={
-          definition && <ProviderKeyLink href={definition.setup_url} />
-        }
-      />
+      </div>
       <FormField
         label={t("API Key")}
         description={t(
@@ -262,14 +282,20 @@ export function SearchProviderForm({
       >
         <Input
           type="password"
+          placeholder={
+            original?.value.credential_configured
+              ? t("Saved credential · enter to replace")
+              : undefined
+          }
           autoComplete="off"
           required={!original}
           value={credential}
           onChange={(event) => setCredential(event.target.value)}
         />
       </FormField>
+      {extra}
       {original && (
-        <SettingsSection>
+        <SettingsSection variant="plain">
           <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
         </SettingsSection>
       )}
@@ -336,9 +362,9 @@ export function SearchProviderForm({
           ))}
         </div>
       )}
-      {extra}
       <FormActions
         onCancel={onCancel}
+        label={t(original ? "Save changes" : "Add provider")}
         pending={save.isPending || reconciling || !!reconcileError}
       />
     </form>

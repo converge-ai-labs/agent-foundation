@@ -1,4 +1,4 @@
-import { Identifier } from "../../shared/copy";
+import { CopyableResourceKey, Identifier } from "../../shared/copy";
 import {
   Badge,
   FormField,
@@ -130,6 +130,7 @@ export function SkillsPage() {
                   <ResourceReference id={item.id} resourceKey={item.key} />
                   <Badge variant="secondary">v{item.version}</Badge>
                 </header>
+                <CopyableResourceKey value={item.key} />
                 <footer>
                   <span>
                     {item.source_kind === "github" ? "GitHub" : t("ZIP upload")}

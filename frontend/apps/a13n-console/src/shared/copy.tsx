@@ -90,3 +90,15 @@ export function CopyableId({
     </span>
   );
 }
+
+export function CopyableResourceKey({ value }: { value: string }) {
+  const { t } = useTranslation();
+  return (
+    <span className="relative z-1 flex min-w-0 items-center gap-1 text-muted-foreground">
+      <code className="max-w-[min(360px,35vw)] truncate text-xs" title={value}>
+        {value}
+      </code>
+      <CopyButton value={value} iconOnly copyLabel={t("Copy resource key")} />
+    </span>
+  );
+}

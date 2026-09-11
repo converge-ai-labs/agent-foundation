@@ -6,7 +6,7 @@ import {
   ModalFrame,
 } from "a13n-ui";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { useTranslation } from "react-i18next";
@@ -21,8 +21,10 @@ import { ConnectionSetup } from "./setup";
 
 export function ConnectorCatalog({
   provider,
+  inline = false,
 }: {
   provider: Schema["ConnectorProvider"];
+  inline?: boolean;
 }) {
   const { t } = useTranslation(),
     client = useClient(),
@@ -31,8 +33,11 @@ export function ConnectorCatalog({
     [search, setSearch] = useState(""),
     [page, setPage] = useState(0),
     [selected, setSelected] = useState<Schema["Connector"]>();
-  const discover = useMutation({
-    mutationFn: () =>
+  const discover = useQuery({
+    queryKey: ["connector-catalog", provider.id, provider.version],
+    enabled: inline || open,
+    retry: false,
+    queryFn: () =>
       client.http
         .POST(
           "/api/v1/connector-providers/{connector_provider_id}/discover-connectors",
@@ -46,21 +51,112 @@ export function ConnectorCatalog({
         .toLocaleLowerCase()
         .includes(search.toLocaleLowerCase()),
     ) ?? [];
-  return (
+  const content = (
+    <div className={styles.stack}>
+      {selected ? (
+        <>
+          <Button
+            variant="outline"
+            onClick={() => setSelected(undefined)}
+            type="button"
+          >
+            {t("Back to connectors")}
+          </Button>
+          <ConnectConnector connector={selected} />
+        </>
+      ) : (
+        <>
+          <div className={styles.toolbar}>
+            <FormField
+              className="min-w-0 w-full"
+              label={t("Search connectors")}
+              hideLabel={true}
+            >
+              <Input
+                placeholder={t("Search connectors")}
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setPage(0);
+                }}
+                type="search"
+              />
+            </FormField>
+            <Button
+              variant="outline"
+              loading={discover.isPending}
+              onClick={() => void discover.refetch()}
+              type="button"
+            >
+              {t("Refresh discovery")}
+            </Button>
+          </div>
+          <ErrorNotice error={discover.error} />
+          {discover.isPending && (
+            <p role="status" className={styles.muted}>
+              {t("Loading…")}
+            </p>
+          )}
+          {matches.slice(page * 10, (page + 1) * 10).map((item) => (
+            <article key={item.key} className={styles.card}>
+              <h3>{item.name}</h3>
+              <p className={styles.muted}>{item.description}</p>
+              <small className={styles.muted}>
+                {item.authentication_methods.join(", ")}
+              </small>
+              <div className={styles.actions}>
+                <ToolPreview connector={item} />
+                {can("connector_connection.manage") && (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => setSelected(item)}
+                    type="button"
+                  >
+                    {t("Connect")}
+                  </Button>
+                )}
+              </div>
+            </article>
+          ))}
+          {discover.data && !matches.length && (
+            <Empty
+              title={t("No matching connectors")}
+              description={t("Try another search or refresh discovery.")}
+            />
+          )}
+          <div className={styles.pagination}>
+            <Button
+              variant="outline"
+              disabled={page === 0}
+              onClick={() => setPage((value) => value - 1)}
+              type="button"
+            >
+              {t("Previous")}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={(page + 1) * 10 >= matches.length}
+              onClick={() => setPage((value) => value + 1)}
+              type="button"
+            >
+              {t("Next")}
+            </Button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+  return inline ? (
+    content
+  ) : (
     <ModalFrame
       onOpenChange={(value) => {
         setOpen(value);
         if (!value) setSelected(undefined);
       }}
       trigger={
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => {
-            if (!discover.data) discover.mutate();
-          }}
-          type="button"
-        >
+        <Button size="sm" variant="outline" type="button">
           {t("Discover connectors")}
         </Button>
       }
@@ -73,98 +169,11 @@ export function ConnectorCatalog({
       closeLabel={t("Close")}
       open={open}
     >
-      <div className={styles.stack}>
-        {selected ? (
-          <>
-            <Button
-              variant="outline"
-              onClick={() => setSelected(undefined)}
-              type="button"
-            >
-              {t("Back to connectors")}
-            </Button>
-            <ConnectConnector connector={selected} />
-          </>
-        ) : (
-          <>
-            <div className={styles.toolbar}>
-              <FormField
-                className="min-w-0 w-full"
-                label={t("Search connectors")}
-                hideLabel={true}
-              >
-                <Input
-                  placeholder={t("Search connectors")}
-                  value={search}
-                  onChange={(event) => {
-                    setSearch(event.target.value);
-                    setPage(0);
-                  }}
-                  type="search"
-                />
-              </FormField>
-              <Button
-                variant="outline"
-                loading={discover.isPending}
-                onClick={() => discover.mutate()}
-                type="button"
-              >
-                {t("Refresh discovery")}
-              </Button>
-            </div>
-            <ErrorNotice error={discover.error} />
-            {matches.slice(page * 10, (page + 1) * 10).map((item) => (
-              <article key={item.key} className={styles.card}>
-                <h3>{item.name}</h3>
-                <p className={styles.muted}>{item.description}</p>
-                <small className={styles.muted}>
-                  {item.authentication_methods.join(", ")}
-                </small>
-                <div className={styles.actions}>
-                  <ToolPreview connector={item} />
-                  {can("connector_connection.manage") && (
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={() => setSelected(item)}
-                      type="button"
-                    >
-                      {t("Connect")}
-                    </Button>
-                  )}
-                </div>
-              </article>
-            ))}
-            {discover.data && !matches.length && (
-              <Empty
-                title={t("No matching connectors")}
-                description={t("Try another search or refresh discovery.")}
-              />
-            )}
-            <div className={styles.pagination}>
-              <Button
-                variant="outline"
-                disabled={page === 0}
-                onClick={() => setPage((value) => value - 1)}
-                type="button"
-              >
-                {t("Previous")}
-              </Button>
-              <Button
-                variant="outline"
-                disabled={(page + 1) * 10 >= matches.length}
-                onClick={() => setPage((value) => value + 1)}
-                type="button"
-              >
-                {t("Next")}
-              </Button>
-            </div>
-          </>
-        )}
-      </div>
+      {content}
     </ModalFrame>
   );
 }
+
 function ToolPreview({ connector }: { connector: Schema["Connector"] }) {
   const client = useClient(),
     { t } = useTranslation();

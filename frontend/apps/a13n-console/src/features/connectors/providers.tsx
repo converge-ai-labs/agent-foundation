@@ -1,3 +1,6 @@
+import { ResourceModalTitle } from "../../shared/resource-modal-title";
+import { CredentialEditor } from "../../shared/credential-editor";
+import { ConfigurationSummary } from "../../shared/configuration-summary";
 import { ProviderTypeField } from "../../shared/provider-type-field";
 import { ProviderEnabled } from "../../shared/provider-enabled";
 import { ProviderIcon } from "../../shared/provider-icon";
@@ -13,10 +16,15 @@ import {
   Button,
   SettingsSection,
   SettingsRow,
-  DisclosureSection,
   FormField,
+  ReadOnlyField,
+  DisclosureSection,
   Input,
   ModalFrame,
+  Tabs,
+  TabsList,
+  TabsTab,
+  TabsPanel,
 } from "a13n-ui";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -29,7 +37,7 @@ import { useAccess } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
-import { FormActions, JsonView } from "../../shared/form";
+import { FormActions } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
 import { SchemaFields } from "../../shared/schema-fields";
 import styles from "../../shared/shared.module.css";
@@ -199,12 +207,27 @@ function ProviderEditor({
         ) : undefined
       }
       size={"md"}
-      title={t(
-        readOnly ? "Provider" : providerId ? "Edit provider" : "Add provider",
-      )}
-      description={t(
-        "Configure the service used to discover connectors and authorize external accounts. Credentials are never returned.",
-      )}
+      title={
+        providerId && resource.data ? (
+          <ResourceModalTitle name={resource.data.name} id={resource.data.id} />
+        ) : (
+          t("Add provider")
+        )
+      }
+      description={
+        providerId && resource.data ? (
+          <span className="flex flex-wrap items-center gap-2">
+            <span>
+              {definitions.data?.items.find(
+                (item) => item.type === resource.data?.type,
+              )?.display_name ?? resource.data.type}
+            </span>
+            <StateBadge state={resource.data.status} />
+          </span>
+        ) : (
+          t("Connect a service to browse connectors and authorize accounts.")
+        )
+      }
       closeLabel={t("Close")}
     >
       {open &&
@@ -212,14 +235,42 @@ function ProviderEditor({
           <Loading />
         ) : definitions.error || resource.error ? (
           <ErrorNotice error={definitions.error ?? resource.error} />
-        ) : readOnly && resource.data ? (
+        ) : resource.data && providerId ? (
           <div className={styles.stack}>
-            <ResourceIdentity
-              name={resource.data.name}
-              description={resource.data.type}
-              resourceId={resource.data.id}
-            />
-            <ConnectorCatalog provider={resource.data} />
+            <Tabs
+              defaultValue={
+                readOnly &&
+                scope.kind === "workspace" &&
+                resource.data.status === "active"
+                  ? "connectors"
+                  : "settings"
+              }
+            >
+              <TabsList aria-label={t("Provider")}>
+                <TabsTab value="settings">{t("Settings")}</TabsTab>
+                {scope.kind === "workspace" &&
+                  resource.data.status === "active" && (
+                    <TabsTab value="connectors">{t("Connectors")}</TabsTab>
+                  )}
+              </TabsList>
+              <TabsPanel value="settings">
+                {readOnly ? (
+                  <ConfigurationSummary value={resource.data.configuration} />
+                ) : (
+                  <ProviderForm
+                    key={generation}
+                    scope={scope}
+                    initial={providerId ? resource.data : undefined}
+                    definitions={definitions.data?.items ?? []}
+                    close={() => setOpen(false)}
+                    reload={reload}
+                  />
+                )}
+              </TabsPanel>
+              <TabsPanel value="connectors">
+                <ConnectorCatalog provider={resource.data} inline />
+              </TabsPanel>
+            </Tabs>
           </div>
         ) : (
           <ProviderForm
@@ -318,7 +369,6 @@ function ProviderForm({
   });
   return (
     <div className={styles.stack}>
-      {basis && <ResourceIdentity name={basis.name} resourceId={basis.id} />}
       <form
         className={styles.form}
         onSubmit={(event) => {
@@ -326,30 +376,46 @@ function ProviderForm({
           save.mutate();
         }}
       >
-        <FormField className="min-w-0 w-full" label={t("Name")}>
-          <Input
-            required={true}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            maxLength={128}
+        <div className={styles.twoColumns}>
+          <FormField className="min-w-0 w-full" label={t("Name")}>
+            <Input
+              required={true}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              maxLength={128}
+            />
+          </FormField>
+          <ProviderTypeField
+            definitions={definitions}
+            value={type}
+            readOnly={!!basis}
+            onValueChange={(value) => {
+              setType(value);
+              setConfiguration({});
+              setCredentials({});
+            }}
           />
-        </FormField>
-        <ProviderTypeField
-          definitions={definitions}
-          value={type}
-          readOnly={!!basis}
-          onValueChange={(value) => {
-            setType(value);
-            setConfiguration({});
-            setCredentials({});
-          }}
-        />
+        </div>
         {basis ? (
           <>
             {Object.keys(configuration).length > 0 && (
-              <DisclosureSection title={t("Configuration")}>
-                <JsonView value={configuration} />
-              </DisclosureSection>
+              <div className={styles.stack}>
+                {typeof configuration.endpoint === "string" && (
+                  <ReadOnlyField label={t("Endpoint")}>
+                    {configuration.endpoint}
+                  </ReadOnlyField>
+                )}
+                <DisclosureSection title={t("Configuration details")}>
+                  <ConfigurationSummary
+                    value={Object.fromEntries(
+                      Object.entries(configuration).filter(
+                        ([key]) => key !== "endpoint",
+                      ),
+                    )}
+                    schema={definition?.configuration_schema}
+                  />
+                </DisclosureSection>
+              </div>
             )}
           </>
         ) : (
@@ -373,22 +439,21 @@ function ProviderForm({
             )}
           </>
         )}
-        {basis && definition && (
-          <>
-            <p className={styles.muted}>
-              {t("Leave empty to keep the current credential.")}
-            </p>
-            <SchemaFields
-              secret
-              schema={{ ...definition.credential_schema, required: [] }}
-              value={credentials}
-              onChange={setCredentials}
-            />
-          </>
-        )}
+        {basis &&
+          definition &&
+          Object.keys(definition.credential_schema.properties ?? {}).length >
+            0 && (
+            <CredentialEditor configured={basis.credential_configured}>
+              <SchemaFields
+                secret
+                schema={{ ...definition.credential_schema, required: [] }}
+                value={credentials}
+                onChange={setCredentials}
+              />
+            </CredentialEditor>
+          )}
         {basis && (
-          <SettingsSection>
-            <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
+          <SettingsSection variant="plain">
             <SettingsRow
               stackOnNarrow={false}
               label={t("Connection")}
@@ -413,19 +478,23 @@ function ProviderForm({
               </Button>
             </SettingsRow>
             <ErrorNotice error={test.error} retry={() => void reload()} />
-            {test.data && <JsonView value={test.data} />}
-            {scope.kind === "workspace" && basis.status === "active" && (
-              <SettingsRow label={t("Connectors")}>
-                <ConnectorCatalog provider={basis} />
-              </SettingsRow>
+            {test.data && (
+              <p role="status" className={styles.muted}>
+                {t("Connection verified")}
+              </p>
             )}
+            <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
           </SettingsSection>
         )}
         <ErrorNotice
           error={save.error}
           retry={basis ? () => void reload() : undefined}
         />
-        <FormActions pending={save.isPending} onCancel={close} />
+        <FormActions
+          pending={save.isPending}
+          onCancel={close}
+          label={t(basis ? "Save changes" : "Add provider")}
+        />
       </form>
     </div>
   );

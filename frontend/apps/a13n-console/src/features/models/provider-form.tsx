@@ -1,3 +1,5 @@
+import { CredentialEditor } from "../../shared/credential-editor";
+import { ResourceReference } from "../../shared/resource-reference";
 import { ProviderTypeField } from "../../shared/provider-type-field";
 import { ProviderEnabled } from "../../shared/provider-enabled";
 import { ProviderKeyLink } from "../../shared/provider-key-link";
@@ -10,19 +12,12 @@ import {
 import { initialHeaders, serializeHeaders } from "./provider-headers";
 import { ConnectionTest } from "./connection-test";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  Button,
-  FormField,
-  Input,
-  SettingsRow,
-  SettingsSection,
-} from "a13n-ui";
+import { FormField, Input, SettingsSection } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { ResourceIdentity } from "../../shared/collection";
 import { FormActions } from "../../shared/form";
 import { SchemaFields } from "../../shared/schema-fields";
 import styles from "../../shared/shared.module.css";
@@ -136,42 +131,42 @@ export function ProviderForm({
         save.mutate();
       }}
     >
-      {original && (
-        <ResourceIdentity
-          name={original.value.name}
-          resourceId={original.value.id}
-        />
-      )}
-      <FormField className="min-w-0 w-full" label={t("Name")}>
-        <Input
-          required={true}
-          value={name}
-          onChange={(event) => {
-            setName(event.target.value);
-            setNameEdited(true);
+      <div className={styles.twoColumns}>
+        <FormField
+          className="min-w-0 w-full"
+          label={t("Name")}
+          labelAction={original && <ResourceReference id={original.value.id} />}
+        >
+          <Input
+            required={true}
+            value={name}
+            onChange={(event) => {
+              setName(event.target.value);
+              setNameEdited(true);
+            }}
+            maxLength={128}
+          />
+        </FormField>
+        <ProviderTypeField
+          definitions={definitions}
+          value={type}
+          readOnly={!!original}
+          onValueChange={(value) => {
+            setType(value);
+            setConfiguration({});
+            setHeaders([]);
+            setAdvancedOpen(false);
+            setCredential("");
+            setRemoveCredential(false);
+            setSuggestedApi(undefined);
           }}
-          maxLength={128}
+          labelAction={
+            providerKeyUrls[type] && (
+              <ProviderKeyLink {...providerKeyUrls[type]} />
+            )
+          }
         />
-      </FormField>
-      <ProviderTypeField
-        definitions={definitions}
-        value={type}
-        readOnly={!!original}
-        onValueChange={(value) => {
-          setType(value);
-          setConfiguration({});
-          setHeaders([]);
-          setAdvancedOpen(false);
-          setCredential("");
-          setRemoveCredential(false);
-          setSuggestedApi(undefined);
-        }}
-        labelAction={
-          providerKeyUrls[type] && (
-            <ProviderKeyLink {...providerKeyUrls[type]} />
-          )
-        }
-      />
+      </div>
       {definition && (
         <>
           <SchemaFields
@@ -183,33 +178,6 @@ export function ProviderForm({
             onChange={setConfiguration}
           />
         </>
-      )}
-      {requiresProviderCredential(type, configuration, definition) && (
-        <FormField
-          className="min-w-0 w-full"
-          label={credentialLabel}
-          description={[
-            t(credentialField.description),
-            original?.value.credential_configured
-              ? t("Leave empty to keep the saved {{label}}.", {
-                  label: credentialLabel,
-                })
-              : "",
-          ]
-            .filter(Boolean)
-            .join(" ")}
-        >
-          <Input
-            type="password"
-            autoComplete="new-password"
-            name="provider-api-key"
-            value={credential}
-            onChange={(event) => {
-              setCredential(event.target.value);
-              setRemoveCredential(false);
-            }}
-          />
-        </FormField>
       )}
       {definition && (
         <ProviderConnection
@@ -238,44 +206,58 @@ export function ProviderForm({
           }}
         />
       )}
+      {requiresProviderCredential(type, configuration, definition) && (
+        <CredentialEditor
+          configured={original?.value.credential_configured}
+          removing={removeCredential}
+          onRemovingChange={(value) => {
+            setRemoveCredential(value);
+            setCredential("");
+          }}
+        >
+          <FormField
+            className="min-w-0 w-full"
+            label={credentialLabel}
+            description={original ? undefined : t(credentialField.description)}
+          >
+            <Input
+              type="password"
+              placeholder={
+                original?.value.credential_configured
+                  ? t("Leave empty to keep saved credential")
+                  : undefined
+              }
+              autoComplete="new-password"
+              name="provider-api-key"
+              value={credential}
+              onChange={(event) => {
+                setCredential(event.target.value);
+                setRemoveCredential(false);
+              }}
+            />
+          </FormField>
+        </CredentialEditor>
+      )}
       {original && (
-        <SettingsSection>
+        <ConnectionTest
+          action={() => api.testProvider(original.value.id)}
+          description="Check the saved connection. May consume provider quota."
+          dirty={
+            save.isPending ||
+            name !== original.value.name ||
+            enabled !== original.value.enabled ||
+            !!credential ||
+            JSON.stringify(headers) !==
+              JSON.stringify(initialHeaders(original.value)) ||
+            removeCredential ||
+            JSON.stringify(configuration) !==
+              JSON.stringify(original.value.configuration)
+          }
+        />
+      )}
+      {original && (
+        <SettingsSection variant="plain">
           <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
-          {original.value.credential_configured && (
-            <SettingsRow
-              stackOnNarrow={false}
-              label={t("Saved credentials")}
-              description={t(
-                removeCredential
-                  ? "Credentials will be removed when you save."
-                  : "Replace them above, or remove the saved credentials.",
-              )}
-            >
-              <Button
-                variant="ghost"
-                size="sm"
-                className={removeCredential ? undefined : "text-destructive"}
-                onClick={() => setRemoveCredential(!removeCredential)}
-              >
-                {t(removeCredential ? "Undo" : "Remove")}
-              </Button>
-            </SettingsRow>
-          )}
-          <ConnectionTest
-            action={() => api.testProvider(original.value.id)}
-            description="Check the saved connection. May consume provider quota."
-            dirty={
-              save.isPending ||
-              name !== original.value.name ||
-              enabled !== original.value.enabled ||
-              !!credential ||
-              JSON.stringify(headers) !==
-                JSON.stringify(initialHeaders(original.value)) ||
-              removeCredential ||
-              JSON.stringify(configuration) !==
-                JSON.stringify(original.value.configuration)
-            }
-          />
         </SettingsSection>
       )}
       <ErrorNotice
@@ -284,7 +266,13 @@ export function ProviderForm({
       />
       <FormActions
         pending={save.isPending}
-        label={onCreated ? t("Connect provider") : undefined}
+        label={t(
+          onCreated
+            ? "Connect provider"
+            : original
+              ? "Save changes"
+              : "Add provider",
+        )}
         onCancel={close}
       />
     </form>

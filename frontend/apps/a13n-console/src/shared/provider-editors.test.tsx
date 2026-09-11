@@ -163,7 +163,7 @@ it.each(cases)(
     expect(
       screen.queryByRole("button", { name: "Replace credentials" }),
     ).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await user.click(screen.getByRole("button", { name: "Add provider" }));
     await waitFor(() =>
       expect(http.POST).toHaveBeenCalledWith(
         listPath,

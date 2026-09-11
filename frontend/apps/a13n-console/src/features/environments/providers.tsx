@@ -1,3 +1,6 @@
+import { CredentialEditor } from "../../shared/credential-editor";
+import { ConfigurationSummary } from "../../shared/configuration-summary";
+import { ResourceReference } from "../../shared/resource-reference";
 import { ProviderTypeField } from "../../shared/provider-type-field";
 import { ProviderEnabled } from "../../shared/provider-enabled";
 import {
@@ -10,15 +13,7 @@ import { ProviderKeyLink } from "../../shared/provider-key-link";
 import { ResourceEditorButton } from "../../shared/resource-editor-button";
 import { ResourceIdentity } from "../../shared/collection";
 import { ScopeBadge } from "../../shared/scope-badge";
-import {
-  Button,
-  DisclosureSection,
-  FormField,
-  Input,
-  SettingsSection,
-  SettingsRow,
-  ModalFrame,
-} from "a13n-ui";
+import { FormField, Input, SettingsSection, ModalFrame } from "a13n-ui";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -35,7 +30,7 @@ import {
 } from "../../shared/api";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
-import { FormActions, JsonView } from "../../shared/form";
+import { FormActions } from "../../shared/form";
 import { SchemaFields } from "../../shared/schema-fields";
 import styles from "../../shared/shared.module.css";
 import { jsonObject, validateSettings } from "../../shared/validation";
@@ -217,9 +212,9 @@ function ProviderEditor({
       }
       size={"md"}
       title={t(providerId ? "Edit provider" : "Add provider")}
-      description={t(
-        "Connect the service that hosts your environments. Credentials are never returned by the service.",
-      )}
+      description={
+        providerId ? undefined : t("Choose where your environments run.")
+      }
       closeLabel={t("Close")}
     >
       {open &&
@@ -314,9 +309,6 @@ function ProviderForm({
   });
   return (
     <div className={styles.stack}>
-      {basis && (
-        <ResourceIdentity name={basis.value.name} resourceId={basis.value.id} />
-      )}
       <form
         className={styles.form}
         onSubmit={(event) => {
@@ -324,35 +316,42 @@ function ProviderForm({
           save.mutate();
         }}
       >
-        <FormField className="min-w-0 w-full" label={t("Name")}>
-          <Input
-            required={true}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            maxLength={128}
+        <div className={styles.twoColumns}>
+          <FormField
+            className="min-w-0 w-full"
+            label={t("Name")}
+            labelAction={basis && <ResourceReference id={basis.value.id} />}
+          >
+            <Input
+              required={true}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              maxLength={128}
+            />
+          </FormField>
+          <ProviderTypeField
+            definitions={definitions}
+            value={type}
+            readOnly={!!basis}
+            onValueChange={(value) => {
+              setType(value);
+              setConfiguration({});
+              setCredential({});
+            }}
+            labelAction={
+              type === "a13n.e2b" && (
+                <ProviderKeyLink href="https://e2b.dev/dashboard?tab=keys" />
+              )
+            }
           />
-        </FormField>
-        <ProviderTypeField
-          definitions={definitions}
-          value={type}
-          readOnly={!!basis}
-          onValueChange={(value) => {
-            setType(value);
-            setConfiguration({});
-            setCredential({});
-          }}
-          labelAction={
-            type === "a13n.e2b" && (
-              <ProviderKeyLink href="https://e2b.dev/dashboard?tab=keys" />
-            )
-          }
-        />
+        </div>
         {basis ? (
           <>
             {Object.keys(configuration).length > 0 && (
-              <DisclosureSection title={t("Configuration")}>
-                <JsonView value={configuration} />
-              </DisclosureSection>
+              <ConfigurationSummary
+                value={configuration}
+                schema={configSchema}
+              />
             )}
           </>
         ) : (
@@ -374,44 +373,25 @@ function ProviderForm({
         )}
         {basis && (
           <>
-            {!!Object.keys(schema(credentialSchema.properties)).length &&
-              !removeCredential && (
-                <>
-                  <p className={styles.muted}>
-                    {t("Leave empty to keep the current credential.")}
-                  </p>
-                  <SchemaFields
-                    secret
-                    schema={{ ...credentialSchema, required: [] }}
-                    value={credential}
-                    onChange={setCredential}
-                  />
-                </>
-              )}
-            <SettingsSection>
+            {!!Object.keys(schema(credentialSchema.properties)).length && (
+              <CredentialEditor
+                configured={basis.value.credential_configured}
+                removing={removeCredential}
+                onRemovingChange={(value) => {
+                  setRemoveCredential(value);
+                  setCredential({});
+                }}
+              >
+                <SchemaFields
+                  secret
+                  schema={{ ...credentialSchema, required: [] }}
+                  value={credential}
+                  onChange={setCredential}
+                />
+              </CredentialEditor>
+            )}
+            <SettingsSection variant="plain">
               <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
-              {basis.value.credential_configured && (
-                <SettingsRow
-                  stackOnNarrow={false}
-                  label={t("Saved credentials")}
-                  description={t(
-                    removeCredential
-                      ? "Credentials will be removed when you save."
-                      : "Replace them above, or remove the saved credentials.",
-                  )}
-                >
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={
-                      removeCredential ? undefined : "text-destructive"
-                    }
-                    onClick={() => setRemoveCredential(!removeCredential)}
-                  >
-                    {t(removeCredential ? "Undo" : "Remove")}
-                  </Button>
-                </SettingsRow>
-              )}
             </SettingsSection>
           </>
         )}
@@ -419,7 +399,11 @@ function ProviderForm({
           error={save.error}
           retry={basis ? () => void reload() : undefined}
         />
-        <FormActions pending={save.isPending} onCancel={close} />
+        <FormActions
+          pending={save.isPending}
+          onCancel={close}
+          label={t(basis ? "Save changes" : "Add provider")}
+        />
       </form>
     </div>
   );
