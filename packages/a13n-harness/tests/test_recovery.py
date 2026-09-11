@@ -10,6 +10,7 @@ import pytest
 from a13n_harness import (
     HarnessBuilder,
     HarnessEvent,
+    HarnessRunResultEvent,
     HarnessState,
     ModelRecoveryPolicy,
     RunBindings,
@@ -1176,7 +1177,8 @@ async def test_upstream_history_cleanup_removes_stale_tool_results_before_retry(
     assert isinstance(sent[result_index - 1], ModelResponse)
 
 
-async def test_saved_interrupted_tool_history_is_repaired_before_rerun() -> None:
+@pytest.mark.parametrize("execute_pending_tools", [False, True])
+async def test_saved_interrupted_tool_history_is_repaired_before_rerun(execute_pending_tools: bool) -> None:
     calls: list[list[ModelMessage]] = []
     history = (
         ModelResponse(
@@ -1206,6 +1208,7 @@ async def test_saved_interrupted_tool_history_is_repaired_before_rerun() -> None
         "continue",
         bindings=RunBindings.embedded(),
         previous_state=HarnessState.new(message_history=history),
+        execute_pending_tools=execute_pending_tools,
     )
 
     assert result.output_or_raise() == "continued safely"
@@ -1274,3 +1277,120 @@ def test_retry_prompt_counts_as_a_real_tool_result_and_deferred_frontier_is_pres
     assert normalized == completed_history
     assert deferred_closed == 0
     assert preserved == deferred_history
+
+
+@pytest.mark.parametrize("entrypoint", ["run", "stream"])
+@pytest.mark.parametrize("execute_pending_tools", [None, False, True])
+async def test_restored_tool_calls_require_execution_opt_in(
+    entrypoint: str, execute_pending_tools: bool | None
+) -> None:
+    executions: list[int] = []
+    model_history: list[list[ModelMessage]] = []
+
+    def change(value: int) -> int:
+        executions.append(value)
+        return value
+
+    async def model_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del info
+        model_history.append(deepcopy(messages))
+        yield "continued"
+
+    executable = HarnessBuilder(instrumentation=None).build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model_stream),
+        capabilities=[Capability(id="test-tools", tools=[change])],
+    )
+    state = HarnessState.new(
+        message_history=(
+            ModelRequest(parts=[UserPromptPart(content="Change both values")]),
+            ModelResponse(
+                parts=[
+                    ToolCallPart(tool_name="change", args={"value": value}, tool_call_id=f"call-{value}")
+                    for value in (1, 2)
+                ]
+            ),
+        ),
+    )
+    payload = state.model_dump_json()
+    restored = HarnessState.model_validate_json(payload)
+    options = {} if execute_pending_tools is None else {"execute_pending_tools": execute_pending_tools}
+    if entrypoint == "run":
+        result = await executable.run(previous_state=restored, **options)
+    else:
+        result = None
+        async with executable.stream(previous_state=restored, **options) as stream:
+            async for event in stream:
+                if isinstance(event, HarnessRunResultEvent):
+                    result = event.result
+        assert result is not None
+
+    assert result.output_or_raise() == "continued"
+    assert len(model_history) == 1
+    returns = {
+        part.tool_call_id: part
+        for message in model_history[0]
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    }
+    assert set(returns) == {"call-1", "call-2"}
+    if execute_pending_tools:
+        assert sorted(executions) == [1, 2]
+        assert [returns[f"call-{value}"].content for value in (1, 2)] == [1, 2]
+    else:
+        assert executions == []
+        assert all(part.outcome == "failed" and part.content == INTERRUPTED_TOOL_RESULT for part in returns.values())
+    assert restored.model_dump_json() == payload
+
+
+@pytest.mark.parametrize("input", [None, "Continue"])
+async def test_restored_partial_tool_results_preserve_completed_work(input: str | None) -> None:
+    executions: list[str] = []
+    model_history: list[list[ModelMessage]] = []
+
+    def change() -> str:
+        executions.append("executed")
+        return "changed"
+
+    async def model_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del info
+        model_history.append(deepcopy(messages))
+        yield "continued"
+
+    executable = HarnessBuilder(instrumentation=None).build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model_stream),
+        capabilities=[Capability(id="test-tools", tools=[change])],
+    )
+    history = (
+        ModelResponse(
+            parts=[
+                ToolCallPart(tool_name="change", args={}, tool_call_id="done"),
+                ToolCallPart(tool_name="change", args={}, tool_call_id="unknown"),
+            ]
+        ),
+        ModelRequest(parts=[ToolReturnPart(tool_name="change", tool_call_id="done", content="saved")]),
+    )
+    result = await executable.run(input, previous_state=HarnessState.new(message_history=history))
+
+    assert result.output_or_raise() == "continued"
+    assert executions == []
+    returns = [part for message in model_history[0] for part in message.parts if isinstance(part, ToolReturnPart)]
+    assert [(part.tool_call_id, part.content) for part in returns] == [
+        ("done", "saved"),
+        ("unknown", INTERRUPTED_TOOL_RESULT),
+    ]
+
+
+def test_restored_provider_suspension_is_not_closed_as_unknown() -> None:
+    history = (
+        ModelResponse(
+            parts=[ToolCallPart(tool_name="change", args={}, tool_call_id="provider-pending")],
+            state="suspended",
+        ),
+    )
+    normalized, closed = normalize_interrupted_history(history, close_pending_tools=True)
+    assert normalized == history
+    assert closed == 0

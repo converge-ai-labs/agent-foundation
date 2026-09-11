@@ -86,6 +86,26 @@ async with executable.stream("Work", bindings=fresh_bindings()) as stream:
 
 `export_state()` does not persist anything and does not expose arbitrary token deltas. The caller decides whether a candidate is complete, current, and safe to select. The terminal result remains the simplest complete checkpoint boundary.
 
+## Resume Unanswered Tool Calls
+
+When a saved history contains tool calls without results, `run()` and `stream()` default to `execute_pending_tools=False`. The Harness fills in an unknown-result `ToolReturnPart` for each unanswered ordinary call and continues with the model. It preserves recorded results and does not execute the unanswered calls itself. Newly generated tool calls still execute normally.
+
+This is useful when a Host saved a model response before its tool results: after a crash, the missing results cannot establish whether the operations ran. The same unknown-result handling applies even if a call never started. The model can inspect current state and decide what to do next.
+
+To explicitly execute calls retained in a trailing complete model response, omit new input and opt in:
+
+```python
+result = await executable.run(
+    bindings=fresh_bindings(),
+    previous_state=checkpoint,
+    execute_pending_tools=True,
+)
+```
+
+This opts into Pydantic AI's native pending-tool execution and can repeat an external effect. Applications that previously relied on automatic execution of these saved calls now need this flag. Already interrupted history continues to receive unknown results with either setting. The flag is a per-run option, not part of serialized state or the model retry policy.
+
+Structured approvals and external results supplied through `deferred_resume` retain their existing behavior without opting in. Provider-suspended model responses also continue through their native path. This option does not provide exactly-once execution or block a later model decision from requesting a new call.
+
 ## Structured Suspension
 
 Native deferred tools and approvals end a root logical run with `status="suspended"`. The result includes:

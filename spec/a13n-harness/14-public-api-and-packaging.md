@@ -192,6 +192,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         environment_run_extensions: Sequence[EnvironmentRunExtension] = (),
         previous_state: HarnessState | None = None,
+        execute_pending_tools: bool = False,
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -208,12 +209,15 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         environment_run_extensions: Sequence[EnvironmentRunExtension] = (),
         previous_state: HarnessState | None = None,
+        execute_pending_tools: bool = False,
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
     ) -> HarnessRunStream[OutputT]: ...
 
 ```
+
+`execute_pending_tools` defaults to closing unanswered restored tool calls with unknown results; explicit opt-in retains native execution of pending calls as defined by [Restored Pending Tool Calls](10-snapshot-and-resume.md#restored-pending-tool-calls).
 
 An immediate input and `input_factory` are mutually exclusive. Omitting both passes no new user input, which permits continuation from imported messages. `deferred_resume` is a separate Harness correlation envelope around native Pydantic requests and results rather than user content. It requires a compatible prior state and current tool surface; after preflight, only its native results are consumed by the first `ModelAttempt`. A supplied `RunUsage` remains the one accumulator shared across all internal `ModelAttempt` values; otherwise the Harness creates a fresh value. Native `UsageLimits` are passed to every attempt and remain monotonic through the shared accumulator.
 

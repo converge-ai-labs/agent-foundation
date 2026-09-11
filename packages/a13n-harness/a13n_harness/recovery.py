@@ -198,15 +198,18 @@ def normalize_interrupted_history(
     messages: Sequence[ModelMessage],
     *,
     response_tracker: InterruptedResponseTracker | None = None,
+    close_pending_tools: bool = False,
 ) -> tuple[tuple[ModelMessage, ...], int]:
-    """Retain safe streamed parts and close finalized tool calls at an interrupted boundary."""
+    """Close interrupted calls, optionally including unanswered calls in restored history."""
     normalized = list(response_tracker.sanitize(messages) if response_tracker is not None else messages)
     if not normalized:
         return (), 0
 
     tail = normalized[-1]
-    if isinstance(tail, ModelResponse) and tail.state == "interrupted":
-        if not _native_parts_are_balanced(tail.parts):
+    if isinstance(tail, ModelResponse) and (
+        tail.state == "interrupted" or (close_pending_tools and tail.state != "suspended")
+    ):
+        if tail.state == "interrupted" and not _native_parts_are_balanced(tail.parts):
             normalized.pop()
             return tuple(normalized), 0
         missing = _missing_tool_calls(tail, ())
@@ -214,12 +217,12 @@ def normalize_interrupted_history(
             normalized.append(ModelRequest(parts=[_failed_tool_result(call) for call in missing]))
         return tuple(normalized), len(missing)
 
-    if isinstance(tail, ModelRequest) and tail.state == "interrupted":
+    if isinstance(tail, ModelRequest) and (tail.state == "interrupted" or close_pending_tools):
         response = next(
             (message for message in reversed(normalized[:-1]) if isinstance(message, ModelResponse)),
             None,
         )
-        if response is None:
+        if response is None or response.state == "suspended":
             return tuple(normalized), 0
         missing = _missing_tool_calls(response, tail.parts)
         if missing:

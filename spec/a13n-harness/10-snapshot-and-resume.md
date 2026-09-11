@@ -150,7 +150,17 @@ Each synthesized failed result says:
 
 This transformation closes the public conversation shape. It does not claim that the external operation failed, did not execute, rolled back, or is safe to repeat.
 
-No interrupted-history normalization occurs for ordinary complete history or for a provider-suspended response. Provider-suspended continuation remains native Pydantic behavior.
+Interrupted-history normalization does not alter provider-suspended responses. Provider-suspended continuation remains native Pydantic behavior. Ordinary restored history follows the separate pending-call policy below.
+
+## Restored Pending Tool Calls
+
+`ExecutableAgent.run()` and `stream()` accept `execute_pending_tools: bool = False` as a per-run continuation option, separate from `HarnessState` and model-attempt retry policy. Before the first model attempt, restored ordinary tool calls without recorded results are closed with the same unknown-effect `ToolReturnPart` values used for interrupted history. This applies to a trailing complete model response and to missing results in its trailing request. Existing tool returns and retry results are preserved, and the supplied state is not mutated. Fresh tool calls generated during the new run execute normally.
+
+With `execute_pending_tools=True`, the Harness leaves ordinary pending history to native Pydantic continuation. A trailing complete model response resumes through `CallToolsNode` when no new input is supplied. This opt-in does not override interrupted-history repair or authorize execution independently of the current tool surface and policy.
+
+A validated `deferred_resume` retains its exact pending calls for native result and approval processing instead of closing them as unknown. Provider-suspended responses also retain their native continuation semantics. Neither path requires `execute_pending_tools=True`.
+
+The default changes ordinary response-only continuation from automatic tool execution to unknown-result closure. Hosts that intentionally execute those retained calls must opt in. A checkpoint without a result proves neither execution nor non-execution; even a call that never started receives an unknown result. This policy does not prevent a later model decision from requesting the operation again and does not establish exactly-once effects.
 
 ## System Prompt Reconciliation
 

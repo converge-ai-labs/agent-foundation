@@ -1045,6 +1045,7 @@ class ExecutableAgent[OutputT]:
         default_environment: None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        execute_pending_tools: bool = False,
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -1061,6 +1062,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        execute_pending_tools: bool = False,
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -1077,6 +1079,7 @@ class ExecutableAgent[OutputT]:
         default_environment: None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        execute_pending_tools: bool = False,
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -1092,6 +1095,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        execute_pending_tools: bool = False,
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -1105,6 +1109,7 @@ class ExecutableAgent[OutputT]:
             default_environment=default_environment,
             bindings=bindings,
             previous_state=previous_state,
+            execute_pending_tools=execute_pending_tools,
             deferred_resume=deferred_resume,
             usage=usage,
             usage_limits=usage_limits,
@@ -1125,6 +1130,7 @@ class ExecutableAgent[OutputT]:
         default_environment: None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        execute_pending_tools: bool = False,
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -1141,6 +1147,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        execute_pending_tools: bool = False,
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -1157,6 +1164,7 @@ class ExecutableAgent[OutputT]:
         default_environment: None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        execute_pending_tools: bool = False,
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -1172,6 +1180,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        execute_pending_tools: bool = False,
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -1185,6 +1194,7 @@ class ExecutableAgent[OutputT]:
             default_environment=default_environment,
             bindings=bindings,
             previous_state=previous_state,
+            execute_pending_tools=execute_pending_tools,
             deferred_resume=deferred_resume,
             usage=usage,
             usage_limits=usage_limits,
@@ -1200,6 +1210,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        execute_pending_tools: bool = False,
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -1235,6 +1246,7 @@ class ExecutableAgent[OutputT]:
             bindings=resolved_bindings,
             environment_binding=environment_binding,
             previous_state=previous_state,
+            execute_pending_tools=execute_pending_tools,
             deferred_resume=normalized_resume,
             run_reserved_capability_ids=run_reserved_ids,
             skill_selection_names=skill_selection_names,
@@ -1255,6 +1267,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         bindings: RunBindings,
         environment_binding: EnvironmentRuntime,
         previous_state: HarnessState | None,
+        execute_pending_tools: bool,
         deferred_resume: DeferredToolResume | None,
         run_reserved_capability_ids: frozenset[str],
         skill_selection_names: frozenset[str] | None,
@@ -1271,6 +1284,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         )
         self.thread_id = self._previous_state.thread_id
         self.run_id = f"run-{uuid4().hex}"
+        self._execute_pending_tools = execute_pending_tools
         self._deferred_resume = deferred_resume
         self._run_reserved_capability_ids = run_reserved_capability_ids
         self._skill_selection_names = skill_selection_names
@@ -2217,7 +2231,10 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         policy = self._executable.definition.model_recovery
         max_attempts = policy.max_attempts if policy.enabled else 1
         attempt_index = 0
-        current_history, _ = normalize_interrupted_history(self._previous_state.message_history)
+        current_history, _ = normalize_interrupted_history(
+            self._previous_state.message_history,
+            close_pending_tools=not self._execute_pending_tools and self._deferred_resume is None,
+        )
         current_history = _reconcile_system_prompt(
             current_history,
             self._executable._system_prompt,
