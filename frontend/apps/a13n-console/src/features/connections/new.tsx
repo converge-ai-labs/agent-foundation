@@ -1,9 +1,14 @@
 import { useState } from "react";
-import { Button, FormField, ModalFrame, SearchPicker } from "a13n-ui";
-import { PlusIcon } from "@phosphor-icons/react";
+import {
+  BrandIcon,
+  Button,
+  FormField,
+  ModalFrame,
+  SearchPicker,
+} from "a13n-ui";
+import { ArrowLeftIcon, PlusIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
-import { BrandIcon } from "../../shared/brand-icon";
 import { ErrorNotice } from "../../shared/feedback";
 import type { Schema } from "../../shared/api";
 import { ManageProvidersLink } from "../providers/manage-link";
@@ -19,7 +24,7 @@ type Selection =
       connector: Schema["Connector"];
       provider: Schema["ConnectorProvider"];
     }
-  | { kind: "mcp"; preset?: MCPPreset; endpoint?: string };
+  | { kind: "mcp"; preset?: MCPPreset };
 export function NewConnection({
   onConnected,
 }: {
@@ -66,7 +71,6 @@ function ConnectionChoice({
     [selected, setSelected] = useState<Selection>(),
     [started, setStarted] = useState(false);
   const directory = useConnectionDirectory(search);
-  const custom = customEndpoint(search);
   const term = search.trim().toLocaleLowerCase();
   const rank = (label: string) =>
     label.toLocaleLowerCase() === term
@@ -99,15 +103,6 @@ function ConnectionChoice({
       a.label.localeCompare(b.label) ||
       a.badge.localeCompare(b.badge),
   );
-  if (can("mcp_connection.manage"))
-    options.push({
-      value: "custom",
-      label: t("Custom MCP server"),
-      description: custom ?? t("Connect your own Streamable HTTP endpoint."),
-      badge: t("Remote MCP"),
-      keywords: [search],
-      icon: <BrandIcon endpoint={custom} />,
-    });
   if (selected)
     return (
       <div className="flex flex-col gap-5">
@@ -118,7 +113,8 @@ function ConnectionChoice({
             className="self-start"
             onClick={() => setSelected(undefined)}
           >
-            {t("Choose another service")}
+            <ArrowLeftIcon aria-hidden="true" />
+            {t("Choose another source")}
           </Button>
         )}
         <div className="flex items-center gap-3">
@@ -130,14 +126,14 @@ function ConnectionChoice({
           ) : (
             <BrandIcon
               identity={selected.preset?.id}
-              endpoint={selected.preset?.endpoint ?? selected.endpoint}
+              endpoint={selected.preset?.endpoint}
             />
           )}
           <div>
             <h3 className="font-medium">
               {selected.kind === "connector"
                 ? selected.connector.name
-                : (selected.preset?.name ?? t("Custom MCP server"))}
+                : (selected.preset?.name ?? t("Custom Remote MCP"))}
             </h3>
             <p className="text-sm text-muted-foreground">
               {selected.kind === "connector"
@@ -179,7 +175,6 @@ function ConnectionChoice({
         ) : (
           <CreateMCP
             preset={selected.preset}
-            endpoint={selected.endpoint}
             onStarted={() => setStarted(true)}
             onSuccess={(connection) => onConnected(connection.id)}
           />
@@ -188,25 +183,16 @@ function ConnectionChoice({
     );
   return (
     <div className="flex flex-col gap-4">
-      <FormField
-        label={t("Service")}
-        description={t("Search for an application or paste an MCP URL.")}
-      >
+      <FormField label={t("Source")}>
         <SearchPicker
-          label={t("Service")}
-          placeholder={t("Search services or paste an MCP URL…")}
+          label={t("Source")}
+          placeholder={t("Search sources…")}
           emptyMessage={
-            directory.pending
-              ? t("Loading services…")
-              : t("No matching services")
+            directory.pending ? t("Loading sources…") : t("No matching sources")
           }
           groups={[{ label: "", options }]}
           onSearchChange={setSearch}
           onValueChange={(value) => {
-            if (value === "custom") {
-              setSelected({ kind: "mcp", endpoint: custom });
-              return;
-            }
             const connector = directory.entries.find(
               (entry) =>
                 value ===
@@ -227,7 +213,7 @@ function ConnectionChoice({
                 role="status"
                 className="px-2 py-1 text-sm text-muted-foreground"
               >
-                {t("Loading services…")}
+                {t("Loading sources…")}
               </p>
             ) : directory.hasMore ? (
               <Button
@@ -245,31 +231,33 @@ function ConnectionChoice({
       </FormField>
       <ErrorNotice error={directory.error} />
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <ManageProvidersLink category="connectors" scope="workspace" />
-        {!!directory.providers.length && (
+        <div className="flex flex-wrap items-center gap-2">
+          <ManageProvidersLink category="connectors" scope="workspace" />
+          {!!directory.providers.length && (
+            <Button
+              variant="ghost"
+              size="sm"
+              loading={directory.loadingMore}
+              onClick={directory.refresh}
+              type="button"
+            >
+              {t("Refresh applications")}
+            </Button>
+          )}
+        </div>
+        {can("mcp_connection.manage") && (
           <Button
-            variant="ghost"
-            size="sm"
-            loading={directory.loadingMore}
-            onClick={directory.refresh}
             type="button"
+            variant="outline"
+            size="sm"
+            className="ml-auto"
+            onClick={() => setSelected({ kind: "mcp" })}
           >
-            {t("Refresh applications")}
+            <PlusIcon />
+            {t("Custom Remote MCP")}
           </Button>
         )}
       </div>
     </div>
   );
-}
-function customEndpoint(value: string): string | undefined {
-  try {
-    const url = new URL(value.trim());
-    return ["https:", "http:"].includes(url.protocol) &&
-      !url.username &&
-      !url.password
-      ? url.href
-      : undefined;
-  } catch {
-    return undefined;
-  }
 }

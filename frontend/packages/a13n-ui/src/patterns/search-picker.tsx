@@ -14,8 +14,17 @@ import {
   ComboboxTrigger,
   ComboboxValue,
 } from "../components/combobox";
-import { SelectButton } from "../components/select";
 import { Badge } from "../components/badge";
+import {
+  Select,
+  SelectButton,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectGroup,
+  SelectGroupLabel,
+  SelectItem,
+} from "../components/select";
 
 export interface SearchOption {
   value: string;
@@ -66,6 +75,54 @@ export function SearchPicker({
     items
       .flatMap((group) => group.items)
       .find((option) => option.value === value) ?? null;
+  const options = items.flatMap((group) => group.items);
+  if (!onSearchChange && options.length <= 8) {
+    return (
+      <Select
+        items={options}
+        value={value ?? null}
+        onValueChange={(next) => {
+          if (next !== null) onValueChange(next);
+        }}
+        disabled={disabled}
+      >
+        <SelectTrigger
+          id={id}
+          aria-label={label}
+          aria-describedby={describedBy}
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            {selected?.icon}
+            <SelectValue placeholder={placeholder} />
+          </span>
+        </SelectTrigger>
+        <SelectPopup aria-label={label} className="w-(--anchor-width)">
+          {groups.map((group) => (
+            <SelectGroup key={group.label}>
+              {groups.length > 1 && (
+                <SelectGroupLabel>{group.label}</SelectGroupLabel>
+              )}
+              {group.options.map((option) => (
+                <SelectItem
+                  key={option.value}
+                  value={option.value}
+                  disabled={option.disabled}
+                >
+                  <OptionContent item={option} />
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          ))}
+          {options.length === 0 && (
+            <p className="px-3 py-2 text-sm text-muted-foreground">
+              {emptyMessage}
+            </p>
+          )}
+          {footer && <div className="p-2">{footer}</div>}
+        </SelectPopup>
+      </Select>
+    );
+  }
   return (
     <Combobox
       autoHighlight
@@ -117,7 +174,7 @@ export function SearchPicker({
         </span>
       </ComboboxTrigger>
       <ComboboxPopup aria-label={label} className="w-(--anchor-width)">
-        <div className="border-b px-1 py-1 focus-within:border-ring">
+        <div className="px-1 py-1">
           <ComboboxInput
             className="w-full"
             aria-label={label}
@@ -127,6 +184,7 @@ export function SearchPicker({
             startAddon={<MagnifyingGlassIcon />}
           />
         </div>
+        <div aria-hidden className="mx-3 border-b border-border/60" />
         <ComboboxEmpty>{emptyMessage}</ComboboxEmpty>
         <ComboboxList>
           {(group: { value: string; items: GroupedOption[] }) => (
@@ -144,38 +202,42 @@ export function SearchPicker({
                       .filter(Boolean)
                       .join(" ")}
                   >
-                    <span className="flex w-full min-w-0 items-center gap-3">
-                      {item.icon}
-                      <span className="min-w-0 flex-1">
-                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                          <span className="max-w-full break-words">
-                            {item.label}
-                          </span>
-                          {item.badge && (
-                            <Badge
-                              variant="secondary"
-                              size="sm"
-                              className="max-w-full whitespace-normal break-words"
-                            >
-                              {item.badge}
-                            </Badge>
-                          )}
-                        </span>
-                        {item.description && (
-                          <span className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-                            {item.description}
-                          </span>
-                        )}
-                      </span>
-                    </span>
+                    <OptionContent item={item} />
                   </ComboboxItem>
                 )}
               </ComboboxCollection>
             </ComboboxGroup>
           )}
         </ComboboxList>
-        {footer && <div className="border-t p-2">{footer}</div>}
+        {footer && <div className="p-2">{footer}</div>}
       </ComboboxPopup>
     </Combobox>
+  );
+}
+
+function OptionContent({ item }: { item: SearchOption }) {
+  return (
+    <span className="flex w-full min-w-0 items-center gap-3">
+      {item.icon}
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="max-w-full break-words">{item.label}</span>
+          {item.badge && (
+            <Badge
+              variant="secondary"
+              size="sm"
+              className="max-w-full whitespace-normal break-words"
+            >
+              {item.badge}
+            </Badge>
+          )}
+        </span>
+        {item.description && (
+          <span className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+            {item.description}
+          </span>
+        )}
+      </span>
+    </span>
   );
 }

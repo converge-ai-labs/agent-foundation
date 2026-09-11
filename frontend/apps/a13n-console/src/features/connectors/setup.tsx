@@ -1,3 +1,5 @@
+import { ManageProvidersLink } from "../providers/manage-link";
+import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { ApiError } from "@converge.ai/a13n";
 import { Button, FormField, Input } from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -212,12 +214,26 @@ export function ConnectionSetup({
           status.error
         }
       />
+      {definition.error instanceof ApiError &&
+        [
+          "connector_provider_disabled",
+          "connector_unavailable",
+          "connector_provider_unavailable",
+        ].includes(definition.error.code) && (
+          <ManageProvidersLink category="connectors" scope="workspace" />
+        )}
       {replacementRequired ? (
         <p role="status">
           {t(
             "This provider cannot reauthorize an existing account. Create a new connection, authorize it, then select it in your agent settings.",
           )}{" "}
-          <a href={`${basePath}/connections`}>{t("Back to connections")}</a>
+          <a
+            className="inline-flex items-center gap-1.5"
+            href={`${basePath}/connections`}
+          >
+            <ArrowLeftIcon size={14} aria-hidden="true" />{" "}
+            {t("Back to connections")}
+          </a>
         </p>
       ) : connection?.status === "ready" && provider.isPending ? (
         <Loading />

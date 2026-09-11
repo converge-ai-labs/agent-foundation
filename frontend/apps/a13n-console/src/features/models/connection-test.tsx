@@ -8,37 +8,49 @@ export function ConnectionTest({
   action,
   description,
   dirty = false,
+  compact = false,
 }: {
   action: () => Promise<Schema["ModelConnectionTestResult"]>;
   description: string;
   dirty?: boolean;
+  compact?: boolean;
 }) {
   const { t } = useTranslation();
   const test = useMutation({
     mutationFn: action,
     gcTime: 0,
   });
+  const hint = t(
+    dirty ? "Save your changes before checking the connection." : description,
+  );
+  const button = (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      disabled={dirty}
+      loading={test.isPending}
+      onClick={() => test.mutate()}
+    >
+      {t("Check connection")}
+    </Button>
+  );
   return (
-    <div>
-      <SettingsRow
-        stackOnNarrow={false}
-        label={t("Connection")}
-        description={t(
-          dirty
-            ? "Save your changes before checking the connection."
-            : description,
-        )}
-      >
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={dirty}
-          loading={test.isPending}
-          onClick={() => test.mutate()}
+    <div className={compact ? "grid gap-3" : undefined}>
+      {compact ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          {button}
+          <span className="text-xs text-muted-foreground">{hint}</span>
+        </div>
+      ) : (
+        <SettingsRow
+          stackOnNarrow={false}
+          label={t("Connection")}
+          description={hint}
         >
-          {t("Check connection")}
-        </Button>
-      </SettingsRow>
+          {button}
+        </SettingsRow>
+      )}
       {!dirty && test.data && (
         <div role="status" className="pb-4 text-sm">
           <div className="flex items-center gap-2">

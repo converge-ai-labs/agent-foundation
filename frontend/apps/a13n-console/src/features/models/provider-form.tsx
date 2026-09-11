@@ -1,3 +1,5 @@
+import { useSuggestedName } from "../../shared/suggested-name";
+import { FormSection, formSectionStyles } from "../../shared/form-section";
 import { CredentialEditor } from "../../shared/credential-editor";
 import { ResourceReference } from "../../shared/resource-reference";
 import { ProviderTypeField } from "../../shared/provider-type-field";
@@ -12,7 +14,7 @@ import {
 import { initialHeaders, serializeHeaders } from "./provider-headers";
 import { ConnectionTest } from "./connection-test";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { FormField, Input, SettingsSection } from "a13n-ui";
+import { FormField, Input } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -20,7 +22,6 @@ import { type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { FormActions } from "../../shared/form";
 import { SchemaFields } from "../../shared/schema-fields";
-import styles from "../../shared/shared.module.css";
 import { validateSettings } from "../../shared/validation";
 import { modelApi, type ModelScope } from "./api";
 
@@ -69,8 +70,7 @@ export function ProviderForm({
           : definitions[0]?.type) ??
         "",
     ),
-    [name, setName] = useState(original?.value.name ?? ""),
-    [nameEdited, setNameEdited] = useState(!!original),
+    { name, setName, suggestName } = useSuggestedName(original?.value.name),
     [suggestedApi, setSuggestedApi] = useState<string>(),
     [configuration, setConfiguration] = useState<Record<string, unknown>>(
       original?.value.configuration ?? {},
@@ -125,13 +125,13 @@ export function ProviderForm({
   });
   return (
     <form
-      className={styles.form}
+      className={formSectionStyles.form}
       onSubmit={(event) => {
         event.preventDefault();
         save.mutate();
       }}
     >
-      <div className={styles.twoColumns}>
+      <FormSection aside={!onCreated} title={t("General")}>
         <FormField
           className="min-w-0 w-full"
           label={t("Name")}
@@ -142,17 +142,22 @@ export function ProviderForm({
             value={name}
             onChange={(event) => {
               setName(event.target.value);
-              setNameEdited(true);
             }}
             maxLength={128}
           />
         </FormField>
+      </FormSection>
+      <FormSection aside={!onCreated} title={t("Connection")}>
         <ProviderTypeField
           definitions={definitions}
           value={type}
           readOnly={!!original}
           onValueChange={(value) => {
             setType(value);
+            suggestName(
+              definitions.find((item) => item.type === value)?.display_name ??
+                value,
+            );
             setConfiguration({});
             setHeaders([]);
             setAdvancedOpen(false);
@@ -166,9 +171,7 @@ export function ProviderForm({
             )
           }
         />
-      </div>
-      {definition && (
-        <>
+        {definition && (
           <SchemaFields
             key={type}
             schema={ordinaryConfigurationSchema(
@@ -177,88 +180,89 @@ export function ProviderForm({
             value={configuration}
             onChange={setConfiguration}
           />
-        </>
-      )}
-      {definition && (
-        <ProviderConnection
-          type={type}
-          schema={definition.configuration_schema}
-          configuration={configuration}
-          onChange={setConfiguration}
-          headers={headers}
-          onHeadersChange={setHeaders}
-          open={advancedOpen}
-          onOpenChange={setAdvancedOpen}
-          onBaseUrlChange={(url) => {
-            setSuggestedApi(undefined);
-            if (!nameEdited) {
+        )}
+        {requiresProviderCredential(type, configuration, definition) && (
+          <CredentialEditor
+            configured={original?.value.credential_configured}
+            removing={removeCredential}
+            onRemovingChange={(value) => {
+              setRemoveCredential(value);
+              setCredential("");
+            }}
+          >
+            <FormField
+              className="min-w-0 w-full"
+              label={credentialLabel}
+              description={
+                original ? undefined : t(credentialField.description)
+              }
+            >
+              <Input
+                type="password"
+                placeholder={
+                  original?.value.credential_configured
+                    ? t("Leave empty to keep saved credential")
+                    : undefined
+                }
+                autoComplete="new-password"
+                name="provider-api-key"
+                value={credential}
+                onChange={(event) => {
+                  setCredential(event.target.value);
+                  setRemoveCredential(false);
+                }}
+              />
+            </FormField>
+          </CredentialEditor>
+        )}
+        {definition && (
+          <ProviderConnection
+            type={type}
+            schema={definition.configuration_schema}
+            configuration={configuration}
+            onChange={setConfiguration}
+            headers={headers}
+            onHeadersChange={setHeaders}
+            open={advancedOpen}
+            onOpenChange={setAdvancedOpen}
+            onBaseUrlChange={(url) => {
+              setSuggestedApi(undefined);
               try {
-                setName(new URL(url).hostname.slice(0, 128));
+                suggestName(new URL(url).hostname.slice(0, 128));
               } catch {
                 /* URL may be incomplete. */
               }
+            }}
+            onSuggestedApi={setSuggestedApi}
+            onAuthChange={(mode) => {
+              if (mode === "none") setCredential("");
+              setRemoveCredential(mode === "none");
+            }}
+          />
+        )}
+        {original && (
+          <ConnectionTest
+            compact
+            action={() => api.testProvider(original.value.id)}
+            description="May consume quota or incur cost."
+            dirty={
+              save.isPending ||
+              name !== original.value.name ||
+              enabled !== original.value.enabled ||
+              !!credential ||
+              JSON.stringify(headers) !==
+                JSON.stringify(initialHeaders(original.value)) ||
+              removeCredential ||
+              JSON.stringify(configuration) !==
+                JSON.stringify(original.value.configuration)
             }
-          }}
-          onSuggestedApi={setSuggestedApi}
-          onAuthChange={(mode) => {
-            if (mode === "none") setCredential("");
-            setRemoveCredential(mode === "none");
-          }}
-        />
-      )}
-      {requiresProviderCredential(type, configuration, definition) && (
-        <CredentialEditor
-          configured={original?.value.credential_configured}
-          removing={removeCredential}
-          onRemovingChange={(value) => {
-            setRemoveCredential(value);
-            setCredential("");
-          }}
-        >
-          <FormField
-            className="min-w-0 w-full"
-            label={credentialLabel}
-            description={original ? undefined : t(credentialField.description)}
-          >
-            <Input
-              type="password"
-              placeholder={
-                original?.value.credential_configured
-                  ? t("Leave empty to keep saved credential")
-                  : undefined
-              }
-              autoComplete="new-password"
-              name="provider-api-key"
-              value={credential}
-              onChange={(event) => {
-                setCredential(event.target.value);
-                setRemoveCredential(false);
-              }}
-            />
-          </FormField>
-        </CredentialEditor>
-      )}
+          />
+        )}
+      </FormSection>
       {original && (
-        <ConnectionTest
-          action={() => api.testProvider(original.value.id)}
-          description="Check the saved connection. May consume provider quota."
-          dirty={
-            save.isPending ||
-            name !== original.value.name ||
-            enabled !== original.value.enabled ||
-            !!credential ||
-            JSON.stringify(headers) !==
-              JSON.stringify(initialHeaders(original.value)) ||
-            removeCredential ||
-            JSON.stringify(configuration) !==
-              JSON.stringify(original.value.configuration)
-          }
-        />
-      )}
-      {original && (
-        <SettingsSection variant="plain">
+        <FormSection aside={!onCreated} title={t("Availability")}>
           <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
-        </SettingsSection>
+        </FormSection>
       )}
       <ErrorNotice
         error={save.error}

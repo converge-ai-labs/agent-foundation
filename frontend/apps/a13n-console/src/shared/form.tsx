@@ -73,6 +73,7 @@ export function Confirm({
   triggerElement,
   danger = false,
   triggerVariant,
+  retry,
   children,
 }: {
   title: string;
@@ -83,6 +84,7 @@ export function Confirm({
   triggerElement?: ReactElement;
   danger?: boolean;
   triggerVariant?: ButtonProps["variant"];
+  retry?: () => void;
   children?: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -151,7 +153,7 @@ export function Confirm({
       {(children || mutation.error) && (
         <>
           {children}
-          <ErrorNotice error={mutation.error} />
+          <ErrorNotice error={mutation.error} retry={retry} />
         </>
       )}
     </ModalFrame>

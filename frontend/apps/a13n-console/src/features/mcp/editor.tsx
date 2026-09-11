@@ -109,6 +109,7 @@ export function MCPEditor({
               )}
               {can("mcp_connection.manage") ? (
                 <Tabs
+                  className="gap-5"
                   key={generation}
                   defaultValue={
                     ["pending", "action_required"].includes(query.data.status)
@@ -177,7 +178,7 @@ export function MCPSettings({
     { workspace } = useWorkspace(),
     { t } = useTranslation(),
     key = useIdempotency(),
-    [basis] = useState(initial),
+    basis = initial,
     [name, setName] = useState(initial.name);
   function done() {
     void cache.invalidateQueries({ queryKey: ["mcp-connections"] });
@@ -222,19 +223,29 @@ export function MCPSettings({
         </div>
         <ErrorNotice error={save.error} retry={() => void reload()} />
       </form>
-      <ReadOnlyField
-        label={t("Authentication")}
-        description={t(
-          "Endpoint and authentication mode are fixed after creation.",
-        )}
-      >
-        {t(`auth.${basis.auth_mode}`)}
-      </ReadOnlyField>
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <span className="text-muted-foreground">{t("Authentication")}</span>
+        <span>{t(`auth.${basis.auth_mode}`)}</span>
+      </div>
 
-      <section className="grid gap-3 border-t border-border pt-4">
-        <h3 className="text-sm font-medium">{t("Connection actions")}</h3>
+      <section className="flex flex-wrap items-center gap-3 rounded-lg bg-muted/40 p-3">
+        <h3 className="mr-auto text-sm font-medium">
+          {t("Connection actions")}
+        </h3>
+        {basis.status === "disabled" &&
+          basis.auth_mode !== "none" &&
+          !basis.credential_configured && (
+            <p className="text-sm text-muted-foreground">
+              {t(
+                "Enabling requires completed authorization. Open the Authorization tab to finish setup if needed.",
+              )}
+            </p>
+          )}
         <div className={styles.actions}>
           <Confirm
+            retry={() =>
+              void cache.invalidateQueries({ queryKey: ["mcp-connections"] })
+            }
             title={t(
               basis.status === "disabled"
                 ? "Enable connection"
@@ -247,30 +258,35 @@ export function MCPSettings({
             action={async () => {
               const action = basis.status === "disabled" ? "enable" : "disable",
                 body = { expected_version: basis.version };
-              await client.http.POST(
-                "/api/v1/mcp-connections/{connection_id}/{action}",
-                {
-                  params: {
-                    path: { connection_id: basis.id, action },
-                    header: commandHeaders(
-                      workspace.id,
-                      key.forBody({ action, ...body }),
-                    ),
+              data(
+                await client.http.POST(
+                  "/api/v1/mcp-connections/{connection_id}/{action}",
+                  {
+                    params: {
+                      path: { connection_id: basis.id, action },
+                      header: commandHeaders(
+                        workspace.id,
+                        key.forBody({ action, ...body }),
+                      ),
+                    },
+                    body,
                   },
-                  body,
-                },
+                ),
               );
               done();
             }}
           />
           <Confirm
+            retry={() =>
+              void cache.invalidateQueries({ queryKey: ["mcp-connections"] })
+            }
             title={t("Delete MCP connection")}
             description={t(
               "This clears local credentials and removes the connection. Remote registration cleanup is best effort.",
             )}
             trigger={t("Delete")}
             danger
-            triggerVariant="outline"
+            triggerVariant="destructive"
             action={async () => {
               const query = { expected_version: basis.version };
               const result = data(

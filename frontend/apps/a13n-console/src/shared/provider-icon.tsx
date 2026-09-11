@@ -4,7 +4,7 @@ import {
   GlobeIcon,
   ArrowsLeftRightIcon,
 } from "@phosphor-icons/react";
-import { BrandIcon } from "./brand-icon";
+import { BrandIcon } from "a13n-ui";
 
 const localIcons = {
   "a13n.direct-local": DesktopIcon,

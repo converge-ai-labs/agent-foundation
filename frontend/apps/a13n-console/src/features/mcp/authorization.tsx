@@ -8,7 +8,7 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { AuthorizationLink } from "../../shared/authorization-link";
-import { ErrorNotice, StateBadge } from "../../shared/feedback";
+import { ErrorNotice } from "../../shared/feedback";
 import { FormActions } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
@@ -25,7 +25,7 @@ export function MCPAuthorization({
     { workspace, basePath } = useWorkspace(),
     { t } = useTranslation(),
     key = useIdempotency(),
-    [basis] = useState(initial),
+    basis = initial,
     [bearer, setBearer] = useState(""),
     [headers, setHeaders] = useState<Record<string, string>>({});
   const authorize = useMutation({
@@ -99,8 +99,17 @@ export function MCPAuthorization({
     },
   });
   return (
-    <div className={styles.stack}>
-      <StateBadge state={basis.status} />
+    <div className="grid justify-items-start gap-4">
+      <div className="grid gap-1">
+        <h3 className="text-sm font-medium">{t(`auth.${basis.auth_mode}`)}</h3>
+        <p className="text-sm text-muted-foreground">
+          {t(
+            basis.auth_mode === "none"
+              ? "This server does not require credentials. Verify the connection to refresh its available tools."
+              : "Manage the credentials used to access this server.",
+          )}
+        </p>
+      </div>
       {basis.auth_mode === "oauth" ? (
         <>
           {authorize.data ? (
@@ -159,7 +168,7 @@ export function MCPAuthorization({
         onClick={() => reconnect.mutate()}
         type="button"
       >
-        {t("Reconnect and verify tools")}
+        {t("Verify connection")}
       </Button>
       <ErrorNotice
         error={authorize.error ?? credentials.error ?? reconnect.error}

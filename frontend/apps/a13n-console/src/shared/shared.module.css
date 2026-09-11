@@ -245,3 +245,7 @@
   overflow-wrap: anywhere;
   line-height: 1.7;
 }
+
+.schemaFields:empty {
+  display: none;
+}

@@ -1,4 +1,4 @@
-import { SettingsRow, Switch } from "a13n-ui";
+import { Switch } from "a13n-ui";
 import { useId } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -14,19 +14,16 @@ export function ProviderEnabled({
   const id = useId();
   const { t } = useTranslation();
   return (
-    <SettingsRow
-      stackOnNarrow={false}
-      label={t("Enabled")}
-      description={t("Allow agents to use this provider.")}
-      controlId={id}
-    >
+    <div className="flex items-center justify-between gap-4 py-1">
+      <label htmlFor={id} className="text-sm">
+        {t("Enabled")}
+      </label>
       <Switch
         id={id}
-        aria-describedby={`${id}-description`}
         checked={checked}
         onCheckedChange={onCheckedChange}
         disabled={disabled}
       />
-    </SettingsRow>
+    </div>
   );
 }

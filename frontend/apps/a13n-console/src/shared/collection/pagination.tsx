@@ -1,3 +1,4 @@
+import { ArrowLeftIcon, ArrowRightIcon } from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
 
 import { useTranslation } from "react-i18next";
@@ -20,6 +21,7 @@ export function Pagination({
         onClick={page.previous}
         type="button"
       >
+        <ArrowLeftIcon aria-hidden="true" />
         {t("Previous")}
       </Button>
       <Button
@@ -30,6 +32,7 @@ export function Pagination({
         type="button"
       >
         {t("Next")}
+        <ArrowRightIcon aria-hidden="true" />
       </Button>
     </div>
   );

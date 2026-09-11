@@ -1,3 +1,4 @@
+import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, DisclosureSection } from "a13n-ui";
 import { useState } from "react";
@@ -47,6 +48,7 @@ export function TemplateHistory({
           onClick={() => setRestore(undefined)}
           type="button"
         >
+          <ArrowLeftIcon size={14} aria-hidden="true" />{" "}
           {t("Back to revisions")}
         </Button>
         <TemplateRecipe

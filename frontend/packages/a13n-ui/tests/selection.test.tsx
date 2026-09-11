@@ -13,6 +13,10 @@ const groups = [
         description: "Learning resources",
         keywords: ["教程"],
       },
+      ...Array.from({ length: 7 }, (_, index) => ({
+        value: `location-${index}`,
+        label: `Location ${index}`,
+      })),
       {
         value: "private",
         label: "Private",
@@ -23,6 +27,55 @@ const groups = [
   },
 ];
 describe("selection", () => {
+  it("selects short local lists without a search input", async () => {
+    const user = userEvent.setup();
+    const change = vi.fn();
+    render(
+      <SearchPicker
+        label="Status"
+        placeholder="All statuses"
+        emptyMessage="No statuses"
+        value="all"
+        onValueChange={change}
+        groups={[
+          {
+            label: "",
+            options: [
+              { value: "all", label: "All statuses" },
+              { value: "enabled", label: "Enabled" },
+            ],
+          },
+        ]}
+      />,
+    );
+    const trigger = screen.getByRole("combobox", { name: "Status" });
+    await user.click(trigger);
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.getAllByRole("combobox")).toHaveLength(1);
+    await user.click(await screen.findByRole("option", { name: "Enabled" }));
+    expect(change).toHaveBeenCalledWith("enabled");
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
+  it("retains search when input drives remote lookup or custom values", async () => {
+    const user = userEvent.setup();
+    const searchChanged = vi.fn();
+    render(
+      <SearchPicker
+        label="Service"
+        placeholder="Search or paste URL"
+        emptyMessage="No services"
+        onValueChange={() => {}}
+        onSearchChange={searchChanged}
+        groups={[]}
+      />,
+    );
+    await user.click(screen.getByRole("combobox", { name: "Service" }));
+    const search = within(
+      await screen.findByRole("dialog", { name: "Service" }),
+    ).getByRole("combobox");
+    await user.type(search, "https://example.com/mcp");
+    expect(searchChanged).toHaveBeenLastCalledWith("https://example.com/mcp");
+  });
   it("keeps an inline filter named and updates its selected value", async () => {
     const user = userEvent.setup();
     function Filter() {
@@ -114,6 +167,7 @@ describe("selection", () => {
         placeholder="Search services"
         emptyMessage="No services"
         onValueChange={change}
+        onSearchChange={vi.fn()}
         groups={[
           {
             label: "",
