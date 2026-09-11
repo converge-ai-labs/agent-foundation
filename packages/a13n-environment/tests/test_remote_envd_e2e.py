@@ -204,6 +204,17 @@ async def exercise(environment):
         FileTextSearchRequest(root="/", pattern="REMOTE", case_sensitive=False, include="*.{txt,py}", max_matches=10)
     )
     assert [match.text for match in search.matches] == ["remote envd"]
+    single = await files.search_text(
+        FileTextSearchRequest(
+            root="/text.txt", pattern="REMOTE", case_sensitive=False, include="/text.txt", max_matches=1
+        )
+    )
+    assert [(match.path, match.text) for match in single.matches] == [("/text.txt", "remote envd")]
+    assert not single.has_more
+    with pytest.raises(EnvironmentError) as missing:
+        await files.search_text(FileTextSearchRequest(root="/missing.txt", pattern="needle", max_matches=1))
+    assert missing.value.code == "environment_not_found"
+    assert missing.value.safe_projection()["message"]
     for arguments, field, reason in [
         ({"pattern": "(", "regex": True}, "pattern", "invalid_regex"),
         ({"pattern": "ok", "include": "{broken}"}, "include", "invalid_glob"),

@@ -5,11 +5,12 @@ This directory owns the explicit development environment for embedded Harness SD
 From the repository root:
 
 ```bash
-cp dev/harness/.env.example dev/harness/.env # only when the private file does not exist
 make langfuse-up
 make harness-dev
 make harness-dev HARNESS_ARGS=summary
 ```
+
+`make harness-dev` creates `dev/harness/.env` from its sibling `.env.example` when missing, without overwriting an existing private file even when the template changes. Use `make env-init` to prepare both Harness development profiles without starting an application or infrastructure.
 
 The example environment contains only public local-test credentials, matching `dev/service/local.toml`. Private `.env` files are ignored by Git. Change the endpoint and headers together if the local Langfuse project is customized. `make harness-dev` uses the official `opentelemetry-instrument` launcher to configure the SDK provider before the scenario runs. The Harness library itself never loads dotenv, initializes exporters or changes global providers.
 
@@ -27,6 +28,6 @@ The committed template sets `OTEL_RESOURCE_ATTRIBUTES=deployment.environment.nam
 
 In your private `.env`, replace the active OTLP endpoint and headers with the commented Logfire values and your project write token. Use the matching US or EU region. Run the same Make target; no local Langfuse server or Logfire SDK is needed. This uses Logfire's standard OTLP ingestion rather than adding a second Pydantic instrumentor. Do not use Langfuse Basic credentials with Logfire.
 
-The environment file is loaded explicitly; exported shell values take precedence according to `uv` dotenv behavior. Clear conflicting `OTEL_*` values, especially signal-specific endpoints/headers, before testing another backend. For an alternate private file, use `HARNESS_ENV=/absolute/path/to/.env`.
+The environment file is loaded explicitly; exported shell values take precedence according to `uv` dotenv behavior. Clear conflicting `OTEL_*` values, especially signal-specific endpoints/headers, before testing another backend. For an alternate private file, use `HARNESS_ENV=/absolute/path/to/.env`. A missing alternate file is initialized only from its own sibling `<path>.example`; if neither exists, the launcher stops with a setup hint.
 
 `standard` captures model/tool content. Review the information boundary before exporting anything other than these fictional inputs. `none` omits normal execution payloads but does not scrub all upstream exceptions or tool schemas.

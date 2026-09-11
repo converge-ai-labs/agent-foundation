@@ -30,7 +30,7 @@ from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolEf
 from a13n_harness.usage import ProviderUsage
 
 from ._instructions import InstructionFunctionToolset, tool_instruction
-from ._results import ToolError, ToolFailure
+from ._results import ToolFailure, environment_failure, tool_failure
 from ._scoped_files import ScopedFileAccess
 from .output import ToolOutputDisclosure, disclose_sequence_field, disclose_text_fields
 
@@ -947,7 +947,7 @@ class WebToolset:
 
                 return list(await asyncio.gather(*(one(url) for url in urls)))
         except EnvironmentError as exc:
-            return [_web_error(exc.code)]
+            return [environment_failure(exc)]
 
     async def _download_one(
         self,
@@ -1014,7 +1014,7 @@ class WebToolset:
                 ),
             }
         except EnvironmentError as exc:
-            return {"url": safe_requested, **_web_error(exc.code)}
+            return {"url": safe_requested, **environment_failure(exc)}
         except (TypeError, ValueError):
             return {"url": safe_requested, **_web_error("web_response_invalid")}
         except Exception:
@@ -1204,14 +1204,15 @@ def _bounded_header_int(headers: Mapping[str, str], name: str) -> int | None:
 
 
 def _status_error(response: WebResponse) -> WebStatusFailure:
+    result = tool_failure(
+        "web_http_status",
+        f"The server returned HTTP status {response.status_code}.",
+        retry_hint="retry" if response.status_code >= 500 or response.status_code == 429 else "request_change",
+    )
+    result["error"]["status_code"] = response.status_code
+    result["error"]["reason"] = response.reason or None
     return {
-        "ok": False,
-        "error": {
-            "code": "web_http_status",
-            "status_code": response.status_code,
-            "reason": response.reason or None,
-            "retry_hint": "retry" if response.status_code >= 500 or response.status_code == 429 else "request_change",
-        },
+        **result,
         "final_url": response.canonical_url,
         "content_type": _header(response.headers, "content-type").split(";", maxsplit=1)[0].strip() or None,
     }
@@ -1234,10 +1235,28 @@ def _web_error(
     retry_hint: str = "dependency_change",
     max_bytes: int | None = None,
 ) -> ToolFailure:
-    error: ToolError = {"code": code, "retry_hint": retry_hint}
+    message = {
+        "web_binding_missing": "No web client is configured for this Run.",
+        "web_body_too_large": "The response body exceeds the configured byte limit.",
+        "web_download_batch_too_large": "Too many download URLs were requested; use a smaller batch.",
+        "web_download_failed": "The download failed; check the URL and destination.",
+        "web_fetch_failed": "The web request failed; check the URL and network access.",
+        "web_redirect_invalid": "The server returned an invalid or disallowed redirect.",
+        "web_response_invalid": "The web client returned an invalid response.",
+        "web_scrape_backend_missing": "No scrape backend is configured.",
+        "web_scrape_failed": "The scrape provider could not read the page.",
+        "web_scrape_response_invalid": "The scrape provider returned an invalid result.",
+        "web_scrape_unavailable": "The configured scrape provider is unavailable.",
+        "web_search_backend_missing": "No search backend is configured.",
+        "web_search_failed": "The search provider could not complete the query.",
+        "web_search_response_invalid": "The search provider returned an invalid result.",
+        "web_search_unavailable": "The configured search provider is unavailable.",
+        "web_timeout": "The web operation timed out.",
+    }.get(code, "The web operation failed; check the request and configured provider.")
+    result = tool_failure(code, message, retry_hint=retry_hint)
     if max_bytes is not None:
-        error["max_bytes"] = max_bytes
-    return {"ok": False, "error": error}
+        result["error"]["max_bytes"] = max_bytes
+    return result
 
 
 __all__ = [

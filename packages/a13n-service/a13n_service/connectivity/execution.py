@@ -10,6 +10,7 @@ from typing import Protocol
 
 import httpx2
 from a13n_harness import AgentContext
+from a13n_harness.observation import record_tool_outcome_unknown
 from anyio import to_thread
 from jsonschema import Draft202012Validator
 from pydantic import JsonValue, TypeAdapter
@@ -313,8 +314,11 @@ class ExternalToolRuntime:
                     )
             except ConnectorProviderError as error:
                 if error.outcome_unknown:
+                    record_tool_outcome_unknown()
                     return {"kind": "outcome_unknown"}
                 raise ValueError("connector_tool_failed") from error
+            if outcome.kind == "outcome_unknown":
+                record_tool_outcome_unknown()
             output_schema = by_name[name].output_schema
             if outcome.kind == "succeeded" and output_schema is not None:
                 await to_thread.run_sync(Draft202012Validator(output_schema).validate, outcome.result)

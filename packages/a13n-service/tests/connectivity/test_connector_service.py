@@ -527,6 +527,7 @@ async def test_disabled_provider_stops_setup_and_releases_callback_reservation(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("outcome", ["typed_unknown", "error_unknown", "business_unknown"])
 async def test_worker_connector_uses_verified_binding_and_preserves_unknown_write(
     connector_services,
     connector_registry,
@@ -534,14 +535,19 @@ async def test_worker_connector_uses_verified_binding_and_preserves_unknown_writ
     credential_protector,
     monkeypatch,
     external_runtime_factory,
+    outcome,
 ):
-    from a13n_service.connectivity.connectors.contracts import ConnectorToolOutcome
+    from a13n_harness import AgentSpec, HarnessBuilder, HarnessInstrumentation, HarnessTraceContent
+    from a13n_service.connectivity.connectors.contracts import ConnectorProviderError, ConnectorToolOutcome
     from a13n_service.connectivity.execution import AttemptToolScope
     from a13n_service.connectivity.mcp.transport import RemoteTransport
     from a13n_service.connectivity.selection_domain import ConnectorConnectionRunSelection
     from a13n_service.connectivity.selection_resolution import FrozenRunConnectivity
     from a13n_service.endpoint_policy import EndpointPolicy
-    from pydantic_ai import Agent
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+    from opentelemetry.trace import StatusCode
     from pydantic_ai.models.test import TestModel
 
     from .connector_helpers import FakeConnection
@@ -571,6 +577,10 @@ async def test_worker_connector_uses_verified_binding_and_preserves_unknown_writ
     async def execute(self, **kwargs):
         await kwargs["before_dispatch"]()
         calls.append((self.binding, kwargs))
+        if outcome == "error_unknown":
+            raise ConnectorProviderError("private_diagnostic", outcome_unknown=True)
+        if outcome == "business_unknown":
+            return ConnectorToolOutcome(kind="succeeded", result={"kind": "outcome_unknown", "ok": False})
         return ConnectorToolOutcome(kind="outcome_unknown", request_id=kwargs["request_id"])
 
     async def guard(session=None):
@@ -586,8 +596,20 @@ async def test_worker_connector_uses_verified_binding_and_preserves_unknown_writ
         guard,
         AttemptToolScope(actor(), ORG_ID, WORKSPACE_ID, FrozenRunConnectivity((), ()), ()),
     )
-    result = await Agent(TestModel(), capabilities=[capability]).run("create issue")
-    assert "outcome_unknown" in result.output
+    tracer = TracerProvider()
+    exporter = InMemorySpanExporter()
+    tracer.add_span_processor(SimpleSpanProcessor(exporter))
+    executable = HarnessBuilder(
+        instrumentation=HarnessInstrumentation(tracer_provider=tracer, trace_content=HarnessTraceContent.NONE)
+    ).build(AgentSpec(), output_type=str, model=TestModel(), capabilities=[capability])
+    result = await executable.run("create issue")
+    assert "outcome_unknown" in result.output_or_raise()
+    tool = next(s for s in exporter.get_finished_spans() if s.attributes.get("gen_ai.operation.name") == "execute_tool")
+    expected = "returned" if outcome == "business_unknown" else "outcome_unknown"
+    assert tool.attributes["a13n.tool.result.status"] == expected
+    assert tool.status.status_code is StatusCode.UNSET
+    assert "private_diagnostic" not in repr(dict(tool.attributes))
+    assert result.status == "completed"
     assert len(calls) == 1 and len(guards) == 3
     assert calls[0][0].external_ref == "external-1"
     assert calls[0][0].external_user_correlation == attempt.external_user_correlation

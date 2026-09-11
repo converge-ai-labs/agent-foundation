@@ -150,7 +150,14 @@ def test_unknown_api_paths_return_json_errors() -> None:
         response = request(app, path)
         assert response.status_code == 404
         assert response.headers["content-type"].startswith("application/json")
-        assert response.json() == {"detail": "API route not found"}
+        assert response.json() == {
+            "error": {
+                "code": "resource_not_found",
+                "message": "The requested resource was not found.",
+                "details": {},
+                "request_id": response.headers["X-Request-ID"],
+            }
+        }
 
 
 def test_worker_role_serves_only_operational_endpoints() -> None:

@@ -53,10 +53,11 @@ async def search_files(request, tmp_path):
     await environment.prepare()
 
     async def operation(action, **arguments):
+        root = arguments.pop("root", "/")
         model = (
-            FileQueryRequest(root="/", max_results=arguments.pop("max_results", 100), **arguments)
+            FileQueryRequest(root=root, max_results=arguments.pop("max_results", 100), **arguments)
             if action == "query"
-            else FileTextSearchRequest(root="/", max_matches=arguments.pop("max_matches", 100), **arguments)
+            else FileTextSearchRequest(root=root, max_matches=arguments.pop("max_matches", 100), **arguments)
         )
         if request.param == "local":
             files = environment.operations.files
@@ -121,6 +122,76 @@ async def test_search_paging_context_crlf_and_per_file_limit(tmp_path, search_fi
     assert [match["path"] for match in limited["matches"]] == ["/a.txt", "/b.txt"]
     crlf = await search_files("search", pattern="MATCH-long", max_line_length=100)
     assert crlf["matches"][0]["text"] == "MATCH-long\r"
+
+
+@pytest.mark.anyio
+async def test_single_file_search_filters_paging_and_context(tmp_path, search_files):
+    (tmp_path / "Makefile").write_text("before\nharness-ui\nafter\ntest:\n")
+    (tmp_path / "other").write_text("harness-ui\n")
+    arguments = dict(root="/Makefile", pattern="harness-ui|^test", regex=True, context_lines=1)
+    whole = await search_files("search", **arguments)
+    assert [match["path"] for match in whole["matches"]] == ["/Makefile", "/Makefile"]
+    assert [match["line"] for match in whole["matches"]] == [2, 4]
+    assert whole["matches"][0]["context"] == "before\nharness-ui\nafter\n"
+    pages = [await search_files("search", **arguments, offset=offset, max_matches=1) for offset in range(3)]
+    assert [page["has_more"] for page in pages] == [True, False, False]
+    assert [match for page in pages for match in page["matches"]] == whole["matches"]
+    assert (await search_files("search", **arguments, include="/Makefile"))["matches"] == whole["matches"]
+    assert not (await search_files("search", **arguments, include="*.py"))["matches"]
+    assert not (await search_files("search", **arguments, max_file_bytes=1))["matches"]
+    assert len((await search_files("search", **arguments, max_matches_per_file=1))["matches"]) == 1
+
+
+@pytest.mark.anyio
+async def test_explicit_file_bypasses_discovery_filters_and_preserves_symlink_path(tmp_path, search_files):
+    (tmp_path / ".gitignore").write_text("ignored/\n")
+    (tmp_path / "ignored").mkdir()
+    (tmp_path / "ignored/.hidden").write_text("needle\n")
+    (tmp_path / "alias").symlink_to(tmp_path / "ignored/.hidden")
+    for root in ["/ignored/.hidden", "/alias"]:
+        result = await search_files("search", root=root, pattern="needle", ignore_mode="git")
+        assert [match["path"] for match in result["matches"]] == [root]
+        assert not (await search_files("search", root=root, pattern="absent"))["matches"]
+    for name, content in [("binary", b"\x00needle"), ("invalid", b"\xffneedle")]:
+        (tmp_path / name).write_bytes(content)
+        assert not (await search_files("search", root="/" + name, pattern="needle"))["matches"]
+
+
+@pytest.mark.anyio
+async def test_single_file_missing_and_outside_symlink_are_failures(tmp_path, search_files):
+    with pytest.raises((EnvironmentError, FileNotFoundError)) as missing:
+        await search_files("search", root="/missing", pattern="needle")
+    if isinstance(missing.value, EnvironmentError):
+        assert missing.value.code == "environment_not_found"
+    (tmp_path / "outside").symlink_to(tmp_path.parent)
+    with pytest.raises((EnvironmentError, PermissionError)) as denied:
+        await search_files("search", root="/outside", pattern="needle")
+    if isinstance(denied.value, EnvironmentError):
+        assert denied.value.code == "environment_denied"
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX special-file fixture")
+async def test_search_special_file_fails_without_opening(tmp_path, search_files):
+    import os
+
+    os.mkfifo(tmp_path / "pipe")
+    (tmp_path / "pipe-alias").symlink_to(tmp_path / "pipe")
+    for root in ["/pipe", "/pipe-alias"]:
+        with pytest.raises((EnvironmentError, ValueError)) as error:
+            await search_files("search", root=root, pattern="needle")
+        assert error.value.details["field"] == "root"
+        assert error.value.details["reason"] == "not_searchable"
+
+
+@pytest.mark.anyio
+async def test_query_still_requires_a_directory_with_actionable_details(tmp_path, search_files):
+    (tmp_path / "Makefile").write_text("needle")
+    with pytest.raises((EnvironmentError, ValueError)) as error:
+        await search_files("query", root="/Makefile", pattern="*")
+    assert error.value.details["field"] == "root"
+    assert error.value.details["reason"] == "not_directory"
+    assert error.value.details["hint"]
 
 
 @pytest.mark.anyio
@@ -194,7 +265,15 @@ def test_guest_embedded_source_compiles_with_posix_configuration():
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Embedded E2B commands execute in a POSIX guest")
-def test_guest_embedded_source_executes_and_returns_diagnostics(tmp_path):
+@pytest.mark.parametrize(
+    "arguments,field,reason",
+    [
+        ({"path": "/", "pattern": "{broken}", "max_results": 1}, "pattern", "invalid_glob"),
+        ({"path": "/Makefile", "pattern": "*", "max_results": 1}, "root", "not_directory"),
+    ],
+)
+def test_guest_embedded_source_executes_and_returns_diagnostics(tmp_path, arguments, field, reason):
+    (tmp_path / "Makefile").write_text("needle")
     configuration = E2BProviderConfiguration(root=str(tmp_path), python=sys.executable)
     commands = GuestCommands(None, configuration)
     command = commands.command(
@@ -202,13 +281,15 @@ def test_guest_embedded_source_executes_and_returns_diagnostics(tmp_path):
         {
             "configuration": configuration.model_dump(mode="json"),
             "action": "query",
-            "arguments": {"path": "/", "pattern": "{broken}", "max_results": 1},
+            "arguments": arguments,
         },
     )
     result = subprocess.run(shlex.split(command), capture_output=True, text=True, check=True)
     value = json.loads(result.stdout)
     assert value["error"] == "environment_request_invalid"
-    assert value["details"]["field"] == "pattern"
+    assert value["details"]["field"] == field
+    assert value["details"]["reason"] == reason
+    assert value["details"]["hint"]
 
 
 @pytest.mark.anyio

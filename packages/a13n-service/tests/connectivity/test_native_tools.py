@@ -93,3 +93,96 @@ async def test_lark_inbound_replies_use_distinct_effect_ids_and_reuse_token():
             }
     assert len(tokens) == 1
     assert len(writes) == 2 and writes[0]["uuid"] != writes[1]["uuid"]
+
+
+@pytest.mark.parametrize("entry", ["inbound", "account"])
+@pytest.mark.parametrize("lost_response", [False, True])
+async def test_native_runtime_observes_unknown_without_repeating_effect(
+    connectivity_sessions, credential_protector, entry, lost_response
+):
+    from a13n_harness import AgentSpec, HarnessBuilder, HarnessInstrumentation, HarnessTraceContent
+    from a13n_service.connectivity.accounts.models import AccountRecord
+    from a13n_service.connectivity.execution import AttemptToolScope
+    from a13n_service.connectivity.native import native_capability
+    from a13n_service.connectivity.native_context import AccountRunContext, InboundRunContext
+    from a13n_service.connectivity.providers.slack.adapter import CONTEXT_VERSION
+    from a13n_service.connectivity.selection_resolution import FrozenRunConnectivity
+    from a13n_service.storage import transaction
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+    from opentelemetry.trace import StatusCode
+    from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
+    from .conftest import ACCOUNT_ID, ORG_ID, WORKSPACE_ID, actor
+
+    async with transaction(connectivity_sessions) as session:
+        account = await session.get(AccountRecord, ACCOUNT_ID)
+        account.provider_key = "slack"
+        account.replace_credential('{"bot_token":"private"}', credential_protector)
+    principal = actor().principal
+    if entry == "inbound":
+        context = InboundRunContext(
+            binding_id="binding-test",
+            account_id=ACCOUNT_ID,
+            execution_principal_ref=principal,
+            provider_key="slack",
+            provider_context_version=CONTEXT_VERSION,
+            provider_context={"channel_id": "C1", "root_thread_ts": "1.0", "conversation_kind": "channel"},
+            action_policy={"reply_mode": "thread"},
+            allowed_actions=("slack.reply",),
+        )
+        arguments = {"text": "hello"}
+    else:
+        context = AccountRunContext(
+            account_id=ACCOUNT_ID,
+            execution_principal_ref=principal,
+            provider_key="slack",
+            target_scope={"channel_ids": ["C1"]},
+            allowed_actions=("slack.send_message",),
+        )
+        arguments = {"channel_id": "C1", "text": "hello"}
+    scope = AttemptToolScope(actor(), ORG_ID, WORKSPACE_ID, FrozenRunConnectivity((), ()), (context,))
+    requests = []
+
+    async def guard():
+        pass
+
+    def send(request):
+        requests.append(request)
+        if lost_response:
+            raise httpx2.ReadTimeout("response lost after dispatch")
+        return httpx2.Response(200, json={"ok": True, "channel": "C1", "ts": "2.0"})
+
+    step = 0
+
+    async def model(messages, info):
+        nonlocal step
+        step += 1
+        if step == 1:
+            yield {
+                0: DeltaToolCall(
+                    name=info.function_tools[0].name, json_args=json.dumps(arguments), tool_call_id="native"
+                )
+            }
+        else:
+            yield "done"
+
+    provider = TracerProvider()
+    exporter = InMemorySpanExporter()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(send)) as http:
+        capability = await native_capability(
+            connectivity_sessions, credential_protector, scope, context, guard, EndpointPolicy(), http
+        )
+        executable = HarnessBuilder(
+            instrumentation=HarnessInstrumentation(tracer_provider=provider, trace_content=HarnessTraceContent.NONE)
+        ).build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=model), capabilities=[capability])
+        result = await executable.run("send")
+    assert result.output_or_raise() == "done" and len(requests) == 1
+    tool = next(s for s in exporter.get_finished_spans() if s.attributes.get("gen_ai.operation.name") == "execute_tool")
+    assert tool.attributes["a13n.tool.result.status"] == ("outcome_unknown" if lost_response else "returned")
+    assert tool.status.status_code is StatusCode.UNSET
+    assert "private" not in repr(dict(tool.attributes))
+    assert "response lost" not in repr(dict(tool.attributes))
+    assert ("outcome_unknown" in repr(result.state)) == lost_response

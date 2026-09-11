@@ -122,6 +122,8 @@ The root additionally owns `a13n.run_attempt.outcome` with `succeeded`, `yielded
 
 First-party search annotates its existing tool-execution span with `a13n.search.provider.id` and `a13n.search.provider.type`, using the exact selected Search Provider identity and bounded catalog type from [Search Provider Management](41-search-provider-management.md). These attributes describe only that invocation, not every node in the Run; they are absent from unrelated spans. They add no duplicate tool or provider span and contain no account name, endpoint, credential, or query. Outcome, duration, and available usage retain their existing tool and provider observation owners.
 
+Connector and Native tool boundaries explicitly report their owned `outcome_unknown` envelope through Harness tool observation. The existing native tool span records `a13n.tool.result.status=outcome_unknown`, not confirmed success or failure. Service does not infer this classification from arbitrary MCP results or from a successful Connector payload. This projection changes neither the returned envelope nor dispatch, retry, receipt, or durable RunAttempt semantics. Search and outcome enrichment are best-effort and scoped to the exact active Harness-selected tool span, including isolation from disabled inline children.
+
 Correlation values are never authorization evidence. The processor does not flatten arbitrary identity claims, request metadata, Agent metadata, headers, provider state, or `RunBindings.metadata`. A value that fails the owning ID or bounded scalar contract is omitted and diagnosed by safe category rather than truncated into a different identity.
 
 ## RunAttempt Trace Lifecycle
@@ -129,6 +131,8 @@ Correlation values are never authorization evidence. The processor does not flat
 ### Root boundary
 
 The newly scheduled `RunAttemptExecutor` starts `a13n.service.run_attempt` immediately after the durable claim or takeover transaction commits the new `leased` RunAttempt. It starts a new trace with no parent even when an inbound or dispatch context remains available. The root stays current through preparation, Harness entry and cleanup, state publication, and the final Attempt/Run decision. It ends after that decision commits or after the local executor proves it can no longer publish authoritatively.
+
+A local executor cancellation ends its root without adding ERROR solely for cancellation and without inventing a durable `cancelled` Attempt outcome. A previously observed authoritative failure retains its outcome and ERROR status. Other escaping execution failures mark the root ERROR without substituting for an authoritative Attempt decision.
 
 If the process terminates abruptly, the root may remain incomplete in a backend. A replacement Worker does not finish, rewrite, or synthesize the old span. Its newly claimed Attempt starts another trace. The authoritative old Attempt becomes `failed` only through the existing takeover transaction.
 
