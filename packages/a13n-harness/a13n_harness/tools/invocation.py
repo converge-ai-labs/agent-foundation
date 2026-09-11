@@ -698,7 +698,7 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
         _AsyncSubagentCapability,
         _InlineSubagentCapability,
     )
-    from a13n_harness.capabilities.tool_proxy import TOOL_PROXY_CAPABILITY_ID, ToolProxyCapability
+    from a13n_harness.capabilities.tool_proxy import TOOL_PROXY_CAPABILITY_ID, _ToolProxySurfaceCapability
     from a13n_harness.capabilities.web import (
         WEB_CAPABILITY_ID,
         WEB_RUN_CAPABILITY_ID,
@@ -768,7 +768,7 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
             provenance.run_ids,
         ),
         TOOL_PROXY_CAPABILITY_ID: (
-            (ToolProxyCapability,),
+            (_ToolProxySurfaceCapability,),
             provenance.definition_ids,
         ),
         CODEACT_CAPABILITY_ID: (

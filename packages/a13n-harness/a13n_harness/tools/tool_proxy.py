@@ -63,7 +63,7 @@ def validate_group(group: str, description: str) -> None:
             "ToolProxy group must start with a letter and contain 1-32 letters, digits, underscores, or hyphens, without '__'."
         )
     if not isinstance(description, str) or not description.strip() or len(description) > 512:
-        raise ValueError("ToolProxy group_description must be non-blank and at most 512 characters.")
+        raise ValueError("ToolProxyGroup.description must be non-blank and at most 512 characters.")
 
 
 def proxy_membership(definition: ToolDefinition) -> ToolProxyMembership | None:
@@ -72,7 +72,7 @@ def proxy_membership(definition: ToolDefinition) -> ToolProxyMembership | None:
         return None
     if not isinstance(value, ToolProxyMembership):
         raise TypeError(
-            f"Invalid ToolProxy membership on {definition.name!r}; use ToolProxyToolset to assign groups instead of writing reserved metadata."
+            f"Invalid ToolProxy membership on {definition.name!r}; configure ToolProxyCapability.groups instead of writing reserved metadata."
         )
     return value
 

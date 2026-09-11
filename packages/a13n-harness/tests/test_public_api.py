@@ -182,7 +182,6 @@ def test_feature_facades_export_documented_families() -> None:
         "AgentMediaUnderstandingProvider",
         "AsyncSubagentToolset",
         "ClientToolsToolset",
-        "ToolProxyToolset",
         "CodeActPolicyToolset",
         "CodeActToolPolicy",
         "DelegateResult",

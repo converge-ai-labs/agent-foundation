@@ -6,13 +6,11 @@ ToolProxy changes discovery and call presentation only. Pydantic AI's current `T
 
 ## Group a Toolset
 
-Wrap a concrete Toolset with `ToolProxyToolset` and install one `ToolProxyCapability` on the Agent:
+Install one `ToolProxyCapability` with an explicit mapping of domain names to sources. Each `ToolProxyGroup` is a passive configuration value, not a separately installed Capability:
 
 ```python
 from a13n_harness import AgentSpec, HarnessBuilder
-from a13n_harness.capabilities import ToolProxyCapability
-from a13n_harness.toolsets import ToolProxyToolset
-from pydantic_ai.capabilities import Capability
+from a13n_harness.capabilities import ToolProxyCapability, ToolProxyGroup
 from pydantic_ai.toolsets import FunctionToolset
 
 
@@ -25,21 +23,19 @@ source = FunctionToolset(
     [customer_name],
     instructions="Use numeric customer IDs, not display names.",
 )
-grouped = Capability(
-    id="customer-tools",
-    toolsets=[
-        ToolProxyToolset(
-            wrapped=source,
-            group="crm",
-            group_description="Customer records and account operations",
+proxy = ToolProxyCapability(
+    groups={
+        "crm": ToolProxyGroup(
+            source=source,
+            description="Customer records and account operations",
         )
-    ],
+    },
 )
 agent = HarnessBuilder().build(
     AgentSpec(),
     output_type=str,
     model=model,  # Supply your configured Pydantic AI Model.
-    capabilities=(ToolProxyCapability(), grouped),
+    capabilities=(proxy,),
 )
 ```
 
@@ -61,7 +57,7 @@ The result includes `tools`, `total`, and `next_offset`. Each match contains its
 
 The original prepared validator checks and converts `arguments`. The tool remains registered under its grouped canonical name, `crm__customer_name`, but that member schema is not directly advertised to the model. Ungrouped tools stay directly visible. Managed tool IDs do not change.
 
-Use groups for domains such as `crm`, `knowledge`, and `billing`, not one group per tool. A group identifier starts with a letter, contains up to 32 letters, digits, hyphens, or underscores, and cannot contain `__`. Its description is non-blank and at most 512 characters. Different groups can contain the same local tool name. Multiple Toolsets can share a group when they use exactly the same description and distinct local names; duplicate members or conflicting descriptions fail preparation.
+Use groups for domains such as `crm`, `knowledge`, and `billing`, not one group per tool. A group identifier starts with a letter, contains up to 32 letters, digits, hyphens, or underscores, and cannot contain `__`. Its description is non-blank and at most 512 characters. Different groups can contain the same local tool name. To combine several sources in one group, pass a native `CombinedToolset`, `Capability(toolsets=[...])`, or `CombinedCapability` as that group's source. Member local names must be distinct; duplicate members fail preparation. Prefix sources before grouping when their names would otherwise collide.
 
 ## Instructions and dynamic parameters
 
@@ -82,10 +78,11 @@ An empty query browses a group or all groups. Keyword matching uses group names,
 ## Configure names and discovery limits
 
 ```python
-from a13n_harness.capabilities import ToolProxyCapability, ToolProxyConfig
+from a13n_harness.capabilities import ToolProxyCapability, ToolProxyConfig, ToolProxyGroup
 
 proxy = ToolProxyCapability(
-    ToolProxyConfig(
+    groups={"crm": ToolProxyGroup(source=source, description="Customer records")},
+    config=ToolProxyConfig(
         search_name="find_operations",
         call_name="invoke_operation",
         max_results=10,
@@ -102,7 +99,7 @@ When no grouped tools survive preparation, neither proxy control nor generated p
 
 ## Group a run-bound MCP Capability
 
-Use `ToolProxyGroup` when the source is a Capability, especially one that replaces itself during run binding. Do not extract a `ContextualMCP` Toolset at definition time:
+Pass the Capability instance as the group's `source`, especially when it replaces itself during run binding. Do not extract a `ContextualMCP` Toolset at definition time:
 
 ```python
 from a13n_harness.capabilities import ToolProxyCapability, ToolProxyGroup
@@ -114,7 +111,7 @@ from a13n_harness.mcp import (
 )
 
 knowledge = ToolProxyGroup(
-    wrapped=ContextualMCP(
+    source=ContextualMCP(
         "https://mcp.example.com/mcp",
         id="knowledge-server",
         native=False,
@@ -128,10 +125,9 @@ knowledge = ToolProxyGroup(
             )
         ),
     ),
-    group="knowledge",
-    group_description="Search and read the tenant's knowledge base",
+    description="Search and read the tenant's knowledge base",
 )
-capabilities = (ToolProxyCapability(), knowledge)
+capabilities = (ToolProxyCapability(groups={"knowledge": knowledge}),)
 ```
 
 The Host supplies the `tenant_id` Identity claim. Headers are resolved once per logical Run; model-recovery attempts reuse that Run's upstream MCP, while concurrent Runs get separate replacements. Grouping preserves the original native MCP transport and lifecycle. See [MCP tools](mcp.md) for header and execution-selection details.
@@ -143,13 +139,8 @@ Select `native=False, local=True`. Provider-native execution, including automati
 Publish the source's typed CodeAct policy before grouping it:
 
 ```python
-from a13n_harness.capabilities import CodeActCapability, ToolProxyCapability
-from a13n_harness.toolsets import (
-    CodeActPolicyToolset,
-    CodeActToolPolicy,
-    ToolProxyToolset,
-)
-from pydantic_ai.capabilities import Capability
+from a13n_harness.capabilities import CodeActCapability, ToolProxyCapability, ToolProxyGroup
+from a13n_harness.toolsets import CodeActPolicyToolset, CodeActToolPolicy
 from pydantic_ai.toolsets import FunctionToolset
 
 source = CodeActPolicyToolset(
@@ -157,11 +148,10 @@ source = CodeActPolicyToolset(
     policy=CodeActToolPolicy(tools={"customer_name": True}),
     reject_unknown_tools=True,
 )
-grouped = Capability(
-    id="customer-tools",
-    toolsets=[ToolProxyToolset(source, "crm", "Customer records")],
+proxy = ToolProxyCapability(
+    groups={"crm": ToolProxyGroup(source=source, description="Customer records")},
 )
-capabilities = (grouped, ToolProxyCapability(), CodeActCapability())
+capabilities = (proxy, CodeActCapability())
 ```
 
 The runner directory contains the proxy controls, not every grouped tool declaration. Restricted Python can discover and call within one `run_code` invocation:
@@ -191,6 +181,86 @@ async def main(inputs):
 Call `run_program(path="lookup.codeact.py", inputs={"customer_id": 42})` with the file accessible through the current Environment. Every host call is awaited. Proxy calls are conservatively sequential barriers, including inside `asyncio.gather`.
 
 Grouping does not grant CodeAct eligibility. The bridge resolves the target and checks its own typed policy before dispatch. An MCP source without an explicit owner policy can be used through ordinary model proxy calls but is not automatically CodeAct-callable. See [CodeAct](delegation-and-codeact.md#codeact) for policy and runtime boundaries.
+
+## Host integration
+
+The Host decides presentation when constructing the Agent definition. Harness accepts concrete Toolset or Capability instances; it does not resolve plugin IDs into sources, scan installed plugins for tools, or take over their runtime execution.
+
+A Host that exposes JSON, YAML, an API, or a configuration UI should provide:
+
+| Host input                            | Host responsibility                                                                                                                        |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Source ID and source-specific options | Resolve the ID through trusted source factories; construct each selected source once per executable.                                       |
+| Direct or grouped presentation        | Install each source either directly or inside a group, not both. Keep unrelated sources direct.                                            |
+| Group name and description            | Collect selected sources into one `ToolProxyCapability(groups=...)` per Agent. Use native composition when several sources share a domain. |
+| Optional discovery settings           | Validate and construct `ToolProxyConfig`; use defaults when no customization is needed.                                                    |
+
+For example, a Host-owned document could contain:
+
+```yaml
+tool_sources:
+  - source_id: customer-tools
+    presentation: proxy
+    group: crm
+    description: Customer records and account operations
+  - source_id: host-status
+    presentation: direct
+```
+
+This is an **illustrative Host schema**, not a built-in Harness or Harness UI resource. Store stable IDs and validated options, not serialized Python objects, import targets, or literal credentials. Source factories and credential resolution remain trusted Host/plugin code. Group descriptions guide discovery; they do not grant authorization or CodeAct eligibility.
+
+Construct a source once, then choose where to put that instance. A third-party `AbstractCapability` works as `ToolProxyGroup(source=capability, description=...)` without a ToolProxy-specific implementation. Native composition preserves its Agent/run binding, hooks, and Capability-level instructions. Supply the Capability itself for run-bound sources such as `ContextualMCP`, rather than calling `get_toolset()` early.
+
+The groups mapping is consumed at construction. To change presentation, build a replacement executable; changing the original mapping does not reconfigure an existing Agent. An empty mapping exposes no proxy controls and leaves direct tools unchanged.
+
+### Plugin-contributed sources
+
+`AbstractHarnessPlugin.get_capabilities()` is a contribution boundary, not a general-purpose source lookup API. ToolProxy explicitly supports this construction source; grouping does not make otherwise disallowed reserved Capabilities valid plugin contributions. Harness calls it on the Agent-bound plugin after `for_agent()`. A plugin that owns its sources can accept a presentation option or expose a source factory that a Host composition layer can use. Aggregate all selected groups at one composition point rather than installing one proxy per plugin.
+
+The following Host-owned plugin illustrates that boundary. Its factory constructs source definitions once per executable; `get_capabilities()` selects direct versus grouped presentation. Source run binding remains native:
+
+```python
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
+
+from a13n_harness import AbstractHarnessPlugin, AgentContext
+from a13n_harness.capabilities import ToolProxyCapability, ToolProxyGroup
+from pydantic_ai.capabilities import AbstractCapability
+
+
+@dataclass
+class HostToolsPlugin(AbstractHarnessPlugin):
+    source_factory: Callable[[], Mapping[str, AbstractCapability[AgentContext]]]
+    group_descriptions: Mapping[str, str]
+    sources: Mapping[str, AbstractCapability[AgentContext]] = field(default_factory=dict)
+
+    @property
+    def plugin_id(self) -> str:
+        return "host-tools"
+
+    def for_agent(self):
+        return replace(self, sources=dict(self.source_factory()))
+
+    def get_capabilities(self) -> Sequence[AbstractCapability[AgentContext]]:
+        direct = []
+        groups = {}
+        for name, source in self.sources.items():
+            if name in self.group_descriptions:
+                groups[name] = ToolProxyGroup(
+                    source=source, description=self.group_descriptions[name]
+                )
+            else:
+                direct.append(source)
+        if groups:
+            direct.append(ToolProxyCapability(groups=groups))
+        return tuple(direct)
+```
+
+Here source names also serve as group names; a Host with separate source IDs and domain names can combine sources before constructing each descriptor. Validate configured names against available sources in the Host's configuration layer.
+
+Pass `HostToolsPlugin(source_factory=build_sources, group_descriptions={"crm": "Customer records"})` through `HarnessBuilder.build(plugins=(plugin,))`, where `build_sources` is your trusted factory returning the named Capabilities. Passing an empty `group_descriptions` keeps every source direct. Do not also pass those sources through `capabilities=`.
+
+For an existing third-party middleware plugin, use its supported configuration/composition interface. If it always contributes tools directly and exposes no such interface, those tools remain direct until the plugin or Host integration provides one. Do not call another plugin's `get_capabilities()` manually before native `for_agent()`, instantiate its sources a second time, or remove the plugin when its middleware is still needed. When separating sources from middleware, the plugin must explicitly support suppressing its original contribution while remaining installed. See [Plugin lifecycle](plugins.md#plugin-lifecycle) and [hosting](hosting.md#reconstruct-trusted-definitions).
 
 ## Execution, usage, and limitations
 

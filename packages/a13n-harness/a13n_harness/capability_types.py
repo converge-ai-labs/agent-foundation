@@ -51,7 +51,11 @@ def _reserved_harness_capability_contract() -> tuple[
         ShellReviewCapability,
     )
     from a13n_harness.capabilities.subagents import SUBAGENT_CAPABILITY_ID, SubagentCapability
-    from a13n_harness.capabilities.tool_proxy import TOOL_PROXY_CAPABILITY_ID, ToolProxyCapability
+    from a13n_harness.capabilities.tool_proxy import (
+        TOOL_PROXY_CAPABILITY_ID,
+        ToolProxyCapability,
+        _ToolProxySurfaceCapability,
+    )
     from a13n_harness.environment.dynamic import (
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
         DynamicEnvironmentCapability,
@@ -94,6 +98,7 @@ def _reserved_harness_capability_contract() -> tuple[
         ClientToolsRunCapability,
         CodeActCapability,
         ToolProxyCapability,
+        _ToolProxySurfaceCapability,
         DynamicEnvironmentCapability,
         ShellReviewCapability,
         SubagentCapability,

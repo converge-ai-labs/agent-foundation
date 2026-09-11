@@ -121,10 +121,7 @@ async def test_contextual_mcp_proxy_real_http_isolates_concurrent_runs_and_reuse
     async with _http_mcp(server) as url:
         capability = ContextualMCP(url, id="context-mcp", headers_factory=headers_factory, native=False, local=True)
         source = MCPCodeActPolicy(capability) if codeact else capability
-        capabilities = (
-            ToolProxyCapability(),
-            ToolProxyGroup(source, group="context", group_description="Current identity"),
-        )
+        capabilities = (ToolProxyCapability(groups={"context": ToolProxyGroup(source, "Current identity")}),)
         if codeact:
             capabilities += (CodeActCapability(),)
         executable = HarnessBuilder().build(
@@ -160,6 +157,4 @@ async def test_contextual_mcp_native_path_is_rejected_by_proxy() -> None:
         "https://example.invalid/mcp", id="native", headers_factory=lambda ctx: {}, native=True, local=False
     )
     with pytest.raises(ValueError, match="provider-native"):
-        await _run(
-            (ToolProxyCapability(), ToolProxyGroup(contextual, group="native", group_description="Native MCP")), []
-        )
+        await _run((ToolProxyCapability(groups={"native": ToolProxyGroup(contextual, "Native MCP")}),), [])

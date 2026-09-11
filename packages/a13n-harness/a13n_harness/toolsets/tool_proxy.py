@@ -59,7 +59,7 @@ class _GroupTool(ToolsetTool[AgentContext]):
 
 
 @dataclass
-class ToolProxyToolset(WrapperToolset[AgentContext]):
+class _GroupedToolset(WrapperToolset[AgentContext]):
     """Assign an arbitrary local Toolset to a flat ToolProxy group.
 
     Compose with ToolProxyCapability. Native lifecycle and dispatch stay on the
@@ -73,8 +73,6 @@ class ToolProxyToolset(WrapperToolset[AgentContext]):
         validate_group(self.group, self.group_description)
 
     async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
-        if "a13n.tool-proxy" not in ctx.capabilities:
-            raise UserError("Add ToolProxyCapability() to the Agent's capabilities before using ToolProxyToolset.")
         result: dict[str, ToolsetTool[AgentContext]] = {}
         for name, tool in (await self.wrapped.get_tools(ctx)).items():
             definition = tool.tool_def
@@ -110,7 +108,7 @@ class ToolProxyToolset(WrapperToolset[AgentContext]):
         self, name: str, tool_args: dict[str, Any], ctx: RunContext[AgentContext], tool: ToolsetTool[AgentContext]
     ) -> Any:
         if not isinstance(tool, _GroupTool):
-            raise TypeError("ToolProxyToolset received a tool it does not own")
+            raise TypeError("_GroupedToolset received a tool it does not own")
         source = tool.source_tool
         local_ctx = replace(ctx, tool_name=tool.owner_local_name)
         return await self.wrapped.call_tool(tool.owner_local_name, tool_args, local_ctx, source)

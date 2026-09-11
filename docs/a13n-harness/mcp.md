@@ -184,7 +184,7 @@ An Agent can select multiple MCP servers when each has a unique `id`. Use code-f
 
 ## Group large local MCP collections
 
-Use [ToolProxyGroup](tool-proxy.md#group-a-run-bound-mcp-capability) around a local `MCP` or `ContextualMCP` Capability to expose grouped discovery instead of every tool schema. Select `native=False, local=True`; provider-native tools and deferred-loading sources are not proxy targets. `ToolProxyGroup` preserves fresh run binding and contextual headers, and calls still use the original MCP Toolset and transport. It reduces model context, not MCP initialization or tool-listing work.
+Pass a local `MCP` or `ContextualMCP` Capability as a [ToolProxyGroup source](tool-proxy.md#group-a-run-bound-mcp-capability) inside `ToolProxyCapability(groups=...)` to expose grouped discovery instead of every tool schema. Select `native=False, local=True`; provider-native tools and deferred-loading sources are not proxy targets. Native composition preserves fresh run binding and contextual headers, and calls still use the original MCP Toolset and transport. It reduces model context, not MCP initialization or tool-listing work.
 
 ## Result boundary
 

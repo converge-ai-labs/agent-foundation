@@ -98,7 +98,7 @@ from a13n_harness.capabilities.steering import (
     SteeringCapability,
 )
 from a13n_harness.capabilities.subagents import SUBAGENT_CAPABILITY_ID, SubagentCapability
-from a13n_harness.capabilities.tool_proxy import TOOL_PROXY_CAPABILITY_ID, ToolProxyCapability
+from a13n_harness.capabilities.tool_proxy import TOOL_PROXY_CAPABILITY_ID, _ToolProxySurfaceCapability
 from a13n_harness.capabilities.web import (
     WEB_CAPABILITY_ID,
     WEB_RUN_CAPABILITY_ID,
@@ -3038,7 +3038,7 @@ def _validate_built_capability_tree(
             in (
                 ClientToolsCapability,
                 CodeActCapability,
-                ToolProxyCapability,
+                _ToolProxySurfaceCapability,
                 DynamicEnvironmentCapability,
                 ShellReviewCapability,
                 RuntimeContextCapability,
@@ -3076,7 +3076,9 @@ def _validate_built_capability_tree(
     )
     if surface_index is not None:
         for capability in leaves[:surface_index]:
-            if isinstance(capability, ToolExecutionBoundaryCapability | CodeActCapability | ToolProxyCapability):
+            if isinstance(
+                capability, ToolExecutionBoundaryCapability | CodeActCapability | _ToolProxySurfaceCapability
+            ):
                 continue
             if type(capability).get_wrapper_toolset is not AbstractCapability.get_wrapper_toolset:
                 raise DefinitionError(
@@ -3258,31 +3260,35 @@ def _validate_capability_source(
                 details={"source": source},
             )
         allowed = (
-            source == "definition"
-            and (
-                isinstance(capability, AbstractModelCostCapability)
-                or type(capability)
-                in (
-                    ClientToolsCapability,
-                    CodeActCapability,
-                    ToolProxyCapability,
-                    DynamicEnvironmentCapability,
-                    ShellReviewCapability,
-                    RuntimeContextCapability,
-                    WorkspaceOutlineCapability,
-                    FileContextCapability,
-                    HandoffCapability,
-                    CompactionCapability,
-                    UserInteractionCapability,
-                    SkillsCapability,
-                    MediaCapability,
-                    DocumentsCapability,
-                    WebCapability,
-                    WorkingStateCapability,
-                    SubagentCapability,
+            (
+                source == "definition"
+                and (
+                    isinstance(capability, AbstractModelCostCapability)
+                    or type(capability)
+                    in (
+                        ClientToolsCapability,
+                        CodeActCapability,
+                        _ToolProxySurfaceCapability,
+                        DynamicEnvironmentCapability,
+                        ShellReviewCapability,
+                        RuntimeContextCapability,
+                        WorkspaceOutlineCapability,
+                        FileContextCapability,
+                        HandoffCapability,
+                        CompactionCapability,
+                        UserInteractionCapability,
+                        SkillsCapability,
+                        MediaCapability,
+                        DocumentsCapability,
+                        WebCapability,
+                        WorkingStateCapability,
+                        SubagentCapability,
+                    )
                 )
             )
-        ) or (source == "run" and type(capability) in run_types)
+            or (source == "plugin" and type(capability) is _ToolProxySurfaceCapability)
+            or (source == "run" and type(capability) in run_types)
+        )
         reserved_type = isinstance(
             capability,
             ToolExecutionBoundaryCapability
@@ -3296,7 +3302,7 @@ def _validate_capability_source(
             | ClientToolsCapability
             | ClientToolsRunCapability
             | CodeActCapability
-            | ToolProxyCapability
+            | _ToolProxySurfaceCapability
             | DynamicEnvironmentCapability
             | ShellReviewCapability
             | RuntimeContextCapability
