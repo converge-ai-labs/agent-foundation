@@ -91,6 +91,7 @@ from a13n_harness_ui.host_files import (
     FileWriteRequest,
     HostFiles,
 )
+from a13n_harness_ui.host_git import GitCaptureRequest, GitDiff, GitDiffRequest, GitDiscovery, GitStatus, HostGit
 from a13n_harness_ui.live import (
     HarnessUiLiveHub,
     HarnessUiSummaryHub,
@@ -281,6 +282,7 @@ class HarnessUiApp:
         self._terminal_projections = terminal_projections
         self._thread_files = thread_files
         self._host_files = HostFiles(enabled=share_computer)
+        self._host_git = HostGit(enabled=share_computer)
         self._root_runs = root_runs
         self._subagent_operator = subagent_operator
         self._live_hub = live_hub
@@ -1038,6 +1040,51 @@ class HarnessUiApp:
                     name=Path(selected.source.path).name,
                     data=selected.data,
                     media_type="application/octet-stream",
+                    source=selected.source,
+                ),
+            )
+            return FileCapture(attachment=attachment, prompt_text=context_text(selected.source, selected.data))
+
+    @property
+    def host_git_available(self) -> bool:
+        return self._host_git.available
+
+    def require_host_git(self) -> None:
+        self._host_git.require_enabled()
+
+    async def discover_host_repository(self, path: str) -> GitDiscovery:
+        async with self._operation():
+            return await self._host_git.discover(path)
+
+    async def host_git_status(
+        self,
+        path: str,
+        *,
+        include_ignored: bool = False,
+        offset: int = 0,
+        limit: int = 200,
+        expected_revision: str | None = None,
+    ) -> GitStatus:
+        async with self._operation():
+            return await self._host_git.status(
+                path, include_ignored=include_ignored, offset=offset, limit=limit, expected_revision=expected_revision
+            )
+
+    async def read_host_git_diff(self, request: GitDiffRequest) -> GitDiff:
+        async with self._operation():
+            return await self._host_git.diff(request)
+
+    async def capture_host_git_diff(self, *, thread_id: str, request: GitCaptureRequest) -> FileCapture:
+        async with self._operation():
+            self.require_host_git()
+            await self._threads.get(thread_id)
+            selected = await self._host_git.capture(request)
+            attachment = await self._thread_files.stage(
+                thread_id,
+                AttachmentUpload(
+                    name=f"{Path(selected.source.path).name}.diff",
+                    data=selected.data,
+                    media_type="text/plain",
                     source=selected.source,
                 ),
             )

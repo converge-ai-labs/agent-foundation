@@ -70,13 +70,29 @@ Git determines repository boundaries and worktree metadata, including `.git` fil
 
 Diff views distinguish text, binary, deletion, rename, conflict, and an unborn HEAD. Repository and file paths are visible so a local diff cannot be mistaken for remote E2B content. Selected lines and diffs can be included in the [shared draft](01-collaborative-conversations.md) as explicit reviewed context.
 
+### Discovery, Status, and Comparisons
+
+Discovery accepts an existing absolute native path and lets Git identify its worktree root, per-worktree Git directory, common Git directory, HEAD object ID and branch. A detached HEAD has no branch; an unborn branch has no HEAD object ID. Bare repositories and locations without a worktree have explicit non-worktree results, not empty change lists. A `.git` directory inside a non-bare repository is not itself a worktree. Git availability is independent of Files: the listener advertises Git only when sharing is enabled and an executable is discoverable; individual query failures remain explicit errors.
+
+Status uses Git's index/worktree codes separately, retaining rename source paths, conflict state and submodule flags. Ignored entries are opt-in; ignored directories can be summarized by Git. Entries are lexically ordered by repository-relative UTF-8 path. Pages contain at most 500 entries, and a status scan is limited to 10000 entries. Further pages require the previous status revision. That opaque revision describes repository identity and status records, not every file's content: edits that leave the status codes unchanged need not change it.
+
+A diff selects one literal repository-relative file or submodule path and one comparison: `staged` (observed HEAD versus index, or the empty tree for an unborn branch), `unstaged` (index versus worktree), or `untracked` (explicit new-file comparison). Directory-wide diffs and ignored-file comparisons are not selected-file previews; ordinary Files still provides their navigation and content. Rename previews retain the original path for the selected axis. Conflicts use Git's unmerged/combined presentation, not an invented resolved baseline. Binary/non-UTF-8 patches have explicit `binary` presentation without editable text. A tracked file with no changes on the selected axis has `unchanged` presentation.
+
+A diff revision covers the repository/worktree identity, observed HEAD, selected and original paths, comparison axis, selected index entries and complete patch bytes. The index entries are checked across the query; a detected change fails with a conflict. Diff and capture can require an expected diff revision. This does not promise a transaction across arbitrary external writers or imply the worktree remains unchanged after the response.
+
+### Captured Diff Context
+
+Capture requires the reviewed diff revision and immediately recomputes that comparison. A mismatch returns a conflict before staging input. Text diffs can be captured whole or as an inclusive one-based range of patch lines, including headers when selected. Binary and unchanged previews cannot be captured as text; Files is the explicit route for binary file bytes. The captured bytes use the existing Thread attachment lifetime and submission path described under [Captured Prompt Content](#captured-prompt-content), including its 64 KiB inline-text bound and text-only steering boundary.
+
+Git source metadata has `kind: git_diff`, `location: host`, repository and per-worktree Git directories, selected/original paths, comparison, observed HEAD, index revision, diff revision and optional patch-line range. Existing file-source metadata remains unchanged and readable. Submission uses the captured bytes and provenance, never a fresh Git query. Captures are not attributed to a Run's edits and do not create another diff history or source registry.
+
 ### Shared State and Refresh
 
 Git state belongs to the actual checkout and index. All Threads and people using that checkout observe the same underlying state. Changes does not label the repository's dirty state as edits made by one Agent or Run; such attribution cannot be inferred from a shared worktree.
 
-After relevant browser mutations, projections are invalidated. Changes from native terminal commands, Agent tools, or other processes become visible through bounded refresh/observation, with an explicit refresh action available. Notifications are invalidation evidence, not complete repository history. A status query and later diff may observe intervening changes and do not claim an atomic repository snapshot.
+Queries compute fresh observations on demand; the App keeps no Git projection cache, watcher or repository database. Clients refresh after their own file mutations, on returning to Changes and through an explicit refresh action. Changes from native terminal commands, Agent tools, or other processes become visible on that bounded refresh. A status query and later diff may observe intervening changes and do not claim an atomic repository snapshot.
 
-Git operations and diff output are bounded; viewing a large repository does not require computing every diff or scanning it on every keystroke. Read-only previews do not execute external diff or text-conversion helpers merely to render content. Git is invoked with unambiguous arguments and literal path selection, not shell interpolation of filenames.
+Each Git subprocess is bounded to 15 seconds, 2 MiB of standard output and 64 KiB of diagnostics. Exceeding a bound fails explicitly, not with a silently truncated patch. Cancellation terminates and reaps the owned process. Viewing a large repository does not require computing every diff or scanning it on every keystroke. Read-only previews disable external diff/text-conversion helpers, filesystem monitor hooks, optional index refresh writes and lazy object fetching. Ordinary repository content attributes still determine Git's comparison semantics. Git is invoked with unambiguous arguments and literal path selection, not shell interpolation of filenames; ambient Git targeting variables cannot retarget the selected path.
 
 ### Mutation Boundary
 

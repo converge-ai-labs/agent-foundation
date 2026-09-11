@@ -49,6 +49,15 @@ from a13n_harness_ui.host_files import (
     NativePath,
     Revision,
 )
+from a13n_harness_ui.host_git import (
+    Comparison,
+    GitCaptureRequest,
+    GitDiff,
+    GitDiffRequest,
+    GitDiscovery,
+    GitPath,
+    GitStatus,
+)
 from a13n_harness_ui.live import LiveCursor, LiveEvent, RootStreamEvent, SummaryCursor, SummaryInvalidation
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginStatus
@@ -92,7 +101,7 @@ class ListenerFeatures(SurfaceModel):
 
     shared_drafts: Literal[False] = False
     host_files: bool = False
-    host_git: Literal[False] = False
+    host_git: bool = False
     host_terminal: Literal[False] = False
 
 
@@ -333,16 +342,23 @@ def create_webui(
     async def app_error(_request: Request, exc: HarnessUiError) -> JSONResponse:
         code = exc.code
         status = 409 if "conflict" in code or "stale" in code or "preflight_required" in code else 400
-        if code in {"request_too_large", "host_files_too_large"}:
+        if code in {"request_too_large", "host_files_too_large", "host_git_too_large"}:
             status = 413
-        elif code in {"host_files_disabled", "host_files_permission_denied"}:
+        elif code in {
+            "host_files_disabled",
+            "host_files_permission_denied",
+            "host_git_disabled",
+            "host_git_permission_denied",
+        }:
             status = 403
         elif code == "host_files_partial_failure":
             status = 409
         elif code == "host_files_io_error":
             status = 500
-        elif code in {"app_not_ready", "app_stopping"}:
+        elif code in {"app_not_ready", "app_stopping", "host_git_unavailable"}:
             status = 503
+        elif code == "host_git_timeout":
+            status = 504
         elif code.endswith("not_found"):
             status = 404
         return _error(code, str(exc), status)
@@ -371,7 +387,7 @@ def create_webui(
             version=__version__,
             build_revision=os.environ.get("A13N_HARNESS_UI_BUILD_REVISION"),
             app=await app().status(),
-            features=ListenerFeatures(host_files=app().shares_computer),
+            features=ListenerFeatures(host_files=app().shares_computer, host_git=app().host_git_available),
             host=host,
             access="api_key" if api_key is not None else "dangerous_bypass",
         )
@@ -455,6 +471,46 @@ def create_webui(
     async def capture_host_file(thread_id: str, request: Request) -> FileCapture:
         app().require_host_files()
         return await app().capture_host_file(thread_id=thread_id, request=await _document(request, FileCaptureRequest))
+
+    @server.get("/api/host/git/repository", response_model=GitDiscovery)
+    async def host_repository(path: NativePath) -> GitDiscovery:
+        return await app().discover_host_repository(path)
+
+    @server.get("/api/host/git/status", response_model=GitStatus)
+    async def host_git_status(
+        path: NativePath,
+        include_ignored: bool = False,
+        offset: Annotated[int, Query(ge=0, le=10000)] = 0,
+        limit: Annotated[int, Query(ge=1, le=500)] = 200,
+        expected_revision: Revision | None = None,
+    ) -> GitStatus:
+        return await app().host_git_status(
+            path, include_ignored=include_ignored, offset=offset, limit=limit, expected_revision=expected_revision
+        )
+
+    @server.get("/api/host/git/diff", response_model=GitDiff)
+    async def host_git_diff(
+        repository_path: NativePath,
+        path: GitPath,
+        comparison: Comparison = "unstaged",
+        expected_revision: Revision | None = None,
+    ) -> GitDiff:
+        return await app().read_host_git_diff(
+            GitDiffRequest(
+                repository_path=repository_path, path=path, comparison=comparison, expected_revision=expected_revision
+            )
+        )
+
+    @server.post(
+        "/api/threads/{thread_id}/host-git-captures",
+        response_model=FileCapture,
+        openapi_extra=_body(GitCaptureRequest),
+    )
+    async def capture_host_git_diff(thread_id: str, request: Request) -> FileCapture:
+        app().require_host_git()
+        return await app().capture_host_git_diff(
+            thread_id=thread_id, request=await _document(request, GitCaptureRequest)
+        )
 
     @server.get("/api/setup", response_model=SetupStatus)
     async def setup(rediscover: bool = False) -> SetupStatus:

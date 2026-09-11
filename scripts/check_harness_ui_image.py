@@ -79,8 +79,20 @@ def check(image: str) -> None:
         )
         assert status["version"] == installed
         assert status["features"]["host_files"] is True
-        assert not any(value for name, value in status["features"].items() if name != "host_files")
+        assert status["features"]["host_git"] is True
+        assert not any(value for name, value in status["features"].items() if name not in {"host_files", "host_git"})
         assert docker("exec", name, "sh", "-c", "command -v git; command -v bash")
+        docker("exec", name, "git", "init", "-b", "main", "/work/git-fixture")
+        docker("exec", name, "sh", "-c", "printf 'container change\\n' > /work/git-fixture/file")
+        code, body = request(url + "/api/host/git/repository?path=/work/git-fixture", key)
+        assert code == 200 and json.loads(body)["repository"]["head_oid"] is None
+        code, body = request(url + "/api/host/git/status?path=/work/git-fixture", key)
+        assert code == 200 and json.loads(body)["entries"][0]["kind"] == "untracked"
+        docker("exec", name, "git", "-C", "/work/git-fixture", "add", "file")
+        code, body = request(
+            url + "/api/host/git/diff?repository_path=/work/git-fixture&path=file&comparison=staged", key
+        )
+        assert code == 200 and "+container change" in json.loads(body)["text"]
         for path in targets.values():
             docker("exec", name, "sh", "-c", f"printf persisted > {path}/smoke-marker")
         docker("stop", "--time", "15", name)

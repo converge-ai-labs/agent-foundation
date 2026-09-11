@@ -490,6 +490,274 @@
         }
       }
     },
+    "/api/host/git/repository": {
+      "get": {
+        "summary": "Host Repository",
+        "operationId": "host_repository_api_host_git_repository_get",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitDiscovery"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/host/git/status": {
+      "get": {
+        "summary": "Host Git Status",
+        "operationId": "host_git_status_api_host_git_status_get",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Path"
+            }
+          },
+          {
+            "name": "include_ignored",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Ignored"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 10000,
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "expected_revision",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Revision"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/host/git/diff": {
+      "get": {
+        "summary": "Host Git Diff",
+        "operationId": "host_git_diff_api_host_git_diff_get",
+        "parameters": [
+          {
+            "name": "repository_path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Repository Path"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Path"
+            }
+          },
+          {
+            "name": "comparison",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "staged",
+                "unstaged",
+                "untracked"
+              ],
+              "type": "string",
+              "default": "unstaged",
+              "title": "Comparison"
+            }
+          },
+          {
+            "name": "expected_revision",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Revision"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitDiff"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/host-git-captures": {
+      "post": {
+        "summary": "Capture Host Git Diff",
+        "operationId": "capture_host_git_diff_api_threads__thread_id__host_git_captures_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileCapture"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitCaptureRequest"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/setup": {
       "get": {
         "summary": "Setup",
@@ -4257,6 +4525,389 @@
         ],
         "title": "FocusSnapshotFrame"
       },
+      "GitChange": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path"
+          },
+          "original_path": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Path"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "tracked",
+              "untracked",
+              "ignored",
+              "conflicted"
+            ],
+            "title": "Kind"
+          },
+          "index_status": {
+            "type": "string",
+            "title": "Index Status"
+          },
+          "worktree_status": {
+            "type": "string",
+            "title": "Worktree Status"
+          },
+          "submodule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submodule"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "kind",
+          "index_status",
+          "worktree_status"
+        ],
+        "title": "GitChange"
+      },
+      "GitContextSource": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "git_diff",
+            "title": "Kind",
+            "default": "git_diff"
+          },
+          "location": {
+            "type": "string",
+            "const": "host",
+            "title": "Location",
+            "default": "host"
+          },
+          "repository_path": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Repository Path"
+          },
+          "git_dir": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Git Dir"
+          },
+          "path": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path"
+          },
+          "original_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Path"
+          },
+          "comparison": {
+            "type": "string",
+            "enum": [
+              "staged",
+              "unstaged",
+              "untracked"
+            ],
+            "title": "Comparison"
+          },
+          "head_oid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Head Oid"
+          },
+          "index_revision": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Index Revision"
+          },
+          "revision": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Revision"
+          },
+          "start_line": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Line"
+          },
+          "end_line": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Line"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "repository_path",
+          "git_dir",
+          "path",
+          "comparison",
+          "head_oid",
+          "index_revision",
+          "revision"
+        ],
+        "title": "GitContextSource",
+        "description": "A reviewed Git comparison, not a revision of one mutable file."
+      },
+      "GitDiff": {
+        "properties": {
+          "repository": {
+            "$ref": "#/components/schemas/GitRepository"
+          },
+          "path": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path"
+          },
+          "original_path": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Path"
+          },
+          "comparison": {
+            "type": "string",
+            "enum": [
+              "staged",
+              "unstaged",
+              "untracked"
+            ],
+            "title": "Comparison"
+          },
+          "index_revision": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Index Revision"
+          },
+          "revision": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Revision"
+          },
+          "presentation": {
+            "type": "string",
+            "enum": [
+              "text",
+              "binary",
+              "unchanged"
+            ],
+            "title": "Presentation"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "repository",
+          "path",
+          "comparison",
+          "index_revision",
+          "revision",
+          "presentation"
+        ],
+        "title": "GitDiff"
+      },
+      "GitDiscovery": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "repository",
+              "not_repository",
+              "bare"
+            ],
+            "title": "State"
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GitRepository"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "state"
+        ],
+        "title": "GitDiscovery"
+      },
+      "GitRepository": {
+        "properties": {
+          "root": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Root"
+          },
+          "git_dir": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Git Dir"
+          },
+          "common_dir": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Common Dir"
+          },
+          "head_oid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Head Oid"
+          },
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "root",
+          "git_dir",
+          "common_dir",
+          "head_oid",
+          "branch"
+        ],
+        "title": "GitRepository"
+      },
+      "GitStatus": {
+        "properties": {
+          "repository": {
+            "$ref": "#/components/schemas/GitRepository"
+          },
+          "revision": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Revision"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/GitChange"
+            },
+            "type": "array",
+            "title": "Entries"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "repository",
+          "revision",
+          "entries",
+          "next_offset"
+        ],
+        "title": "GitStatus"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -4286,7 +4937,6 @@
           },
           "host_git": {
             "type": "boolean",
-            "const": false,
             "title": "Host Git",
             "default": false
           },
@@ -6196,9 +6846,13 @@
                 "$ref": "#/components/schemas/FileContextSource"
               },
               {
+                "$ref": "#/components/schemas/GitContextSource"
+              },
+              {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Source"
           }
         },
         "additionalProperties": false,
@@ -6994,6 +7648,70 @@
           "expected_revision"
         ],
         "title": "FileCaptureRequest",
+        "type": "object"
+      },
+      "GitCaptureRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "repository_path": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Repository Path",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "comparison": {
+            "default": "unstaged",
+            "enum": [
+              "staged",
+              "unstaged",
+              "untracked"
+            ],
+            "title": "Comparison",
+            "type": "string"
+          },
+          "expected_revision": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Expected Revision",
+            "type": "string"
+          },
+          "start_line": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Line"
+          },
+          "end_line": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Line"
+          }
+        },
+        "required": [
+          "repository_path",
+          "path",
+          "expected_revision"
+        ],
+        "title": "GitCaptureRequest",
         "type": "object"
       },
       "ApiKeyAuthentication": {

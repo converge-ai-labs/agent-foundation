@@ -93,3 +93,4 @@ jobs:
           packages/a13n-harness-ui/tests/test_webui.py
           packages/a13n-harness-ui/tests/test_webui_startup.py
           packages/a13n-harness-ui/tests/test_host_files_webui.py
+          packages/a13n-harness-ui/tests/test_host_git_webui.py

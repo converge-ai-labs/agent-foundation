@@ -19,7 +19,7 @@ from anyio import CancelScope, Lock, to_thread
 from filelock import FileLock, Timeout
 from pydantic import BaseModel, ConfigDict
 
-from a13n_harness_ui.file_context import FileContextSource
+from a13n_harness_ui.file_context import CapturedSource
 
 logger = logging.getLogger(__name__)
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
@@ -36,7 +36,7 @@ class ThreadAttachment(BaseModel):
     name: str
     media_type: str
     size: int
-    source: FileContextSource | None = None
+    source: CapturedSource | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,7 +44,7 @@ class AttachmentUpload:
     name: str
     data: bytes
     media_type: str | None = None
-    source: FileContextSource | None = None
+    source: CapturedSource | None = None
 
 
 @dataclass(frozen=True, slots=True)

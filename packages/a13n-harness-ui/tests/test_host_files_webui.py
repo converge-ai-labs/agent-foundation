@@ -82,7 +82,12 @@ async def test_host_files_http_end_to_end_and_captured_input_survives_source_cha
         assert (await client.post("/api/host/files/directories", json={"path": str(root)})).status_code == 401
         client.headers["Authorization"] = "Bearer key"
         features = (await client.get("/api/status")).json()["features"]
-        assert features == {"host_files": True, "host_git": False, "host_terminal": False, "shared_drafts": False}
+        assert features == {
+            "host_files": True,
+            "host_git": opened[0].host_git_available,
+            "host_terminal": False,
+            "shared_drafts": False,
+        }
         assert (await client.post("/api/host/files/directories", json={"path": str(root)})).status_code == 200
         source = root / "source.py"
         result = await client.put(

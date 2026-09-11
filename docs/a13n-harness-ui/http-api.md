@@ -48,64 +48,81 @@ Only one active root operation is allowed per Thread. A second submit is rejecte
 
 These are all schema-listed operations; the grouped table preserves method distinctions. Exact field schemas live in OpenAPI.
 
-| Method and route                                               | Purpose                                                       |
-| -------------------------------------------------------------- | ------------------------------------------------------------- |
-| `GET /api/status`                                              | Listener/API/App status                                       |
-| `GET /api/host/files`                                          | Bounded native directory page                                 |
-| `GET /api/host/files/metadata`                                 | Native entry metadata, without following the final symlink    |
-| `GET /api/host/files/text`                                     | Complete editable UTF-8 or explicit binary/large presentation |
-| `PUT /api/host/files/text`                                     | Create or save text with an observed revision                 |
-| `GET /api/host/files/content`                                  | Bounded attachment-only native download                       |
-| `PUT /api/host/files/content`                                  | Bounded raw upload with create/replace preconditions          |
-| `POST /api/host/files/directories`                             | Create one native directory                                   |
-| `POST /api/host/files/move`                                    | Rename/move one observed entry to an absent destination       |
-| `POST /api/host/files/delete`                                  | Deliberate nonrecursive or bounded recursive deletion         |
-| `POST /api/threads/{thread_id}/host-file-captures`             | Capture reviewed file bytes or lines as Thread input          |
-| `GET /api/setup`                                               | Current setup view                                            |
-| `POST /api/setup/preview`                                      | Preview a setup selection                                     |
-| `POST /api/setup/apply`                                        | Apply a setup selection                                       |
-| `POST /api/environments/preflight`                             | Preflight native/sandbox profile for a project path           |
-| `GET /api/auth/keys`                                           | Safe model-provider key metadata                              |
-| `PUT /api/auth/keys`                                           | Store provider credentials                                    |
-| `DELETE /api/auth/keys/{reference}`                            | Remove a provider key reference                               |
-| `POST /api/auth/logins`                                        | Start provider login                                          |
-| `GET /api/auth/logins/{session_id}`                            | Read provider login progress                                  |
-| `DELETE /api/auth/logins/{session_id}`                         | Cancel/remove the selected login session                      |
-| `GET /api/configuration/sources`                               | Accepted source metadata                                      |
-| `GET /api/configuration/sources/{relative_path}`               | Accepted source content where available                       |
-| `PUT /api/configuration/sources/{relative_path}`               | Validate and publish source replacement                       |
-| `DELETE /api/configuration/sources/{relative_path}`            | Validate and remove a non-root source                         |
-| `POST /api/configuration/validate`                             | Validate source replacement without publication               |
-| `POST /api/threads/preview`                                    | Resolve new Thread selections without creating one            |
-| `PATCH /api/threads/{thread_id}/configuration`                 | Versioned exact configuration change                          |
-| `GET /api/threads/{thread_id}/project-defaults`                | Preview the selected Project's configured defaults            |
-| `POST /api/threads/{thread_id}/project-defaults`               | Apply reviewed defaults with version/digest checks            |
-| `GET /api/projects`                                            | Available Projects and creation defaults                      |
-| `GET /api/selectors`                                           | Configuration selection options                               |
-| `GET /api/threads`                                             | Query/page Threads                                            |
-| `GET /api/threads/activity`                                    | Navigation activity and pending summaries                     |
-| `GET /api/threads/{thread_id}/tasks`                           | Selected Working State task projection                        |
-| `GET /api/threads/{thread_id}/children`                        | Parent-scoped child listing or exact query                    |
-| `GET /api/threads/{thread_id}/children/wait`                   | Bounded child wait or poll                                    |
-| `GET /api/threads/{thread_id}/children/{execution_id}/review`  | Bounded child inspection                                      |
-| `POST /api/threads/{thread_id}/children/{execution_id}/steer`  | Enqueue child steering text                                   |
-| `POST /api/threads/{thread_id}/children/{execution_id}/cancel` | Request child cancellation                                    |
-| `POST /api/threads`                                            | Create using optional defaults/title                          |
-| `GET /api/threads/{thread_id}`                                 | Detail, continuation, available actions                       |
-| `GET /api/threads/{thread_id}/transcript`                      | Bounded retained transcript                                   |
-| `PATCH /api/threads/{thread_id}/metadata`                      | Versioned title/archive change                                |
-| `POST /api/threads/{thread_id}/attachments`                    | Stage raw bytes with a filename                               |
-| `GET /api/threads/{thread_id}/attachments/{attachment_id}`     | Download a scoped attachment                                  |
-| `POST /api/threads/{thread_id}/submit`                         | Submit ordinary prompt and attachment IDs                     |
-| `GET /api/threads/{thread_id}/decisions`                       | Exact pending-decision projection                             |
-| `POST /api/threads/{thread_id}/decisions`                      | Respond to the complete pending set                           |
-| `GET /api/operations/{receipt_id}`                             | Query exact process-local operation                           |
-| `POST /api/operations/{receipt_id}/steer`                      | Add steering text                                             |
-| `POST /api/operations/{receipt_id}/cancel`                     | Request cancellation                                          |
-| `GET /api/threads/{thread_id}/events`                          | Focused SSE snapshot/events                                   |
-| `GET /api/events`                                              | Summary SSE invalidations                                     |
+| Method and route                                               | Purpose                                                                |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `GET /api/status`                                              | Listener/API/App status                                                |
+| `GET /api/host/files`                                          | Bounded native directory page                                          |
+| `GET /api/host/files/metadata`                                 | Native entry metadata, without following the final symlink             |
+| `GET /api/host/files/text`                                     | Complete editable UTF-8 or explicit binary/large presentation          |
+| `PUT /api/host/files/text`                                     | Create or save text with an observed revision                          |
+| `GET /api/host/files/content`                                  | Bounded attachment-only native download                                |
+| `PUT /api/host/files/content`                                  | Bounded raw upload with create/replace preconditions                   |
+| `POST /api/host/files/directories`                             | Create one native directory                                            |
+| `POST /api/host/files/move`                                    | Rename/move one observed entry to an absent destination                |
+| `POST /api/host/files/delete`                                  | Deliberate nonrecursive or bounded recursive deletion                  |
+| `POST /api/threads/{thread_id}/host-file-captures`             | Capture reviewed file bytes or lines as Thread input                   |
+| `GET /api/host/git/repository`                                 | Discover the actual repository/worktree for a native path              |
+| `GET /api/host/git/status`                                     | Read paged index/worktree status, optionally including ignored entries |
+| `GET /api/host/git/diff`                                       | Read one staged, unstaged, or untracked comparison                     |
+| `POST /api/threads/{thread_id}/host-git-captures`              | Capture reviewed patch bytes or lines as Thread input                  |
+| `GET /api/setup`                                               | Current setup view                                                     |
+| `POST /api/setup/preview`                                      | Preview a setup selection                                              |
+| `POST /api/setup/apply`                                        | Apply a setup selection                                                |
+| `POST /api/environments/preflight`                             | Preflight native/sandbox profile for a project path                    |
+| `GET /api/auth/keys`                                           | Safe model-provider key metadata                                       |
+| `PUT /api/auth/keys`                                           | Store provider credentials                                             |
+| `DELETE /api/auth/keys/{reference}`                            | Remove a provider key reference                                        |
+| `POST /api/auth/logins`                                        | Start provider login                                                   |
+| `GET /api/auth/logins/{session_id}`                            | Read provider login progress                                           |
+| `DELETE /api/auth/logins/{session_id}`                         | Cancel/remove the selected login session                               |
+| `GET /api/configuration/sources`                               | Accepted source metadata                                               |
+| `GET /api/configuration/sources/{relative_path}`               | Accepted source content where available                                |
+| `PUT /api/configuration/sources/{relative_path}`               | Validate and publish source replacement                                |
+| `DELETE /api/configuration/sources/{relative_path}`            | Validate and remove a non-root source                                  |
+| `POST /api/configuration/validate`                             | Validate source replacement without publication                        |
+| `POST /api/threads/preview`                                    | Resolve new Thread selections without creating one                     |
+| `PATCH /api/threads/{thread_id}/configuration`                 | Versioned exact configuration change                                   |
+| `GET /api/threads/{thread_id}/project-defaults`                | Preview the selected Project's configured defaults                     |
+| `POST /api/threads/{thread_id}/project-defaults`               | Apply reviewed defaults with version/digest checks                     |
+| `GET /api/projects`                                            | Available Projects and creation defaults                               |
+| `GET /api/selectors`                                           | Configuration selection options                                        |
+| `GET /api/threads`                                             | Query/page Threads                                                     |
+| `GET /api/threads/activity`                                    | Navigation activity and pending summaries                              |
+| `GET /api/threads/{thread_id}/tasks`                           | Selected Working State task projection                                 |
+| `GET /api/threads/{thread_id}/children`                        | Parent-scoped child listing or exact query                             |
+| `GET /api/threads/{thread_id}/children/wait`                   | Bounded child wait or poll                                             |
+| `GET /api/threads/{thread_id}/children/{execution_id}/review`  | Bounded child inspection                                               |
+| `POST /api/threads/{thread_id}/children/{execution_id}/steer`  | Enqueue child steering text                                            |
+| `POST /api/threads/{thread_id}/children/{execution_id}/cancel` | Request child cancellation                                             |
+| `POST /api/threads`                                            | Create using optional defaults/title                                   |
+| `GET /api/threads/{thread_id}`                                 | Detail, continuation, available actions                                |
+| `GET /api/threads/{thread_id}/transcript`                      | Bounded retained transcript                                            |
+| `PATCH /api/threads/{thread_id}/metadata`                      | Versioned title/archive change                                         |
+| `POST /api/threads/{thread_id}/attachments`                    | Stage raw bytes with a filename                                        |
+| `GET /api/threads/{thread_id}/attachments/{attachment_id}`     | Download a scoped attachment                                           |
+| `POST /api/threads/{thread_id}/submit`                         | Submit ordinary prompt and attachment IDs                              |
+| `GET /api/threads/{thread_id}/decisions`                       | Exact pending-decision projection                                      |
+| `POST /api/threads/{thread_id}/decisions`                      | Respond to the complete pending set                                    |
+| `GET /api/operations/{receipt_id}`                             | Query exact process-local operation                                    |
+| `POST /api/operations/{receipt_id}/steer`                      | Add steering text                                                      |
+| `POST /api/operations/{receipt_id}/cancel`                     | Request cancellation                                                   |
+| `GET /api/threads/{thread_id}/events`                          | Focused SSE snapshot/events                                            |
+| `GET /api/events`                                              | Summary SSE invalidations                                              |
 
-`GET /api/openapi.json`, `/healthz`, `/readyz`, and static navigation/assets are additional non-schema-listed boundaries. Serving an application shell at a recognized browser route does not implement that screen. `features.host_files` is true only when the App was opened with native sharing enabled. Shared drafts, Host Git, and Host terminal flags remain false; the Files API does not imply those modules or browser panels exist.
+`GET /api/openapi.json`, `/healthz`, `/readyz`, and static navigation/assets are additional non-schema-listed boundaries. Serving an application shell at a recognized browser route does not implement that screen. `features.host_files` is true only when the App was opened with native sharing enabled. `features.host_git` is true when sharing is enabled and a Git executable is discoverable. Shared drafts and Host terminal flags remain false; native APIs do not imply browser panels exist.
+
+## Native Git Changes
+
+Git Changes is read-only and uses the same computer-sharing gate as Files. Paths identify the server/container checkout, not the Agent's selected Environment. Disabling sharing returns `403 host_git_disabled`, including for direct App calls. A missing executable returns `503 host_git_unavailable` without disabling Files; repository errors are not reported as a clean worktree.
+
+1. Discover with `GET /api/host/git/repository?path=<absolute-native-path>`. A file or directory resolves through Git to its worktree. The reply has `state: repository`, `not_repository`, or `bare`; a repository includes `root`, `git_dir`, `common_dir`, `head_oid` and `branch`. Detached HEAD has no branch; an unborn branch has no HEAD object ID. Linked worktrees, nested repositories and submodules keep their own identities.
+2. Read `GET /api/host/git/status?path=...&include_ignored=false`. Entries have repository-relative `path`, optional `original_path`, separate `index_status`/`worktree_status`, `kind` and optional submodule flags. A file may have changes on both axes. Ignored directories may be summarized by Git. Pages default to 200 entries, allow at most 500 and reject scans above 10000. Further pages require `offset` and the preceding `expected_revision`; conflicts restart the listing. The status revision covers status records, not every file's bytes.
+3. Read `GET /api/host/git/diff?repository_path=...&path=<relative-file>&comparison=unstaged`. `staged` compares observed HEAD (or the empty tree) to index; `unstaged` compares index to worktree; `untracked` explicitly compares a new file. Paths are literal, not patterns; directory/ignored selection belongs in Files. The reply supplies identity, index and diff revisions, and `text`, `binary` or `unchanged` presentation. Only text presentation supplies a UTF-8 patch; conflicts retain Git's combined/unmerged form. An optional `expected_revision` rejects a changed comparison.
+4. Capture with `POST /api/threads/{thread_id}/host-git-captures`. The JSON body has `repository_path`, relative `path`, `comparison`, required `expected_revision`, and optionally both `start_line` and `end_line` as inclusive one-based **patch** lines. The server recomputes and checks the reviewed diff before staging it. The response uses the same `attachment`/`prompt_text` shape as file capture. Binary and unchanged previews are rejected; use Files when selecting binary file bytes.
+
+Captured source metadata includes `kind: git_diff`, Host location, repository/Git directory, selected/original paths, comparison, HEAD, index/diff revisions and range. Send its attachment ID through ordinary `/submit`; the saved bytes and source remain stable after later edits or index/branch changes. Captures up to 64 KiB supply attributed inline text; larger patches remain retained attachments. Steering is still text-only and can deliberately use `prompt_text` when present. Existing file provenance and ordinary attachments remain compatible.
+
+Queries are fresh on demand, without a Git database or watcher. Refresh after file mutations, on returning to Changes, or explicitly to observe other people's and processes' edits. Git state is shared checkout state, not per-Run attribution. Each subprocess is limited to 15 seconds, 2 MiB stdout and 64 KiB stderr; overflow returns `413 host_git_too_large`, timeout returns `504 host_git_timeout`, and cancellation reaps the process. No partial patch is presented as complete. The API disables external diff/textconv helpers and optional index refresh writes. It never stages, commits, discards, switches branches or runs remote operations.
 
 ## Native Host Files
 
