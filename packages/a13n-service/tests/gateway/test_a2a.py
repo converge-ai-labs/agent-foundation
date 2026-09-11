@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import aclosing
 from datetime import timedelta
 from types import SimpleNamespace
 from typing import Any, cast
@@ -460,17 +461,13 @@ async def test_stream_delivers_complete_artifact_before_terminal_status(
     async with short_session(lifecycle_interaction_sessions) as database:
         binding = await database.get(A2ATaskBindingRecord, task.id)
     assert binding is not None
-    events: list[a2a.StreamResponse] = []
-
-    async def collect() -> None:
-        events.extend(
-            [event async for event in service.stream_task(actor=_actor(), agent_id=AGENT_ID, task_id=task.id)]
-        )
-
-    async with anyio.create_task_group() as tasks:
-        tasks.start_soon(collect)
-        await anyio.sleep(0.01)
+    async with aclosing(service.stream_task(actor=_actor(), agent_id=AGENT_ID, task_id=task.id)) as stream:
+        initial = await anext(stream)
+        assert initial.WhichOneof("payload") == "task"
+        assert initial.task.status.state == a2a.TASK_STATE_SUBMITTED
+        assert not initial.task.artifacts
         await _complete_run(lifecycle_interaction_sessions, objects, run_id=binding.current_run_id)
+        events = [initial, *[event async for event in stream]]
 
     kinds = tuple(event.WhichOneof("payload") for event in events)
     assert kinds[0] == "task"
