@@ -1729,5 +1729,21 @@
   "Verification needed": "需要验证",
   "Setup needed": "需要设置",
   "Reauthorization needed": "需要重新授权",
-  "Configuration needed": "需要配置"
+  "Configuration needed": "需要配置",
+  "Bases, records, comments, and workspace schemas": "数据表、记录、评论和工作区结构",
+  "Analytics, experiments, cohorts, and tracking plans": "分析、实验、用户群组和跟踪计划",
+  "Scheduling, events, and availability": "日程安排、活动和可用时间",
+  "CRM leads, calls, and pipelines": "CRM 线索、通话和销售管道",
+  "Meeting transcripts, insights, and action items": "会议逐字稿、洞察和行动项",
+  "Real-time social and market intelligence": "实时社交和市场情报",
+  "Discuss and iterate on Magic Patterns designs": "讨论并迭代 Magic Patterns 设计",
+  "Run scenarios and manage your Make account": "运行场景并管理 Make 账户",
+  "Accounts, transactions, balances, and cards": "账户、交易、余额和银行卡",
+  "Meeting transcripts, conversations, and insights": "会议逐字稿、对话和洞察",
+  "Payments, orders, and settlements": "支付、订单和结算",
+  "Emails, templates, contacts, broadcasts, and domains": "邮件、模板、联系人、群发和域名",
+  "Manage authentication project settings": "管理身份验证项目设置",
+  "Marketing data, analytics, and reporting": "营销数据、分析和报告",
+  "Marketing data connectors and attribution": "营销数据连接和归因",
+  "Supply a LunarCrush API key. Tool access and request limits depend on your plan.": "提供 LunarCrush API key；可用工具和请求限额取决于你的套餐。"
 }

@@ -1729,5 +1729,21 @@
   "Verification needed": "Verification needed",
   "Setup needed": "Setup needed",
   "Reauthorization needed": "Reauthorization needed",
-  "Configuration needed": "Configuration needed"
+  "Configuration needed": "Configuration needed",
+  "Bases, records, comments, and workspace schemas": "Bases, records, comments, and workspace schemas",
+  "Analytics, experiments, cohorts, and tracking plans": "Analytics, experiments, cohorts, and tracking plans",
+  "Scheduling, events, and availability": "Scheduling, events, and availability",
+  "CRM leads, calls, and pipelines": "CRM leads, calls, and pipelines",
+  "Meeting transcripts, insights, and action items": "Meeting transcripts, insights, and action items",
+  "Real-time social and market intelligence": "Real-time social and market intelligence",
+  "Discuss and iterate on Magic Patterns designs": "Discuss and iterate on Magic Patterns designs",
+  "Run scenarios and manage your Make account": "Run scenarios and manage your Make account",
+  "Accounts, transactions, balances, and cards": "Accounts, transactions, balances, and cards",
+  "Meeting transcripts, conversations, and insights": "Meeting transcripts, conversations, and insights",
+  "Payments, orders, and settlements": "Payments, orders, and settlements",
+  "Emails, templates, contacts, broadcasts, and domains": "Emails, templates, contacts, broadcasts, and domains",
+  "Manage authentication project settings": "Manage authentication project settings",
+  "Marketing data, analytics, and reporting": "Marketing data, analytics, and reporting",
+  "Marketing data connectors and attribution": "Marketing data connectors and attribution",
+  "Supply a LunarCrush API key. Tool access and request limits depend on your plan.": "Supply a LunarCrush API key. Tool access and request limits depend on your plan."
 }

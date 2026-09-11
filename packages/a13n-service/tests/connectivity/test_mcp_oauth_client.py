@@ -155,6 +155,52 @@ async def test_discovery_reports_only_usable_automatic_registration(methods, reg
 
 
 @pytest.mark.anyio
+async def test_dcr_is_used_when_client_metadata_cannot_use_a_public_client() -> None:
+    registered = False
+
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        nonlocal registered
+        if request.url.path == "/mcp":
+            return httpx2.Response(401)
+        if request.url.path == "/.well-known/oauth-protected-resource/mcp":
+            return _json({"resource": RESOURCE, "authorization_servers": [ISSUER]})
+        if request.url.path == "/.well-known/oauth-authorization-server":
+            return _json(
+                {
+                    "issuer": ISSUER,
+                    "authorization_endpoint": f"{ISSUER}/authorize",
+                    "token_endpoint": f"{ISSUER}/token",
+                    "registration_endpoint": f"{ISSUER}/register",
+                    "client_id_metadata_document_supported": True,
+                    "code_challenge_methods_supported": ["S256"],
+                    "token_endpoint_auth_methods_supported": ["client_secret_basic"],
+                }
+            )
+        if request.url.path == "/register":
+            registered = True
+            assert json.loads(request.content)["token_endpoint_auth_method"] == "client_secret_basic"
+            return _json(
+                {
+                    "client_id": "registered",
+                    "client_secret": "secret",
+                    "token_endpoint_auth_method": "client_secret_basic",
+                }
+            )
+        raise AssertionError(str(request.url))
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as http:
+        preparation = await MCPOAuthClient(http, EndpointPolicy()).prepare(
+            RESOURCE,
+            public_origin="https://1.1.1.1",
+            client_name="Service",
+        )
+
+    assert registered
+    assert preparation.client_id == "registered"
+    assert preparation.token_endpoint_auth_method == "client_secret_basic"
+
+
+@pytest.mark.anyio
 async def test_token_exchange_never_follows_origin_changing_redirect_with_code_or_secret() -> None:
     requests: list[httpx2.Request] = []
 
@@ -350,7 +396,109 @@ async def test_well_known_fallback_preserves_resource_and_issuer_identity(resour
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("resource", ["https://8.8.8.8/other", "https://8.8.8.8/mcp"])
+@pytest.mark.parametrize(
+    ("endpoint", "metadata_url", "resource"),
+    [
+        ("https://8.8.8.8/mcp", "https://8.8.8.8/.well-known/oauth-protected-resource", "https://8.8.8.8"),
+        ("https://8.8.8.8", "https://8.8.8.8/.well-known/oauth-protected-resource", "https://8.8.8.8/"),
+    ],
+)
+async def test_advertised_metadata_accepts_a_canonical_parent_resource(
+    endpoint: str,
+    metadata_url: str,
+    resource: str,
+) -> None:
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        if request.method == "POST":
+            return httpx2.Response(401, headers={"www-authenticate": f'Bearer resource_metadata="{metadata_url}"'})
+        if str(request.url) == metadata_url:
+            return _json({"resource": resource, "authorization_servers": [ISSUER]})
+        if request.url.path == "/.well-known/oauth-authorization-server":
+            return _json(
+                {
+                    "issuer": ISSUER,
+                    "authorization_endpoint": f"{ISSUER}/authorize",
+                    "token_endpoint": f"{ISSUER}/token",
+                    "code_challenge_methods_supported": ["S256"],
+                    "client_id_metadata_document_supported": True,
+                    "token_endpoint_auth_methods_supported": ["none"],
+                }
+            )
+        raise AssertionError(str(request.url))
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as http:
+        preparation = await MCPOAuthClient(http, EndpointPolicy()).prepare(
+            endpoint,
+            public_origin="https://1.1.1.1",
+            client_name="Service",
+        )
+
+    assert preparation.resource_url == resource
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("metadata_url", "resource"),
+    [
+        ("https://8.8.8.8/resource-metadata", "https://8.8.8.8"),
+        ("https://8.8.8.8/.well-known/oauth-protected-resource/other", "https://8.8.8.8/other"),
+        ("https://9.9.9.9/.well-known/oauth-protected-resource", "https://9.9.9.9"),
+        ("https://8.8.8.8/.well-known/oauth-protected-resource", "https://8.8.8.8/#fragment"),
+        ("https://8.8.8.8/.well-known/oauth-protected-resource", "https://8.8.8.8:invalid"),
+    ],
+)
+async def test_advertised_parent_resource_requires_authoritative_coverage(
+    metadata_url: str,
+    resource: str,
+) -> None:
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        if request.method == "POST":
+            return httpx2.Response(401, headers={"www-authenticate": f'Bearer resource_metadata="{metadata_url}"'})
+        return _json({"resource": resource, "authorization_servers": [ISSUER]})
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as http:
+        with pytest.raises(MCPOAuthError, match="resource_mismatch"):
+            await MCPOAuthClient(http, EndpointPolicy()).prepare(
+                RESOURCE,
+                public_origin="https://1.1.1.1",
+                client_name="Service",
+            )
+
+
+@pytest.mark.anyio
+async def test_mismatched_path_metadata_falls_back_to_valid_root_metadata() -> None:
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        if request.method == "POST":
+            return httpx2.Response(401)
+        if request.url.path == "/.well-known/oauth-protected-resource/mcp":
+            return _json({"resource": "https://8.8.8.8/other", "authorization_servers": [ISSUER]})
+        if request.url.path == "/.well-known/oauth-protected-resource":
+            return _json({"resource": "https://8.8.8.8", "authorization_servers": [ISSUER]})
+        if request.url.path == "/.well-known/oauth-authorization-server":
+            return _json(
+                {
+                    "issuer": ISSUER,
+                    "authorization_endpoint": f"{ISSUER}/authorize",
+                    "token_endpoint": f"{ISSUER}/token",
+                    "code_challenge_methods_supported": ["S256"],
+                    "client_id_metadata_document_supported": True,
+                    "token_endpoint_auth_methods_supported": ["none"],
+                }
+            )
+        raise AssertionError(str(request.url))
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as http:
+        preparation = await MCPOAuthClient(http, EndpointPolicy()).prepare(
+            RESOURCE,
+            public_origin="https://1.1.1.1",
+            client_name="Service",
+        )
+
+    assert preparation.resource_url == "https://8.8.8.8"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("resource", ["https://8.8.8.8/other", "https://8.8.8.8/mcp/other"])
 async def test_well_known_resource_must_match_the_identity_used_to_construct_its_url(resource: str) -> None:
     def handle(request: httpx2.Request) -> httpx2.Response:
         if request.method == "POST" or request.url.path.endswith("/mcp"):

@@ -521,17 +521,24 @@ class MCPOAuthClient:
 
     async def _resource_metadata(self, endpoint: str, advertised: str | None) -> ProtectedResourceMetadata:
         candidates = build_protected_resource_metadata_discovery_urls(advertised, endpoint.rstrip("/"))
+        mismatch: MCPOAuthError | None = None
         for candidate in candidates:
             try:
-                metadata = ProtectedResourceMetadata.model_validate(await self._get_json(candidate))
-                if not _resource_matches_candidate(str(metadata.resource), endpoint, candidate, advertised):
+                value = await self._get_json(candidate)
+                resource = value.get("resource")
+                if isinstance(resource, str) and not _resource_matches_candidate(resource, endpoint, candidate):
                     raise MCPOAuthError("resource_mismatch")
+                metadata = ProtectedResourceMetadata.model_validate(value)
                 return metadata
             except ValidationError as error:
                 raise MCPOAuthError("invalid_resource_metadata") from error
             except MCPOAuthError as error:
-                if advertised is not None or error.code != "metadata_not_found":
+                if advertised is not None or error.code not in {"metadata_not_found", "resource_mismatch"}:
                     raise
+                if error.code == "resource_mismatch":
+                    mismatch = error
+        if mismatch is not None:
+            raise mismatch
         raise MCPOAuthError("protected_resource_metadata_missing")
 
     async def _authorization_metadata(self, issuer: str) -> OAuthMetadata:
@@ -698,13 +705,38 @@ def _token_error(error: Exception) -> MCPOAuthError:
     return MCPOAuthError("invalid_oauth_response")
 
 
-def _resource_matches_candidate(resource: str, endpoint: str, candidate: str, advertised: str | None) -> bool:
-    if advertised is not None:
-        return resource == endpoint
-    parsed = urlsplit(endpoint)
-    origin = urlunsplit((parsed.scheme, parsed.netloc, "", "", ""))
-    root_location = f"{origin}/.well-known/oauth-protected-resource"
-    return resource == (origin if candidate == root_location else endpoint)
+def _resource_matches_candidate(resource: str, endpoint: str, metadata_url: str) -> bool:
+    if resource == endpoint:
+        return True
+    try:
+        endpoint_parts = urlsplit(endpoint)
+        resource_parts = urlsplit(resource)
+    except ValueError:
+        return False
+    if resource_parts.username is not None or resource_parts.password is not None or resource_parts.fragment:
+        return False
+    try:
+        resource_port = resource_parts.port
+    except ValueError:
+        return False
+    if (
+        endpoint_parts.scheme.lower(),
+        endpoint_parts.hostname,
+        endpoint_parts.port,
+    ) != (
+        resource_parts.scheme.lower(),
+        resource_parts.hostname,
+        resource_port,
+    ):
+        return False
+    resource_path = resource_parts.path.rstrip("/")
+    endpoint_path = endpoint_parts.path.rstrip("/")
+    if resource_path and endpoint_path != resource_path and not endpoint_path.startswith(f"{resource_path}/"):
+        return False
+    if resource_parts.query and resource_parts.query != endpoint_parts.query:
+        return False
+    locations = build_protected_resource_metadata_discovery_urls(None, resource.rstrip("/"))
+    return metadata_url in locations
 
 
 def _supported_token_auth_methods(metadata: OAuthMetadata) -> tuple[OAuthTokenAuthMethod, ...]:
