@@ -1,8 +1,10 @@
 .metrics {
   display: flex;
   flex-wrap: wrap;
-  gap: 24px;
+  gap: 24px 40px;
   padding: 20px;
+  margin-block: 16px;
+  font-variant-numeric: tabular-nums;
   background: var(--a13n-surface);
   border-radius: var(--a13n-radius-lg);
 }
@@ -160,9 +162,7 @@
 }
 .primaryFilters {
   display: grid;
-  grid-template-columns:
-    minmax(180px, 1fr) minmax(180px, 1fr) minmax(180px, 1.2fr)
-    auto;
+  grid-template-columns: 210px 210px minmax(200px, 320px) auto;
   gap: 12px;
   align-items: end;
 }
@@ -175,9 +175,6 @@
   .primaryFilters,
   .advancedFilters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .primaryFilters > button {
-    justify-self: end;
   }
 }
 @media (max-width: 520px) {
@@ -200,12 +197,15 @@
   gap: 12px;
   margin-top: 24px;
 }
-.observationToolbar > :last-child {
-  width: 200px;
-  max-width: 100%;
+.observationControls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
 }
-.observationToolbar + .timeline {
-  margin-top: 12px;
+.viewControl,
+.observationControls > * {
+  width: 210px;
+  max-width: 100%;
 }
 .identifier {
   font-size: 12px;
@@ -329,10 +329,180 @@
 .listPreview {
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   overflow: hidden;
-  width: clamp(140px, 15vw, 260px);
   white-space: normal;
   overflow-wrap: anywhere;
   line-height: 1.5;
+}
+
+.primaryFilters > button {
+  justify-self: start;
+}
+.listToolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+.listToolbar h2,
+.contentPair h3,
+.diagnostics h3 {
+  font-size: 14px;
+  font-weight: 500;
+}
+.listToolbar > :last-child {
+  width: 180px;
+}
+.traceTable {
+  table-layout: fixed;
+  min-width: 980px;
+}
+.traceTable th {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--a13n-muted);
+}
+.traceTable td {
+  padding-block: 16px;
+  vertical-align: top;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--a13n-text-supporting);
+}
+.traceTable th:first-child {
+  width: 24%;
+}
+.traceTable th[data-column="started"] {
+  width: 156px;
+}
+.traceTable th[data-column="duration"] {
+  width: 104px;
+}
+.traceTable th[data-column="cost"] {
+  width: 100px;
+}
+.traceName {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--a13n-text);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.traceIdentity > span {
+  max-width: 100%;
+}
+.chips,
+.identityLabels {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.chips:empty {
+  display: none;
+}
+.identityLabels {
+  margin-top: 8px;
+}
+.chips > * {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 400;
+}
+.chips span span {
+  color: var(--a13n-muted);
+}
+.started,
+.missing {
+  color: var(--a13n-muted);
+}
+.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sortButton {
+  padding-inline: 4px;
+  margin-inline: -4px;
+  font-weight: 400;
+}
+.detailTabs {
+  margin-top: 24px;
+  gap: 20px;
+}
+.timelineScale {
+  display: flex;
+  justify-content: space-between;
+  font-variant-numeric: tabular-nums;
+}
+.contentPair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin-block: 20px;
+}
+.contentPair > section {
+  min-width: 0;
+}
+.contentPair h3 {
+  margin-bottom: 12px;
+}
+.properties {
+  display: grid;
+  gap: 0;
+  font-size: 13px;
+}
+.properties > div {
+  display: grid;
+  grid-template-columns: minmax(160px, 40%) minmax(0, 1fr);
+  gap: 16px;
+  padding-block: 10px;
+}
+.properties > div + div {
+  border-top: 1px solid var(--a13n-border);
+}
+.properties dt {
+  color: var(--a13n-muted);
+  overflow-wrap: anywhere;
+}
+.properties dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.diagnostics {
+  margin-top: 20px;
+}
+.diagnosticValues {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-block: 16px;
+}
+@media (max-width: 760px) {
+  .contentPair,
+  .properties > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .properties > div {
+    gap: 4px;
+  }
+  .observationControls {
+    width: 100%;
+  }
+  .observationControls > * {
+    flex: 1;
+    min-width: 150px;
+  }
+}
+@media (max-width: 520px) {
+  .timelineHeader,
+  .observation {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .track {
+    min-height: 22px;
+  }
 }

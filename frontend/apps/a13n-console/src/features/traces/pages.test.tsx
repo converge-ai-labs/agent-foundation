@@ -36,14 +36,14 @@ afterEach(() => {
   caches.length = 0;
   vi.resetAllMocks();
 });
-function mount(element: React.ReactNode) {
+function mount(element: React.ReactNode, entry = "/") {
   const cache = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   caches.push(cache);
   render(
     <QueryClientProvider client={cache}>
-      <MemoryRouter>{element}</MemoryRouter>
+      <MemoryRouter initialEntries={[entry]}>{element}</MemoryRouter>
     </QueryClientProvider>,
   );
   return cache;
@@ -330,7 +330,12 @@ it("shows full root previews, seconds, normalized levels and paginated aggregate
   expect(screen.getByText("Output preview")).toBeTruthy();
   expect(screen.getByText("2.5 s")).toBeTruthy();
   expect(screen.getByText("Info")).toBeTruthy();
-  expect(screen.getByRole("columnheader", { name: "Cost" })).toBeTruthy();
+  expect(
+    screen.getAllByRole("columnheader").map((cell) => cell.textContent?.trim()),
+  ).toEqual(["Trace", "Started", "Duration", "Cost", "Input", "Output"]);
+  expect(
+    screen.getByRole("link", { name: "Input preview" }).getAttribute("href"),
+  ).toContain("?tab=content");
   expect(screen.queryByText("Root status")).toBeNull();
   expect(screen.queryByText("Severity")).toBeNull();
   expect(screen.queryByText(/USD|Unavailable/)).toBeNull();
@@ -368,7 +373,7 @@ it("does not expose root-only or partial list costs when a later page fails or r
   for (const row of screen.getAllByRole("row").slice(1)) {
     const cells = within(row).getAllByRole("cell");
     expect(cells[2].textContent).toBe("-");
-    expect(cells.at(-1)?.textContent).toBe("-");
+    expect(cells[3].textContent).toBe("-");
   }
   expect(
     http.GET.mock.calls.filter(([path]) => path.endsWith("observations")),
@@ -431,8 +436,7 @@ it("caps advancing cost pagination without exposing a partial total", async () =
   await waitFor(() => expect(cache.isFetching()).toBe(0));
   expect(reads).toBe(20);
   expect(
-    within(screen.getAllByRole("row")[1]).getAllByRole("cell").at(-1)
-      ?.textContent,
+    within(screen.getAllByRole("row")[1]).getAllByRole("cell")[3].textContent,
   ).toBe("-");
 });
 
@@ -448,7 +452,10 @@ it("uses seconds in the detail overview, timeline and observation dialog", async
   );
   mount(<TraceDetail traceId="trace-1" />);
   await screen.findByRole("button", { name: /^root/ });
-  expect(screen.getAllByText("2.5 s")).toHaveLength(2);
+  expect(screen.getByText("0 s").parentElement?.textContent).toBe("0 s2.5 s");
+  expect(
+    within(screen.getByRole("button", { name: /^root/ })).getByText("2.5 s"),
+  ).toBeTruthy();
   expect(screen.queryByText("Root status")).toBeNull();
   await user.click(screen.getByRole("button", { name: /^root/ }));
   const dialog = await screen.findByRole("dialog");
@@ -485,4 +492,111 @@ it("immediately hides revoked content without waiting for unrelated cost reads o
   expect(
     http.GET.mock.calls.filter(([path]) => path.endsWith("observations")),
   ).toHaveLength(4);
+});
+
+it("sorts aggregate costs rather than root costs and keeps the order after pagination and view changes", async () => {
+  const user = userEvent.setup();
+  const makeTrace = (id: string, cost: string | null) => ({
+    ...trace(),
+    id,
+    root: { ...observation(id), cost_usd: cost },
+  });
+  http.GET.mockImplementation(async (path, options) => {
+    if (path.endsWith("trace-query")) return response(descriptor);
+    if (path.endsWith("observations"))
+      return response({
+        items: [
+          {
+            ...observation("child"),
+            cost_usd: options.params.path.trace_id === "low-root" ? "10" : null,
+          },
+        ],
+        next_cursor: null,
+      });
+    const next = options.params.query.cursor;
+    return response({
+      items: next
+        ? [makeTrace("next-low", "1"), makeTrace("next-high", "2")]
+        : [
+            makeTrace("high-root", "5"),
+            makeTrace("low-root", "1"),
+            makeTrace("unknown", null),
+          ],
+      next_cursor: next ? null : "next",
+    });
+  });
+  const cache = mount(<TracesPage />);
+  await screen.findByText("$11");
+  const names = () =>
+    screen
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => within(row).getAllByRole("link")[0].textContent);
+  await user.click(screen.getByRole("button", { name: "Cost" }));
+  expect(names()).toEqual(["low-root", "high-root", "unknown"]);
+  await user.click(screen.getByRole("button", { name: "Cost" }));
+  expect(names()).toEqual(["high-root", "low-root", "unknown"]);
+  await user.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByText("$2");
+  expect(names()).toEqual(["next-low", "next-high"]);
+  expect(
+    screen
+      .getByRole("columnheader", { name: "Cost" })
+      .getAttribute("aria-sort"),
+  ).toBe("ascending");
+  await user.click(screen.getByRole("combobox", { name: "Content" }));
+  await user.click(await screen.findByRole("option", { name: "Compact" }));
+  await screen.findByRole("link", { name: "high-root" });
+  await waitFor(() => expect(cache.isFetching()).toBe(0));
+  expect(names()).toEqual(["high-root", "low-root", "unknown"]);
+  expect(screen.queryByRole("columnheader", { name: "Input" })).toBeNull();
+  expect(http.GET).toHaveBeenCalledWith(
+    expect.stringContaining("/traces"),
+    expect.objectContaining({
+      params: expect.objectContaining({
+        query: expect.objectContaining({ view: "compact", cursor: undefined }),
+      }),
+    }),
+  );
+});
+
+it("opens the root content tab from preview links without substituting child output", async () => {
+  const user = userEvent.setup();
+  http.GET.mockImplementation(async (path) =>
+    response(
+      path.endsWith("observations")
+        ? {
+            items: [
+              {
+                ...observation("child", "root"),
+                output: {
+                  media_type: "text/plain",
+                  value: "Child only output",
+                },
+              },
+            ],
+            next_cursor: null,
+          }
+        : {
+            ...trace(),
+            root: {
+              ...observation("root"),
+              input: { media_type: "text/plain", value: "Root input" },
+            },
+          },
+    ),
+  );
+  mount(<TraceDetail traceId="trace-1" />, "/?tab=content");
+  await screen.findByText("Root input");
+  expect(
+    screen
+      .getByRole("tab", { name: "Input and output" })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
+  expect(screen.queryByText("Child only output")).toBeNull();
+  await user.click(screen.getByRole("tab", { name: "Observations" }));
+  await user.click(await screen.findByRole("button", { name: /^child/ }));
+  expect(
+    within(await screen.findByRole("dialog")).getByText("Child only output"),
+  ).toBeTruthy();
 });

@@ -9,7 +9,7 @@ import { formatLocalDateTime } from "../../shared/local-date-time";
 
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 import { DateTimeField } from "../../shared/date-time-field";
 
 import { ApiError } from "@converge.ai/a13n";
@@ -17,7 +17,7 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
-import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
+import { Pagination, useCursor } from "../../shared/collection";
 import {
   Empty,
   ErrorNotice,
@@ -25,9 +25,8 @@ import {
   Page,
   Timestamp,
 } from "../../shared/feedback";
-import { Duration, Level } from "./values";
-import { formatCost } from "./cost";
-import { contentPreview } from "./preview";
+import { TraceTable } from "./list-table";
+import type { ObservationSort } from "./sorting";
 import { useListCosts } from "./list-cost";
 import traceStyles from "./traces.module.css";
 function localTime(date: Date) {
@@ -246,10 +245,7 @@ function TraceBrowser({
     </Page>
   );
 }
-export function TraceList({
-  filters,
-  page,
-}: {
+interface TraceListProps {
   filters: {
     from?: string;
     to?: string;
@@ -260,12 +256,47 @@ export function TraceList({
     run_attempt_id?: string;
   };
   page: ReturnType<typeof useCursor>;
-}) {
+}
+export function TraceList({ filters, page }: TraceListProps) {
+  const { t } = useTranslation();
+  const [view, setView] = useState<Schema["TraceView"]>("full");
+  return (
+    <>
+      <div className={traceStyles.listToolbar}>
+        <h2>{t("Trace activity")}</h2>
+        <ChoiceField
+          label={t("Content")}
+          value={view}
+          onValueChange={(value) => {
+            if (value === "full" || value === "compact") {
+              page.reset();
+              setView(value);
+            }
+          }}
+          options={[
+            { value: "full", label: t("With previews") },
+            { value: "compact", label: t("Compact") },
+          ]}
+        />
+      </div>
+      <TraceResults filters={filters} page={page} view={view} />
+    </>
+  );
+}
+function TraceResults({
+  filters,
+  page,
+  view,
+}: TraceListProps & { view: Schema["TraceView"] }) {
+  const [sort, setSort] = useState<ObservationSort>({
+    field: "started",
+    direction: "desc",
+  });
   const client = useClient(),
     { workspace, basePath } = useWorkspace(),
     { t } = useTranslation();
   const query = useQuery({
-    queryKey: ["trace-list", workspace.id, filters, page.cursor, "full"],
+    queryKey: ["trace-list", workspace.id, filters, page.cursor, view],
     queryFn: ({ signal }) =>
       client.http
         .GET("/api/v1/workspaces/{workspace}/traces", {
@@ -279,7 +310,7 @@ export function TraceList({
               run_id: filters.run_id || undefined,
               run_attempt_id: filters.run_attempt_id || undefined,
               cursor: page.cursor,
-              view: "full",
+              view,
               limit: 25,
             },
           },
@@ -323,65 +354,13 @@ export function TraceList({
   return (
     <>
       {query.data?.items.length ? (
-        <ResourceTable
+        <TraceTable
           items={query.data.items}
-          columns={[
-            {
-              label: t("Trace"),
-              tone: "primary",
-              render: (item) => (
-                <Link to={`${basePath}/traces/${encodeURIComponent(item.id)}`}>
-                  <strong>{item.root.name}</strong>
-                  <small>{item.id}</small>
-                </Link>
-              ),
-            },
-            {
-              label: t("Started"),
-              tone: "muted",
-              render: (item) => <Timestamp value={item.root.started_at} />,
-            },
-            {
-              label: t("Input"),
-              render: (item) => (
-                <span className={traceStyles.listPreview}>
-                  {contentPreview(item.root.input)}
-                </span>
-              ),
-            },
-            {
-              label: t("Output"),
-              render: (item) => (
-                <span className={traceStyles.listPreview}>
-                  {contentPreview(item.root.output)}
-                </span>
-              ),
-            },
-            {
-              label: t("Level"),
-              render: (item) => <Level level={item.root.level} />,
-            },
-            {
-              label: t("Duration"),
-              align: "right",
-              render: (item) => <Duration observation={item.root} />,
-            },
-            {
-              label: t("Cost"),
-              align: "right",
-              render: (item) => (
-                <span
-                  title={t(
-                    "Reported observation costs; missing costs are not estimated.",
-                  )}
-                >
-                  {formatCost(
-                    costs.isSuccess ? (costs.data[item.id] ?? null) : null,
-                  )}
-                </span>
-              ),
-            },
-          ]}
+          basePath={basePath}
+          view={view}
+          costs={costs.isSuccess ? costs.data : {}}
+          sort={sort}
+          onSortChange={setSort}
         />
       ) : (
         <Empty

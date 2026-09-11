@@ -1,7 +1,16 @@
-import { Button, ChoiceField, DisclosureSection, ModalFrame } from "a13n-ui";
+import {
+  Button,
+  ChoiceField,
+  DisclosureSection,
+  ModalFrame,
+  Tabs,
+  TabsList,
+  TabsTab,
+  TabsPanel,
+} from "a13n-ui";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useParams, useSearchParams } from "react-router";
 import { ApiError } from "@converge.ai/a13n";
 import { ArrowSquareOutIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
@@ -12,6 +21,9 @@ import { ErrorNotice, Loading, Page, Timestamp } from "../../shared/feedback";
 import { TraceContent, TraceJson } from "./content";
 import { formatCost, observationCost } from "./cost";
 import { ObservationIcon } from "./identity";
+import { MetadataChips, AttributeValues } from "./metadata";
+import { compareObservations, type ObservationSort } from "./sorting";
+import { CopyableId } from "../../shared/copy";
 import shared from "../../shared/shared.module.css";
 import { observationRows } from "./timeline";
 import { Duration, durationMs, Level, TelemetryStatus } from "./values";
@@ -27,9 +39,12 @@ export function TraceDetail({ traceId }: { traceId: string }) {
     { workspace, basePath } = useWorkspace(),
     { t } = useTranslation();
   const [view, setView] = useState<Schema["TraceView"]>("full");
+  const [order, setOrder] = useState("tree");
+  const [searchParams] = useSearchParams();
   const viewControl = (
     <ChoiceField
       label={t("Observation content")}
+      className={styles.viewControl}
       value={view}
       onValueChange={(value) => {
         if (value === "compact" || value === "full") setView(value);
@@ -111,6 +126,15 @@ export function TraceDetail({ traceId }: { traceId: string }) {
   );
   const duration = Math.max(1, latest - start);
   const source = safeSource(trace.source_url);
+  const [field, direction] = order.split(":");
+  const rows =
+    order === "tree"
+      ? observationRows(observations)
+      : [...observations]
+          .sort((a, b) =>
+            compareObservations(a, b, { field, direction } as ObservationSort),
+          )
+          .map((observation) => ({ observation, depth: 0 }));
   return (
     <Page
       title={root.name}
@@ -124,13 +148,19 @@ export function TraceDetail({ traceId }: { traceId: string }) {
             {t("Open run")}
           </Link>
           {source && (
-            <a href={source} target="_blank" rel="noopener noreferrer">
+            <a
+              className="inline-flex items-center gap-1"
+              href={source}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               {t("Open trace backend")} <ArrowSquareOutIcon size={13} />
             </a>
           )}
         </>
       }
     >
+      <MetadataChips observation={root} />
       <div className={styles.metrics}>
         <Metric label={t("Level")}>
           <Level level={root.level} />
@@ -150,130 +180,189 @@ export function TraceDetail({ traceId }: { traceId: string }) {
           "Level and duration describe the root. Cost sums each loaded observation once; missing costs are not estimated.",
         )}
       </p>
-      <div className={styles.observationToolbar}>
-        <p className={shared.muted}>
-          {t("Loaded observations")}: {observations.length} · {trace.provider}
-        </p>
-        {viewControl}
-      </div>
-      <div className={styles.timeline}>
-        <div className={styles.timelineHeader}>
-          <strong>{t("Observations")}</strong>
-          <small>{t("Duration")}</small>
-        </div>
-        {observationRows(observations).map(({ observation, depth }) => {
-          const left = Math.max(
-            0,
-            Math.min(
-              100,
-              ((Date.parse(observation.started_at) - start) / duration) * 100,
-            ),
-          );
-          const elapsed = durationMs(observation);
-          const width =
-            elapsed === null
-              ? null
-              : Math.max(0.5, Math.min(100 - left, (elapsed / duration) * 100));
-          return (
-            <ModalFrame
-              key={observation.id}
-              trigger={
-                <Button
-                  className={styles.observation}
-                  variant="ghost"
-                  type="button"
-                >
-                  <span
-                    className={styles.observationName}
-                    style={{ paddingInlineStart: Math.min(depth, 12) * 14 }}
-                  >
-                    <ObservationIcon observation={observation} />
-                    <span>
-                      {observation.name}
-                      <small>
-                        {observation.type}
-                        {observation.model &&
-                          ` · ${observation.model.response ?? observation.model.requested}`}
-                      </small>
-                    </span>
-                  </span>
-                  <span className={styles.track}>
-                    {width !== null && (
-                      <span
-                        className={styles.bar}
-                        style={{ left: `${left}%`, width: `${width}%` }}
-                        data-status={observation.status}
-                        data-level={observation.level}
-                      />
-                    )}
-                    <span className={styles.duration}>
-                      <Duration observation={observation} />
-                    </span>
-                  </span>
-                </Button>
-              }
-              size="lg"
-              title={observation.name}
-              description={t(
-                "Telemetry content reflects the producer's content policy and backend retention.",
-              )}
-              closeLabel={t("Close")}
-            >
-              <ObservationDetails observation={observation} view={view} />
-            </ModalFrame>
-          );
-        })}
-      </div>
-      {observationsQuery.isPending && <Loading />}
-      <ErrorNotice
-        error={observationsQuery.error}
-        retry={() =>
-          void (observationsQuery.isFetchNextPageError
-            ? observationsQuery.fetchNextPage()
-            : observationsQuery.refetch())
+      <Tabs
+        defaultValue={
+          searchParams.get("tab") === "content" ? "content" : "observations"
         }
-      />
-      {observationsQuery.hasNextPage && (
-        <Button
-          variant="outline"
-          disabled={observationsQuery.isFetching}
-          onClick={() => void observationsQuery.fetchNextPage()}
-        >
-          {t("Load more observations")}
-        </Button>
-      )}
-      <p className={styles.providerNote}>
-        {t("Costs reported")}: {cost.reported} / {observations.length}.{" "}
-        {!costsComplete && t("Load all observation pages for the trace cost.")}{" "}
-        {t("Sampling, export, retention, and unreported costs can leave gaps.")}
-      </p>
-      <div className={styles.payloads}>
-        {(["input", "output", "usage"] as const).map((key) => (
-          <DisclosureSection
-            key={key}
-            title={
-              <>
-                {t(
-                  key === "input"
-                    ? "Root input"
-                    : key === "output"
-                      ? "Root output"
-                      : "Root usage",
-                )}
-              </>
-            }
-          >
-            {key === "usage" ? (
-              <TraceJson value={root.usage} />
-            ) : (
-              <TraceContent content={root[key]} compact={view === "compact"} />
+        className={styles.detailTabs}
+      >
+        <TabsList size="sm">
+          <TabsTab value="observations">{t("Observations")}</TabsTab>
+          <TabsTab value="content">{t("Input and output")}</TabsTab>
+          <TabsTab value="metadata">{t("Metadata")}</TabsTab>
+        </TabsList>
+        <TabsPanel value="observations">
+          <div className={styles.observationToolbar}>
+            <p className={shared.muted}>
+              {t("Loaded observations")}: {observations.length} ·{" "}
+              {trace.provider}
+            </p>
+            <div className={styles.observationControls}>
+              <ChoiceField
+                label={t("Observation order")}
+                value={order}
+                onValueChange={setOrder}
+                options={[
+                  { value: "tree", label: t("Call tree") },
+                  { value: "started:asc", label: t("Started · oldest first") },
+                  { value: "started:desc", label: t("Started · newest first") },
+                  {
+                    value: "duration:desc",
+                    label: t("Duration · longest first"),
+                  },
+                  {
+                    value: "duration:asc",
+                    label: t("Duration · shortest first"),
+                  },
+                  { value: "cost:desc", label: t("Cost · highest first") },
+                  { value: "cost:asc", label: t("Cost · lowest first") },
+                ]}
+              />
+              {viewControl}
+            </div>
+          </div>
+          <p className={styles.providerNote}>
+            {t(
+              "Ordering applies to loaded observations only. Call tree preserves parent relationships.",
             )}
+          </p>
+          <div className={styles.timeline}>
+            <div className={styles.timelineHeader}>
+              <strong>{t("Observations")}</strong>
+              <div className={styles.timelineScale}>
+                <span>0 s</span>
+                <span>
+                  {(duration / 1000).toLocaleString(undefined, {
+                    maximumFractionDigits: 6,
+                  })}{" "}
+                  s
+                </span>
+              </div>
+            </div>
+            {rows.map(({ observation, depth }) => {
+              const left = Math.max(
+                0,
+                Math.min(
+                  100,
+                  ((Date.parse(observation.started_at) - start) / duration) *
+                    100,
+                ),
+              );
+              const elapsed = durationMs(observation);
+              const width =
+                elapsed === null
+                  ? null
+                  : Math.max(
+                      0.5,
+                      Math.min(100 - left, (elapsed / duration) * 100),
+                    );
+              return (
+                <ModalFrame
+                  key={observation.id}
+                  trigger={
+                    <Button
+                      className={styles.observation}
+                      variant="ghost"
+                      type="button"
+                    >
+                      <span
+                        className={styles.observationName}
+                        style={{ paddingInlineStart: Math.min(depth, 12) * 14 }}
+                      >
+                        <ObservationIcon observation={observation} />
+                        <span>
+                          {observation.name}
+                          <small>
+                            {observation.type}
+                            {(observation.model?.response ??
+                              observation.model?.requested) &&
+                              ` · ${observation.model?.response ?? observation.model?.requested}`}
+                            {observation.parent_id &&
+                              !byId.has(observation.parent_id) &&
+                              ` · ${t("Parent not loaded")}`}
+                          </small>
+                        </span>
+                      </span>
+                      <span className={styles.track}>
+                        {width !== null && (
+                          <span
+                            className={styles.bar}
+                            style={{ left: `${left}%`, width: `${width}%` }}
+                            data-status={observation.status}
+                            data-level={observation.level}
+                          />
+                        )}
+                        <span className={styles.duration}>
+                          <Duration observation={observation} />
+                        </span>
+                      </span>
+                    </Button>
+                  }
+                  size="lg"
+                  title={observation.name}
+                  description={t(
+                    "Telemetry content reflects the producer's content policy and backend retention.",
+                  )}
+                  closeLabel={t("Close")}
+                >
+                  <ObservationDetails observation={observation} view={view} />
+                </ModalFrame>
+              );
+            })}
+          </div>
+          {observationsQuery.isPending && <Loading />}
+          <ErrorNotice
+            error={observationsQuery.error}
+            retry={() =>
+              void (observationsQuery.isFetchNextPageError
+                ? observationsQuery.fetchNextPage()
+                : observationsQuery.refetch())
+            }
+          />
+          {observationsQuery.hasNextPage && (
+            <Button
+              variant="outline"
+              disabled={observationsQuery.isFetching}
+              onClick={() => void observationsQuery.fetchNextPage()}
+            >
+              {t("Load more observations")}
+            </Button>
+          )}
+          <p className={styles.providerNote}>
+            {t("Costs reported")}: {cost.reported} / {observations.length}.{" "}
+            {!costsComplete &&
+              t("Load all observation pages for the trace cost.")}{" "}
+            {t(
+              "Sampling, export, retention, and unreported costs can leave gaps.",
+            )}
+          </p>
+        </TabsPanel>
+        <TabsPanel value="content">
+          {viewControl}
+          <p className={styles.providerNote}>
+            {t(
+              "Content belongs to the root observation. Missing output is not reconstructed from child calls.",
+            )}
+          </p>
+          <ContentPair observation={root} view={view} />
+        </TabsPanel>
+        <TabsPanel value="metadata">
+          {viewControl}
+          <ObservationMetadata observation={root} view={view} />
+          <DisclosureSection title={<>{t("Correlation")}</>}>
+            <dl className={styles.properties}>
+              {Object.entries(correlation).map(([key, value]) => (
+                <div key={key}>
+                  <dt>{key}</dt>
+                  <dd>
+                    <CopyableId value={value} />
+                  </dd>
+                </div>
+              ))}
+            </dl>
           </DisclosureSection>
-        ))}
-        <DisclosureSection title={<>{t("Correlation")}</>}>
-          <TraceJson value={correlation} />
-        </DisclosureSection>
-      </div>
+        </TabsPanel>
+      </Tabs>
     </Page>
   );
 }
@@ -301,25 +390,9 @@ function ObservationDetails({
   view: Schema["TraceView"];
 }) {
   const { t } = useTranslation();
-  const sections = [
-    ["input", "Input"],
-    ["output", "Output"],
-    ["usage", "Usage"],
-    ["attributes", "Attributes"],
-    ["resource_attributes", "Resource attributes"],
-    ["scope", "Instrumentation scope"],
-    ["events", "Events"],
-    ["links", "Links"],
-  ] as const;
   return (
     <div className={shared.stack}>
       <div className={styles.metrics}>
-        <Metric label={t("Telemetry status")}>
-          <TelemetryStatus observation={observation} />
-        </Metric>
-        <Metric label={t("Level")}>
-          <Level level={observation.level} />
-        </Metric>
         <Metric label={t("Type")}>
           <span className={styles.typeIdentity}>
             <ObservationIcon observation={observation} />
@@ -331,15 +404,14 @@ function ObservationDetails({
         </Metric>
         <Metric label={t("Cost")}>{formatCost(observation.cost_usd)}</Metric>
       </div>
-      <p className={styles.identifier}>
-        {observation.id}
+      <div className={styles.identifier}>
+        <CopyableId value={observation.id} />
         {observation.parent_id && (
-          <>
-            {" "}
-            · {t("Parent ID")}: {observation.parent_id}
-          </>
+          <span>
+            {t("Parent ID")}: <CopyableId value={observation.parent_id} />
+          </span>
         )}
-      </p>
+      </div>
       <p>
         <Timestamp value={observation.started_at} /> —{" "}
         <Timestamp value={observation.ended_at} />
@@ -354,6 +426,70 @@ function ObservationDetails({
           </Metric>
         </div>
       )}
+      <MetadataChips observation={observation} />
+      <ContentPair observation={observation} view={view} />
+      <ObservationMetadata observation={observation} view={view} />
+    </div>
+  );
+}
+
+function ContentPair({
+  observation,
+  view,
+}: {
+  observation: Schema["Observation"];
+  view: Schema["TraceView"];
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className={styles.contentPair}>
+      {(["input", "output"] as const).map((key) => (
+        <section key={key}>
+          <h3>{t(key === "input" ? "Input" : "Output")}</h3>
+          <TraceContent
+            content={observation[key]}
+            compact={view === "compact"}
+          />
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function ObservationMetadata({
+  observation,
+  view,
+}: {
+  observation: Schema["Observation"];
+  view: Schema["TraceView"];
+}) {
+  const { t } = useTranslation();
+  const sections = [
+    ["usage", "Usage"],
+    ["attributes", "Attributes"],
+    ["resource_attributes", "Resource attributes"],
+    ["scope", "Instrumentation scope"],
+    ["events", "Events"],
+    ["links", "Links"],
+  ] as const;
+  return (
+    <div className={styles.payloads}>
+      <div className={styles.diagnostics}>
+        <h3>{t("Diagnostics")}</h3>
+        <p className={styles.providerNote}>
+          {t(
+            "Telemetry status is the span's reported OpenTelemetry status, not the Run outcome. Unset and unavailable do not mean success.",
+          )}
+        </p>
+        <div className={styles.diagnosticValues}>
+          <Metric label={t("Telemetry status")}>
+            <TelemetryStatus observation={observation} />
+          </Metric>
+          <Metric label={t("Level")}>
+            <Level level={observation.level} />
+          </Metric>
+        </div>
+      </div>
       {view === "compact" && (
         <p className={shared.muted}>
           {t(
@@ -370,16 +506,9 @@ function ObservationDetails({
         </div>
       )}
       {sections.map(([key, label]) => (
-        <DisclosureSection
-          key={key}
-          defaultOpen={key === "input" || key === "output"}
-          title={<>{t(label)}</>}
-        >
-          {key === "input" || key === "output" ? (
-            <TraceContent
-              content={observation[key]}
-              compact={view === "compact"}
-            />
+        <DisclosureSection key={key} title={<>{t(label)}</>}>
+          {key === "attributes" || key === "resource_attributes" ? (
+            <AttributeValues value={observation[key]} />
           ) : (
             <TraceJson value={observation[key]} />
           )}
