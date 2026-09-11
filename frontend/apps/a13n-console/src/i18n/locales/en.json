@@ -1273,5 +1273,11 @@
   "End time": "End time",
   "24 hours": "24 hours",
   "Project API Key": "Project API Key",
-  "Catalog API Key": "Catalog API Key"
+  "Catalog API Key": "Catalog API Key",
+  "This provider cannot reauthorize an existing account. Create a new connection, authorize it, then select it in your agent settings.": "This provider cannot reauthorize an existing account. Create a new connection, authorize it, then select it in your agent settings.",
+  "Back to connections": "Back to connections",
+  "Load tools on demand": "Load tools on demand",
+  "Select no tools": "Select no tools",
+  "No tools": "No tools",
+  "Authorization has already started. Restarting invalidates the previous authorization link.": "Authorization has already started. Restarting invalidates the previous authorization link."
 }

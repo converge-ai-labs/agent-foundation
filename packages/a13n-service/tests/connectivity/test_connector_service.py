@@ -385,7 +385,10 @@ async def test_connection_http_commands_preserve_lifecycle_and_dispatch(
     connection = await create_connection(
         connections, connector_provider_id=provider.id, idempotency_key="http-connection"
     )
+    from a13n_service.api import install_api_conventions
+
     app = FastAPI()
+    install_api_conventions(app)
     app.include_router(router.router)
     app.dependency_overrides[authenticate_request] = actor
     monkeypatch.setattr(router, "_connections", lambda request: connections)
@@ -399,6 +402,20 @@ async def test_connection_http_commands_preserve_lifecycle_and_dispatch(
         )
         assert response.status_code == 200
         launch = response.json()
+        duplicate = await client.post(
+            path + "/setup",
+            headers={"Idempotency-Key": "http-setup-another-key"},
+            json={"expected_version": connection.version, **setup},
+        )
+        assert duplicate.status_code == 409
+        assert duplicate.json()["error"]["code"] == "setup_already_started"
+        invalid_path = await client.post(
+            path + "/setup",
+            headers={"Idempotency-Key": "http-setup-invalid-path"},
+            json={"expected_version": connection.version, **setup, "return_path": "//outside.invalid/"},
+        )
+        assert invalid_path.status_code == 400
+        assert connector_backend.started == 1
         response = await client.post(
             "/api/v1/connector-setup/complete",
             json={
@@ -527,6 +544,7 @@ async def test_disabled_provider_stops_setup_and_releases_callback_reservation(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("rejection", [None, "scope_missing", "not_found", "rate_limited", "schema", "depth", "size"])
 async def test_worker_connector_uses_verified_binding_and_preserves_unknown_write(
     connector_services,
     connector_registry,
@@ -534,8 +552,9 @@ async def test_worker_connector_uses_verified_binding_and_preserves_unknown_writ
     credential_protector,
     monkeypatch,
     external_runtime_factory,
+    rejection,
 ):
-    from a13n_service.connectivity.connectors.contracts import ConnectorToolOutcome
+    from a13n_service.connectivity.connectors.contracts import ConnectorProviderError, ConnectorToolOutcome
     from a13n_service.connectivity.execution import AttemptToolScope
     from a13n_service.connectivity.mcp.transport import RemoteTransport
     from a13n_service.connectivity.selection_domain import ConnectorConnectionRunSelection
@@ -571,6 +590,18 @@ async def test_worker_connector_uses_verified_binding_and_preserves_unknown_writ
     async def execute(self, **kwargs):
         await kwargs["before_dispatch"]()
         calls.append((self.binding, kwargs))
+        if rejection in {"schema", "depth", "size"}:
+            payload = "invalid-object" if rejection == "schema" else {"value": "x" * (1024 * 1024)}
+            if rejection == "depth":
+                payload = {}
+                for _ in range(70):
+                    payload = {"nested": payload}
+            return ConnectorToolOutcome(kind="succeeded", result=payload, request_id=kwargs["request_id"])
+        if rejection is not None:
+            raise ConnectorProviderError(
+                "tool_rejected" if rejection == "not_found" else rejection,
+                http_status=404 if rejection == "not_found" else None,
+            )
         return ConnectorToolOutcome(kind="outcome_unknown", request_id=kwargs["request_id"])
 
     async def guard(session=None):
@@ -587,7 +618,10 @@ async def test_worker_connector_uses_verified_binding_and_preserves_unknown_writ
         AttemptToolScope(actor(), ORG_ID, WORKSPACE_ID, FrozenRunConnectivity((), ()), ()),
     )
     result = await Agent(TestModel(), capabilities=[capability]).run("create issue")
-    assert "outcome_unknown" in result.output
+    unknown = rejection in {None, "schema", "depth", "size"}
+    assert ("outcome_unknown" if unknown else rejection) in result.output
+    if not unknown:
+        assert '"failed"' in result.output
     assert len(calls) == 1 and len(guards) == 3
     assert calls[0][0].external_ref == "external-1"
     assert calls[0][0].external_user_correlation == attempt.external_user_correlation

@@ -95,6 +95,13 @@ it("edits capabilities inline and preserves pinned versions, hidden configuratio
   );
   await user.click(screen.getByRole("button", { name: "Add Connectors" }));
   await user.click(screen.getByRole("checkbox", { name: "Repository" }));
+  await user.type(
+    screen.getAllByRole("textbox", { name: "Tool names" })[1],
+    "profile.read, search",
+  );
+  await user.click(
+    screen.getByRole("checkbox", { name: "Load tools on demand" }),
+  );
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   expect(screen.queryByRole("alert")?.textContent).toBeUndefined();
   expect(submit).toHaveBeenCalledWith(
@@ -108,7 +115,13 @@ it("edits capabilities inline and preserves pinned versions, hidden configuratio
           tools: ["search", "read"],
         },
       ],
-      connector_tools: [{ connector_connection_id: "conn_0123456789abcdef" }],
+      connector_tools: [
+        {
+          connector_connection_id: "conn_0123456789abcdef",
+          tools: ["profile.read", "search"],
+          defer_loading: true,
+        },
+      ],
     }),
     "Research",
     "",
@@ -156,4 +169,21 @@ it("requires saving the instruction draft before trial or agent management", asy
     "",
     7,
   );
+});
+
+it("distinguishes an empty Connector allowlist from all tools", async () => {
+  const user = userEvent.setup(),
+    { submit } = editor();
+  await user.click(screen.getByRole("button", { name: "Add Connectors" }));
+  await user.click(screen.getByRole("checkbox", { name: "Repository" }));
+  await user.click(screen.getByRole("checkbox", { name: "Select no tools" }));
+  expect(
+    (screen.getByRole("textbox", { name: "Tool names" }) as HTMLInputElement)
+      .disabled,
+  ).toBe(true);
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(submit.mock.calls[0][0].connector_tools[0].tools).toEqual([]);
+  await user.click(screen.getByRole("checkbox", { name: "Select no tools" }));
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(submit.mock.calls[1][0].connector_tools[0].tools).toBeNull();
 });

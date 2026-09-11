@@ -211,6 +211,8 @@ async def write_hook_lifecycle(
 ) -> tuple[OutboxRecord, ...]:
     """Append matching delivery intents, then expire inline Hooks on sealed Runs."""
 
+    # Matching events share the Workspace fence; management still takes an
+    # exclusive lock before changing subscriptions or checking capacity.
     workspace = await _lock_event_workspace(database, event)
     statement = (
         select(HookSubscriptionRecord, HookSubscriptionRevisionRecord)
@@ -355,7 +357,7 @@ async def _lock_event_workspace(
             SessionRecord.id == event.session_id,
             WorkspaceRecord.deleted_at.is_(None),
         )
-        .with_for_update(of=WorkspaceRecord, key_share=True)
+        .with_for_update(of=WorkspaceRecord, read=True)
     )
     if workspace is None:
         raise HookSubscriptionInvariantError(

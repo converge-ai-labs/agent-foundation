@@ -166,20 +166,54 @@ export function AgentCapabilities({
             name: item.name,
           })),
           connectors.map((item) => item.connector_connection_id),
-        ).map((connection) => ({
-          ...connection,
-          checked: connectors.some(
+        ).map((connection) => {
+          const selected = connectors.find(
             (item) => item.connector_connection_id === connection.key,
-          ),
-          onChange: (checked) =>
-            setConnectors((previous) =>
-              checked
-                ? [...previous, { connector_connection_id: connection.key }]
-                : previous.filter(
-                    (item) => item.connector_connection_id !== connection.key,
-                  ),
+          );
+          return {
+            ...connection,
+            checked: !!selected,
+            onChange: (checked) =>
+              setConnectors((previous) =>
+                checked
+                  ? [...previous, { connector_connection_id: connection.key }]
+                  : previous.filter(
+                      (item) => item.connector_connection_id !== connection.key,
+                    ),
+              ),
+            settings: selected && (
+              <>
+                <ToolNames
+                  tools={selected.tools}
+                  onChange={(tools) =>
+                    setConnectors((previous) =>
+                      previous.map((item) =>
+                        item.connector_connection_id === connection.key
+                          ? { ...item, tools }
+                          : item,
+                      ),
+                    )
+                  }
+                />
+                <Label>
+                  <Checkbox
+                    checked={selected.defer_loading ?? false}
+                    onCheckedChange={(checked) =>
+                      setConnectors((previous) =>
+                        previous.map((item) =>
+                          item.connector_connection_id === connection.key
+                            ? { ...item, defer_loading: checked === true }
+                            : item,
+                        ),
+                      )
+                    }
+                  />
+                  {t("Load tools on demand")}
+                </Label>
+              </>
             ),
-        }))}
+          };
+        })}
       />
     </>
   );
@@ -358,24 +392,37 @@ function ToolNames({
   const { t } = useTranslation();
   const [text, setText] = useState(tools?.join(", ") ?? "");
   return (
-    <FormField
-      className="min-w-0 w-full"
-      label={t("Tool names")}
-      description={t("Comma-separated; empty selects all.")}
-    >
-      <Input
-        value={text}
-        placeholder={t("All tools")}
-        onChange={(event) => {
-          const value = event.target.value;
-          setText(value);
-          const names = value
-            .split(",")
-            .map((name) => name.trim())
-            .filter(Boolean);
-          onChange(names.length ? names : null);
-        }}
-      />
-    </FormField>
+    <div>
+      <Label>
+        <Checkbox
+          checked={tools?.length === 0}
+          onCheckedChange={(checked) => {
+            setText("");
+            onChange(checked ? [] : null);
+          }}
+        />
+        {t("Select no tools")}
+      </Label>
+      <FormField
+        className="min-w-0 w-full"
+        label={t("Tool names")}
+        description={t("Comma-separated; empty selects all.")}
+      >
+        <Input
+          value={text}
+          disabled={tools?.length === 0}
+          placeholder={tools?.length === 0 ? t("No tools") : t("All tools")}
+          onChange={(event) => {
+            const value = event.target.value;
+            setText(value);
+            const names = value
+              .split(",")
+              .map((name) => name.trim())
+              .filter(Boolean);
+            onChange(names.length ? names : null);
+          }}
+        />
+      </FormField>
+    </div>
   );
 }

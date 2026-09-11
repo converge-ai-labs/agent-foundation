@@ -1273,5 +1273,11 @@
   "End time": "结束时间",
   "24 hours": "24 小时",
   "Project API Key": "项目 API Key",
-  "Catalog API Key": "目录 API Key"
+  "Catalog API Key": "目录 API Key",
+  "This provider cannot reauthorize an existing account. Create a new connection, authorize it, then select it in your agent settings.": "此提供商不支持对现有账户重新授权。请新建连接并授权，然后在智能体设置中选择新连接。",
+  "Back to connections": "返回连接列表",
+  "Load tools on demand": "按需加载工具",
+  "Select no tools": "不选择任何工具",
+  "No tools": "无工具",
+  "Authorization has already started. Restarting invalidates the previous authorization link.": "授权已经开始。重新开始会使之前的授权链接失效。"
 }
