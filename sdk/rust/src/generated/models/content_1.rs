@@ -12,16 +12,13 @@ use crate::generated::models;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum ContentInner {
-    #[serde(rename = "text")]
-    Text(Box<models::TextContent>),
-    #[serde(rename = "binary")]
-    Binary(Box<models::BinaryContent>),
+#[serde(untagged)]
+pub enum Content1 {
+    AnyOf0(String),
+    AnyOf1(Vec<models::Content1AnyOfInner>),
 }
-
-impl Default for ContentInner {
+impl Default for Content1 {
     fn default() -> Self {
-        Self::Text(Default::default())
+        Self::AnyOf0(Default::default())
     }
 }

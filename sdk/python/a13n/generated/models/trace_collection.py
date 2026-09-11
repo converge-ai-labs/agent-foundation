@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 from attrs import define as _attrs_define
 
 if TYPE_CHECKING:
-    from ..models.trace_summary import TraceSummary
+    from ..models.trace import Trace
 
 
 T = TypeVar("T", bound="TraceCollection")
@@ -16,11 +16,11 @@ T = TypeVar("T", bound="TraceCollection")
 class TraceCollection:
     """
     Attributes:
-        items (list[TraceSummary]):
+        items (list[Trace]):
         next_cursor (None | str):
     """
 
-    items: list[TraceSummary]
+    items: list[Trace]
     next_cursor: str | None
 
     def to_dict(self) -> dict[str, Any]:
@@ -45,13 +45,13 @@ class TraceCollection:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.trace_summary import TraceSummary
+        from ..models.trace import Trace
 
         d = dict(src_dict)
         items = []
         _items = d.pop("items")
         for items_item_data in _items:
-            items_item = TraceSummary.from_dict(items_item_data)
+            items_item = Trace.from_dict(items_item_data)
 
             items.append(items_item)
 

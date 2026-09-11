@@ -3043,14 +3043,15 @@ Responses:
 
 List Models.
 
-| Parameter     | Location | Required | Type / schema   | Constraints and default            |
-| ------------- | -------- | -------- | --------------- | ---------------------------------- |
-| `workspace`   | path     | true     | string          | —                                  |
-| `limit`       | query    | false    | integer         | minimum=1; maximum=100; default=50 |
-| `cursor`      | query    | false    | string or null  | —                                  |
-| `query`       | query    | false    | string or null  | —                                  |
-| `provider_id` | query    | false    | string or null  | —                                  |
-| `enabled`     | query    | false    | boolean or null | —                                  |
+| Parameter     | Location | Required | Type / schema                       | Constraints and default            |
+| ------------- | -------- | -------- | ----------------------------------- | ---------------------------------- |
+| `workspace`   | path     | true     | string                              | —                                  |
+| `limit`       | query    | false    | integer                             | minimum=1; maximum=100; default=50 |
+| `cursor`      | query    | false    | string or null                      | —                                  |
+| `query`       | query    | false    | string or null                      | —                                  |
+| `provider_id` | query    | false    | string or null                      | —                                  |
+| `enabled`     | query    | false    | boolean or null                     | —                                  |
+| `scope`       | query    | false    | "organization", "workspace" or null | —                                  |
 
 Responses:
 
@@ -4083,6 +4084,20 @@ Responses:
 
 ## trace-query
 
+### `GET /api/v1/workspaces/{workspace}/trace-query`
+
+Get Trace Query.
+
+| Parameter   | Location | Required | Type / schema | Constraints and default |
+| ----------- | -------- | -------- | ------------- | ----------------------- |
+| `workspace` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: TraceQueryDescriptor`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ### `GET /api/v1/workspaces/{workspace}/traces`
 
 List Traces.
@@ -4099,6 +4114,7 @@ List Traces.
 | `thread_id`      | query    | false    | string or null   | —                                  |
 | `run_id`         | query    | false    | string or null   | —                                  |
 | `run_attempt_id` | query    | false    | string or null   | —                                  |
+| `view`           | query    | false    | TraceView        | default="compact"                  |
 
 Responses:
 
@@ -4118,6 +4134,24 @@ Get Trace.
 
 Responses:
 
-- **200** — Successful Response (`application/json: TraceDetail`).
+- **200** — Successful Response (`application/json: Trace`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/traces/{trace_id}/observations`
+
+List Trace Observations.
+
+| Parameter   | Location | Required | Type / schema  | Constraints and default            |
+| ----------- | -------- | -------- | -------------- | ---------------------------------- |
+| `trace_id`  | path     | true     | string         | minLength=1; maxLength=512         |
+| `workspace` | path     | true     | string         | —                                  |
+| `view`      | query    | false    | TraceView      | default="compact"                  |
+| `limit`     | query    | false    | integer        | minimum=1; maximum=100; default=50 |
+| `cursor`    | query    | false    | string or null | —                                  |
+
+Responses:
+
+- **200** — Successful Response (`application/json: ObservationCollection`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).

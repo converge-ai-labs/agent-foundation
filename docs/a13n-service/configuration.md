@@ -105,6 +105,14 @@ Arrays are TOML arrays in the file and JSON arrays in environment variables. Sta
 
 Set `[service].deployment_environment_name = "local"` for local execution; the repository's `dev/service/local.toml` already declares this explicitly. Service exports the value as the OpenTelemetry resource attribute `deployment.environment.name`, used by Langfuse's environment filter. This label is independent of the Run's execution Environment or provider. Restart Service after changing it; existing traces retain their original labels. The dev launcher also derives `OTEL_RESOURCE_ATTRIBUTES` from this setting for its OTLP profile.
 
+## Query backends
+
+Trace querying selects one installed backend independently of OTLP export. `observability.query.provider` defaults to `none`. The built-in `langfuse` provider requires `langfuse_base_url`, `langfuse_public_key`, and `langfuse_secret_key` in `[observability.query]` and uses the v4 Observations v2 API.
+
+The built-in `logfire` provider uses the public Query API over completed span records. Configure `logfire_base_url` for the project's region, `logfire_read_token` with project read access, and a timezone-aware `logfire_history_from` lower bound. The equivalent environment variables use `A13N_SERVICE_OBSERVABILITY_QUERY_LOGFIRE_` followed by `BASE_URL`, `READ_TOKEN`, or `HISTORY_FROM`. Store tokens as deployment secrets, not browser configuration. Query does not include pending spans, standalone logs, or separate event-copy rows.
+
+The query descriptor exposes the lower history bound and supported search targets. Exact reads use that declared history rather than a recent 24-hour fallback. List ranges outside the declared history are rejected. Provider credentials, project access, and current Service Run/IAM authority are all required; backend UI access alone is insufficient.
+
 ## Reading execution traces
 
 Service uses one `a13n.service.run_attempt` root per worker Attempt, with the existing Harness and model/tool spans beneath it. Root attributes identify the Run and Attempt, the stored recovery reason, and the final durable outcome and safe failure code. A retry starts a new trace, not a continuation of an unbounded Thread trace.
@@ -147,7 +155,7 @@ Field bounds are not the whole contract. In addition:
 - Connectivity account pending counts/bytes cannot exceed Workspace bounds. Batch counts/bytes cannot exceed account bounds. Admission lease must exceed its poll interval, and total timeout cannot be shorter than connect/read phase timeouts.
 - Credential encryption requires an exact 32-byte standard-base64 master key and a non-empty key identifier. Configure them before creating credential-bearing Providers/connections. Keys are deployment authority, not database content.
 - OAuth callback origins and endpoint allowlists remain explicit. Allowing a private destination does not remove provider authentication.
-- Enabling trace querying needs both an installed query adapter and a trusted access authorizer. Export credentials alone do not authorize trace reads.
+- Enabling trace querying needs a configured installed query adapter. Default composition supplies Run/IAM authorization; export credentials alone do not authorize trace reads.
 
 Derived storage, identity, endpoint, and artifact checks can reject values beyond the field-level JSON schema. Read startup errors and readiness rather than treating a successful parse as a healthy deployment.
 

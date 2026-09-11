@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AgentInput {
     #[serde(rename = "content", skip_serializing_if = "Option::is_none")]
-    pub content: Option<Vec<models::ContentInner>>,
+    pub content: Option<Vec<models::Content1Inner>>,
 
     #[serde(rename = "schema_version")]
     pub schema_version: SchemaVersion,

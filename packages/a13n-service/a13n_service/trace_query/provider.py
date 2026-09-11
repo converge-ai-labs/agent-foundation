@@ -5,16 +5,28 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Protocol
 
-from .domain import ProviderTraceDetail, ProviderTracePage, ProviderTraceQuery, TraceQueryCapabilities, TraceView
+from .domain import (
+    ObservationCollection,
+    ProviderTraceQuery,
+    ProviderTraceRead,
+    Trace,
+    TraceCollection,
+    TraceQueryCapabilities,
+)
 
 
 class TraceQueryProvider(Protocol):
     @property
     def capabilities(self) -> TraceQueryCapabilities: ...
 
-    async def list_traces(self, query: ProviderTraceQuery) -> ProviderTracePage: ...
+    @property
+    def cursor_namespace(self) -> str: ...
 
-    async def get_trace(self, trace_id: str, view: TraceView) -> ProviderTraceDetail | None: ...
+    async def list_traces(self, query: ProviderTraceQuery) -> TraceCollection: ...
+
+    async def get_trace(self, query: ProviderTraceRead) -> Trace | None: ...
+
+    async def list_observations(self, query: ProviderTraceRead) -> ObservationCollection: ...
 
 
 TraceQueryProviderFactory = Callable[[], TraceQueryProvider]

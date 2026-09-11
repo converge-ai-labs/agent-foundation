@@ -210,7 +210,7 @@ class Settings(Section):
     def validate_trace_query_configuration(
         self,
         *,
-        registered_provider_keys: Collection[str] = ("langfuse",),
+        registered_provider_keys: Collection[str] = ("langfuse", "logfire"),
     ) -> None:
         """Validate provider selection without opening a control-plane client."""
 
@@ -218,6 +218,18 @@ class Settings(Section):
             return
         if self.observability.query.provider not in registered_provider_keys:
             raise ValueError(f"Trace Query provider is not registered: {self.observability.query.provider}")
+        if self.observability.query.provider == "logfire":
+            query = self.observability.query
+            if query.logfire_base_url is None:
+                raise ValueError("A13N_SERVICE_OBSERVABILITY_QUERY_LOGFIRE_BASE_URL is required")
+            if query.logfire_read_token is None:
+                raise ValueError("A13N_SERVICE_OBSERVABILITY_QUERY_LOGFIRE_READ_TOKEN is required")
+            if query.logfire_history_from is None or query.logfire_history_from.tzinfo is None:
+                raise ValueError("A13N_SERVICE_OBSERVABILITY_QUERY_LOGFIRE_HISTORY_FROM must be timezone-aware")
+            from a13n_service.trace_query.logfire import validate_logfire_base_url
+
+            validate_logfire_base_url(query.logfire_base_url)
+            return
         if self.observability.query.provider != "langfuse":
             return
         if self.observability.query.langfuse_base_url is None:

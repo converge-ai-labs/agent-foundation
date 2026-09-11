@@ -8,6 +8,7 @@ import pytest
 from a13n_service.trace_query import (
     LangfuseTraceQueryProvider,
     ProviderTraceQuery,
+    ProviderTraceRead,
     SearchIn,
     TraceQueryProviderError,
     TraceView,
@@ -88,6 +89,7 @@ def query(**updates: object) -> ProviderTraceQuery:
         "from_started_at": datetime(2026, 9, 1, tzinfo=UTC),
         "to_started_at": datetime(2026, 9, 2, tzinfo=UTC),
         "limit": 50,
+        "view": TraceView.full,
     }
     values.update(updates)
     return ProviderTraceQuery(**values)  # type: ignore[arg-type]
@@ -122,11 +124,11 @@ async def test_list_uses_v2_root_filters_and_normalizes_correlation() -> None:
     assert len(page.items) == 1
     summary = page.items[0]
     assert summary.id == "trace-1"
-    assert summary.duration_ms == 1250
+    assert (summary.root.ended_at - summary.root.started_at).total_seconds() == 1.25
     assert summary.correlation.thread_id == "thread-1"
     assert summary.correlation.run_attempt_id == "attempt-1"
-    assert summary.input == {"prompt": "hello"}
-    assert summary.output == {"answer": "world"}
+    assert summary.root.input.value == {"prompt": "hello"}
+    assert summary.root.output.value == {"answer": "world"}
     assert summary.source_url == "https://langfuse.example.com/project/project-1/traces/trace-1"
 
     request = captured[0]
@@ -201,61 +203,67 @@ async def test_list_accepts_flattened_v4_metadata_response() -> None:
         page = await provider.list_traces(query())
 
     assert page.items[0].correlation.workspace_id == "ws-1"
-    assert page.items[0].input == {"prompt": "hello"}
+    assert page.items[0].root.input.value == {"prompt": "hello"}
+
+
+def read_query(view: TraceView = TraceView.full, **updates) -> ProviderTraceRead:
+    return ProviderTraceRead(
+        organization_id="org-1",
+        workspace_id="ws-1",
+        trace_id="trace-1",
+        history_from=None,
+        to_started_at=datetime(2026, 9, 2, tzinfo=UTC),
+        view=view,
+        **updates,
+    )
 
 
 @pytest.mark.anyio
-async def test_detail_groups_observations_and_compact_omits_content() -> None:
-    requests: list[httpx2.Request] = []
+async def test_exact_root_and_observation_pages_share_model_and_projection() -> None:
+    requests = []
 
-    def respond(request: httpx2.Request) -> httpx2.Response:
+    def respond(request):
         requests.append(request)
-        return httpx2.Response(200, json={"data": [child(), root()], "meta": {"cursor": None}})
+        filters = json.loads(request.url.params["filter"])
+        rows = [root()] if any(f["column"] == "name" for f in filters) else [child(), root()]
+        return httpx2.Response(200, json={"data": rows, "meta": {"cursor": None}})
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
         provider = LangfuseTraceQueryProvider(
-            client,
-            base_url="https://langfuse.example.com",
-            public_key="pk-test",
-            secret_key="sk-test",
+            client, base_url="https://langfuse.example.com", public_key="pk-test", secret_key="sk-test"
         )
-        full = await provider.get_trace("trace-1", TraceView.full)
-        compact = await provider.get_trace("trace-1", TraceView.compact)
-
-    assert full is not None
-    assert full.trace.observation_count == 2
-    assert [item.id for item in full.observations] == ["root-1", "generation-1"]
-    generation = full.observations[1]
+        trace = await provider.get_trace(read_query())
+        full = await provider.list_observations(read_query())
+        compact = await provider.list_observations(read_query(TraceView.compact))
+    assert trace.root == full.items[1]
+    assert [item.id for item in full.items] == ["generation-1", "root-1"]
+    generation = full.items[0]
     assert generation.type == "generation"
-    assert generation.model == "gpt-test"
+    assert generation.model is None
+    assert generation.attributes["langfuse.model"] == "gpt-test"
     assert generation.usage == {"input": 12, "output": 4, "total": 16}
     assert str(generation.cost_usd) == "0.00125"
-    assert generation.input == "hello"
-    assert generation.metadata["scope"] == {"name": "pydantic-ai"}
-    assert compact is not None
-    assert compact.observations[0].input is None
-    assert compact.observations[0].output is None
-    assert compact.observations[0].metadata == {}
-    assert requests[0].url.params["fields"].find("io") >= 0
-    assert "io" not in requests[1].url.params["fields"]
-    assert "metadata" in requests[1].url.params["fields"]
-    assert requests[1].url.params["expandMetadata"] == "attributes,resourceAttributes,scope"
+    assert generation.input.value == "hello"
+    assert generation.scope.name == "pydantic-ai"
+    assert generation.resource_attributes == {"service.name": "a13n-service"}
+    assert generation.status is None and generation.level == "default"
+    assert generation.events is None and generation.links is None
+    for item in compact.items:
+        assert item.input is item.output is item.attributes is item.scope is item.resource_attributes is None
+    assert "io" in requests[1].url.params["fields"].split(",")
+    assert "io" not in requests[2].url.params["fields"].split(",")
+    assert all(request.url.params["traceId"] == "trace-1" for request in requests)
 
 
 @pytest.mark.anyio
 async def test_missing_root_is_absent_and_combined_search_fails_explicitly() -> None:
     async with httpx2.AsyncClient(
-        transport=httpx2.MockTransport(
-            lambda _request: httpx2.Response(200, json={"data": [child()], "meta": {"cursor": None}})
-        )
+        transport=httpx2.MockTransport(lambda _: httpx2.Response(200, json={"data": [], "meta": {"cursor": None}}))
     ) as client:
         provider = LangfuseTraceQueryProvider(
-            client,
-            base_url="https://langfuse.example.com",
-            public_key="pk-test",
-            secret_key="sk-test",
+            client, base_url="https://langfuse.example.com", public_key="pk-test", secret_key="sk-test"
         )
-        assert await provider.get_trace("trace-1", TraceView.full) is None
+        assert await provider.get_trace(read_query()) is None
         with pytest.raises(TraceQueryProviderError) as raised:
             await provider.list_traces(query(query="hello", search_in=SearchIn.input_output))
         assert raised.value.failure == "filter_unsupported"

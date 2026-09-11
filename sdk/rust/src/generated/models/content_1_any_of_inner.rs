@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
-pub enum ContentAnyOfInner {
+pub enum Content1AnyOfInner {
     #[serde(rename = "text")]
     Text(models::TextInputContent),
     #[serde(rename = "image")]
@@ -28,7 +28,7 @@ pub enum ContentAnyOfInner {
     Binary(models::BinaryInputContent),
 }
 
-impl Default for ContentAnyOfInner {
+impl Default for Content1AnyOfInner {
     fn default() -> Self {
         Self::Text(Default::default())
     }

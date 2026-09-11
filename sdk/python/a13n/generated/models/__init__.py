@@ -106,6 +106,7 @@ from .connector_tool_input_schema import ConnectorToolInputSchema
 from .connector_tool_output_schema_type_0 import ConnectorToolOutputSchemaType0
 from .connector_tool_page import ConnectorToolPage
 from .consume_queued_submission_request import ConsumeQueuedSubmissionRequest
+from .content import Content
 from .context import Context
 from .continue_run_request import ContinueRunRequest
 from .create_account_request import CreateAccountRequest
@@ -204,6 +205,8 @@ from .input_batching_policy import InputBatchingPolicy
 from .input_content_data_source import InputContentDataSource
 from .input_content_url_source import InputContentUrlSource
 from .input_override import InputOverride
+from .instrumentation_scope import InstrumentationScope
+from .instrumentation_scope_attributes_type_0 import InstrumentationScopeAttributesType0
 from .interrupt_receipt import InterruptReceipt
 from .interrupt_request import InterruptRequest
 from .invitation import Invitation
@@ -250,6 +253,7 @@ from .model_description_suggested_settings import ModelDescriptionSuggestedSetti
 from .model_discovery import ModelDiscovery
 from .model_discovery_settings_schemas import ModelDiscoverySettingsSchemas
 from .model_discovery_settings_schemas_additional_property import ModelDiscoverySettingsSchemasAdditionalProperty
+from .model_identity import ModelIdentity
 from .model_limits import ModelLimits
 from .model_override import ModelOverride
 from .model_override_settings_type_0 import ModelOverrideSettingsType0
@@ -269,9 +273,14 @@ from .notification_subscription import NotificationSubscription
 from .notification_subscription_scope import NotificationSubscriptionScope
 from .notification_subscription_topics_item import NotificationSubscriptionTopicsItem
 from .observation import Observation
-from .observation_metadata import ObservationMetadata
-from .observation_status import ObservationStatus
-from .observation_type import ObservationType
+from .observation_attributes_type_0 import ObservationAttributesType0
+from .observation_collection import ObservationCollection
+from .observation_event import ObservationEvent
+from .observation_event_attributes import ObservationEventAttributes
+from .observation_link import ObservationLink
+from .observation_link_attributes_type_0 import ObservationLinkAttributesType0
+from .observation_resource_attributes_type_0 import ObservationResourceAttributesType0
+from .observation_status_type_0 import ObservationStatusType0
 from .observation_usage_type_0 import ObservationUsageType0
 from .organization import Organization
 from .organization_permissions import OrganizationPermissions
@@ -437,12 +446,10 @@ from .thread_run_submission_request import ThreadRunSubmissionRequest
 from .tool import Tool
 from .tool_call import ToolCall
 from .tool_message import ToolMessage
+from .trace import Trace
 from .trace_collection import TraceCollection
-from .trace_detail import TraceDetail
-from .trace_summary import TraceSummary
-from .trace_summary_run_attempt_outcome_type_0 import TraceSummaryRunAttemptOutcomeType0
-from .trace_summary_trace_status import TraceSummaryTraceStatus
-from .trace_summary_usage_type_0 import TraceSummaryUsageType0
+from .trace_correlation import TraceCorrelation
+from .trace_query_descriptor import TraceQueryDescriptor
 from .trace_view import TraceView
 from .update_account_request import UpdateAccountRequest
 from .update_account_request_provider_config_type_0 import UpdateAccountRequestProviderConfigType0
@@ -595,6 +602,7 @@ __all__ = (
     "ConnectorToolOutputSchemaType0",
     "ConnectorToolPage",
     "ConsumeQueuedSubmissionRequest",
+    "Content",
     "Context",
     "ContinueRunRequest",
     "CreateAccountRequest",
@@ -693,6 +701,8 @@ __all__ = (
     "InputContentDataSource",
     "InputContentUrlSource",
     "InputOverride",
+    "InstrumentationScope",
+    "InstrumentationScopeAttributesType0",
     "InterruptReceipt",
     "InterruptRequest",
     "Invitation",
@@ -739,6 +749,7 @@ __all__ = (
     "ModelDiscovery",
     "ModelDiscoverySettingsSchemas",
     "ModelDiscoverySettingsSchemasAdditionalProperty",
+    "ModelIdentity",
     "ModelLimits",
     "ModelOverride",
     "ModelOverrideSettingsType0",
@@ -758,9 +769,14 @@ __all__ = (
     "NotificationSubscriptionScope",
     "NotificationSubscriptionTopicsItem",
     "Observation",
-    "ObservationMetadata",
-    "ObservationStatus",
-    "ObservationType",
+    "ObservationAttributesType0",
+    "ObservationCollection",
+    "ObservationEvent",
+    "ObservationEventAttributes",
+    "ObservationLink",
+    "ObservationLinkAttributesType0",
+    "ObservationResourceAttributesType0",
+    "ObservationStatusType0",
     "ObservationUsageType0",
     "Organization",
     "OrganizationPermissions",
@@ -922,12 +938,10 @@ __all__ = (
     "Tool",
     "ToolCall",
     "ToolMessage",
+    "Trace",
     "TraceCollection",
-    "TraceDetail",
-    "TraceSummary",
-    "TraceSummaryRunAttemptOutcomeType0",
-    "TraceSummaryTraceStatus",
-    "TraceSummaryUsageType0",
+    "TraceCorrelation",
+    "TraceQueryDescriptor",
     "TraceView",
     "UpdateAccountRequest",
     "UpdateAccountRequestProviderConfigType0",

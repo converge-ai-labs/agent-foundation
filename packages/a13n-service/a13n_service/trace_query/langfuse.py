@@ -1,27 +1,57 @@
-"""Langfuse v4 Observations API v2 Trace Query adapter."""
+"""Langfuse v4 Observations API v2 read adapter."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Mapping
-from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
 from typing import Any, cast
 from urllib.parse import quote, urlsplit, urlunsplit
 
 import httpx2
-from pydantic import JsonValue
+from pydantic import JsonValue, ValidationError
 
+from .decoding import (
+    bounded_json as _bounded_json,
+)
+from .decoding import (
+    datetime as _datetime,
+)
+from .decoding import (
+    decimal as _decimal,
+)
+from .decoding import (
+    format_datetime as _format_datetime,
+)
+from .decoding import (
+    io_value as _io_value,
+)
+from .decoding import (
+    optional_datetime as _optional_datetime,
+)
+from .decoding import (
+    optional_text as _optional_text,
+)
+from .decoding import (
+    required_text as _required_text,
+)
+from .decoding import (
+    usage as _usage,
+)
 from .domain import (
-    ProviderObservation,
-    ProviderTraceDetail,
-    ProviderTracePage,
+    InstrumentationScope,
+    ModelIdentity,
+    Observation,
+    ObservationCollection,
     ProviderTraceQuery,
-    ProviderTraceSummary,
+    ProviderTraceRead,
     SearchIn,
+    Trace,
+    TraceCollection,
     TraceCorrelation,
     TraceQueryCapabilities,
     TraceView,
+    project_observation,
 )
 from .errors import TraceQueryProviderError
 
@@ -31,52 +61,35 @@ _FIELD_GROUPS = "core,basic,io,metadata,model,usage,metrics,trace_context"
 _COMPACT_FIELD_GROUPS = "core,basic,metadata,model,usage,metrics,trace_context"
 _EXPANDED_METADATA_KEYS = "attributes,resourceAttributes,scope"
 _MAX_RESPONSE_BYTES = 8 * 1024 * 1024
-_MAX_OBSERVATIONS_PER_TRACE = 1000
-_MAX_CONTENT_BYTES = 1024 * 1024
 _MAX_METADATA_BYTES = 256 * 1024
 _MAX_METADATA_ENTRIES = 512
-_MAX_TEXT_BYTES = 4096
-_MAX_USAGE_ENTRIES = 64
 
 
 class LangfuseTraceQueryProvider:
-    """Read normalized traces from documented Langfuse v4 public APIs."""
+    """Read one bounded native page; never walk a whole trace internally."""
 
-    def __init__(
-        self,
-        client: httpx2.AsyncClient,
-        *,
-        base_url: str,
-        public_key: str,
-        secret_key: str,
-    ) -> None:
+    def __init__(self, client: httpx2.AsyncClient, *, base_url: str, public_key: str, secret_key: str) -> None:
         self._client = client
         self._base_url = _validate_base_url(base_url)
         if not public_key or not secret_key:
             raise ValueError("Langfuse query credentials are required")
         self._auth = httpx2.BasicAuth(public_key, secret_key)
+        self._namespace = hashlib.sha256(json.dumps([self._base_url, public_key, secret_key]).encode()).hexdigest()
+
+    @property
+    def cursor_namespace(self) -> str:
+        return self._namespace
 
     @property
     def capabilities(self) -> TraceQueryCapabilities:
-        return TraceQueryCapabilities(
-            input_search=True,
-            output_search=True,
-            combined_input_output_search=False,
-            usage=True,
-            cost=True,
-            source_url=True,
-        )
+        return TraceQueryCapabilities(search_in=(SearchIn.input, SearchIn.output))
 
-    async def list_traces(self, query: ProviderTraceQuery) -> ProviderTracePage:
-        if query.limit < 1 or query.limit > 100:
-            raise ValueError("Provider trace limit must be between 1 and 100")
-        filters = _base_filters()
+    async def list_traces(self, query: ProviderTraceQuery) -> TraceCollection:
+        filters = _base_filters() + _scope_filters(query.organization_id, query.workspace_id)
         filters.extend(
             (
                 _filter("datetime", "startTime", ">=", _format_datetime(query.from_started_at)),
                 _filter("datetime", "startTime", "<", _format_datetime(query.to_started_at)),
-                _metadata_filter("a13n.organization.id", query.organization_id),
-                _metadata_filter("a13n.workspace.id", query.workspace_id),
             )
         )
         if query.thread_id is not None:
@@ -86,106 +99,103 @@ class LangfuseTraceQueryProvider:
         if query.run_attempt_id is not None:
             filters.append(_metadata_filter("a13n.run_attempt.id", query.run_attempt_id))
         if query.query is not None:
-            if query.search_in is SearchIn.input:
-                filters.append(_filter("string", "input", "matches", query.query))
-            elif query.search_in is SearchIn.output:
-                filters.append(_filter("string", "output", "matches", query.query))
-            else:
+            if query.search_in not in self.capabilities.search_in:
                 raise TraceQueryProviderError("filter_unsupported")
+            filters.append(_filter("string", str(query.search_in), "matches", query.query))
+        rows, cursor = await self._page(query.view, query.limit, filters, cursor=query.cursor)
+        traces = tuple(self._trace(row, query.view) for row in rows)
+        return TraceCollection(
+            items=tuple(trace for trace in traces if _matches_query_correlation(trace, query)), next_cursor=cursor
+        )
 
+    async def get_trace(self, query: ProviderTraceRead) -> Trace | None:
+        filters = _base_filters() + _scope_filters(query.organization_id, query.workspace_id) + _history_filters(query)
+        rows, cursor = await self._page(query.view, 2, filters, trace_id=query.trace_id)
+        if cursor is not None or len(rows) > 1:
+            raise TraceQueryProviderError("malformed")
+        if not rows:
+            return None
+        trace = self._trace(rows[0], query.view)
+        if trace.id != query.trace_id:
+            raise TraceQueryProviderError("malformed")
+        if (
+            trace.correlation.organization_id != query.organization_id
+            or trace.correlation.workspace_id != query.workspace_id
+        ):
+            return None
+        return trace
+
+    async def list_observations(self, query: ProviderTraceRead) -> ObservationCollection:
+        rows, cursor = await self._page(
+            query.view, query.limit, _history_filters(query), trace_id=query.trace_id, cursor=query.cursor
+        )
+        # Children need not repeat Service root attributes. The trace identity
+        # associates them with the independently authorized scoped root.
+        if any(row.get("traceId") != query.trace_id for row in rows):
+            raise TraceQueryProviderError("malformed")
+        return ObservationCollection(
+            items=tuple(_observation(row, view=query.view) for row in rows), next_cursor=cursor
+        )
+
+    async def _page(
+        self,
+        view: TraceView,
+        limit: int,
+        filters: list[dict[str, Any]],
+        *,
+        trace_id: str | None = None,
+        cursor: str | None = None,
+    ) -> tuple[list[Mapping[str, Any]], str | None]:
         payload = await self._get_observations(
             {
-                "fields": _FIELD_GROUPS,
+                "fields": _FIELD_GROUPS if view is TraceView.full else _COMPACT_FIELD_GROUPS,
                 "expandMetadata": _EXPANDED_METADATA_KEYS,
-                "limit": str(query.limit),
+                "limit": str(limit),
                 "filter": json.dumps(filters, separators=(",", ":")),
-                **({"cursor": query.cursor} if query.cursor is not None else {}),
+                **({"traceId": trace_id} if trace_id is not None else {}),
+                **({"cursor": cursor} if cursor is not None else {}),
             }
         )
-        observations, cursor = _page(payload)
-        if len(observations) > query.limit:
+        rows, next_cursor = _page(payload)
+        if len(rows) > limit:
             raise TraceQueryProviderError("response_too_large")
-        # Keep a local correlation check even though the same exact values are
-        # forced into the backend filter; provider responses are never trusted.
-        summaries = tuple(
-            summary for item in observations if _matches_query_correlation(summary := self._summary(item), query)
-        )
-        return ProviderTracePage(summaries, cursor)
-
-    async def get_trace(self, trace_id: str, view: TraceView) -> ProviderTraceDetail | None:
-        _bounded_text(trace_id, "trace_id", max_bytes=512)
-        observations: list[Mapping[str, Any]] = []
-        cursor: str | None = None
-        fields = _FIELD_GROUPS if view is TraceView.full else _COMPACT_FIELD_GROUPS
-        while True:
-            remaining = _MAX_OBSERVATIONS_PER_TRACE - len(observations)
-            if remaining <= 0:
-                raise TraceQueryProviderError("response_too_large")
-            payload = await self._get_observations(
-                {
-                    "fields": fields,
-                    "expandMetadata": _EXPANDED_METADATA_KEYS,
-                    "limit": str(min(remaining, 1000)),
-                    "traceId": trace_id,
-                    **({"cursor": cursor} if cursor is not None else {}),
-                }
-            )
-            page, cursor = _page(payload)
-            observations.extend(page)
-            if cursor is None:
-                break
-        roots = [item for item in observations if _is_run_attempt_root(item)]
-        if not roots:
-            return None
-        if len(roots) != 1:
+        if next_cursor is not None and next_cursor == cursor:
             raise TraceQueryProviderError("malformed")
-        summary = self._summary(roots[0], observation_count=len(observations))
-        normalized = tuple(_observation(item, include_content=view is TraceView.full) for item in observations)
-        normalized = tuple(sorted(normalized, key=lambda item: (item.started_at, item.id)))
-        return ProviderTraceDetail(summary, normalized)
+        return rows, next_cursor
 
     async def _get_observations(self, params: Mapping[str, str]) -> Mapping[str, Any]:
         try:
             async with self._client.stream(
-                "GET",
-                f"{self._base_url}{_OBSERVATIONS_PATH}",
-                params=params,
-                auth=self._auth,
+                "GET", f"{self._base_url}{_OBSERVATIONS_PATH}", params=params, auth=self._auth
             ) as response:
                 if response.status_code == 404:
                     raise TraceQueryProviderError("version_unsupported")
-                if response.status_code != 200:
-                    raise TraceQueryProviderError("unavailable")
                 body = bytearray()
                 async for chunk in response.aiter_bytes():
                     body.extend(chunk)
                     if len(body) > _MAX_RESPONSE_BYTES:
                         raise TraceQueryProviderError("response_too_large")
-        except TraceQueryProviderError:
-            raise
         except httpx2.HTTPError as error:
             raise TraceQueryProviderError("unavailable") from error
         try:
             value = json.loads(body)
         except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
-            raise TraceQueryProviderError("malformed") from error
+            raise TraceQueryProviderError("malformed" if response.status_code == 200 else "unavailable") from error
+        if response.status_code != 200:
+            if response.status_code == 400 and isinstance(value, Mapping):
+                message = value.get("message")
+                if isinstance(message, str) and message.lower().startswith(("invalid cursor", "cursor expired")):
+                    raise TraceQueryProviderError("invalid_cursor")
+            raise TraceQueryProviderError("unavailable")
         if not isinstance(value, Mapping):
             raise TraceQueryProviderError("malformed")
         return cast(Mapping[str, Any], value)
 
-    def _summary(
-        self,
-        item: Mapping[str, Any],
-        *,
-        observation_count: int | None = None,
-    ) -> ProviderTraceSummary:
+    def _trace(self, item: Mapping[str, Any], view: TraceView) -> Trace:
         if not _is_run_attempt_root(item):
             raise TraceQueryProviderError("malformed")
         trace_id = _required_text(item.get("traceId"), "traceId", max_bytes=512)
-        started_at = _datetime(item.get("startTime"), "startTime")
-        ended_at = _optional_datetime(item.get("endTime"), "endTime")
-        metadata = _metadata(item.get("metadata"))
-        attributes = _otel_attributes(metadata)
+        attributes = _otel_attributes(_metadata(item.get("metadata")))
         correlation = TraceCorrelation(
             organization_id=_attribute(attributes, "a13n.organization.id"),
             workspace_id=_attribute(attributes, "a13n.workspace.id"),
@@ -195,62 +205,80 @@ class LangfuseTraceQueryProvider:
             run_attempt_id=_attribute(attributes, "a13n.run_attempt.id"),
             agent_id=_attribute(attributes, "a13n.agent.preset.id"),
         )
-        return ProviderTraceSummary(
+        project_id = _required_text(item.get("projectId"), "projectId", max_bytes=512)
+        return Trace(
             id=trace_id,
-            name=_required_text(item.get("name"), "name"),
-            started_at=started_at,
-            ended_at=ended_at,
-            duration_ms=_duration_ms(started_at, ended_at),
-            trace_status=_status(item.get("level"), ended_at),
+            provider="langfuse",
             correlation=correlation,
-            input=_io_value(item.get("input"), attributes.get("input.mime_type")),
-            output=_io_value(item.get("output"), attributes.get("output.mime_type")),
-            observation_count=observation_count,
-            models=_models(item),
-            usage=_usage(item.get("usageDetails")),
-            total_cost_usd=_decimal(item.get("totalCost")),
-            source_url=self._source_url(item, trace_id),
+            root=_observation(item, view=view),
+            source_url=f"{self._base_url}/project/{quote(project_id, safe='')}/traces/{quote(trace_id, safe='')}",
         )
 
-    def _source_url(self, item: Mapping[str, Any], trace_id: str) -> str:
-        project_id = _required_text(item.get("projectId"), "projectId", max_bytes=512)
-        return f"{self._base_url}/project/{quote(project_id, safe='')}/traces/{quote(trace_id, safe='')}"
 
-
-def _observation(item: Mapping[str, Any], *, include_content: bool) -> ProviderObservation:
-    started_at = _datetime(item.get("startTime"), "startTime")
-    ended_at = _optional_datetime(item.get("endTime"), "endTime")
+def _observation(item: Mapping[str, Any], *, view: TraceView) -> Observation:
     metadata = _metadata(item.get("metadata"))
-    attributes = _otel_attributes(metadata)
-    raw_type = item.get("type")
-    observation_type = {
-        "SPAN": "span",
-        "GENERATION": "generation",
-        "EVENT": "event",
-    }.get(raw_type if isinstance(raw_type, str) else "", "unknown")
-    return ProviderObservation(
-        id=_required_text(item.get("id"), "id", max_bytes=512),
-        parent_id=_optional_text(item.get("parentObservationId"), "parentObservationId", max_bytes=512),
-        type=cast(Any, observation_type),
-        name=_required_text(item.get("name"), "name"),
-        started_at=started_at,
-        ended_at=ended_at,
-        duration_ms=_duration_ms(started_at, ended_at),
-        status=_status(item.get("level"), ended_at),
-        model=_model(item),
-        usage=_usage(item.get("usageDetails")),
-        cost_usd=_decimal(item.get("totalCost")),
-        input=_io_value(item.get("input"), attributes.get("input.mime_type")) if include_content else None,
-        output=_io_value(item.get("output"), attributes.get("output.mime_type")) if include_content else None,
-        metadata=_normalized_metadata(metadata) if include_content else {},
-    )
+    attributes = dict(_otel_attributes(metadata))
+    requested = _optional_text(attributes.get("gen_ai.request.model"), "gen_ai.request.model")
+    response = _optional_text(attributes.get("gen_ai.response.model"), "gen_ai.response.model")
+    # A vendor display label does not establish request/response identity.
+    label = item.get("model") or item.get("providedModelName")
+    if label is not None:
+        attributes["langfuse.model"] = _required_text(label, "model")
+    scope = _metadata_namespace(metadata, "scope")
+    level = _optional_text(item.get("level"), "level")
+    try:
+        observation = Observation(
+            id=_required_text(item.get("id"), "id", max_bytes=512),
+            parent_id=_optional_text(item.get("parentObservationId"), "parentObservationId", max_bytes=512),
+            type=_required_text(item.get("type", "SPAN"), "type", max_bytes=128).lower(),
+            name=_required_text(item.get("name"), "name"),
+            started_at=_datetime(item.get("startTime"), "startTime"),
+            ended_at=_optional_datetime(item.get("endTime"), "endTime"),
+            status=None,
+            level=level.lower() if level is not None else None,
+            status_message=_optional_text(item.get("statusMessage"), "statusMessage")
+            if item.get("statusMessage")
+            else None,
+            model=ModelIdentity(requested=requested, response=response)
+            if requested is not None or response is not None
+            else None,
+            usage=_usage(item.get("usageDetails")),
+            cost_usd=_decimal(item.get("totalCost")),
+            input=_io_value(item.get("input"), attributes.get("input.mime_type")) if view is TraceView.full else None,
+            output=_io_value(item.get("output"), attributes.get("output.mime_type"))
+            if view is TraceView.full
+            else None,
+            attributes=attributes,
+            resource_attributes=_metadata_namespace(metadata, "resourceAttributes") or None,
+            scope=InstrumentationScope.model_validate(
+                {"name": scope.get("name"), "version": scope.get("version"), "attributes": scope.get("attributes")}
+            )
+            if scope
+            else None,
+            events=None,
+            links=None,
+        )
+    except ValidationError as error:
+        raise TraceQueryProviderError("malformed") from error
+    return project_observation(observation, view)
 
 
 def _base_filters() -> list[dict[str, Any]]:
+    return [_filter("string", "name", "=", _ROOT_NAME), _filter("boolean", "isRootObservation", "=", True)]
+
+
+def _scope_filters(organization_id: str, workspace_id: str) -> list[dict[str, Any]]:
     return [
-        _filter("string", "name", "=", _ROOT_NAME),
-        _filter("boolean", "isRootObservation", "=", True),
+        _metadata_filter("a13n.organization.id", organization_id),
+        _metadata_filter("a13n.workspace.id", workspace_id),
     ]
+
+
+def _history_filters(query: ProviderTraceRead) -> list[dict[str, Any]]:
+    filters = [_filter("datetime", "startTime", "<", _format_datetime(query.to_started_at))]
+    if query.history_from is not None:
+        filters.append(_filter("datetime", "startTime", ">=", _format_datetime(query.history_from)))
+    return filters
 
 
 def _filter(kind: str, column: str, operator: str, value: object) -> dict[str, Any]:
@@ -258,17 +286,11 @@ def _filter(kind: str, column: str, operator: str, value: object) -> dict[str, A
 
 
 def _metadata_filter(key: str, value: str) -> dict[str, Any]:
-    return {
-        "type": "stringObject",
-        "column": "metadata",
-        "key": f"attributes.{key}",
-        "operator": "=",
-        "value": value,
-    }
+    return {"type": "stringObject", "column": "metadata", "key": f"attributes.{key}", "operator": "=", "value": value}
 
 
-def _matches_query_correlation(summary: ProviderTraceSummary, query: ProviderTraceQuery) -> bool:
-    correlation = summary.correlation
+def _matches_query_correlation(trace: Trace, query: ProviderTraceQuery) -> bool:
+    correlation = trace.correlation
     return (
         correlation.organization_id == query.organization_id
         and correlation.workspace_id == query.workspace_id
@@ -279,8 +301,7 @@ def _matches_query_correlation(summary: ProviderTraceSummary, query: ProviderTra
 
 
 def _page(payload: Mapping[str, Any]) -> tuple[list[Mapping[str, Any]], str | None]:
-    data = payload.get("data")
-    meta = payload.get("meta")
+    data, meta = payload.get("data"), payload.get("meta")
     if not isinstance(data, list) or not isinstance(meta, Mapping):
         raise TraceQueryProviderError("malformed")
     items: list[Mapping[str, Any]] = []
@@ -288,18 +309,12 @@ def _page(payload: Mapping[str, Any]) -> tuple[list[Mapping[str, Any]], str | No
         if not isinstance(item, Mapping):
             raise TraceQueryProviderError("malformed")
         items.append(cast(Mapping[str, Any], item))
-    cursor = meta.get("cursor")
-    if cursor is not None:
-        cursor = _required_text(cursor, "cursor", max_bytes=4096)
-    return items, cast(str | None, cursor)
+    cursor = _optional_text(meta.get("cursor"), "cursor", max_bytes=4096)
+    return items, cursor
 
 
 def _is_run_attempt_root(item: Mapping[str, Any]) -> bool:
-    return (
-        item.get("name") == _ROOT_NAME
-        and item.get("parentObservationId") is None
-        and item.get("isRootObservation") is True
-    )
+    return item.get("name") == _ROOT_NAME and item.get("parentObservationId") is None
 
 
 def _metadata(value: object) -> Mapping[str, JsonValue]:
@@ -314,22 +329,7 @@ def _metadata(value: object) -> Mapping[str, JsonValue]:
 
 
 def _otel_attributes(metadata: Mapping[str, JsonValue]) -> Mapping[str, JsonValue]:
-    attributes = _metadata_namespace(metadata, "attributes")
-    return attributes or metadata
-
-
-def _normalized_metadata(metadata: Mapping[str, JsonValue]) -> Mapping[str, JsonValue]:
-    normalized: dict[str, JsonValue] = {}
-    for source, target in (
-        ("attributes", "attributes"),
-        ("resourceAttributes", "resource_attributes"),
-        ("scope", "scope"),
-    ):
-        value = _metadata_namespace(metadata, source)
-        if value:
-            normalized[target] = cast(JsonValue, value)
-    _bounded_json(normalized, max_bytes=_MAX_METADATA_BYTES)
-    return normalized
+    return _metadata_namespace(metadata, "attributes")
 
 
 def _metadata_namespace(metadata: Mapping[str, JsonValue], namespace: str) -> dict[str, JsonValue]:
@@ -356,138 +356,6 @@ def _attribute(attributes: Mapping[str, JsonValue], key: str) -> str:
     return _required_text(attributes.get(key), key)
 
 
-def _io_value(value: object, mime_type: object) -> JsonValue | None:
-    if value is None:
-        return None
-    if isinstance(value, str):
-        if len(value.encode("utf-8")) > _MAX_CONTENT_BYTES:
-            raise TraceQueryProviderError("response_too_large")
-        if mime_type == "application/json":
-            try:
-                parsed = json.loads(value)
-            except (json.JSONDecodeError, RecursionError) as error:
-                raise TraceQueryProviderError("malformed") from error
-            _bounded_json(parsed, max_bytes=_MAX_CONTENT_BYTES)
-            return cast(JsonValue, parsed)
-        return value
-    _bounded_json(value, max_bytes=_MAX_CONTENT_BYTES)
-    return cast(JsonValue, value)
-
-
-def _usage(value: object) -> Mapping[str, int] | None:
-    if value is None:
-        return None
-    if not isinstance(value, Mapping) or len(value) > _MAX_USAGE_ENTRIES:
-        raise TraceQueryProviderError("malformed")
-    normalized: dict[str, int] = {}
-    for key, amount in value.items():
-        name = _required_text(key, "usage key", max_bytes=128)
-        if not isinstance(amount, int) or isinstance(amount, bool) or amount < 0:
-            raise TraceQueryProviderError("malformed")
-        normalized[name] = amount
-    return normalized or None
-
-
-def _models(item: Mapping[str, Any]) -> tuple[str, ...]:
-    value = _model(item)
-    return (value,) if value is not None else ()
-
-
-def _model(item: Mapping[str, Any]) -> str | None:
-    for field in ("model", "providedModelName"):
-        value = item.get(field)
-        if value in (None, ""):
-            continue
-        return _required_text(value, field)
-    return None
-
-
-def _decimal(value: object) -> Decimal | None:
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, (str, int, float, Decimal)):
-        raise TraceQueryProviderError("malformed")
-    try:
-        result = Decimal(str(value))
-    except InvalidOperation as error:
-        raise TraceQueryProviderError("malformed") from error
-    if not result.is_finite() or result < 0:
-        raise TraceQueryProviderError("malformed")
-    return result
-
-
-def _status(level: object, ended_at: datetime | None):
-    if level == "ERROR":
-        return "error"
-    return "ok" if ended_at is not None else "unset"
-
-
-def _duration_ms(started_at: datetime, ended_at: datetime | None) -> int | None:
-    if ended_at is None:
-        return None
-    duration = int((ended_at - started_at).total_seconds() * 1000)
-    if duration < 0:
-        raise TraceQueryProviderError("malformed")
-    return duration
-
-
-def _datetime(value: object, field: str) -> datetime:
-    if not isinstance(value, str):
-        raise TraceQueryProviderError("malformed")
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as error:
-        raise TraceQueryProviderError("malformed") from error
-    if parsed.tzinfo is None:
-        raise TraceQueryProviderError("malformed")
-    return parsed.astimezone(UTC)
-
-
-def _optional_datetime(value: object, field: str) -> datetime | None:
-    if value is None:
-        return None
-    return _datetime(value, field)
-
-
-def _format_datetime(value: datetime) -> str:
-    if value.tzinfo is None:
-        raise ValueError("Trace query timestamps must be timezone-aware")
-    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
-
-
-def _required_text(value: object, field: str, *, max_bytes: int = _MAX_TEXT_BYTES) -> str:
-    if not isinstance(value, str) or not value:
-        raise TraceQueryProviderError("malformed")
-    _bounded_text(value, field, max_bytes=max_bytes)
-    return value
-
-
-def _optional_text(value: object, field: str, *, max_bytes: int = _MAX_TEXT_BYTES) -> str | None:
-    if value is None:
-        return None
-    return _required_text(value, field, max_bytes=max_bytes)
-
-
-def _bounded_text(value: str, field: str, *, max_bytes: int = _MAX_TEXT_BYTES) -> None:
-    if not isinstance(value, str) or "\x00" in value:
-        raise TraceQueryProviderError("malformed")
-    try:
-        encoded = value.encode("utf-8")
-    except UnicodeEncodeError as error:
-        raise TraceQueryProviderError("malformed") from error
-    if len(encoded) > max_bytes:
-        raise TraceQueryProviderError("response_too_large")
-
-
-def _bounded_json(value: object, *, max_bytes: int) -> None:
-    try:
-        encoded = json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8")
-    except (TypeError, ValueError, UnicodeEncodeError, RecursionError) as error:
-        raise TraceQueryProviderError("malformed") from error
-    if len(encoded) > max_bytes:
-        raise TraceQueryProviderError("response_too_large")
-
-
 def _validate_base_url(value: str) -> str:
     parsed = urlsplit(value)
     if (
@@ -499,11 +367,9 @@ def _validate_base_url(value: str) -> str:
         or parsed.fragment
     ):
         raise ValueError("Langfuse base URL is invalid")
-    path = parsed.path.rstrip("/")
-    return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""))
 
 
 def validate_langfuse_base_url(value: str) -> str:
     """Validate and normalize the deployment-owned Langfuse origin."""
-
     return _validate_base_url(value)

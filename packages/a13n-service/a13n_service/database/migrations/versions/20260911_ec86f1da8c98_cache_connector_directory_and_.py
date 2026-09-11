@@ -18,7 +18,11 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Apply the schema change."""
-    op.add_column("connector_providers", sa.Column("setup_claims_json", sa.JSON(), nullable=False))
+    # A constant database default also initializes retained providers. Keep it:
+    # removing it by rebuilding the SQLite parent could cascade-delete children.
+    op.add_column(
+        "connector_providers", sa.Column("setup_claims_json", sa.JSON(), nullable=False, server_default=sa.text("'{}'"))
+    )
     op.add_column("connector_providers", sa.Column("directory_json", sa.JSON(), nullable=True))
     op.add_column("connector_providers", sa.Column("directory_updated_at", sa.DateTime(timezone=True), nullable=True))
 

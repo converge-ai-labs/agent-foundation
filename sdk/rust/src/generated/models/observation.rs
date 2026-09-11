@@ -13,44 +13,62 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Observation {
+    #[serde(rename = "attributes", deserialize_with = "Option::deserialize")]
+    pub attributes: Option<std::collections::HashMap<String, serde_json::Value>>,
+
     #[serde(rename = "cost_usd", deserialize_with = "Option::deserialize")]
     pub cost_usd: Option<String>,
 
-    #[serde(rename = "duration_ms", deserialize_with = "Option::deserialize")]
-    pub duration_ms: Option<i32>,
-
     #[serde(rename = "ended_at", deserialize_with = "Option::deserialize")]
     pub ended_at: Option<chrono::DateTime<chrono::FixedOffset>>,
+
+    #[serde(rename = "events", deserialize_with = "Option::deserialize")]
+    pub events: Option<Vec<models::ObservationEvent>>,
 
     #[serde(rename = "id")]
     pub id: String,
 
     #[serde(rename = "input", deserialize_with = "Option::deserialize")]
-    pub input: Option<Box<serde_json::Value>>,
+    pub input: Option<Box<models::Content>>,
 
-    #[serde(rename = "metadata")]
-    pub metadata: std::collections::HashMap<String, serde_json::Value>,
+    #[serde(rename = "level", deserialize_with = "Option::deserialize")]
+    pub level: Option<String>,
+
+    #[serde(rename = "links", deserialize_with = "Option::deserialize")]
+    pub links: Option<Vec<models::ObservationLink>>,
 
     #[serde(rename = "model", deserialize_with = "Option::deserialize")]
-    pub model: Option<String>,
+    pub model: Option<Box<models::ModelIdentity>>,
 
     #[serde(rename = "name")]
     pub name: String,
 
     #[serde(rename = "output", deserialize_with = "Option::deserialize")]
-    pub output: Option<Box<serde_json::Value>>,
+    pub output: Option<Box<models::Content>>,
 
     #[serde(rename = "parent_id", deserialize_with = "Option::deserialize")]
     pub parent_id: Option<String>,
 
+    #[serde(
+        rename = "resource_attributes",
+        deserialize_with = "Option::deserialize"
+    )]
+    pub resource_attributes: Option<std::collections::HashMap<String, serde_json::Value>>,
+
+    #[serde(rename = "scope", deserialize_with = "Option::deserialize")]
+    pub scope: Option<Box<models::InstrumentationScope>>,
+
     #[serde(rename = "started_at")]
     pub started_at: chrono::DateTime<chrono::FixedOffset>,
 
-    #[serde(rename = "status")]
-    pub status: Status,
+    #[serde(rename = "status", deserialize_with = "Option::deserialize")]
+    pub status: Option<Status>,
+
+    #[serde(rename = "status_message", deserialize_with = "Option::deserialize")]
+    pub status_message: Option<String>,
 
     #[serde(rename = "type")]
-    pub r#type: Type,
+    pub r#type: String,
 
     #[serde(rename = "usage", deserialize_with = "Option::deserialize")]
     pub usage: Option<std::collections::HashMap<String, i32>>,
@@ -58,33 +76,44 @@ pub struct Observation {
 
 impl Observation {
     pub fn new(
+        attributes: Option<std::collections::HashMap<String, serde_json::Value>>,
         cost_usd: Option<String>,
-        duration_ms: Option<i32>,
         ended_at: Option<chrono::DateTime<chrono::FixedOffset>>,
+        events: Option<Vec<models::ObservationEvent>>,
         id: String,
-        input: Option<serde_json::Value>,
-        metadata: std::collections::HashMap<String, serde_json::Value>,
-        model: Option<String>,
+        input: Option<models::Content>,
+        level: Option<String>,
+        links: Option<Vec<models::ObservationLink>>,
+        model: Option<models::ModelIdentity>,
         name: String,
-        output: Option<serde_json::Value>,
+        output: Option<models::Content>,
         parent_id: Option<String>,
+        resource_attributes: Option<std::collections::HashMap<String, serde_json::Value>>,
+        scope: Option<models::InstrumentationScope>,
         started_at: chrono::DateTime<chrono::FixedOffset>,
-        status: Status,
-        r#type: Type,
+        status: Option<Status>,
+        status_message: Option<String>,
+        r#type: String,
         usage: Option<std::collections::HashMap<String, i32>>,
     ) -> Observation {
         Observation {
+            attributes,
             cost_usd,
-            duration_ms,
             ended_at,
+            events,
             id,
             input: if let Some(x) = input {
                 Some(Box::new(x))
             } else {
                 None
             },
-            metadata,
-            model,
+            level,
+            links,
+            model: if let Some(x) = model {
+                Some(Box::new(x))
+            } else {
+                None
+            },
             name,
             output: if let Some(x) = output {
                 Some(Box::new(x))
@@ -92,8 +121,15 @@ impl Observation {
                 None
             },
             parent_id,
+            resource_attributes,
+            scope: if let Some(x) = scope {
+                Some(Box::new(x))
+            } else {
+                None
+            },
             started_at,
             status,
+            status_message,
             r#type,
             usage,
         }
@@ -113,23 +149,5 @@ pub enum Status {
 impl Default for Status {
     fn default() -> Status {
         Self::Unset
-    }
-}
-///
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-pub enum Type {
-    #[serde(rename = "span")]
-    Span,
-    #[serde(rename = "generation")]
-    Generation,
-    #[serde(rename = "event")]
-    Event,
-    #[serde(rename = "unknown")]
-    Unknown,
-}
-
-impl Default for Type {
-    fn default() -> Type {
-        Self::Span
     }
 }

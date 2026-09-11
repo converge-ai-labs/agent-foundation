@@ -85,10 +85,11 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
         components or Components(),
     )
     trace_query_provider_registry = resolved_components.trace_query_provider_registry or TraceQueryProviderRegistry()
-    if "langfuse" in trace_query_provider_registry.keys():
-        raise ValueError("Trace Query provider key is already registered: langfuse")
+    for key in ("langfuse", "logfire"):
+        if key in trace_query_provider_registry.keys():
+            raise ValueError(f"Trace Query provider key is already registered: {key}")
     resolved_settings.validate_trace_query_configuration(
-        registered_provider_keys=(*trace_query_provider_registry.keys(), "langfuse")
+        registered_provider_keys=(*trace_query_provider_registry.keys(), "langfuse", "logfire")
     )
     process_status = ProcessStatus()
     serves_control_plane = owns_control(resolved_settings.service.role)

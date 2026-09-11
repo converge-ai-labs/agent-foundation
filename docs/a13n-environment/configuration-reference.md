@@ -168,9 +168,10 @@ Choices: `"if_missing", "always", "never"`.
 
 ## `E2BBackendConfiguration`
 
-| Field    | Required | Type / choices | Constraints and default                                                          |
-| -------- | -------- | -------------- | -------------------------------------------------------------------------------- |
-| `domain` | false    | string         | pattern="^[a-zA-Z0-9](?:%5Ba-zA-Z0-9.-%5D*%5Ba-zA-Z0-9%5D)?$"; default="e2b.dev" |
+| Field     | Required | Type / choices | Constraints and default                                                          |
+| --------- | -------- | -------------- | -------------------------------------------------------------------------------- |
+| `domain`  | false    | string         | pattern="^[a-zA-Z0-9](?:%5Ba-zA-Z0-9.-%5D*%5Ba-zA-Z0-9%5D)?$"; default="e2b.dev" |
+| `api_url` | false    | string or null | default=null                                                                     |
 
 ## `E2BCredential`
 

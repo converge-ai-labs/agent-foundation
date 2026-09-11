@@ -153,6 +153,8 @@ Installed Plugin and adapter keys select trusted code already present in the Ser
 
 ## Trace queries
 
-Workspace trace search/detail are independent of durable lifecycle-event reads and of telemetry export. They require a configured installed query adapter **and** a trusted RunAttempt-backed access authorizer. The default composition does not supply the authorizer, so configuring a backend alone remains fail-closed.
+Workspace trace search/detail are independent of durable lifecycle-event reads and of telemetry export. They require a configured installed query adapter. The default Service composition supplies Run/IAM authorization: callers need `trace.read` permission and visibility of the owning Run. Each result's correlation must match retained Service Run and Attempt records; current access is rechecked after the backend read.
 
-Backend correlation metadata is not authorization evidence. Local Langfuse ingestion or its own UI can operate independently of the Service Trace Query API. See [observation boundaries](streams-and-events.md#traces-and-usage).
+A Trace contains its provider, validated resource correlation, and the actual root Observation. Read the root directly, then load observations through `/workspaces/{workspace}/traces/{trace_id}/observations`; the collection includes the root ID. Follow `next_cursor` even on an empty page. Values such as usage and cost belong to each observation, not the whole trace, and missing values are not zero or success. Read the Run/RunAttempt resources for authoritative execution outcome.
+
+`/workspaces/{workspace}/trace-query` reports the configured provider, enabled state, supported content-search targets, and queryable history lower bound. Collections default to `view=compact`; exact Trace reads default to `view=full`. Full includes retained content and diagnostic fields; compact excludes them without changing authorization. Backend correlation metadata is not authorization evidence. Local Langfuse ingestion or its own UI can operate independently of the Service Trace Query API. See [observation boundaries](streams-and-events.md#traces-and-usage).

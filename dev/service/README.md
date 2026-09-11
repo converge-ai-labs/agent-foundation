@@ -59,7 +59,7 @@ make langfuse-reset    # Delete only Langfuse data, never Service data
 
 `make setup` checks web/worker readiness and project authentication; the explicit smoke test additionally waits for ingestion and verifies input search and trace detail. Application runtime readiness still does not depend on exporter availability. Service state resets never delete Langfuse volumes. Seeded resets export their fictional execution journeys to the same trace store.
 
-The default Service composition does not yet supply a `TraceAccessAuthorizer`. Trace ingestion and the Langfuse UI work, but Console's Service Trace Query API remains safely unavailable until the authoritative RunAttempt authorizer is composed. The smoke test uses a fixture-owned authorizer; it verifies transport, backend reads and HTTP mapping, not production authorization completeness.
+The default Service composition supplies a Run/IAM-backed `TraceAccessAuthorizer`. With the query backend configured, Console and the Service Trace Query API return traces only for retained Runs the caller can read with `trace.read` permission. Backend correlation is checked against Service records after each backend read. The smoke test uses fixture-owned Run/IAM records and the default authorizer to verify OTLP transport, backend reads, and authorized HTTP list/detail responses.
 
 ### Upgrading an older local Langfuse stack
 

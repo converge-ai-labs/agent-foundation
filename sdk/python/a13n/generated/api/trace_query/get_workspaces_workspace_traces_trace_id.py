@@ -6,7 +6,7 @@ import httpx2 as httpx
 
 from ...client import AuthenticatedClient, Client
 from ...models.error_response import ErrorResponse
-from ...models.trace_detail import TraceDetail
+from ...models.trace import Trace
 from ...models.trace_view import TraceView
 from ...types import UNSET, Response, Unset
 
@@ -40,9 +40,9 @@ def build_request(
     return _kwargs
 
 
-def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> ErrorResponse | TraceDetail:
+def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> ErrorResponse | Trace:
     if response.status_code == 200:
-        response_200 = TraceDetail.from_dict(response.json())
+        response_200 = Trace.from_dict(response.json())
 
         return response_200
 
@@ -58,7 +58,7 @@ def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Res
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[ErrorResponse | TraceDetail]:
+) -> Response[ErrorResponse | Trace]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -73,7 +73,7 @@ def sync_detailed(
     *,
     client: AuthenticatedClient,
     view: TraceView | Unset = UNSET,
-) -> Response[ErrorResponse | TraceDetail]:
+) -> Response[ErrorResponse | Trace]:
     """Get Trace
 
     Args:
@@ -86,7 +86,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ErrorResponse | TraceDetail]
+        Response[ErrorResponse | Trace]
     """
 
     kwargs = build_request(
@@ -108,7 +108,7 @@ def sync(
     *,
     client: AuthenticatedClient,
     view: TraceView | Unset = UNSET,
-) -> ErrorResponse | TraceDetail | None:
+) -> ErrorResponse | Trace | None:
     """Get Trace
 
     Args:
@@ -121,7 +121,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ErrorResponse | TraceDetail
+        ErrorResponse | Trace
     """
 
     return sync_detailed(
@@ -138,7 +138,7 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
     view: TraceView | Unset = UNSET,
-) -> Response[ErrorResponse | TraceDetail]:
+) -> Response[ErrorResponse | Trace]:
     """Get Trace
 
     Args:
@@ -151,7 +151,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ErrorResponse | TraceDetail]
+        Response[ErrorResponse | Trace]
     """
 
     kwargs = build_request(
@@ -171,7 +171,7 @@ async def asyncio(
     *,
     client: AuthenticatedClient,
     view: TraceView | Unset = UNSET,
-) -> ErrorResponse | TraceDetail | None:
+) -> ErrorResponse | Trace | None:
     """Get Trace
 
     Args:
@@ -184,7 +184,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ErrorResponse | TraceDetail
+        ErrorResponse | Trace
     """
 
     return (

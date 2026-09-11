@@ -8,7 +8,7 @@ from a13n_service.api import install_api_conventions
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
 from a13n_service.iam.http.resource_dependencies import resolve_workspace
-from a13n_service.trace_query import TraceCollection, TraceDetail, TraceQueryError, TraceQueryService, TraceView
+from a13n_service.trace_query import Trace, TraceCollection, TraceQueryError, TraceQueryService, TraceView
 from a13n_service.trace_query.router import router
 from fastapi import FastAPI, Request
 
@@ -34,7 +34,7 @@ class StubTraceQueryService:
         self.list_arguments = arguments
         return TraceCollection(items=(), next_cursor=None)
 
-    async def get(self, **arguments: object) -> TraceDetail:
+    async def get(self, **arguments: object) -> Trace:
         self.get_arguments = arguments
         raise TraceQueryError("trace_not_found", "The Trace was not found.", category=ErrorCategory.not_found)
 
@@ -91,7 +91,7 @@ async def test_disabled_query_uses_the_shared_safe_error_envelope(process_runtim
     assert response.json() == {
         "error": {
             "code": "trace_query_unavailable",
-            "message": "Trace Query is unavailable.",
+            "message": "Trace Query is temporarily unavailable.",
             "details": {},
             "request_id": "req-trace-test",
         }

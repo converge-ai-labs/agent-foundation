@@ -42,7 +42,15 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
         "SkillPackageManifest",
         "SkillRevision",
     } <= schemas.keys()
-    assert {"Observation", "TraceCollection", "TraceDetail", "TraceSummary"} <= schemas.keys()
+    assert {
+        "Observation",
+        "ObservationCollection",
+        "Trace",
+        "TraceCollection",
+        "TraceCorrelation",
+        "TraceQueryDescriptor",
+    } <= schemas.keys()
+    assert {"TraceDetail", "TraceSummary"}.isdisjoint(schemas)
     assert {
         "Ingress",
         "Route",
@@ -57,6 +65,8 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert request(app, "/docs/oauth2-redirect").status_code == 404
     assert "/api/v1/workspaces/{workspace}/traces" in document["paths"]
     assert "/api/v1/workspaces/{workspace}/traces/{trace_id}" in document["paths"]
+    assert "/api/v1/workspaces/{workspace}/traces/{trace_id}/observations" in document["paths"]
+    assert "/api/v1/workspaces/{workspace}/trace-query" in document["paths"]
     assert "/api/v1/plugins" not in document["paths"]
     assert "/api/v1/plugins/{plugin_id}/versions" not in document["paths"]
     assert "/api/v1/plugin-versions/{plugin_version_id}" not in document["paths"]

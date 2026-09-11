@@ -77,14 +77,17 @@ The complete machine-readable validation schema, including named enum/union defi
 
 ## `observability`
 
-| Setting                                   | Environment variable                                   | Type / choices             | Constraints and default                                     |
-| ----------------------------------------- | ------------------------------------------------------ | -------------------------- | ----------------------------------------------------------- |
-| `observability.tracing`                   | `A13N_SERVICE_OBSERVABILITY_TRACING`                   | boolean                    | default=true                                                |
-| `observability.trace_content`             | `A13N_SERVICE_OBSERVABILITY_TRACE_CONTENT`             | "none", "standard", "full" | default="none"                                              |
-| `observability.query.provider`            | `A13N_SERVICE_OBSERVABILITY_QUERY_PROVIDER`            | string                     | maxLength=64; pattern="^[a-z][a-z0-9\_]\*$"; default="none" |
-| `observability.query.langfuse_base_url`   | `A13N_SERVICE_OBSERVABILITY_QUERY_LANGFUSE_BASE_URL`   | string or null             | default=null                                                |
-| `observability.query.langfuse_public_key` | `A13N_SERVICE_OBSERVABILITY_QUERY_LANGFUSE_PUBLIC_KEY` | string or null             | default=null                                                |
-| `observability.query.langfuse_secret_key` | `A13N_SERVICE_OBSERVABILITY_QUERY_LANGFUSE_SECRET_KEY` | string or null             | default=null                                                |
+| Setting                                    | Environment variable                                    | Type / choices             | Constraints and default                                     |
+| ------------------------------------------ | ------------------------------------------------------- | -------------------------- | ----------------------------------------------------------- |
+| `observability.tracing`                    | `A13N_SERVICE_OBSERVABILITY_TRACING`                    | boolean                    | default=true                                                |
+| `observability.trace_content`              | `A13N_SERVICE_OBSERVABILITY_TRACE_CONTENT`              | "none", "standard", "full" | default="none"                                              |
+| `observability.query.logfire_base_url`     | `A13N_SERVICE_OBSERVABILITY_QUERY_LOGFIRE_BASE_URL`     | string or null             | default=null                                                |
+| `observability.query.logfire_read_token`   | `A13N_SERVICE_OBSERVABILITY_QUERY_LOGFIRE_READ_TOKEN`   | string or null             | default=null                                                |
+| `observability.query.logfire_history_from` | `A13N_SERVICE_OBSERVABILITY_QUERY_LOGFIRE_HISTORY_FROM` | string or null             | default=null                                                |
+| `observability.query.provider`             | `A13N_SERVICE_OBSERVABILITY_QUERY_PROVIDER`             | string                     | maxLength=64; pattern="^[a-z][a-z0-9\_]\*$"; default="none" |
+| `observability.query.langfuse_base_url`    | `A13N_SERVICE_OBSERVABILITY_QUERY_LANGFUSE_BASE_URL`    | string or null             | default=null                                                |
+| `observability.query.langfuse_public_key`  | `A13N_SERVICE_OBSERVABILITY_QUERY_LANGFUSE_PUBLIC_KEY`  | string or null             | default=null                                                |
+| `observability.query.langfuse_secret_key`  | `A13N_SERVICE_OBSERVABILITY_QUERY_LANGFUSE_SECRET_KEY`  | string or null             | default=null                                                |
 
 ## `database`
 

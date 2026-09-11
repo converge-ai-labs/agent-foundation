@@ -8,6 +8,7 @@ from a13n_service.application_errors import ApplicationError
 
 ProviderFailure = Literal[
     "unavailable",
+    "invalid_cursor",
     "version_unsupported",
     "filter_unsupported",
     "malformed",

@@ -69,6 +69,8 @@ GET /api/v1/workspaces/ws_123/agents?limit=50&cursor=opaque-value
 
 Each endpoint defines one deterministic default order and uses a unique stable tie-breaker. It exposes only explicit filters and sort choices rather than a platform query language. A cursor is bound to the authenticated scope and the query that created it. A changed scope, filter, or ordering, or an invalid or expired cursor, returns a typed error instead of an empty page.
 
+[Trace Query](a13n-service/39-trace-query.md#filters-history-and-ordering) is a scoped exception for provider-backed telemetry: descending start time uses the selected backend's stable opaque identity continuation for ties rather than a cross-provider public ID comparator. Service preserves this native order across filtered pages; it does not impose a different global order by sorting individual pages.
+
 A bounded transient catalog command may return its complete `items` array without pagination when its owning API explicitly defines that contract and its response limits, as in [Model discovery](a13n-service/30-model-management.md#management-api). This does not change ordinary resource collection pagination.
 
 The cursor is a continuation value, not an object ID or bearer authority. Clients do not parse or construct it, and the server reauthorizes every page. Ordinary collection pagination does not imply a database snapshot; an API that requires snapshot isolation or durable replay defines that stronger contract separately.

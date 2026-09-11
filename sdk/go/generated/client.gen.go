@@ -1327,43 +1327,19 @@ func (e NotificationSubscriptionTopics) Valid() bool {
 
 // Defines values for ObservationStatus.
 const (
-	ObservationStatusError ObservationStatus = "error"
-	ObservationStatusOk    ObservationStatus = "ok"
-	ObservationStatusUnset ObservationStatus = "unset"
+	Error ObservationStatus = "error"
+	Ok    ObservationStatus = "ok"
+	Unset ObservationStatus = "unset"
 )
 
 // Valid indicates whether the value is a known member of the ObservationStatus enum.
 func (e ObservationStatus) Valid() bool {
 	switch e {
-	case ObservationStatusError:
+	case Error:
 		return true
-	case ObservationStatusOk:
+	case Ok:
 		return true
-	case ObservationStatusUnset:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for ObservationType.
-const (
-	ObservationTypeEvent      ObservationType = "event"
-	ObservationTypeGeneration ObservationType = "generation"
-	ObservationTypeSpan       ObservationType = "span"
-	ObservationTypeUnknown    ObservationType = "unknown"
-)
-
-// Valid indicates whether the value is a known member of the ObservationType enum.
-func (e ObservationType) Valid() bool {
-	switch e {
-	case ObservationTypeEvent:
-		return true
-	case ObservationTypeGeneration:
-		return true
-	case ObservationTypeSpan:
-		return true
-	case ObservationTypeUnknown:
+	case Unset:
 		return true
 	default:
 		return false
@@ -2012,51 +1988,6 @@ const (
 func (e ToolMessageRole) Valid() bool {
 	switch e {
 	case ToolMessageRoleTool:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for TraceSummaryRunAttemptOutcome.
-const (
-	TraceSummaryRunAttemptOutcomeCancelled TraceSummaryRunAttemptOutcome = "cancelled"
-	TraceSummaryRunAttemptOutcomeFailed    TraceSummaryRunAttemptOutcome = "failed"
-	TraceSummaryRunAttemptOutcomeSucceeded TraceSummaryRunAttemptOutcome = "succeeded"
-	TraceSummaryRunAttemptOutcomeYielded   TraceSummaryRunAttemptOutcome = "yielded"
-)
-
-// Valid indicates whether the value is a known member of the TraceSummaryRunAttemptOutcome enum.
-func (e TraceSummaryRunAttemptOutcome) Valid() bool {
-	switch e {
-	case TraceSummaryRunAttemptOutcomeCancelled:
-		return true
-	case TraceSummaryRunAttemptOutcomeFailed:
-		return true
-	case TraceSummaryRunAttemptOutcomeSucceeded:
-		return true
-	case TraceSummaryRunAttemptOutcomeYielded:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for TraceSummaryTraceStatus.
-const (
-	TraceSummaryTraceStatusError TraceSummaryTraceStatus = "error"
-	TraceSummaryTraceStatusOk    TraceSummaryTraceStatus = "ok"
-	TraceSummaryTraceStatusUnset TraceSummaryTraceStatus = "unset"
-)
-
-// Valid indicates whether the value is a known member of the TraceSummaryTraceStatus enum.
-func (e TraceSummaryTraceStatus) Valid() bool {
-	switch e {
-	case TraceSummaryTraceStatusError:
-		return true
-	case TraceSummaryTraceStatusOk:
-		return true
-	case TraceSummaryTraceStatusUnset:
 		return true
 	default:
 		return false
@@ -3094,6 +3025,12 @@ type ConsumeQueuedSubmissionRequest struct {
 	ExpectedThreadVersion int `json:"expected_thread_version"`
 }
 
+// Content defines model for Content.
+type Content struct {
+	MediaType nullable.Nullable[string] `json:"media_type"`
+	Value     JsonValue                 `json:"value"`
+}
+
 // Context Additional context for the agent.
 type Context struct {
 	Description          string                 `json:"description"`
@@ -3720,6 +3657,13 @@ type InputOverride struct {
 	Skills         nullable.Nullable[[]SkillSelection]                   `json:"skills,omitempty"`
 }
 
+// InstrumentationScope defines model for InstrumentationScope.
+type InstrumentationScope struct {
+	Attributes nullable.Nullable[map[string]JsonValue] `json:"attributes"`
+	Name       nullable.Nullable[string]               `json:"name"`
+	Version    nullable.Nullable[string]               `json:"version"`
+}
+
 // InterruptReceipt defines model for InterruptReceipt.
 type InterruptReceipt struct {
 	InterruptedAt time.Time                      `json:"interrupted_at"`
@@ -4013,6 +3957,12 @@ type ModelDiscovery struct {
 	SettingsSchemas map[string]map[string]interface{} `json:"settings_schemas"`
 }
 
+// ModelIdentity defines model for ModelIdentity.
+type ModelIdentity struct {
+	Requested nullable.Nullable[string] `json:"requested"`
+	Response  nullable.Nullable[string] `json:"response"`
+}
+
 // ModelLimits defines model for ModelLimits.
 type ModelLimits struct {
 	ContextWindowTokens nullable.Nullable[int] `json:"context_window_tokens,omitempty"`
@@ -4106,27 +4056,49 @@ type NotificationSubscriptionTopics string
 
 // Observation defines model for Observation.
 type Observation struct {
-	CostUsd    nullable.Nullable[string]         `json:"cost_usd"`
-	DurationMs nullable.Nullable[int]            `json:"duration_ms"`
-	EndedAt    nullable.Nullable[time.Time]      `json:"ended_at"`
-	Id         string                            `json:"id"`
-	Input      nullable.Nullable[JsonValue]      `json:"input"`
-	Metadata   map[string]JsonValue              `json:"metadata"`
-	Model      nullable.Nullable[string]         `json:"model"`
-	Name       string                            `json:"name"`
-	Output     nullable.Nullable[JsonValue]      `json:"output"`
-	ParentId   nullable.Nullable[string]         `json:"parent_id"`
-	StartedAt  time.Time                         `json:"started_at"`
-	Status     ObservationStatus                 `json:"status"`
-	Type       ObservationType                   `json:"type"`
-	Usage      nullable.Nullable[map[string]int] `json:"usage"`
+	Attributes         nullable.Nullable[map[string]JsonValue] `json:"attributes"`
+	CostUsd            nullable.Nullable[string]               `json:"cost_usd"`
+	EndedAt            nullable.Nullable[time.Time]            `json:"ended_at"`
+	Events             nullable.Nullable[[]ObservationEvent]   `json:"events"`
+	Id                 string                                  `json:"id"`
+	Input              nullable.Nullable[Content]              `json:"input"`
+	Level              nullable.Nullable[string]               `json:"level"`
+	Links              nullable.Nullable[[]ObservationLink]    `json:"links"`
+	Model              nullable.Nullable[ModelIdentity]        `json:"model"`
+	Name               string                                  `json:"name"`
+	Output             nullable.Nullable[Content]              `json:"output"`
+	ParentId           nullable.Nullable[string]               `json:"parent_id"`
+	ResourceAttributes nullable.Nullable[map[string]JsonValue] `json:"resource_attributes"`
+	Scope              nullable.Nullable[InstrumentationScope] `json:"scope"`
+	StartedAt          time.Time                               `json:"started_at"`
+	Status             nullable.Nullable[ObservationStatus]    `json:"status"`
+	StatusMessage      nullable.Nullable[string]               `json:"status_message"`
+	Type               string                                  `json:"type"`
+	Usage              nullable.Nullable[map[string]int]       `json:"usage"`
 }
 
 // ObservationStatus defines model for Observation.Status.
 type ObservationStatus string
 
-// ObservationType defines model for Observation.Type.
-type ObservationType string
+// ObservationCollection defines model for ObservationCollection.
+type ObservationCollection struct {
+	Items      []Observation             `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor"`
+}
+
+// ObservationEvent defines model for ObservationEvent.
+type ObservationEvent struct {
+	Attributes map[string]JsonValue `json:"attributes"`
+	Name       string               `json:"name"`
+	OccurredAt time.Time            `json:"occurred_at"`
+}
+
+// ObservationLink defines model for ObservationLink.
+type ObservationLink struct {
+	Attributes    nullable.Nullable[map[string]JsonValue] `json:"attributes"`
+	ObservationId string                                  `json:"observation_id"`
+	TraceId       string                                  `json:"trace_id"`
+}
 
 // Organization defines model for Organization.
 type Organization struct {
@@ -5273,46 +5245,39 @@ type ToolMessage struct {
 // ToolMessageRole defines model for ToolMessage.Role.
 type ToolMessageRole string
 
+// Trace defines model for Trace.
+type Trace struct {
+	Correlation TraceCorrelation          `json:"correlation"`
+	Id          string                    `json:"id"`
+	Provider    string                    `json:"provider"`
+	Root        Observation               `json:"root"`
+	SourceUrl   nullable.Nullable[string] `json:"source_url"`
+}
+
 // TraceCollection defines model for TraceCollection.
 type TraceCollection struct {
-	Items      []TraceSummary            `json:"items"`
+	Items      []Trace                   `json:"items"`
 	NextCursor nullable.Nullable[string] `json:"next_cursor"`
 }
 
-// TraceDetail defines model for TraceDetail.
-type TraceDetail struct {
-	Observations []Observation `json:"observations"`
-	Trace        TraceSummary  `json:"trace"`
+// TraceCorrelation defines model for TraceCorrelation.
+type TraceCorrelation struct {
+	AgentId        string `json:"agent_id"`
+	OrganizationId string `json:"organization_id"`
+	RunAttemptId   string `json:"run_attempt_id"`
+	RunId          string `json:"run_id"`
+	SessionId      string `json:"session_id"`
+	ThreadId       string `json:"thread_id"`
+	WorkspaceId    string `json:"workspace_id"`
 }
 
-// TraceSummary defines model for TraceSummary.
-type TraceSummary struct {
-	DurationMs        nullable.Nullable[int]                           `json:"duration_ms"`
-	EndedAt           nullable.Nullable[time.Time]                     `json:"ended_at"`
-	Id                string                                           `json:"id"`
-	Input             nullable.Nullable[JsonValue]                     `json:"input"`
-	Models            []string                                         `json:"models"`
-	Name              string                                           `json:"name"`
-	ObservationCount  nullable.Nullable[int]                           `json:"observation_count"`
-	Output            nullable.Nullable[JsonValue]                     `json:"output"`
-	RunAttemptId      string                                           `json:"run_attempt_id"`
-	RunAttemptNumber  int                                              `json:"run_attempt_number"`
-	RunAttemptOutcome nullable.Nullable[TraceSummaryRunAttemptOutcome] `json:"run_attempt_outcome"`
-	RunId             string                                           `json:"run_id"`
-	SessionId         string                                           `json:"session_id"`
-	SourceUrl         nullable.Nullable[string]                        `json:"source_url"`
-	StartedAt         time.Time                                        `json:"started_at"`
-	ThreadId          string                                           `json:"thread_id"`
-	TotalCostUsd      nullable.Nullable[string]                        `json:"total_cost_usd"`
-	TraceStatus       TraceSummaryTraceStatus                          `json:"trace_status"`
-	Usage             nullable.Nullable[map[string]int]                `json:"usage"`
+// TraceQueryDescriptor defines model for TraceQueryDescriptor.
+type TraceQueryDescriptor struct {
+	Enabled     bool                         `json:"enabled"`
+	HistoryFrom nullable.Nullable[time.Time] `json:"history_from"`
+	Provider    string                       `json:"provider"`
+	SearchIn    []SearchIn                   `json:"search_in"`
 }
-
-// TraceSummaryRunAttemptOutcome defines model for TraceSummary.RunAttemptOutcome.
-type TraceSummaryRunAttemptOutcome string
-
-// TraceSummaryTraceStatus defines model for TraceSummary.TraceStatus.
-type TraceSummaryTraceStatus string
 
 // TraceView defines model for TraceView.
 type TraceView string
@@ -6466,11 +6431,19 @@ type GetWorkspacesWorkspaceTracesParams struct {
 	ThreadId     *string    `form:"thread_id,omitempty" json:"thread_id,omitempty"`
 	RunId        *string    `form:"run_id,omitempty" json:"run_id,omitempty"`
 	RunAttemptId *string    `form:"run_attempt_id,omitempty" json:"run_attempt_id,omitempty"`
+	View         *TraceView `form:"view,omitempty" json:"view,omitempty"`
 }
 
 // GetWorkspacesWorkspaceTracesTraceIdParams defines parameters for GetWorkspacesWorkspaceTracesTraceId.
 type GetWorkspacesWorkspaceTracesTraceIdParams struct {
 	View *TraceView `form:"view,omitempty" json:"view,omitempty"`
+}
+
+// GetWorkspacesWorkspaceTracesTraceIdObservationsParams defines parameters for GetWorkspacesWorkspaceTracesTraceIdObservations.
+type GetWorkspacesWorkspaceTracesTraceIdObservationsParams struct {
+	View   *TraceView `form:"view,omitempty" json:"view,omitempty"`
+	Limit  *int       `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string    `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
 // PatchApplicationAccountsAccountIdJSONRequestBody defines body for PatchApplicationAccountsAccountId for application/json ContentType.
@@ -13501,6 +13474,11 @@ type ClientInterface interface {
 	// Corresponds with POST /api/v1/workspaces/{workspace}/threads (the `PostWorkspacesWorkspaceThreads` operationId).
 	PostWorkspacesWorkspaceThreads(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceThreadsParams, body PostWorkspacesWorkspaceThreadsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetWorkspacesWorkspaceTraceQuery Get Trace Query
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/trace-query (the `GetWorkspacesWorkspaceTraceQuery` operationId).
+	GetWorkspacesWorkspaceTraceQuery(ctx context.Context, workspace string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetWorkspacesWorkspaceTraces List Traces
 	//
 	// Corresponds with GET /api/v1/workspaces/{workspace}/traces (the `GetWorkspacesWorkspaceTraces` operationId).
@@ -13510,6 +13488,11 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /api/v1/workspaces/{workspace}/traces/{trace_id} (the `GetWorkspacesWorkspaceTracesTraceId` operationId).
 	GetWorkspacesWorkspaceTracesTraceId(ctx context.Context, workspace string, traceId string, params *GetWorkspacesWorkspaceTracesTraceIdParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWorkspacesWorkspaceTracesTraceIdObservations List Trace Observations
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/traces/{trace_id}/observations (the `GetWorkspacesWorkspaceTracesTraceIdObservations` operationId).
+	GetWorkspacesWorkspaceTracesTraceIdObservations(ctx context.Context, workspace string, traceId string, params *GetWorkspacesWorkspaceTracesTraceIdObservationsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 // GetAgentRevisionsAgentRevisionId Get Agent Revision
@@ -19118,6 +19101,21 @@ func (c *Client) PostWorkspacesWorkspaceThreads(ctx context.Context, workspace s
 	return c.Client.Do(req)
 }
 
+// GetWorkspacesWorkspaceTraceQuery Get Trace Query
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/trace-query (the `GetWorkspacesWorkspaceTraceQuery` operationId).
+func (c *Client) GetWorkspacesWorkspaceTraceQuery(ctx context.Context, workspace string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspacesWorkspaceTraceQueryRequest(c.Server, workspace)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetWorkspacesWorkspaceTraces List Traces
 //
 // Corresponds with GET /api/v1/workspaces/{workspace}/traces (the `GetWorkspacesWorkspaceTraces` operationId).
@@ -19138,6 +19136,21 @@ func (c *Client) GetWorkspacesWorkspaceTraces(ctx context.Context, workspace str
 // Corresponds with GET /api/v1/workspaces/{workspace}/traces/{trace_id} (the `GetWorkspacesWorkspaceTracesTraceId` operationId).
 func (c *Client) GetWorkspacesWorkspaceTracesTraceId(ctx context.Context, workspace string, traceId string, params *GetWorkspacesWorkspaceTracesTraceIdParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetWorkspacesWorkspaceTracesTraceIdRequest(c.Server, workspace, traceId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetWorkspacesWorkspaceTracesTraceIdObservations List Trace Observations
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/traces/{trace_id}/observations (the `GetWorkspacesWorkspaceTracesTraceIdObservations` operationId).
+func (c *Client) GetWorkspacesWorkspaceTracesTraceIdObservations(ctx context.Context, workspace string, traceId string, params *GetWorkspacesWorkspaceTracesTraceIdObservationsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspacesWorkspaceTracesTraceIdObservationsRequest(c.Server, workspace, traceId, params)
 	if err != nil {
 		return nil, err
 	}
@@ -32613,6 +32626,40 @@ func NewPostWorkspacesWorkspaceThreadsRequestWithBody(server string, workspace s
 	return req, nil
 }
 
+// NewGetWorkspacesWorkspaceTraceQueryRequest constructs an http.Request for the GetWorkspacesWorkspaceTraceQuery method
+func NewGetWorkspacesWorkspaceTraceQueryRequest(server string, workspace string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/trace-query", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetWorkspacesWorkspaceTracesRequest constructs an http.Request for the GetWorkspacesWorkspaceTraces method
 func NewGetWorkspacesWorkspaceTracesRequest(server string, workspace string, params *GetWorkspacesWorkspaceTracesParams) (*http.Request, error) {
 	var err error
@@ -32756,6 +32803,18 @@ func NewGetWorkspacesWorkspaceTracesRequest(server string, workspace string, par
 
 		}
 
+		if params.View != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "view", *params.View, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -32815,6 +32874,98 @@ func NewGetWorkspacesWorkspaceTracesTraceIdRequest(server string, workspace stri
 		if params.View != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "view", *params.View, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetWorkspacesWorkspaceTracesTraceIdObservationsRequest constructs an http.Request for the GetWorkspacesWorkspaceTracesTraceIdObservations method
+func NewGetWorkspacesWorkspaceTracesTraceIdObservationsRequest(server string, workspace string, traceId string, params *GetWorkspacesWorkspaceTracesTraceIdObservationsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "trace_id", traceId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/traces/%s/observations", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.View != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "view", *params.View, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -35304,6 +35455,13 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /api/v1/workspaces/{workspace}/threads (the `PostWorkspacesWorkspaceThreads` operationId).
 	PostWorkspacesWorkspaceThreadsWithResponse(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceThreadsParams, body PostWorkspacesWorkspaceThreadsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceThreadsResponse, error)
 
+	// GetWorkspacesWorkspaceTraceQueryWithResponse Get Trace Query
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/trace-query (the `GetWorkspacesWorkspaceTraceQuery` operationId).
+	GetWorkspacesWorkspaceTraceQueryWithResponse(ctx context.Context, workspace string, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceTraceQueryResponse, error)
+
 	// GetWorkspacesWorkspaceTracesWithResponse List Traces
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -35317,6 +35475,13 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /api/v1/workspaces/{workspace}/traces/{trace_id} (the `GetWorkspacesWorkspaceTracesTraceId` operationId).
 	GetWorkspacesWorkspaceTracesTraceIdWithResponse(ctx context.Context, workspace string, traceId string, params *GetWorkspacesWorkspaceTracesTraceIdParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceTracesTraceIdResponse, error)
+
+	// GetWorkspacesWorkspaceTracesTraceIdObservationsWithResponse List Trace Observations
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/traces/{trace_id}/observations (the `GetWorkspacesWorkspaceTracesTraceIdObservations` operationId).
+	GetWorkspacesWorkspaceTracesTraceIdObservationsWithResponse(ctx context.Context, workspace string, traceId string, params *GetWorkspacesWorkspaceTracesTraceIdObservationsParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceTracesTraceIdObservationsResponse, error)
 }
 
 // GetAgentRevisionsAgentRevisionIdResponse200Headers the declared response headers of an HTTP 200 response for GetAgentRevisionsAgentRevisionId
@@ -53897,6 +54062,83 @@ func (r PostWorkspacesWorkspaceThreadsResponse) ContentType() string {
 	return ""
 }
 
+// GetWorkspacesWorkspaceTraceQueryResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceTraceQuery
+type GetWorkspacesWorkspaceTraceQueryResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceTraceQueryResponse400Headers the declared response headers of an HTTP 400 response for GetWorkspacesWorkspaceTraceQuery
+type GetWorkspacesWorkspaceTraceQueryResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceTraceQueryResponseDefaultHeaders the declared response headers of an HTTP default response for GetWorkspacesWorkspaceTraceQuery
+type GetWorkspacesWorkspaceTraceQueryResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetWorkspacesWorkspaceTraceQueryResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *TraceQueryDescriptor
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetWorkspacesWorkspaceTraceQueryResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetWorkspacesWorkspaceTraceQueryResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetWorkspacesWorkspaceTraceQueryResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetWorkspacesWorkspaceTraceQueryResponse) GetJSON200() *TraceQueryDescriptor {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetWorkspacesWorkspaceTraceQueryResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetWorkspacesWorkspaceTraceQueryResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetWorkspacesWorkspaceTraceQueryResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkspacesWorkspaceTraceQueryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkspacesWorkspaceTraceQueryResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetWorkspacesWorkspaceTraceQueryResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // GetWorkspacesWorkspaceTracesResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceTraces
 type GetWorkspacesWorkspaceTracesResponse200Headers struct {
 	XRequestID *string
@@ -53994,7 +54236,7 @@ type GetWorkspacesWorkspaceTracesTraceIdResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *TraceDetail
+	JSON200 *Trace
 	// JSON400 the response for an HTTP 400 `application/json` response
 	JSON400 *ErrorResponse
 	// JSONDefault the response for an HTTP default `application/json` response
@@ -54008,7 +54250,7 @@ type GetWorkspacesWorkspaceTracesTraceIdResponse struct {
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r GetWorkspacesWorkspaceTracesTraceIdResponse) GetJSON200() *TraceDetail {
+func (r GetWorkspacesWorkspaceTracesTraceIdResponse) GetJSON200() *Trace {
 	return r.JSON200
 }
 
@@ -54045,6 +54287,83 @@ func (r GetWorkspacesWorkspaceTracesTraceIdResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetWorkspacesWorkspaceTracesTraceIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetWorkspacesWorkspaceTracesTraceIdObservationsResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceTracesTraceIdObservations
+type GetWorkspacesWorkspaceTracesTraceIdObservationsResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceTracesTraceIdObservationsResponse400Headers the declared response headers of an HTTP 400 response for GetWorkspacesWorkspaceTracesTraceIdObservations
+type GetWorkspacesWorkspaceTracesTraceIdObservationsResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceTracesTraceIdObservationsResponseDefaultHeaders the declared response headers of an HTTP default response for GetWorkspacesWorkspaceTracesTraceIdObservations
+type GetWorkspacesWorkspaceTracesTraceIdObservationsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetWorkspacesWorkspaceTracesTraceIdObservationsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ObservationCollection
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetWorkspacesWorkspaceTracesTraceIdObservationsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetWorkspacesWorkspaceTracesTraceIdObservationsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetWorkspacesWorkspaceTracesTraceIdObservationsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetWorkspacesWorkspaceTracesTraceIdObservationsResponse) GetJSON200() *ObservationCollection {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetWorkspacesWorkspaceTracesTraceIdObservationsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetWorkspacesWorkspaceTracesTraceIdObservationsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetWorkspacesWorkspaceTracesTraceIdObservationsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkspacesWorkspaceTracesTraceIdObservationsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkspacesWorkspaceTracesTraceIdObservationsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetWorkspacesWorkspaceTracesTraceIdObservationsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -58549,6 +58868,19 @@ func (c *ClientWithResponses) PostWorkspacesWorkspaceThreadsWithResponse(ctx con
 	return ParsePostWorkspacesWorkspaceThreadsResponse(rsp)
 }
 
+// GetWorkspacesWorkspaceTraceQueryWithResponse Get Trace Query
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/trace-query (the `GetWorkspacesWorkspaceTraceQuery` operationId).
+func (c *ClientWithResponses) GetWorkspacesWorkspaceTraceQueryWithResponse(ctx context.Context, workspace string, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceTraceQueryResponse, error) {
+	rsp, err := c.GetWorkspacesWorkspaceTraceQuery(ctx, workspace, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkspacesWorkspaceTraceQueryResponse(rsp)
+}
+
 // GetWorkspacesWorkspaceTracesWithResponse List Traces
 //
 // Returns a wrapper object for the known response body format(s).
@@ -58573,6 +58905,19 @@ func (c *ClientWithResponses) GetWorkspacesWorkspaceTracesTraceIdWithResponse(ct
 		return nil, err
 	}
 	return ParseGetWorkspacesWorkspaceTracesTraceIdResponse(rsp)
+}
+
+// GetWorkspacesWorkspaceTracesTraceIdObservationsWithResponse List Trace Observations
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/traces/{trace_id}/observations (the `GetWorkspacesWorkspaceTracesTraceIdObservations` operationId).
+func (c *ClientWithResponses) GetWorkspacesWorkspaceTracesTraceIdObservationsWithResponse(ctx context.Context, workspace string, traceId string, params *GetWorkspacesWorkspaceTracesTraceIdObservationsParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceTracesTraceIdObservationsResponse, error) {
+	rsp, err := c.GetWorkspacesWorkspaceTracesTraceIdObservations(ctx, workspace, traceId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkspacesWorkspaceTracesTraceIdObservationsResponse(rsp)
 }
 
 // ParseGetAgentRevisionsAgentRevisionIdResponse parses an HTTP response from a GetAgentRevisionsAgentRevisionIdWithResponse call
@@ -77942,6 +78287,86 @@ func ParsePostWorkspacesWorkspaceThreadsResponse(rsp *http.Response) (*PostWorks
 	return response, nil
 }
 
+// ParseGetWorkspacesWorkspaceTraceQueryResponse parses an HTTP response from a GetWorkspacesWorkspaceTraceQueryWithResponse call
+func ParseGetWorkspacesWorkspaceTraceQueryResponse(rsp *http.Response) (*GetWorkspacesWorkspaceTraceQueryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkspacesWorkspaceTraceQueryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest TraceQueryDescriptor
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetWorkspacesWorkspaceTraceQueryResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetWorkspacesWorkspaceTraceQueryResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetWorkspacesWorkspaceTraceQueryResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
 // ParseGetWorkspacesWorkspaceTracesResponse parses an HTTP response from a GetWorkspacesWorkspaceTracesWithResponse call
 func ParseGetWorkspacesWorkspaceTracesResponse(rsp *http.Response) (*GetWorkspacesWorkspaceTracesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -78037,7 +78462,7 @@ func ParseGetWorkspacesWorkspaceTracesTraceIdResponse(rsp *http.Response) (*GetW
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest TraceDetail
+		var dest Trace
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -78082,6 +78507,86 @@ func ParseGetWorkspacesWorkspaceTracesTraceIdResponse(rsp *http.Response) (*GetW
 		response.Headers400 = &headers
 	case true:
 		var headers GetWorkspacesWorkspaceTracesTraceIdResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkspacesWorkspaceTracesTraceIdObservationsResponse parses an HTTP response from a GetWorkspacesWorkspaceTracesTraceIdObservationsWithResponse call
+func ParseGetWorkspacesWorkspaceTracesTraceIdObservationsResponse(rsp *http.Response) (*GetWorkspacesWorkspaceTracesTraceIdObservationsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkspacesWorkspaceTracesTraceIdObservationsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ObservationCollection
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetWorkspacesWorkspaceTracesTraceIdObservationsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetWorkspacesWorkspaceTracesTraceIdObservationsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetWorkspacesWorkspaceTracesTraceIdObservationsResponseDefaultHeaders
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {

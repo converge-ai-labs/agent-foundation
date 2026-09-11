@@ -8,11 +8,14 @@ from a13n_service.http_errors import application_error_status
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
 from a13n_service.trace_query import (
     AuthorizedRunAttempt,
-    ProviderTraceDetail,
-    ProviderTracePage,
+    Content,
+    Observation,
+    ObservationCollection,
     ProviderTraceQuery,
-    ProviderTraceSummary,
+    ProviderTraceRead,
     SearchIn,
+    Trace,
+    TraceCollection,
     TraceCorrelation,
     TraceQueryCapabilities,
     TraceQueryError,
@@ -32,55 +35,79 @@ def actor(*, principal_id: str = "user_0000000000000001") -> AuthenticatedActor:
     )
 
 
-def summary(**updates: object) -> ProviderTraceSummary:
-    values: dict[str, object] = {
+def summary(**updates: object) -> Trace:
+    correlation = TraceCorrelation(
+        organization_id="org-1",
+        workspace_id="ws-1",
+        session_id="session-1",
+        thread_id="thread-1",
+        run_id="run-1",
+        run_attempt_id="attempt-1",
+        agent_id="agent-1",
+    )
+    root = Observation(
+        id="root-1",
+        parent_id=None,
+        type="span",
+        name="a13n.service.run_attempt",
+        started_at=datetime(2026, 9, 1, 1, tzinfo=UTC),
+        ended_at=datetime(2026, 9, 1, 1, 0, 1, tzinfo=UTC),
+        status=None,
+        level="default",
+        status_message="root message",
+        model=None,
+        usage={"total": 12},
+        cost_usd=None,
+        input=Content(media_type="text/plain", value="hello"),
+        output=Content(media_type="text/plain", value="world"),
+        attributes={"phase": "root"},
+        resource_attributes={"service.name": "service"},
+        scope=None,
+        events=None,
+        links=None,
+    )
+    if "input" in updates:
+        root = root.model_copy(update={"input": Content(media_type=None, value=updates.pop("input"))})
+    values = {
         "id": "trace-1",
-        "name": "a13n.service.run_attempt",
-        "started_at": datetime(2026, 9, 1, 1, tzinfo=UTC),
-        "ended_at": datetime(2026, 9, 1, 1, 0, 1, tzinfo=UTC),
-        "duration_ms": 1000,
-        "trace_status": "ok",
-        "correlation": TraceCorrelation(
-            organization_id="org-1",
-            workspace_id="ws-1",
-            session_id="session-1",
-            thread_id="thread-1",
-            run_id="run-1",
-            run_attempt_id="attempt-1",
-            agent_id="agent-1",
-        ),
-        "input": "hello",
-        "output": "world",
-        "observation_count": 2,
-        "models": ("model-1",),
-        "usage": {"total": 12},
-        "total_cost_usd": None,
+        "provider": "fixture",
+        "correlation": correlation,
+        "root": root,
         "source_url": "https://langfuse.example.com/trace-1",
+        **updates,
     }
-    values.update(updates)
-    return ProviderTraceSummary(**values)  # type: ignore[arg-type]
+    return Trace.model_validate(values)
 
 
 class Provider:
-    capabilities = TraceQueryCapabilities(input_search=True, output_search=True)
+    capabilities = TraceQueryCapabilities(search_in=(SearchIn.input, SearchIn.output))
+    cursor_namespace = "fixture-project"
 
-    def __init__(self, *, items: tuple[ProviderTraceSummary, ...] = (summary(),)) -> None:
+    def __init__(self, *, items: tuple[Trace, ...] = (summary(),)) -> None:
         self.items = items
         self.queries: list[ProviderTraceQuery] = []
-        self.detail: ProviderTraceDetail | None = ProviderTraceDetail(items[0], ()) if items else None
+        self.reads: list[ProviderTraceRead] = []
+        self.detail: Trace | None = items[0] if items else None
+        self.observations = ObservationCollection(items=tuple(item.root for item in items[:1]), next_cursor=None)
         self.failure: TraceQueryProviderError | None = None
 
-    async def list_traces(self, query: ProviderTraceQuery) -> ProviderTracePage:
+    async def list_traces(self, query: ProviderTraceQuery) -> TraceCollection:
         self.queries.append(query)
         if self.failure is not None:
             raise self.failure
-        return ProviderTracePage(self.items, "provider-next")
+        return TraceCollection(items=self.items, next_cursor="provider-next" if query.cursor is None else None)
 
-    async def get_trace(self, trace_id: str, view: TraceView) -> ProviderTraceDetail | None:
-        del trace_id, view
+    async def get_trace(self, query: ProviderTraceRead) -> Trace | None:
+        self.reads.append(query)
         if self.failure is not None:
             raise self.failure
         return self.detail
+
+    async def list_observations(self, query: ProviderTraceRead) -> ObservationCollection:
+        self.reads.append(query)
+        if self.failure is not None:
+            raise self.failure
+        return self.observations
 
 
 class Authorizer:
@@ -102,8 +129,6 @@ class Authorizer:
         return {
             item.run_attempt_id: AuthorizedRunAttempt(
                 run_attempt_id=item.run_attempt_id,
-                number=7,
-                outcome="failed",
             )
             for item in correlations
             if item.run_attempt_id in self.visible
@@ -115,7 +140,7 @@ def service(
     authorizer: Authorizer | None = None,
 ) -> TraceQueryService:
     return TraceQueryService(
-        provider_key="langfuse",
+        provider_key="fixture",
         provider=provider,
         authorizer=authorizer,
         clock=lambda: datetime(2026, 9, 2, tzinfo=UTC),
@@ -145,13 +170,40 @@ async def list_traces(
 
 
 @pytest.mark.anyio
-async def test_list_forces_scope_authorizes_results_and_projects_durable_attempt_facts() -> None:
+async def test_organization_session_can_page_both_collections_without_workspace_header() -> None:
+    browser = replace(actor(), auth_method="session", boundary_workspace_id=None, boundary_organization_id="org-1")
+    adapter = Provider()
+    queries = service(adapter, Authorizer())
+    first = await queries.list(actor=browser, workspace_id="ws-1")
+    assert first.items and first.next_cursor
+    second = await queries.list(actor=browser, workspace_id="ws-1", cursor=first.next_cursor)
+    assert second.next_cursor is None
+    with pytest.raises(TraceQueryError, match="cursor"):
+        await queries.list(actor=actor(), workspace_id="ws-1", cursor=first.next_cursor)
+    adapter.observations = ObservationCollection(items=(summary().root,), next_cursor="children-next")
+    children = await queries.list_observations(actor=browser, workspace_id="ws-1", trace_id="trace-1")
+    assert children.items and children.next_cursor
+    adapter.observations = ObservationCollection(items=(), next_cursor=None)
+    last = await queries.list_observations(
+        actor=browser, workspace_id="ws-1", trace_id="trace-1", cursor=children.next_cursor
+    )
+    assert last.items == () and last.next_cursor is None
+    with pytest.raises(TraceQueryError, match="cursor"):
+        await queries.list_observations(
+            actor=actor(), workspace_id="ws-1", trace_id="trace-1", cursor=children.next_cursor
+        )
+
+
+@pytest.mark.anyio
+async def test_list_forces_scope_authorizes_results_and_projects_root_consistently() -> None:
     provider = Provider()
 
     result = await list_traces(service(provider, Authorizer()))
 
-    assert result.items[0].run_attempt_number == 7  # type: ignore[attr-defined]
-    assert result.items[0].run_attempt_outcome == "failed"  # type: ignore[attr-defined]
+    assert result.items[0].root.status is None
+    assert result.items[0].root.input is None
+    assert result.items[0].root.attributes is None
+    assert "run_attempt_outcome" not in result.items[0].model_dump()
     assert result.next_cursor is not None  # type: ignore[attr-defined]
     query = provider.queries[0]
     assert query.organization_id == "org-1"
@@ -162,9 +214,8 @@ async def test_list_forces_scope_authorizes_results_and_projects_durable_attempt
 
 @pytest.mark.anyio
 async def test_list_omits_unauthorized_and_cross_scope_provider_results() -> None:
-    cross_scope = replace(
-        summary(id="trace-cross"),
-        correlation=replace(summary().correlation, workspace_id="ws-other"),
+    cross_scope = summary(
+        id="trace-cross", correlation=summary().correlation.model_copy(update={"workspace_id": "ws-other"})
     )
     provider = Provider(items=(summary(), cross_scope))
 
@@ -221,7 +272,7 @@ async def test_cursor_preserves_the_default_time_window_across_pages() -> None:
         )
     )
     trace_service = TraceQueryService(
-        provider_key="langfuse",
+        provider_key="fixture",
         provider=provider,
         authorizer=Authorizer(),
         clock=lambda: next(times),
@@ -245,7 +296,7 @@ async def test_exact_read_conceals_absent_cross_scope_and_unauthorized_traces() 
         )
     assert absent.value.code == "trace_not_found"
 
-    provider.detail = ProviderTraceDetail(summary(), ())
+    provider.detail = summary()
     with pytest.raises(TraceQueryError) as concealed:
         await service(provider, Authorizer(visible=frozenset())).get(
             actor=actor(), workspace_id="ws-1", trace_id="trace-1", view=TraceView.full
@@ -314,7 +365,7 @@ async def test_invalid_exact_filter_and_trace_id_fail_before_provider_io() -> No
 
 @pytest.mark.anyio
 async def test_duplicate_trace_or_attempt_correlation_fails_safely() -> None:
-    duplicate = replace(summary(), id="trace-2")
+    duplicate = summary(id="trace-2")
     provider = Provider(items=(summary(), duplicate))
 
     with pytest.raises(TraceQueryError) as raised:
@@ -327,7 +378,7 @@ async def test_duplicate_trace_or_attempt_correlation_fails_safely() -> None:
 async def test_provider_page_is_rebounded_at_the_service_boundary() -> None:
     second = summary(
         id="trace-2",
-        correlation=replace(summary().correlation, run_attempt_id="attempt-2"),
+        correlation=summary().correlation.model_copy(update={"run_attempt_id": "attempt-2"}),
     )
     provider = Provider(items=(summary(), second))
 
@@ -362,7 +413,7 @@ async def test_provider_unbounded_content_fails_safely() -> None:
 @pytest.mark.anyio
 async def test_exact_provider_result_must_match_the_requested_trace_id() -> None:
     provider = Provider()
-    provider.detail = ProviderTraceDetail(summary(id="trace-other"), ())
+    provider.detail = summary(id="trace-other")
 
     with pytest.raises(TraceQueryError) as raised:
         await service(provider, Authorizer()).get(
