@@ -114,7 +114,7 @@ def upgrade() -> None:
         sa.Column("nonce", sa.LargeBinary(length=12), nullable=True),
         sa.Column("encryption_key_id", sa.String(length=128), nullable=True),
         sa.CheckConstraint(
-            "status IN ('pending', 'exchanging', 'completed', 'failed', 'expired')",
+            "status IN ('pending', 'received', 'exchanging', 'completed', 'failed', 'expired')",
             name=op.f("ck_mcp_oauth_sessions_status_valid"),
         ),
         sa.CheckConstraint(

@@ -12,19 +12,15 @@ T = TypeVar("T", bound="CompleteMCPOAuthRequest")
 class CompleteMCPOAuthRequest:
     """
     Attributes:
-        code (str):
-        issuer (str):
+        receipt (str):
         state (str):
     """
 
-    code: str
-    issuer: str
+    receipt: str
     state: str
 
     def to_dict(self) -> dict[str, Any]:
-        code = self.code
-
-        issuer = self.issuer
+        receipt = self.receipt
 
         state = self.state
 
@@ -32,8 +28,7 @@ class CompleteMCPOAuthRequest:
 
         field_dict.update(
             {
-                "code": code,
-                "issuer": issuer,
+                "receipt": receipt,
                 "state": state,
             }
         )
@@ -43,15 +38,12 @@ class CompleteMCPOAuthRequest:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         d = dict(src_dict)
-        code = d.pop("code")
-
-        issuer = d.pop("issuer")
+        receipt = d.pop("receipt")
 
         state = d.pop("state")
 
         complete_mcpo_auth_request = cls(
-            code=code,
-            issuer=issuer,
+            receipt=receipt,
             state=state,
         )
 

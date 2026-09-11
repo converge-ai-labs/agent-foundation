@@ -13,6 +13,7 @@ afterEach(() => {
   window.history.replaceState(null, "", "/");
 });
 const state = "s".repeat(48);
+const receipt = "r".repeat(48);
 const connection = {
   id: "mcpc_test",
   workspace_id: "ws_test",
@@ -23,7 +24,7 @@ function launch(expiresAt = Date.now() + 60_000) {
     expires_at: new Date(expiresAt).toISOString(),
   } as Schema["MCPAuthorizationLaunch"];
 }
-it("binds the same-tab callback to its exact workspace and connection, excluding the authorization code", () => {
+it("binds the same-tab callback to its exact workspace and connection, excluding the callback receipt", () => {
   saveMCPAuthorization(launch(), connection, "/workspace/design");
   expect(readMCPAuthorization()).toMatchObject({
     state,
@@ -34,15 +35,15 @@ it("binds the same-tab callback to its exact workspace and connection, excluding
   window.history.replaceState(
     null,
     "",
-    `/mcp-setup/callback?code=private-code&state=${state}&iss=https://auth.example`,
+    `/mcp-setup/callback#receipt=${receipt}&state=${state}`,
   );
   expect(takeMCPCallback()).toEqual({
-    code: "private-code",
+    receipt,
     state,
-    issuer: "https://auth.example",
   });
   expect(window.location.search).toBe("");
-  expect(JSON.stringify(sessionStorage)).not.toContain("private-code");
+  expect(window.location.hash).toBe("");
+  expect(JSON.stringify(sessionStorage)).not.toContain(receipt);
   expect(takeMCPCallback()).toBeNull();
 });
 it("rejects expired context, unsafe return paths and ambiguous callback values", () => {
@@ -53,8 +54,9 @@ it("rejects expired context, unsafe return paths and ambiguous callback values",
   window.history.replaceState(
     null,
     "",
-    `/mcp-setup/callback?code=one&code=two&state=${state}&iss=https://auth.example`,
+    `/mcp-setup/callback#receipt=${receipt}&receipt=${receipt}&state=${state}`,
   );
   expect(takeMCPCallback()).toBeNull();
   expect(window.location.search).toBe("");
+  expect(window.location.hash).toBe("");
 });

@@ -56,7 +56,7 @@ from .management import (
     require_connection,
     require_version,
 )
-from .models import MCPConnectionRecord, MCPOAuthSessionRecord
+from .models import MCPConnectionOAuthClientRecord, MCPConnectionRecord, MCPOAuthSessionRecord
 
 
 class ConnectionDiscovery(Protocol):
@@ -472,6 +472,9 @@ class MCPConnectionService:
             if record.auth_mode == "oauth" and record.ciphertext is not None:
                 credentials.append(record.credential_snapshot())
             record.clear_credential()
+            client_configuration = await session.get(MCPConnectionOAuthClientRecord, connection_id)
+            if client_configuration is not None:
+                await session.delete(client_configuration)
             now = self._clock()
             record.status = "disabled"
             record.status_reason = None
@@ -482,7 +485,7 @@ class MCPConnectionService:
             oauth_sessions = await session.scalars(
                 select(MCPOAuthSessionRecord).where(
                     MCPOAuthSessionRecord.mcp_connection_id == connection_id,
-                    MCPOAuthSessionRecord.status.in_(("pending", "exchanging")),
+                    MCPOAuthSessionRecord.status.in_(("pending", "received", "exchanging")),
                 )
             )
             for oauth_session in oauth_sessions:

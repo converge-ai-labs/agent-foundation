@@ -20,7 +20,7 @@ from a13n_service.connectivity.mcp.models import (
     MCPConnectionRecord,
     MCPOAuthSessionRecord,
 )
-from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient
+from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient, issuer_key
 from a13n_service.connectivity.mcp.oauth_service import MCPOAuthService
 from a13n_service.connectivity.mcp.refresh import OAuthCredentialRefresh
 from a13n_service.connectivity.mcp.service import MCPConnectionService
@@ -38,6 +38,11 @@ from .conftest import NOW, SERVICE_ACCOUNT_ID, WORKSPACE_ID, actor
 MCP_ENDPOINT = "https://8.8.8.8/mcp"
 ISSUER = "https://8.8.4.4"
 PUBLIC_ORIGIN = "https://1.1.1.1"
+
+
+async def capture_receipt(oauth: MCPOAuthService, state: str, *, issuer: str | None = ISSUER) -> str:
+    target = await oauth.receive_callback(callback_key=issuer_key(ISSUER), state=state, code="code", issuer=issuer)
+    return parse_qs(urlsplit(target).fragment)["receipt"][0]
 
 
 class RemoteServer:
@@ -72,6 +77,8 @@ class RemoteServer:
                     "authorization_endpoint": f"{ISSUER}/authorize",
                     "token_endpoint": f"{ISSUER}/token",
                     "code_challenge_methods_supported": ["S256"],
+                    "authorization_response_iss_parameter_supported": True,
+                    "token_endpoint_auth_methods_supported": ["none", "client_secret_basic", "client_secret_post"],
                     **client_registration,
                 },
             )
@@ -412,8 +419,9 @@ async def test_oauth_state_is_bound_single_use_and_callback_validates_connection
     query = parse_qs(urlsplit(launch.authorization_url).query)
     assert query["resource"] == [MCP_ENDPOINT]
     assert query["code_challenge_method"] == ["S256"]
-    assert query["client_id"] == [f"{PUBLIC_ORIGIN}/api/v1/oauth/mcp/client-metadata.json"]
+    assert query["client_id"] == [f"{PUBLIC_ORIGIN}/api/v1/oauth/mcp/client-metadata/{issuer_key(ISSUER)}.json"]
 
+    receipt = await capture_receipt(oauth, query["state"][0])
     other_user = AuthenticatedActor(
         principal=PrincipalRef(principal_type="user", principal_id="usr_0123456789abcdef"),
         auth_method="session",
@@ -421,13 +429,13 @@ async def test_oauth_state_is_bound_single_use_and_callback_validates_connection
         boundary_workspace_id=WORKSPACE_ID,
     )
     with pytest.raises(MCPConnectionError, match="state is invalid"):
-        await oauth.callback(actor=other_user, state=query["state"][0], code="code", issuer=ISSUER)
+        await oauth.callback(actor=other_user, state=query["state"][0], receipt=receipt)
 
-    ready = await oauth.callback(actor=actor(), state=query["state"][0], code="code", issuer=ISSUER)
+    ready = await oauth.callback(actor=actor(), state=query["state"][0], receipt=receipt)
     assert ready.status == "ready"
     assert ready.credential_configured is True
     with pytest.raises(MCPConnectionError, match="already used"):
-        await oauth.callback(actor=actor(), state=query["state"][0], code="code", issuer=ISSUER)
+        await oauth.callback(actor=actor(), state=query["state"][0], receipt=receipt)
 
 
 @pytest.mark.anyio
@@ -488,7 +496,8 @@ async def test_delete_fences_connection_and_cleans_exact_dcr_registration(
         expected_version=1,
     )
     state = parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
-    ready = await oauth.callback(actor=actor(), state=state, code="code", issuer=ISSUER)
+    receipt = await capture_receipt(oauth, state)
+    ready = await oauth.callback(actor=actor(), state=state, receipt=receipt)
     await connections.delete(
         actor=actor(),
         connection_id=ready.id,
@@ -532,7 +541,8 @@ async def test_oauth_refresh_rotates_bundle_without_coupling_readiness_to_discov
         expected_version=1,
     )
     state = parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
-    ready = await oauth.callback(actor=actor(), state=state, code="code", issuer=ISSUER)
+    receipt = await capture_receipt(oauth, state)
+    ready = await oauth.callback(actor=actor(), state=state, receipt=receipt)
 
     requests_before = len(remote.requests)
     assert await oauth_refresh.ensure_current(ready.id) is True
@@ -566,7 +576,8 @@ async def test_oauth_invalid_grant_requires_reauthorization(mcp_services, oauth_
         expected_version=1,
     )
     state = parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
-    ready = await oauth.callback(actor=actor(), state=state, code="code", issuer=ISSUER)
+    receipt = await capture_receipt(oauth, state)
+    ready = await oauth.callback(actor=actor(), state=state, receipt=receipt)
     remote.refresh_error = "invalid_grant"
 
     assert await oauth_refresh.ensure_current(ready.id) is False
@@ -602,7 +613,8 @@ async def test_oauth_refresh_lost_race_does_not_replace_newer_credentials(
         expected_version=1,
     )
     state = parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
-    ready = await oauth.callback(actor=actor(), state=state, code="code", issuer=ISSUER)
+    receipt = await capture_receipt(oauth, state)
+    ready = await oauth.callback(actor=actor(), state=state, receipt=receipt)
     started = Event()
     proceed = Event()
 
@@ -678,7 +690,7 @@ async def test_new_oauth_authorization_expires_and_cleans_prior_dcr_session(
     assert remote.registration_deleted is False
     state = parse_qs(urlsplit(first.authorization_url).query)["state"][0]
     with pytest.raises(MCPConnectionError, match="unavailable"):
-        await oauth.callback(actor=actor(), state=state, code="code", issuer=ISSUER)
+        await oauth.callback(actor=actor(), state=state, receipt="unused-receipt")
 
 
 @pytest.fixture
@@ -722,7 +734,8 @@ async def test_postgresql_cross_pod_callback_and_single_refresh(
             clock=lambda: NOW,
         )
         state = parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
-        ready = await pod_b.callback(actor=actor(), state=state, code="code", issuer=ISSUER)
+        receipt = await capture_receipt(pod_a, state)
+        ready = await pod_b.callback(actor=actor(), state=state, receipt=receipt)
         assert ready.status == "ready"
         entered, release = Event(), Event()
         original_refresh = pod_a._oauth.refresh

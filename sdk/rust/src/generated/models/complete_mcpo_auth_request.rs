@@ -13,22 +13,15 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CompleteMcpoAuthRequest {
-    #[serde(rename = "code")]
-    pub code: String,
-
-    #[serde(rename = "issuer")]
-    pub issuer: String,
+    #[serde(rename = "receipt")]
+    pub receipt: String,
 
     #[serde(rename = "state")]
     pub state: String,
 }
 
 impl CompleteMcpoAuthRequest {
-    pub fn new(code: String, issuer: String, state: String) -> CompleteMcpoAuthRequest {
-        CompleteMcpoAuthRequest {
-            code,
-            issuer,
-            state,
-        }
+    pub fn new(receipt: String, state: String) -> CompleteMcpoAuthRequest {
+        CompleteMcpoAuthRequest { receipt, state }
     }
 }

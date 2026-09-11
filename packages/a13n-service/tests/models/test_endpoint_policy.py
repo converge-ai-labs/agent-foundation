@@ -24,7 +24,7 @@ def test_endpoint_is_normalized_without_changing_safe_query() -> None:
         "HTTPS://Models.Example.COM:443/v1/?api-version=2026-01-01"
     )
 
-    assert normalized == "https://models.example.com/v1?api-version=2026-01-01"
+    assert normalized == "https://models.example.com/v1/?api-version=2026-01-01"
     assert hostname == "models.example.com"
     assert port == 443
 

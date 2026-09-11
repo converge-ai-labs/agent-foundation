@@ -1,5 +1,6 @@
 from http import HTTPStatus
 from typing import Any
+from urllib.parse import quote
 
 import httpx2 as httpx
 
@@ -9,11 +10,15 @@ from ...models.mcp_client_metadata import MCPClientMetadata
 from ...types import Response
 
 
-def build_request() -> dict[str, Any]:
+def build_request(
+    issuer_key: str,
+) -> dict[str, Any]:
 
     _kwargs: dict[str, Any] = {
         "method": "get",
-        "url": "/api/v1/oauth/mcp/client-metadata.json",
+        "url": "/api/v1/oauth/mcp/client-metadata/{issuer_key}.json".format(
+            issuer_key=quote(str(issuer_key), safe=""),
+        ),
     }
 
     return _kwargs
@@ -26,6 +31,11 @@ def _parse_response(
         response_200 = MCPClientMetadata.from_dict(response.json())
 
         return response_200
+
+    if response.status_code == 400:
+        response_400 = ErrorResponse.from_dict(response.json())
+
+        return response_400
 
     response_default = ErrorResponse.from_dict(response.json())
 
@@ -44,10 +54,14 @@ def _build_response(
 
 
 def sync_detailed(
+    issuer_key: str,
     *,
     client: AuthenticatedClient | Client,
 ) -> Response[ErrorResponse | MCPClientMetadata]:
     """Mcp Client Metadata
+
+    Args:
+        issuer_key (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -57,7 +71,9 @@ def sync_detailed(
         Response[ErrorResponse | MCPClientMetadata]
     """
 
-    kwargs = build_request()
+    kwargs = build_request(
+        issuer_key=issuer_key,
+    )
 
     response = client.get_httpx_client().request(
         **kwargs,
@@ -67,10 +83,14 @@ def sync_detailed(
 
 
 def sync(
+    issuer_key: str,
     *,
     client: AuthenticatedClient | Client,
 ) -> ErrorResponse | MCPClientMetadata | None:
     """Mcp Client Metadata
+
+    Args:
+        issuer_key (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -81,15 +101,20 @@ def sync(
     """
 
     return sync_detailed(
+        issuer_key=issuer_key,
         client=client,
     ).parsed
 
 
 async def asyncio_detailed(
+    issuer_key: str,
     *,
     client: AuthenticatedClient | Client,
 ) -> Response[ErrorResponse | MCPClientMetadata]:
     """Mcp Client Metadata
+
+    Args:
+        issuer_key (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -99,7 +124,9 @@ async def asyncio_detailed(
         Response[ErrorResponse | MCPClientMetadata]
     """
 
-    kwargs = build_request()
+    kwargs = build_request(
+        issuer_key=issuer_key,
+    )
 
     response = await client.get_async_httpx_client().request(**kwargs)
 
@@ -107,10 +134,14 @@ async def asyncio_detailed(
 
 
 async def asyncio(
+    issuer_key: str,
     *,
     client: AuthenticatedClient | Client,
 ) -> ErrorResponse | MCPClientMetadata | None:
     """Mcp Client Metadata
+
+    Args:
+        issuer_key (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -122,6 +153,7 @@ async def asyncio(
 
     return (
         await asyncio_detailed(
+            issuer_key=issuer_key,
             client=client,
         )
     ).parsed

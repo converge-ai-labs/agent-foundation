@@ -33,6 +33,8 @@ async def test_dcr_fallback_is_discovered_and_cleanup_uses_exact_registration() 
                     "authorization_endpoint": f"{ISSUER}/authorize",
                     "token_endpoint": f"{ISSUER}/token",
                     "registration_endpoint": f"{ISSUER}/register",
+                    "token_endpoint_auth_methods_supported": ["none", "client_secret_post"],
+                    "authorization_response_iss_parameter_supported": True,
                     "code_challenge_methods_supported": ["S256"],
                 }
             )
@@ -56,8 +58,7 @@ async def test_dcr_fallback_is_discovered_and_cleanup_uses_exact_registration() 
         client = MCPOAuthClient(http_client, EndpointPolicy())
         preparation = await client.prepare(
             RESOURCE,
-            client_metadata_url="https://1.1.1.1/api/v1/oauth/mcp/client-metadata.json",
-            redirect_uri="https://1.1.1.1/api/v1/oauth/mcp/callback",
+            public_origin="https://1.1.1.1",
             client_name="Service",
         )
         cleaned = await client.cleanup_registration_bundle(
@@ -82,6 +83,8 @@ async def test_token_exchange_never_follows_origin_changing_redirect_with_code_o
         return httpx2.Response(307, headers={"location": "https://9.9.9.9/token"})
 
     preparation = OAuthPreparation(
+        redirect_uri="https://1.1.1.1/callback",
+        requires_issuer=True,
         resource_url=RESOURCE,
         issuer_url=ISSUER,
         authorization_endpoint=f"{ISSUER}/authorize",
@@ -100,7 +103,6 @@ async def test_token_exchange_never_follows_origin_changing_redirect_with_code_o
                 preparation,
                 code="code",
                 verifier="v" * 64,
-                redirect_uri="https://1.1.1.1/api/v1/oauth/mcp/callback",
             )
 
     assert len(requests) == 1
@@ -137,6 +139,8 @@ async def test_authlib_exchange_and_refresh_share_bounded_cookie_free_pool(auth_
         return httpx2.Response(200, json=token, headers={"set-cookie": "session=provider; Path=/"})
 
     preparation = OAuthPreparation(
+        redirect_uri="https://1.1.1.1/callback",
+        requires_issuer=True,
         resource_url=RESOURCE,
         issuer_url=ISSUER,
         authorization_endpoint=f"{ISSUER}/authorize",
@@ -151,9 +155,7 @@ async def test_authlib_exchange_and_refresh_share_bounded_cookie_free_pool(auth_
     )
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle), cookies={"old": "cookie"}) as pool:
         oauth = MCPOAuthClient(pool, EndpointPolicy())
-        bundle = await oauth.exchange_code(
-            preparation, code="code", verifier="v" * 64, redirect_uri="https://1.1.1.1/callback"
-        )
+        bundle = await oauth.exchange_code(preparation, code="code", verifier="v" * 64)
         refreshed = await oauth.refresh(bundle)
         assert refreshed["refresh_token"] == "refresh"
         assert not pool.is_closed
@@ -227,3 +229,111 @@ async def test_registration_cleanup_requires_confirmed_result(status, confirmed)
             )
             is confirmed
         )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("resource", ["https://8.8.8.8/mcp/", "https://8.8.8.8"])
+async def test_well_known_fallback_preserves_resource_and_issuer_identity(resource: str) -> None:
+    issuer = f"{ISSUER}/tenant/"
+    paths: list[str] = []
+
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        paths.append(request.url.path)
+        if request.method == "POST":
+            return httpx2.Response(401)
+        if request.url.path == "/.well-known/oauth-protected-resource/mcp":
+            return (
+                _json({"resource": resource, "authorization_servers": [issuer]})
+                if resource.endswith("/mcp/")
+                else httpx2.Response(404)
+            )
+        if request.url.path == "/.well-known/oauth-protected-resource":
+            return _json({"resource": resource, "authorization_servers": [issuer]})
+        if request.url.path == "/.well-known/oauth-authorization-server/tenant":
+            return httpx2.Response(404)
+        if request.url.path == "/.well-known/openid-configuration/tenant":
+            return _json(
+                {
+                    "issuer": issuer,
+                    "authorization_endpoint": f"{ISSUER}/authorize/",
+                    "token_endpoint": f"{ISSUER}/token/",
+                    "code_challenge_methods_supported": ["S256"],
+                    "client_id_metadata_document_supported": True,
+                    "token_endpoint_auth_methods_supported": ["none"],
+                    "authorization_response_iss_parameter_supported": True,
+                }
+            )
+        raise AssertionError(str(request.url))
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as http:
+        preparation = await MCPOAuthClient(http, EndpointPolicy()).prepare(
+            "https://8.8.8.8/mcp/",
+            public_origin="https://1.1.1.1",
+            client_name="Service",
+        )
+    assert preparation.resource_url == resource
+    assert preparation.issuer_url == issuer
+    assert preparation.token_endpoint == f"{ISSUER}/token/"
+    assert paths[0] == "/mcp/"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("resource", ["https://8.8.8.8/other", "https://8.8.8.8/mcp"])
+async def test_well_known_resource_must_match_the_identity_used_to_construct_its_url(resource: str) -> None:
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        if request.method == "POST" or request.url.path.endswith("/mcp"):
+            return httpx2.Response(404)
+        return _json({"resource": resource, "authorization_servers": [ISSUER]})
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as http:
+        with pytest.raises(MCPOAuthError, match="resource_mismatch"):
+            await MCPOAuthClient(http, EndpointPolicy()).prepare(
+                "https://8.8.8.8/mcp/",
+                public_origin="https://1.1.1.1",
+                client_name="Service",
+            )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("supported", "returned", "secret", "valid"),
+    [
+        (["client_secret_basic"], "client_secret_basic", "secret", True),
+        (["client_secret_post"], "client_secret_post", "secret", True),
+        (["none"], "none", None, True),
+        (["client_secret_post"], "none", None, False),
+        (["client_secret_basic"], "client_secret_basic", None, False),
+    ],
+)
+async def test_registration_negotiates_supported_client_authentication(supported, returned, secret, valid):
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        if request.url.path == "/mcp":
+            return httpx2.Response(401)
+        if request.url.path == "/.well-known/oauth-protected-resource/mcp":
+            return _json({"resource": RESOURCE, "authorization_servers": [ISSUER]})
+        if request.url.path == "/.well-known/oauth-authorization-server":
+            return _json(
+                {
+                    "issuer": ISSUER,
+                    "authorization_endpoint": f"{ISSUER}/authorize",
+                    "token_endpoint": f"{ISSUER}/token",
+                    "registration_endpoint": f"{ISSUER}/register",
+                    "token_endpoint_auth_methods_supported": supported,
+                    "authorization_response_iss_parameter_supported": True,
+                    "code_challenge_methods_supported": ["S256"],
+                }
+            )
+        if request.url.path == "/register":
+            assert json.loads(request.content)["token_endpoint_auth_method"] == supported[0]
+            return _json({"client_id": "registered", "token_endpoint_auth_method": returned, "client_secret": secret})
+        raise AssertionError(str(request.url))
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as http_client:
+        client = MCPOAuthClient(http_client, EndpointPolicy())
+        if not valid:
+            with pytest.raises(MCPOAuthError):
+                await client.prepare(RESOURCE, public_origin="https://1.1.1.1", client_name="Service")
+        else:
+            preparation = await client.prepare(RESOURCE, public_origin="https://1.1.1.1", client_name="Service")
+            assert preparation.token_endpoint_auth_method == returned
+            assert preparation.client_secret == secret

@@ -36,11 +36,11 @@ async def test_default_process_accepts_bootstrap_and_authenticates_product_api(t
             denied = await client.post(
                 "/api/v1/oauth/mcp/complete",
                 headers={"X-A13N-CSRF-Token": ""},
-                json={"code": "private-code", "state": "s" * 32, "issuer": "https://issuer.example"},
+                json={"receipt": "private-receipt" * 3, "state": "s" * 32},
             )
             assert denied.status_code == 403, denied.text
             assert denied.json()["error"]["code"] == "csrf_rejected"
-            assert "private-code" not in denied.text
+            assert "private-receipt" not in denied.text
             completion = await client.post(
                 "/api/v1/connector-setup/complete",
                 headers={"X-A13N-CSRF-Token": ""},

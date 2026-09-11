@@ -55,7 +55,7 @@ Manage existing membership through the Organization or Workspace `role-bindings`
 
 Composio returns to the Console page `/connector-setup/callback`. The page removes the upstream session from the address bar and posts it with the exact attempt and browser proof to `/api/v1/connector-setup/complete`, using the normal Origin, session cookie, and CSRF token. Follow the [Composio setup guide](external-tools.md#connector-providers-composio) to configure the verifier and shared origin.
 
-The MCP OAuth GET callback still requires the same CSRF proof as mutations when using a local browser session. A provider redirect alone cannot complete that route. Do not treat an ordinary provider redirect as a working session-authenticated completion flow.
+MCP providers redirect to `/api/v1/oauth/mcp/callback/{issuer_key}`. Service validates the callback and stores the authorization code, then redirects to `/mcp-setup/callback` with a short-lived receipt in the URL fragment. Console checks the original tab context and completes authorization with the signed-in User and CSRF token. Keep authorization in the same tab. Service omits query strings from its access logs; configure ingress access logs to do the same.
 
 ## Create application keys
 

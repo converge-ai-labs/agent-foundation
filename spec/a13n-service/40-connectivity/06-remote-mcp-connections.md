@@ -95,11 +95,14 @@ sequenceDiagram
     Control->>MCP: protected request and metadata discovery
     MCP-->>Control: challenge and protected-resource metadata
     Control->>AS: authorization-server discovery
-    Control->>Control: prefer Client ID Metadata Document; otherwise DCR
+    Control->>Control: use configured app; otherwise Client ID Metadata Document or DCR
     Control-->>User: browser authorization redirect with PKCE and resource
     User->>AS: authenticate and authorize
-    AS-->>Control: fixed callback with code, state, and issuer
-    Control->>Control: consume state and validate issuer, redirect, PKCE, and resource
+    AS-->>Control: issuer-specific callback with code, state, and issuer
+    Control->>Control: validate callback and store encrypted code
+    Control-->>User: same-tab completion receipt
+    User->>Control: authenticated, CSRF-protected completion
+    Control->>Control: reserve receipt and validate current authority
     Control->>AS: exchange code
     AS-->>Control: access token and optional refresh token
     Control->>Credentials: encrypt current credential bundle
@@ -107,13 +110,17 @@ sequenceDiagram
     Control-->>User: MCPConnection ready
 ```
 
-A public origin is required when interactive OAuth is used; Control can manage noninteractive connections without it. Service publishes one deployment-correct Client ID Metadata Document at `${public_origin}/api/v1/oauth/mcp/client-metadata.json`; the URL itself is the OAuth `client_id`. The document contains that exact client ID, the fixed `${public_origin}/mcp-setup/callback` redirect URI, the configured bounded client name, `authorization_code`, `code`, and `none` token-endpoint authentication. `public_origin` is an operator setting validated as one absolute HTTPS origin and is never derived from `Host` or forwarding headers. The document is a public protocol artifact containing no organization, MCPConnection, registration, or credential data.
+A public origin is required when interactive OAuth is used; Control can manage noninteractive connections without it. `public_origin` is an operator setting validated as one absolute HTTPS origin, never derived from request headers. For each exact discovered issuer, Service derives `issuer_key` as its SHA-256 hex digest and publishes `${public_origin}/api/v1/oauth/mcp/client-metadata/{issuer_key}.json`. That URL is the OAuth client ID; the document lists only `${public_origin}/api/v1/oauth/mcp/callback/{issuer_key}` as its redirect URI, plus the configured client name, authorization-code grant, code response, and public-client token authentication. This public artifact contains no connection, organization, or credential data.
 
-Service uses Client ID Metadata when the discovered authorization server advertises it. Otherwise, Service uses standards-defined Dynamic Client Registration only when discovery provides a registration endpoint. A server supporting neither mechanism is incompatible with OAuth setup and the MCPConnection does not become ready. Authorization endpoints and client registration values come only from standards-defined discovery and registration.
+Client selection uses a connection-owned pre-registered app when configured, then Client ID Metadata when advertised and public-client authentication is supported, then Dynamic Client Registration when available. DCR selects an advertised token authentication method, preferring `none`, then `client_secret_basic`, then `client_secret_post`; omitted metadata defaults to Basic authentication. The registration response must use a supported method and supply a secret for confidential authentication. A server supporting none of these choices cannot complete setup.
 
-The fixed callback uses short-lived, unpredictable, single-use state bound to the exact Organization, Workspace, MCPConnection, initiating User, endpoint resource, issuer expectation, redirect URI, and PKCE verifier. That setup state is durably available to any eligible control replica and is consumed atomically, so a callback cannot be replayed or completed for another MCPConnection or organization.
+Workspace administrators can discover the exact issuer, supported token authentication methods, and redirect URI, then save their registered client ID, method, and write-only secret. Service revalidates the discovered issuer and authentication method before the version-fenced write. Configuration is an internal record owned by the MCPConnection, with its secret protected under the shared resource-credential contract. It survives token expiry and failed authorization. Replacing or clearing it atomically increments the connection version, clears active credentials, and invalidates setup and refresh claims. Deletion clears this record but never deletes a user-owned provider app. Service accepts no caller-defined authorization, token, registration, or resource endpoints.
 
-Service requires RFC 9728 Protected Resource Metadata, discovered from the Bearer challenge or the standard endpoint-path then root well-known locations, and verifies that its resource identifies the canonical MCP endpoint. It selects one advertised authorization server, discovers it through RFC 8414 or OpenID Connect metadata, and pins the exact issuer. It uses PKCE `S256` and sends the canonical MCP resource in both authorization and token requests. Scope comes from the authenticated challenge or protected-resource metadata rather than an arbitrary caller field. It never accepts manually supplied authorization, token, registration, or issuer endpoints and never treats self-reported display metadata as authorization identity.
+Short-lived unpredictable state binds the Organization, Workspace, connection, initiating User, exact resource, issuer, redirect URI, and PKCE verifier. The public GET callback validates state, the actual issuer-specific route, and issuer policy, then stores the code and a receipt digest in the encrypted setup bundle and moves `pending` to `received` without extending expiry. It redirects to Console with state and an unpredictable receipt in the URL fragment. A repeated callback cannot replace the code. Authenticated, CSRF-protected completion reserves that receipt once, rechecks the initiating User and current management authority, and exchanges only the stored code using the persisted redirect URI. Any eligible control replica can complete it.
+
+Automatic registration and public clients require the authorization response `iss`. A configured confidential app may explicitly allow its absence only when discovery does not advertise issuer-response support. An advertised requirement cannot be disabled, and any supplied issuer must match exactly. This opt-in is bound to the registered client configuration; Service never enables it automatically after a failed callback.
+
+Service requires RFC 9728 Protected Resource Metadata, discovered from a Bearer challenge or endpoint-path then root well-known locations. Missing challenges permit well-known discovery. Challenge and endpoint-path metadata must identify the exact endpoint; origin-root fallback must identify that origin. Path and trailing-slash identity are preserved; only well-known URL construction removes terminating slashes as required by the discovery specifications. Authorization-server discovery tries RFC 8414, OIDC path insertion, then OIDC path appending, and pins the exact issuer. PKCE `S256` and the discovered resource are used in authorization and token requests. Scope comes from the Bearer challenge or protected-resource metadata, never an arbitrary caller field.
 
 Access tokens, refresh tokens, and Dynamic Client Registration credentials form one encrypted connection bundle. Deletion first clears local credentials, tombstones the connection, and fences setup/refresh. It takes minimal snapshots and makes one bounded attempt to delete each owned registration at its exact validated management URI. Failure or uncertainty yields an honest persisted cleanup receipt; replay cannot repeat the effect. There is no cleanup scheduler. Agent execution never opens an interactive browser flow.
 
@@ -121,7 +128,7 @@ Access tokens, refresh tokens, and Dynamic Client Registration credentials form 
 
 The OAuth protocol implementation uses a maintained OAuth library for authorization, PKCE, token endpoint authentication, exchange, and refresh. Service adds MCP discovery, exact resource/issuer binding, shared persistence, and bounded endpoint-policy HTTP transport. The process owns a cookie-free HTTP pool; credentials are explicit request values and are never client defaults.
 
-A callback atomically reserves shared single-use state before token exchange. Any control replica can complete it. Current connection version, credential generation, state claim owner/generation, deadline, and initiating User authority are checked again at commit. Expired or interrupted exchange claims become `action_required`; they never replay a possibly consumed authorization code. Failed setup requires an explicit new authorization.
+Authenticated completion atomically reserves shared single-use callback receipt state before token exchange. Any control replica can complete it. Current connection version, credential generation, state claim owner/generation, deadline, and initiating User authority are checked again at commit. Expired or interrupted exchange claims become `action_required`; they never replay a possibly consumed authorization code. Failed setup requires an explicit new authorization.
 
 Management discovery and Worker execution obtain current credentials through the same demand-driven refresh boundary. Discovery can refresh a pending connection after reconnect or OAuth completion; it does not require discovery to have already established readiness. Each handshake and paginated discovery request obtains current credentials. Discovery completion checks the latest credential generation used by its requests while retaining the original endpoint and management-version fence. Refresh occurs before authenticated use, never through a refresh-candidate scanner. A short connection transaction checks credential expiry and claims one credential generation. Claim acquisition is atomic for concurrent requests in the SQLite single-process profile and across PostgreSQL Pods; only the winner can exchange the claimed rotating refresh token. Exchange runs outside the transaction and success commits only under the same valid claim, eligible ready or pending connection, Workspace, and credential generation. Replacement, disablement, deletion, or new authorization fences late results.
 
@@ -129,7 +136,7 @@ A live competing claim causes a bounded wait outside any database session, follo
 
 ## Credential Boundary
 
-MCPConnection records store ciphertext, nonce, key identifier, and credential generation under the [shared protection contract](../27-secret-management.md#protection-boundary). OAuth sessions separately protect PKCE and registration setup material. Completion, expiration, and terminal failure clear session material. Generic Secret routes cannot enumerate or mutate either bundle. Local deletion clears all encryption fields in its initial transaction.
+MCPConnection records store ciphertext, nonce, key identifier, and credential generation under the [shared protection contract](../27-secret-management.md#protection-boundary). OAuth client configuration separately protects registered application secrets. OAuth sessions protect PKCE, registration setup material, received authorization codes, and receipt digests. Completion, expiration, and terminal failure clear session material. Generic Secret routes cannot enumerate or mutate these bundles. Local deletion clears all encryption fields in its initial transaction.
 
 No plaintext credential enters Agent configuration, Run state, discovered tool definitions, model context, Tool arguments, events, Items, errors, logs, traces, or tool results. The Worker resolves only the exact credential required for the current fenced RunAttempt and endpoint request.
 
@@ -154,17 +161,17 @@ The Run stores no OAuth scope string or token snapshot. Each remote operation re
 
 ## Failure Semantics
 
-| Condition                                                       | Outcome                                                                                                                  |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Endpoint violates outbound-network or transport policy          | Creation or discovery fails before any credential is sent                                                                |
-| Protected-resource or authorization-server discovery is invalid | OAuth setup fails closed; Service does not accept caller-supplied replacement endpoints                                  |
-| Neither Client ID Metadata Document nor DCR is supported        | OAuth setup reports an incompatible MCP authorization service                                                            |
-| State, issuer, redirect, resource, or PKCE validation fails     | Callback is rejected and no credential or ready transition commits                                                       |
-| Callback or token response is lost after a possible commit      | A completed receipt remains authoritative; an interrupted exchange requires new authorization without replaying the code |
-| Refresh token is absent or refresh fails                        | Current call fails; the MCPConnection becomes `action_required` with `reauthorization_required`                          |
-| Static header name or value violates the bounded policy         | Setup or replacement fails before any credential is stored or sent                                                       |
-| Tool definitions change after Run acceptance                    | Current discovery stays within the accepted scope; missing tools or invalid arguments fail explicitly                    |
-| Remote effect may have occurred but its result is lost          | Tool outcome follows the remote MCP tool's task, idempotency, reconciliation, or unknown-outcome semantics               |
+| Condition                                                              | Outcome                                                                                                                  |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Endpoint violates outbound-network or transport policy                 | Creation or discovery fails before any credential is sent                                                                |
+| Protected-resource or authorization-server discovery is invalid        | OAuth setup fails closed; Service does not accept caller-supplied replacement endpoints                                  |
+| No configured client, Client ID Metadata Document, or DCR is available | OAuth setup reports an incompatible MCP authorization service                                                            |
+| State, issuer, redirect, resource, or PKCE validation fails            | Callback is rejected and no credential or ready transition commits                                                       |
+| Callback or token response is lost after a possible commit             | A completed receipt remains authoritative; an interrupted exchange requires new authorization without replaying the code |
+| Refresh token is absent or refresh fails                               | Current call fails; the MCPConnection becomes `action_required` with `reauthorization_required`                          |
+| Static header name or value violates the bounded policy                | Setup or replacement fails before any credential is stored or sent                                                       |
+| Tool definitions change after Run acceptance                           | Current discovery stays within the accepted scope; missing tools or invalid arguments fail explicitly                    |
+| Remote effect may have occurred but its result is lost                 | Tool outcome follows the remote MCP tool's task, idempotency, reconciliation, or unknown-outcome semantics               |
 
 ## Compatibility and Invariants
 
@@ -172,7 +179,7 @@ Service validates negotiated MCP protocol compatibility through its supported up
 
 1. One MCPConnection combines one Streamable HTTP endpoint and one authorization identity; Service defines no separate MCPServer resource.
 2. a13n Service never launches user-configured MCP processes.
-3. Service implements one standards-based MCP OAuth client using a Client ID Metadata Document when supported and DCR otherwise, without provider-specific branches.
+3. Service implements one standards-based MCP OAuth client using a configured app, Client ID Metadata Document, or DCR, without provider-specific branches.
 4. Workspace MCPConnections require current execution Principal and Workspace authority; external actors cannot confer authority.
 5. OAuth, bearer, and bounded static-header credentials are MCPConnection-owned encrypted bundles and never model-visible data.
 6. Discovery and authenticated clients are isolated by MCPConnection identity; accepted Runs retain source selections, not immutable tool catalogs.
@@ -183,4 +190,4 @@ Control and Worker construct remote MCP clients with the same configured HTTP ph
 
 Expired setup records are processed in bounded short transactions. A productive maintenance pass yields to other tasks and continues draining eligible work; the normal poll delay applies when there is no eligible work. No transaction spans a poll wait or network operation.
 
-Console receives the OAuth redirect, removes its query material before authentication requests, checks its same-tab state, and POSTs `code`, `state`, and `issuer` to `/api/v1/oauth/mcp/complete` with the authenticated browser session and CSRF proof. Service retains the one-use state, exact owner and issuer checks, and PKCE verification.
+Console receives state and receipt through `/mcp-setup/callback`, removes query and fragment material before authentication requests, checks same-tab state, and POSTs only `state` and `receipt` to `/api/v1/oauth/mcp/complete` with its authenticated browser session and CSRF proof. It never receives the authorization code. Service access logs omit request query strings; ingress operators must apply equivalent query redaction.

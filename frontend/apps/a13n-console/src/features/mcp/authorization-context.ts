@@ -54,22 +54,18 @@ export function clearMCPAuthorization() {
 /** Remove OAuth material before any authentication request, telemetry, or rendering. */
 export function takeMCPCallback(): Schema["CompleteMCPOAuthRequest"] | null {
   if (window.location.pathname !== "/mcp-setup/callback") return null;
-  const params = new URLSearchParams(window.location.search);
+  const params = new URLSearchParams(window.location.hash.slice(1));
   window.history.replaceState(null, "", window.location.pathname);
-  const code = params.getAll("code"),
-    state = params.getAll("state"),
-    issuer = params.getAll("iss");
+  const receipt = params.getAll("receipt"),
+    state = params.getAll("state");
   if (
-    code.length !== 1 ||
-    !code[0] ||
-    code[0].length > 8192 ||
+    receipt.length !== 1 ||
+    receipt[0].length < 32 ||
+    receipt[0].length > 512 ||
     state.length !== 1 ||
     state[0].length < 32 ||
-    state[0].length > 512 ||
-    issuer.length !== 1 ||
-    !issuer[0] ||
-    issuer[0].length > 2048
+    state[0].length > 512
   )
     return null;
-  return { code: code[0], state: state[0], issuer: issuer[0] };
+  return { receipt: receipt[0], state: state[0] };
 }

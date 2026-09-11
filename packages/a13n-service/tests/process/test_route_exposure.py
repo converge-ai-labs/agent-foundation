@@ -109,7 +109,7 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert "/api/v1/application-accounts/{account_id}/targets/{target_id}" in document["paths"]
     assert "/api/v1/workspaces/{workspace}/mcp-connections" in document["paths"]
     assert "/api/v1/mcp-connections/{connection_id}/authorize" in document["paths"]
-    assert "/api/v1/oauth/mcp/client-metadata.json" in document["paths"]
+    assert "/api/v1/oauth/mcp/client-metadata/{issuer_key}.json" in document["paths"]
     connectivity_paths = {
         path: operations
         for path, operations in document["paths"].items()

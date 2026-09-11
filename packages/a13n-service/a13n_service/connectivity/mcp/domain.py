@@ -87,9 +87,43 @@ class UpdateMCPConnectionRequest(StrictModel):
 
 
 class CompleteMCPOAuthRequest(StrictModel):
-    code: str = Field(min_length=1, max_length=8192, repr=False)
     state: str = Field(min_length=32, max_length=512, repr=False)
-    issuer: str = Field(min_length=1, max_length=2048)
+    receipt: str = Field(min_length=32, max_length=512, repr=False)
+
+
+OAuthTokenAuthMethod = Literal["none", "client_secret_basic", "client_secret_post"]
+
+
+class MCPOAuthClientConfiguration(StrictModel):
+    issuer_url: Endpoint
+    client_id: str = Field(min_length=1, max_length=2048)
+    token_endpoint_auth_method: OAuthTokenAuthMethod
+    allow_missing_issuer: bool = False
+
+
+class MCPOAuthClientInput(MCPOAuthClientConfiguration):
+    client_secret: SecretStr | None = Field(default=None, min_length=1, max_length=16_384, repr=False)
+
+    @model_validator(mode="after")
+    def valid_client(self) -> MCPOAuthClientInput:
+        confidential = self.token_endpoint_auth_method != "none"
+        if confidential != (self.client_secret is not None):
+            raise ValueError("Confidential clients require a secret; public clients must not supply one")
+        if self.allow_missing_issuer and not confidential:
+            raise ValueError("Missing issuer responses require a trusted confidential client")
+        return self
+
+
+class ConfigureMCPOAuthClientRequest(StrictModel):
+    expected_version: int = Field(ge=1)
+    client: MCPOAuthClientInput | None
+
+
+class MCPOAuthDiscovery(StrictModel):
+    issuer_url: Endpoint
+    redirect_uri: Endpoint
+    token_endpoint_auth_methods_supported: tuple[OAuthTokenAuthMethod, ...]
+    authorization_response_iss_parameter_supported: bool
 
 
 class MCPConnectionCommandRequest(StrictModel):

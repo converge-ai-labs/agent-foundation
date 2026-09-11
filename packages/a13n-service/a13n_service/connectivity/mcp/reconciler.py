@@ -36,7 +36,7 @@ class MCPReconciler:
                 select(MCPConnectionRecord)
                 .join(MCPOAuthSessionRecord, MCPOAuthSessionRecord.mcp_connection_id == MCPConnectionRecord.id)
                 .where(
-                    MCPOAuthSessionRecord.status.in_(("pending", "exchanging")),
+                    MCPOAuthSessionRecord.status.in_(("pending", "received", "exchanging")),
                     or_(
                         MCPOAuthSessionRecord.expires_at <= now,
                         (MCPOAuthSessionRecord.status == "exchanging")
@@ -53,7 +53,7 @@ class MCPReconciler:
                 select(MCPOAuthSessionRecord)
                 .where(
                     MCPOAuthSessionRecord.mcp_connection_id == connection.id,
-                    MCPOAuthSessionRecord.status.in_(("pending", "exchanging")),
+                    MCPOAuthSessionRecord.status.in_(("pending", "received", "exchanging")),
                     or_(
                         MCPOAuthSessionRecord.expires_at <= now,
                         (MCPOAuthSessionRecord.status == "exchanging")

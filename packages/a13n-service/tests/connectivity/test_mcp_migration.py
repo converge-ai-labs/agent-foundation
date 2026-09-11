@@ -1,11 +1,14 @@
 from pathlib import Path
 
+from a13n_service.database.metadata import service_metadata
 from a13n_service.database.migration import DatabaseMigrator
 from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
 from a13n_service.storage.relational import sync_database_url
+from alembic.autogenerate import compare_metadata
+from alembic.migration import MigrationContext
 from sqlalchemy import create_engine, inspect
 
-TABLES = {"mcp_connections", "mcp_oauth_sessions"}
+TABLES = {"mcp_connections", "mcp_oauth_sessions", "mcp_oauth_clients"}
 
 
 def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
@@ -14,6 +17,14 @@ def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
     migrator.current(check_heads=True, verbose=False)
     engine = create_engine(sync_database_url(config))
     try:
+        with engine.connect() as connection:
+            context = MigrationContext.configure(
+                connection,
+                opts={
+                    "include_object": lambda obj, name, kind, reflected, compare_to: kind != "table" or name in TABLES,
+                },
+            )
+            assert compare_metadata(context, service_metadata()) == []
         inspector = inspect(engine)
         assert "mcp_tool_catalogs" not in inspector.get_table_names()
         assert TABLES <= set(inspector.get_table_names())
@@ -32,6 +43,8 @@ def _exercise(config: PostgreSQLConfig | SQLiteConfig) -> None:
         )
         constraints = {constraint["name"] for constraint in inspector.get_check_constraints("mcp_connections")}
         assert "ck_mcp_connections_refresh_claim_generation_non_negative" in constraints
+        session_constraints = inspector.get_check_constraints("mcp_oauth_sessions")
+        assert any("received" in constraint["sqltext"] for constraint in session_constraints)
         session_columns = {column["name"] for column in inspector.get_columns("mcp_oauth_sessions")}
         assert {"state_digest", "ciphertext", "claim_generation", "expires_at"} <= session_columns
     finally:

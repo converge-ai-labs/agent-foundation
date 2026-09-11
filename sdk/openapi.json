@@ -2494,16 +2494,10 @@
       "CompleteMCPOAuthRequest": {
         "additionalProperties": false,
         "properties": {
-          "code": {
-            "maxLength": 8192,
-            "minLength": 1,
-            "title": "Code",
-            "type": "string"
-          },
-          "issuer": {
-            "maxLength": 2048,
-            "minLength": 1,
-            "title": "Issuer",
+          "receipt": {
+            "maxLength": 512,
+            "minLength": 32,
+            "title": "Receipt",
             "type": "string"
           },
           "state": {
@@ -2514,9 +2508,8 @@
           }
         },
         "required": [
-          "code",
           "state",
-          "issuer"
+          "receipt"
         ],
         "title": "CompleteMCPOAuthRequest",
         "type": "object"
@@ -2572,6 +2565,32 @@
           "result"
         ],
         "title": "CompletePendingResolution",
+        "type": "object"
+      },
+      "ConfigureMCPOAuthClientRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MCPOAuthClientInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_version",
+          "client"
+        ],
+        "title": "ConfigureMCPOAuthClientRequest",
         "type": "object"
       },
       "ConnectionCleanupReceipt": {
@@ -6982,6 +7001,138 @@
           "mcp_connection_id"
         ],
         "title": "MCPConnectionToolSelection",
+        "type": "object"
+      },
+      "MCPOAuthClientConfiguration": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_missing_issuer": {
+            "default": false,
+            "title": "Allow Missing Issuer",
+            "type": "boolean"
+          },
+          "client_id": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Client Id",
+            "type": "string"
+          },
+          "issuer_url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Issuer Url",
+            "type": "string"
+          },
+          "token_endpoint_auth_method": {
+            "enum": [
+              "none",
+              "client_secret_basic",
+              "client_secret_post"
+            ],
+            "title": "Token Endpoint Auth Method",
+            "type": "string"
+          }
+        },
+        "required": [
+          "issuer_url",
+          "client_id",
+          "token_endpoint_auth_method"
+        ],
+        "title": "MCPOAuthClientConfiguration",
+        "type": "object"
+      },
+      "MCPOAuthClientInput": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_missing_issuer": {
+            "default": false,
+            "title": "Allow Missing Issuer",
+            "type": "boolean"
+          },
+          "client_id": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_secret": {
+            "anyOf": [
+              {
+                "format": "password",
+                "maxLength": 16384,
+                "minLength": 1,
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Secret"
+          },
+          "issuer_url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Issuer Url",
+            "type": "string"
+          },
+          "token_endpoint_auth_method": {
+            "enum": [
+              "none",
+              "client_secret_basic",
+              "client_secret_post"
+            ],
+            "title": "Token Endpoint Auth Method",
+            "type": "string"
+          }
+        },
+        "required": [
+          "issuer_url",
+          "client_id",
+          "token_endpoint_auth_method"
+        ],
+        "title": "MCPOAuthClientInput",
+        "type": "object"
+      },
+      "MCPOAuthDiscovery": {
+        "additionalProperties": false,
+        "properties": {
+          "authorization_response_iss_parameter_supported": {
+            "title": "Authorization Response Iss Parameter Supported",
+            "type": "boolean"
+          },
+          "issuer_url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Issuer Url",
+            "type": "string"
+          },
+          "redirect_uri": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Redirect Uri",
+            "type": "string"
+          },
+          "token_endpoint_auth_methods_supported": {
+            "items": {
+              "enum": [
+                "none",
+                "client_secret_basic",
+                "client_secret_post"
+              ],
+              "type": "string"
+            },
+            "title": "Token Endpoint Auth Methods Supported",
+            "type": "array"
+          }
+        },
+        "required": [
+          "issuer_url",
+          "redirect_uri",
+          "token_endpoint_auth_methods_supported",
+          "authorization_response_iss_parameter_supported"
+        ],
+        "title": "MCPOAuthDiscovery",
         "type": "object"
       },
       "MCPTool": {
@@ -21640,6 +21791,280 @@
         ]
       }
     },
+    "/api/v1/mcp-connections/{connection_id}/oauth-client": {
+      "get": {
+        "operationId": "get_mcp_connections_connection_id_oauth_client",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/MCPOAuthClientConfiguration"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Mcp Oauth Client Api V1 Mcp Connections  Connection Id  Oauth Client Get"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Mcp Oauth Client",
+        "tags": [
+          "connectivity-management"
+        ]
+      },
+      "put": {
+        "operationId": "put_mcp_connections_connection_id_oauth_client",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigureMCPOAuthClientRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPConnection"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Configure Mcp Oauth Client",
+        "tags": [
+          "connectivity-management"
+        ]
+      }
+    },
+    "/api/v1/mcp-connections/{connection_id}/oauth-discovery": {
+      "post": {
+        "operationId": "post_mcp_connections_connection_id_oauth_discovery",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPOAuthDiscovery"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Discover Mcp Oauth",
+        "tags": [
+          "connectivity-management"
+        ]
+      }
+    },
     "/api/v1/mcp-connections/{connection_id}/reconnect": {
       "post": {
         "operationId": "post_mcp_connections_connection_id_reconnect",
@@ -21925,9 +22350,21 @@
         ]
       }
     },
-    "/api/v1/oauth/mcp/client-metadata.json": {
+    "/api/v1/oauth/mcp/client-metadata/{issuer_key}.json": {
       "get": {
-        "operationId": "get_oauth_mcp_client_metadata_json",
+        "operationId": "get_oauth_mcp_client_metadata_issuer_key_json",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issuer_key",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Issuer Key",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -21938,6 +22375,23 @@
               }
             },
             "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
             "headers": {
               "X-Request-ID": {
                 "schema": {

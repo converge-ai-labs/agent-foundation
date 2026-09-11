@@ -73,6 +73,7 @@ from .complete_email_change_request import CompleteEmailChangeRequest
 from .complete_mcpo_auth_request import CompleteMCPOAuthRequest
 from .complete_password_reset_request import CompletePasswordResetRequest
 from .complete_pending_resolution import CompletePendingResolution
+from .configure_mcpo_auth_client_request import ConfigureMCPOAuthClientRequest
 from .connection_cleanup_receipt import ConnectionCleanupReceipt
 from .connection_cleanup_receipt_local_status import ConnectionCleanupReceiptLocalStatus
 from .connection_cleanup_receipt_remote_status import ConnectionCleanupReceiptRemoteStatus
@@ -234,6 +235,16 @@ from .mcp_tool_annotations import MCPToolAnnotations
 from .mcp_tool_collection import MCPToolCollection
 from .mcp_tool_input_schema import MCPToolInputSchema
 from .mcp_tool_output_schema_type_0 import MCPToolOutputSchemaType0
+from .mcpo_auth_client_configuration import MCPOAuthClientConfiguration
+from .mcpo_auth_client_configuration_token_endpoint_auth_method import (
+    MCPOAuthClientConfigurationTokenEndpointAuthMethod,
+)
+from .mcpo_auth_client_input import MCPOAuthClientInput
+from .mcpo_auth_client_input_token_endpoint_auth_method import MCPOAuthClientInputTokenEndpointAuthMethod
+from .mcpo_auth_discovery import MCPOAuthDiscovery
+from .mcpo_auth_discovery_token_endpoint_auth_methods_supported_item import (
+    MCPOAuthDiscoveryTokenEndpointAuthMethodsSupportedItem,
+)
 from .model import Model
 from .model_candidate import ModelCandidate
 from .model_candidate_parameter_support import ModelCandidateParameterSupport
@@ -562,6 +573,7 @@ __all__ = (
     "CompleteMCPOAuthRequest",
     "CompletePasswordResetRequest",
     "CompletePendingResolution",
+    "ConfigureMCPOAuthClientRequest",
     "ConnectionCleanupReceipt",
     "ConnectionCleanupReceiptLocalStatus",
     "ConnectionCleanupReceiptRemoteStatus",
@@ -718,6 +730,12 @@ __all__ = (
     "MCPConnectionStatus",
     "MCPConnectionStatusReason",
     "MCPConnectionToolSelection",
+    "MCPOAuthClientConfiguration",
+    "MCPOAuthClientConfigurationTokenEndpointAuthMethod",
+    "MCPOAuthClientInput",
+    "MCPOAuthClientInputTokenEndpointAuthMethod",
+    "MCPOAuthDiscovery",
+    "MCPOAuthDiscoveryTokenEndpointAuthMethodsSupportedItem",
     "MCPTool",
     "MCPToolAnnotations",
     "MCPToolCollection",

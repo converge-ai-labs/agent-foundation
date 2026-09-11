@@ -26,3 +26,23 @@ def test_pretty_logging_is_the_local_default() -> None:
 
     assert config["handlers"]["default"]["formatter"] == "pretty"
     assert config["handlers"]["default"]["()"] is RichHandler
+
+
+def test_access_logging_removes_callback_secrets_before_formatting() -> None:
+    import logging
+
+    from a13n_service.log import RequestTargetFilter
+
+    record = logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        "",
+        0,
+        '%s - "%s %s HTTP/%s" %d',
+        ("127.0.0.1", "GET", "/api/v1/oauth/mcp/callback/key?code=secret&state=state", "1.1", 303),
+        None,
+    )
+    assert RequestTargetFilter().filter(record)
+    assert record.getMessage() == '127.0.0.1 - "GET /api/v1/oauth/mcp/callback/key HTTP/1.1" 303'
+    config = build_log_config(Settings())
+    assert config["loggers"]["uvicorn.access"]["filters"] == ["request_target"]

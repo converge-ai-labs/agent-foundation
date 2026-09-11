@@ -90,7 +90,13 @@ function ConnectionChoice({
           description: t(preset.description),
           badge: t("Remote MCP"),
           keywords: [preset.id, preset.endpoint],
-          icon: <BrandIcon identity={preset.id} endpoint={preset.endpoint} />,
+          icon: (
+            <BrandIcon
+              identity={preset.id}
+              endpoint={preset.endpoint}
+              logo={preset.logo}
+            />
+          ),
         }))
       : []),
   ].sort(
@@ -130,6 +136,7 @@ function ConnectionChoice({
           ) : (
             <BrandIcon
               identity={selected.preset?.id}
+              logo={selected.preset?.logo}
               endpoint={selected.preset?.endpoint ?? selected.endpoint}
             />
           )}
@@ -162,19 +169,6 @@ function ConnectionChoice({
               </a>
             )}
             <ConnectorToolPreview connector={selected.connector} />
-          </>
-        ) : selected.preset?.unavailableReason ? (
-          <>
-            <p role="status" className="text-sm text-muted-foreground">
-              {t(selected.preset.unavailableReason)}
-            </p>
-            <a
-              href={selected.preset.docs}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {t("Setup guide")}
-            </a>
           </>
         ) : (
           <CreateMCP

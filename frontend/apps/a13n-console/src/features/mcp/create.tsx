@@ -5,13 +5,12 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
-import { AuthorizationLink } from "../../shared/authorization-link";
 import { ErrorNotice } from "../../shared/feedback";
 import { FormActions, TextAreaField } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
 import type { MCPPreset } from "../connections/presets";
-import { saveMCPAuthorization } from "./authorization-context";
+import { MCPOAuthSetup } from "./oauth-setup";
 import { MCPCredentialFields } from "./credentials";
 
 export function CreateMCP({
@@ -27,7 +26,7 @@ export function CreateMCP({
 }) {
   const client = useClient(),
     cache = useQueryClient(),
-    { workspace, basePath } = useWorkspace(),
+    { workspace } = useWorkspace(),
     { t } = useTranslation(),
     key = useIdempotency();
   const created = useRef<Schema["MCPConnection"]>(undefined);
@@ -38,7 +37,8 @@ export function CreateMCP({
     [bearer, setBearer] = useState(""),
     [headers, setHeaders] = useState<Record<string, string>>({}),
     [started, setStarted] = useState(false),
-    [launch, setLaunch] = useState<Schema["MCPAuthorizationLaunch"]>();
+    [oauthConnection, setOAuthConnection] = useState<Schema["MCPConnection"]>(),
+    [ownApp, setOwnApp] = useState(preset?.oauthClient === "preregistered");
   const headerNames = Array.from(
     new Set(
       names
@@ -77,25 +77,7 @@ export function CreateMCP({
       }
       const path = { connection_id: connection.id };
       if (mode === "oauth") {
-        const body = { expected_version: connection.version };
-        const result = data(
-          await client.http.POST(
-            "/api/v1/mcp-connections/{connection_id}/authorize",
-            {
-              params: {
-                path,
-                header: commandHeaders(
-                  workspace.id,
-                  key.forBody({ authorize: connection.id, ...body }),
-                ),
-              },
-              body,
-            },
-          ),
-        );
-        const href = saveMCPAuthorization(result, connection, basePath);
-        setLaunch(result);
-        window.location.assign(href);
+        setOAuthConnection(connection);
         return;
       }
       if (mode !== "none" && !connection.credential_configured) {
@@ -141,12 +123,21 @@ export function CreateMCP({
       void cache.invalidateQueries({ queryKey: ["mcp-connections"] });
     },
   });
-  return launch ? (
-    <AuthorizationLink
-      url={launch.authorization_url}
-      expiresAt={launch.expires_at}
-      sameTab
-    />
+  return oauthConnection ? (
+    <div className={styles.stack}>
+      {preset && <p className={styles.muted}>{t(preset.requirements)}</p>}
+      {preset && (
+        <a href={preset.docs} target="_blank" rel="noopener noreferrer">
+          {t("Setup guide")}
+        </a>
+      )}
+      <MCPOAuthSetup
+        connection={oauthConnection}
+        onConnectionChange={setOAuthConnection}
+        autoStart
+        configureInitially={ownApp}
+      />
+    </div>
   ) : (
     <form
       className={styles.form}
@@ -192,6 +183,19 @@ export function CreateMCP({
           (value) => ({ value, label: t(`auth.${value}`) }),
         )}
       />
+      {mode === "oauth" && (
+        <ChoiceField
+          label={t("OAuth app")}
+          placeholder={t("Select OAuth app")}
+          value={ownApp ? "own" : "automatic"}
+          disabled={started}
+          options={[
+            { value: "automatic", label: t("Automatic client registration") },
+            { value: "own", label: t("Use your own OAuth app") },
+          ]}
+          onValueChange={(value) => setOwnApp(value === "own")}
+        />
+      )}
       {mode === "static_headers" && !started && (
         <TextAreaField
           label={t("Header names")}
@@ -212,6 +216,7 @@ export function CreateMCP({
           onHeaders={setHeaders}
         />
       )}
+      {preset && <p className={styles.muted}>{t(preset.requirements)}</p>}
       {preset && (
         <a href={preset.docs} target="_blank" rel="noopener noreferrer">
           {t("Setup guide")}
