@@ -109,7 +109,17 @@ async def test_composio_http_success_with_tool_failure_keeps_only_safe_status(st
 
 
 @pytest.mark.parametrize(
-    "body", [b"", b"null", b"[]", b"{}", b'{"successful": "false"}', b"invalid json", b"x" * (1024 * 1024 + 1)]
+    "body",
+    [
+        pytest.param(b"", id="empty"),
+        pytest.param(b"null", id="null"),
+        pytest.param(b"[]", id="array"),
+        pytest.param(b"{}", id="missing-success"),
+        pytest.param(b'{"successful": "false"}', id="invalid-success-type"),
+        pytest.param(b"invalid json", id="invalid-json"),
+        # Keep the payload out of verbose CI node IDs and runner log processing.
+        pytest.param(b"x" * (1024 * 1024 + 1), id="oversized-response"),
+    ],
 )
 @pytest.mark.anyio
 async def test_composio_invalid_execution_evidence_remains_unknown_without_retry(body):
@@ -149,7 +159,10 @@ def test_setup_rejects_nonlocal_return_targets(path):
         StartConnectorConnectionSetupRequest(expected_version=1, setup={}, return_path=path)
 
 
-@pytest.mark.parametrize("path", ["/", "/workspaces/ws_test/connectors", "/path%20name/", "/" + "a" * 2047])
+@pytest.mark.parametrize(
+    "path",
+    ["/", "/workspaces/ws_test/connectors", "/path%20name/", pytest.param("/" + "a" * 2047, id="max-length-path")],
+)
 def test_setup_accepts_local_return_paths(path):
     from a13n_service.connectivity.connectors.domain import StartConnectorConnectionSetupRequest
 
