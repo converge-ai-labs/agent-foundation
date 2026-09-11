@@ -41,6 +41,7 @@ from .output import (
 )
 from .shell import ShellToolset
 from .subagents import AsyncSubagentToolset
+from .tool_proxy import ToolProxyToolset
 from .web import WebToolset
 from .working_state import WorkingStateToolset
 
@@ -74,6 +75,7 @@ __all__ = [
     "NativeInputMediaKind",
     "ShellToolset",
     "ToolOutputDisclosure",
+    "ToolProxyToolset",
     "UserInteractionToolset",
     "WebToolset",
     "WorkingStateToolset",

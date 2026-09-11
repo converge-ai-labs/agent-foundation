@@ -54,6 +54,8 @@ The Model authentication feature exports `CodexRequestModel`, `CodexLoginFlow`, 
 
 A value is not private merely because it is absent from the root facade. Its owning module and that module's documented exports are the canonical import route. Removing duplicate root re-exports keeps discovery bounded and prevents unrelated feature families from becoming one coupled compatibility surface. The public Mem0 integration is imported as `from a13n_harness.capabilities import Mem0Capability, Mem0Scope`; its run replacement and Toolset implementation remain package-private. The public async-subagent boundary is imported from `a13n_harness.capabilities`: `SubagentCapability`, `SubagentOperator`, `SubagentOperatorContext`, `SubagentToolCallContext`, `SubagentDelegationPlan`, and the standard request/result/view models. `AsyncSubagentToolset` and the standard Environment Shell Toolset are available from `a13n_harness.toolsets`; the private inline executor and Run process controller are not public operator implementations.
 
+Grouped discovery is imported as `ToolProxyCapability`, `ToolProxyConfig`, and `ToolProxyGroup` from `a13n_harness.capabilities`, and `ToolProxyToolset` from `a13n_harness.toolsets`. These are code-first composition APIs; they do not add a built-in declarative `AgentSpec` registration. Their behavior belongs to [Tool Execution](07-tool-execution.md#grouped-toolproxy-discovery).
+
 ## Build API
 
 ```python

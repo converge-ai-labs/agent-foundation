@@ -115,6 +115,8 @@ The [integration package example](https://github.com/converge-ai-labs/agent-foun
 | `CodeActCapability`            | Restricted Python runners and explicit key-to-JSON stored values                            | Explicit eligible tools and Environment files for programs     |
 | `ContextualMCP`                | URL-based MCP with headers resolved once from the current logical run                       | Current `AgentContext` supplied by the Harness                 |
 
+For large local tool collections, [ToolProxyCapability and ToolProxyGroup](tool-proxy.md) provide code-first grouped discovery with dynamic schemas and CodeAct compatibility, without replacing native execution.
+
 Provider-backed run Capabilities contain live trusted collaborators. They are not definition state and never enter `HarnessState`.
 
 ## Native Image Generation with Saving

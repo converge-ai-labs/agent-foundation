@@ -182,6 +182,10 @@ A Host can expose the same URL-based path through its own trusted configuration 
 
 An Agent can select multiple MCP servers when each has a unique `id`. Use code-first `ContextualMCP` when configuration requires callable factories, current identity, static headers, or an out-of-band secret resolver.
 
+## Group large local MCP collections
+
+Use [ToolProxyGroup](tool-proxy.md#group-a-run-bound-mcp-capability) around a local `MCP` or `ContextualMCP` Capability to expose grouped discovery instead of every tool schema. Select `native=False, local=True`; provider-native tools and deferred-loading sources are not proxy targets. `ToolProxyGroup` preserves fresh run binding and contextual headers, and calls still use the original MCP Toolset and transport. It reduces model context, not MCP initialization or tool-listing work.
+
 ## Result boundary
 
 Locally executed MCP tools are ordinary dynamically discovered function tools. Their text and JSON returns cross the mandatory Harness result boundary and default to explicit truncation rather than spill when oversized. This bounds the value integrated into model history; it does not impose a transport-body or process-memory limit before the MCP client receives the result. Provider-native MCP execution remains on the provider path and does not cross the local function-tool boundary.

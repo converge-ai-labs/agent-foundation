@@ -183,6 +183,8 @@ One fresh context is created for every logical Harness run and reused by that ru
 
 ## MCP Context Headers
 
+For compact local MCP discovery, code-first `ToolProxyGroup` composes around the run-bound Capability rather than a definition-time Toolset. It preserves this header lifecycle and requires local-only MCP execution. [Grouped ToolProxy Discovery](07-tool-execution.md#grouped-toolproxy-discovery) owns its discovery and call contract.
+
 `ContextualMCP` resolves outbound headers during Pydantic Capability run binding, before the returned fresh upstream `MCP` exposes either a provider-native `MCPServerTool` or a local `MCPToolset`. A code-first caller supplies any trusted sync or async `MCPHeadersFactory`. `MCPContextHeaders` is the shared declarative implementation backed by `MCPContextHeadersConfig` and exact header bindings.
 
 The declarative resolver supports only these source namespaces:
