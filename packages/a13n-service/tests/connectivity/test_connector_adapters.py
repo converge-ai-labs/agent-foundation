@@ -7,9 +7,6 @@ import pytest
 from a13n_service.connectivity.connectors.contracts import ConnectionBinding, ConnectorProviderError, SetupContext
 from a13n_service.connectivity.connectors.http import ConnectorHttpClient
 from a13n_service.connectivity.connectors.providers.composio import ComposioProvider
-from a13n_service.connectivity.connectors.providers.composio.configuration import (
-    ComposioConfiguration,
-)
 from a13n_service.connectivity.connectors.providers.configuration import ApiKeyCredentials
 from jsonschema import Draft202012Validator
 from pydantic import ValidationError
@@ -36,7 +33,6 @@ def _context(*, callback: bool = False) -> SetupContext:
 def _composio(http_client: httpx2.AsyncClient) -> ComposioProvider:
     return ComposioProvider(
         ConnectorHttpClient(http_client, _AllowEndpoint(), response_max_bytes=1024 * 1024),
-        ComposioConfiguration(),
         ApiKeyCredentials(api_key="secret"),
     )
 

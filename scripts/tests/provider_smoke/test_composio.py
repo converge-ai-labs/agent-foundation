@@ -30,8 +30,6 @@ def smoke(monkeypatch):
         tool="GITHUB_LOOKUP",
         arguments='{"query":"hello"}',
         execute=False,
-        endpoint=None,
-        allow_private_domain=[],
         auth_config_id="auth-1",
         callback_url="https://callback.example/complete",
     )

@@ -11,7 +11,6 @@ from a13n_service.connectivity.connectors.providers.composio.catalog import (
     connection_fields,
     connector_metadata,
 )
-from a13n_service.connectivity.connectors.providers.composio.configuration import ComposioConfiguration
 
 from .connector_helpers import AllowEndpoint
 
@@ -93,9 +92,7 @@ async def test_managed_configuration_creation_reconciles_before_single_use_gate(
         raise httpx2.ReadTimeout("response lost")
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
-        catalog = ComposioCatalog(
-            ConnectorHttpClient(http, AllowEndpoint(), response_max_bytes=65536), ComposioConfiguration(), "secret"
-        )
+        catalog = ComposioCatalog(ConnectorHttpClient(http, AllowEndpoint(), response_max_bytes=65536), "secret")
         with pytest.raises(ConnectorProviderError):
             await catalog.resolve_auth_config("github", "managed", reserve)
         # Upstream accepted the POST despite a lost response; reuse its result.
@@ -105,3 +102,14 @@ async def test_managed_configuration_creation_reconciles_before_single_use_gate(
             await catalog.resolve_auth_config("github", "managed", reserve)
     assert len(posts) == 1
     assert posts[0]["auth_config"]["type"] == "use_composio_managed_auth"
+
+
+def test_hosted_composio_rejects_user_configuration():
+    from a13n_service.connectivity.connectors.providers.composio.configuration import ComposioConfiguration
+    from pydantic import ValidationError
+
+    assert ComposioConfiguration.model_json_schema()["properties"] == {}
+    assert ComposioConfiguration.model_validate({}).model_dump() == {}
+    for field in ("endpoint", "project_identity", "connected_accounts_profile", "tools_profile"):
+        with pytest.raises(ValidationError):
+            ComposioConfiguration.model_validate({field: "custom"})

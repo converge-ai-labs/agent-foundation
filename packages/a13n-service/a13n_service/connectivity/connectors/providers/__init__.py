@@ -32,7 +32,6 @@ def built_in_connector_provider_registry(
                 setup_validator=composio_setup,
                 factory=lambda configuration, credentials: ComposioProvider(
                     http,
-                    ComposioConfiguration.model_validate(configuration),
                     ApiKeyCredentials.model_validate(credentials),
                 ),
             ),

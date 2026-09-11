@@ -102,6 +102,10 @@ def connectivity_router(root, config):
             "slug": "live",
             "name": "Live toolkit",
             "meta": {"version": TOOLKIT_VERSION, "description": "Local HTTP proof"},
+            "auth_schemes": ["OAUTH2"],
+            "auth_config_details": [
+                {"mode": "OAUTH2", "fields": {"connected_account_initiation": {"required": [], "optional": []}}}
+            ],
         }
         if path == "toolkits":
             return {"items": [toolkit], "next_cursor": None}

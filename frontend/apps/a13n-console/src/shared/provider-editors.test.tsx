@@ -125,6 +125,7 @@ it.each(cases)(
     await screen.findByText("Existing provider");
     await user.click(screen.getByRole("button", { name: "Add provider" }));
     await user.click(screen.getByRole("combobox", { name: "Provider type" }));
+    expect(screen.queryByPlaceholderText("Search providers…")).toBeNull();
     await user.click(
       await screen.findByRole("option", {
         name: connector ? "Composio" : type,
@@ -173,7 +174,7 @@ it.each(cases)(
     ).toBe("");
     expect(
       screen.getByRole("combobox", { name: "Provider type" }).textContent,
-    ).toContain("Search providers…");
+    ).toContain("Select provider type");
   },
 );
 

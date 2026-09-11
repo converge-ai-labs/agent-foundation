@@ -1,5 +1,13 @@
 import type { ReactNode } from "react";
-import { FormField, ReadOnlyField, SearchPicker } from "a13n-ui";
+import {
+  FormField,
+  ReadOnlyField,
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectItem,
+} from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { ProviderIcon } from "./provider-icon";
 
@@ -29,24 +37,33 @@ export function ProviderTypeField({
     );
   return (
     <FormField label={t("Provider type")} labelAction={labelAction}>
-      <SearchPicker
-        label={t("Provider type")}
-        placeholder={t("Search providers…")}
-        emptyMessage={t("No matching providers")}
-        value={value}
-        onValueChange={onValueChange}
-        groups={[
-          {
-            label: "",
-            options: definitions.map((item) => ({
-              value: item.type,
-              label: item.display_name,
-              keywords: [item.type],
-              icon: <ProviderIcon key={item.type} type={item.type} />,
-            })),
-          },
-        ]}
-      />
+      <Select
+        value={value || null}
+        items={definitions.map((item) => ({
+          value: item.type,
+          label: item.display_name,
+        }))}
+        onValueChange={(next) => {
+          if (next !== null) onValueChange(next);
+        }}
+      >
+        <SelectTrigger>
+          <span className="flex items-center gap-2">
+            {value && <ProviderIcon type={value} />}
+            <SelectValue placeholder={t("Select provider type")} />
+          </span>
+        </SelectTrigger>
+        <SelectPopup>
+          {definitions.map((item) => (
+            <SelectItem key={item.type} value={item.type}>
+              <span className="flex items-center gap-2">
+                <ProviderIcon type={item.type} />
+                {item.display_name}
+              </span>
+            </SelectItem>
+          ))}
+        </SelectPopup>
+      </Select>
     </FormField>
   );
 }

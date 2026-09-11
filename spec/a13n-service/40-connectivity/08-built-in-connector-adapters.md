@@ -61,7 +61,7 @@ Control uses discovery for setup checks and advisory management projections. The
 
 ## Composio v3.1
 
-`type = "composio"`, `connected_accounts_profile = "v3_1"`, and `tools_profile = "v3_1"` select the current REST profiles at `https://backend.composio.dev` or one exact operator-allowed compatible origin. The ConnectorProvider owns write-only credential field `api_key`; deployments should use a scoped project key limited to required Connected Account read/write and tool read/execute operations.
+`type = "composio"` uses the fixed v3.1 REST API at `https://backend.composio.dev`. Provider configuration is an empty object; endpoint and protocol selection are implementation-owned. The ConnectorProvider owns write-only credential field `api_key`; deployments should use a scoped project key limited to required Connected Account read/write and tool read/execute operations.
 
 All discoverable toolkits are available without a manually configured allowlist. The directory projects toolkit identity, description, logo, immutable toolkit version, managed OAuth availability, and enabled existing OAuth2 auth configurations. Unsupported authentication and missing version metadata produce an explicit unavailable reason. Third-party credentials and auth-config secret fields never enter the directory cache.
 

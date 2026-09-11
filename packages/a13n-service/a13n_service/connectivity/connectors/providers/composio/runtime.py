@@ -35,7 +35,7 @@ from ...validation import (
     same_origin_url,
 )
 from .catalog import TOOLKIT_VERSION, ComposioCatalog
-from .configuration import ComposioConfiguration, ComposioSetup
+from .configuration import COMPOSIO_ENDPOINT, ComposioSetup
 from .output_schema import corrected_output_schema
 
 
@@ -43,23 +43,20 @@ class ComposioProvider:
     compatibility_profile = "composio_v3_1"
     setup_replay_safe = False
 
-    def __init__(
-        self, http: ConnectorHttpClient, configuration: ComposioConfiguration, credentials: ApiKeyCredentials
-    ) -> None:
+    def __init__(self, http: ConnectorHttpClient, credentials: ApiKeyCredentials) -> None:
         self._http = http
-        self._configuration = configuration
         self._credentials = credentials
-        self._catalog = ComposioCatalog(http, configuration, credentials.api_key)
+        self._catalog = ComposioCatalog(http, credentials.api_key)
 
     async def aclose(self) -> None:
         # The process owns the shared HTTP client.
         pass
 
     def connect(self, binding: ConnectionBinding) -> ComposioConnection:
-        return ComposioConnection(self._http, self._configuration, self._credentials, binding)
+        return ComposioConnection(self._http, self._credentials, binding)
 
     def tool_catalog(self, connector_key: str) -> ComposioToolCatalog:
-        return ComposioToolCatalog(self._http, self._configuration, self._credentials, connector_key)
+        return ComposioToolCatalog(self._http, self._credentials, connector_key)
 
     async def inspect_setup(self, *, setup_ref: str, context: SetupContext) -> ConnectionInspection:
         return await self.connect(
@@ -73,7 +70,7 @@ class ComposioProvider:
     async def test(self) -> tuple[ProviderAccess, ...]:
         await self._http.request(
             "GET",
-            endpoint=self._configuration.endpoint,
+            endpoint=COMPOSIO_ENDPOINT,
             path="/api/v3.1/connected_accounts?limit=1",
             api_key=self._credentials.api_key,
         )
@@ -110,7 +107,7 @@ class ComposioProvider:
         )
         value = await self._http.request(
             "POST",
-            endpoint=self._configuration.endpoint,
+            endpoint=COMPOSIO_ENDPOINT,
             path="/api/v3.1/connected_accounts/link",
             api_key=self._credentials.api_key,
             json_body={
@@ -142,7 +139,7 @@ class ComposioProvider:
     ) -> ConnectionInspection:
         value = await self._http.request(
             "POST",
-            endpoint=self._configuration.endpoint,
+            endpoint=COMPOSIO_ENDPOINT,
             path="/api/v3.1/connected_accounts/complete_auth",
             api_key=self._credentials.api_key,
             json_body={
@@ -183,12 +180,10 @@ class ComposioToolCatalog:
     def __init__(
         self,
         http: ConnectorHttpClient,
-        configuration: ComposioConfiguration,
         credentials: ApiKeyCredentials,
         connector_key: str,
     ) -> None:
         self._http = http
-        self._configuration = configuration
         self._credentials = credentials
         self._connector_key = connector_key
         self._catalog_version: str | None = None
@@ -198,7 +193,7 @@ class ComposioToolCatalog:
             toolkit = required_object(
                 await self._http.request(
                     "GET",
-                    endpoint=self._configuration.endpoint,
+                    endpoint=COMPOSIO_ENDPOINT,
                     path=f"/api/v3.1/toolkits/{path_segment(self._connector_key)}",
                     api_key=self._credentials.api_key,
                 )
@@ -220,7 +215,7 @@ class ComposioToolCatalog:
         value = required_object(
             await self._http.request(
                 "GET",
-                endpoint=self._configuration.endpoint,
+                endpoint=COMPOSIO_ENDPOINT,
                 path="/api/v3.1/tools",
                 api_key=self._credentials.api_key,
                 params=params,
@@ -249,7 +244,7 @@ class ComposioToolCatalog:
             detail = required_object(
                 await self._http.request(
                     "GET",
-                    endpoint=self._configuration.endpoint,
+                    endpoint=COMPOSIO_ENDPOINT,
                     path=f"/api/v3.1/tools/{path_segment(key)}",
                     api_key=self._credentials.api_key,
                     params={"version": version},
@@ -284,15 +279,13 @@ class ComposioConnection:
     def __init__(
         self,
         http: ConnectorHttpClient,
-        configuration: ComposioConfiguration,
         credentials: ApiKeyCredentials,
         binding: ConnectionBinding,
     ) -> None:
         self._http = http
-        self._configuration = configuration
         self._credentials = credentials
         self._binding = binding
-        self._catalog = ComposioToolCatalog(http, configuration, credentials, binding.connector_key)
+        self._catalog = ComposioToolCatalog(http, credentials, binding.connector_key)
 
     async def aclose(self) -> None:
         # Closing a local binding neither closes a borrowed client nor revokes the account.
@@ -303,7 +296,7 @@ class ComposioConnection:
             value = required_object(
                 await self._http.request(
                     "GET",
-                    endpoint=self._configuration.endpoint,
+                    endpoint=COMPOSIO_ENDPOINT,
                     path=f"/api/v3.1/connected_accounts/{path_segment(self._binding.external_ref)}",
                     api_key=self._credentials.api_key,
                 )
@@ -322,7 +315,7 @@ class ComposioConnection:
     ) -> None:
         await self._http.request(
             "POST",
-            endpoint=self._configuration.endpoint,
+            endpoint=COMPOSIO_ENDPOINT,
             path=f"/api/v3.1/connected_accounts/{path_segment(self._binding.external_ref)}/revoke",
             api_key=self._credentials.api_key,
             json_body={},
@@ -348,7 +341,7 @@ class ComposioConnection:
         try:
             value = await self._http.request(
                 "POST",
-                endpoint=self._configuration.endpoint,
+                endpoint=COMPOSIO_ENDPOINT,
                 path=f"/api/v3.1/tools/execute/{path_segment(tool_key)}",
                 api_key=self._credentials.api_key,
                 json_body={

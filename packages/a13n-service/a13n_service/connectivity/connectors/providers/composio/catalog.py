@@ -15,7 +15,7 @@ from ...discovery import is_credential_field
 from ...http import ConnectorHttpClient
 from ...validation import optional_string, path_segment, required_object, required_string
 from ..discovery import DirectoryBudget, directory_items
-from .configuration import ComposioConfiguration
+from .configuration import COMPOSIO_ENDPOINT
 
 TOOLKIT_VERSION = re.compile(r"^[0-9]{8}_[0-9]{2}$")
 MANAGED = "managed"
@@ -30,15 +30,14 @@ class AuthConfiguration:
 
 
 class ComposioCatalog:
-    def __init__(self, http: ConnectorHttpClient, configuration: ComposioConfiguration, api_key: str) -> None:
+    def __init__(self, http: ConnectorHttpClient, api_key: str) -> None:
         self._http = http
-        self._endpoint = configuration.endpoint
         self._api_key = api_key
 
     async def configurations(self) -> tuple[AuthConfiguration, ...]:
         items = await directory_items(
             self._http,
-            endpoint=self._endpoint,
+            endpoint=COMPOSIO_ENDPOINT,
             api_key=self._api_key,
             path="/api/v3.1/auth_configs",
             budget=DirectoryBudget(),
@@ -58,7 +57,7 @@ class ComposioCatalog:
     async def directory(self) -> tuple[DiscoveredConnector, ...]:
         toolkits = await directory_items(
             self._http,
-            endpoint=self._endpoint,
+            endpoint=COMPOSIO_ENDPOINT,
             api_key=self._api_key,
             path="/api/v3.1/toolkits",
             budget=DirectoryBudget(),
@@ -70,7 +69,7 @@ class ComposioCatalog:
         item = required_object(
             await self._http.request(
                 "GET",
-                endpoint=self._endpoint,
+                endpoint=COMPOSIO_ENDPOINT,
                 path=f"/api/v3.1/toolkits/{path_segment(key)}",
                 api_key=self._api_key,
             )
@@ -108,7 +107,7 @@ class ComposioCatalog:
         value = required_object(
             await self._http.request(
                 "POST",
-                endpoint=self._endpoint,
+                endpoint=COMPOSIO_ENDPOINT,
                 path="/api/v3.1/auth_configs",
                 api_key=self._api_key,
                 json_body={
