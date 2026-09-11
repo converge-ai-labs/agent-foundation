@@ -191,7 +191,7 @@ tool_proxy:
 
 **Grouping does not enable sources.** Agent `mcp_servers` and `harness_plugins` remain creation defaults, and existing Threads retain their sticky source selections. A referenced disabled source is dormant. Enabled sources not listed in a group remain direct. Empty groups produce no discovery controls. Content Plugins provide skills and subagents; they are not Harness Plugin tool sources.
 
-In the browser, choose **Configure tool groups**, select the Agent, and add, edit, rename, or remove groups. Select sources and review the grouped, dormant, and direct counts. These are static source counts using Agent defaults, not live tool counts or a particular Thread's selection. **Save groups** validates the complete configuration, writes the existing Agent source, and reads it back. A failed save retains the draft. Other Agent settings remain intact. Changes apply to subsequent Runs, never the active Run.
+Configure groups in the Agent YAML file, then validate and inspect the result with the CLI. Changes apply to subsequent Runs, never the active Run. Browser group editing is not available.
 
 ```console
 a13n-harness-ui config validate

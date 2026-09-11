@@ -1,10 +1,10 @@
 # Browser server
 
-Harness UI's HTTP server shares the local `HarnessUiApp` with the terminal product. Its bundled browser page provides authentication/status and [Agent tool-proxy group editing](agents-and-subagents.md#tool-proxy-groups), **not** the Service Console or a completed browser chat workbench. Do not infer browser controls from backend API availability.
+Harness UI's HTTP server shares the local `HarnessUiApp` with the terminal product. Its bundled browser page is currently an authentication/status foundation, **not** the Service Console or a completed browser chat workbench. Do not infer browser controls from backend API availability.
 
 ## Start the server
 
-The bundled page accepts the instance API key and displays the installed Python package version returned by the server. **Configure tool groups** opens an Agent source editor with validation, save/readback, and static source previews. It does not provide conversation, general setup, shared drafts, Host Files, Git, or terminal controls; those browser controls remain unavailable. The HTTP API is independent: native Host Files and read-only Git Changes are enabled by default (Git requires an installed executable), while terminal and shared drafts remain unavailable.
+The bundled foundation page accepts the instance API key and displays the installed Python package version returned by the server. It does not yet provide conversation, setup, shared drafts, Host Files, Git, or terminal controls; those browser controls remain unavailable. The HTTP API is independent: native Host Files and read-only Git Changes are enabled by default (Git requires an installed executable), while terminal and shared drafts remain unavailable.
 
 ```bash
 a13n-harness-ui webui                       # 127.0.0.1:8765, generated per-process API key

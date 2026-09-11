@@ -20,7 +20,7 @@ from a13n_harness_ui.configuration import (
     load_harness_ui_configuration,
     mutate_configuration_source,
 )
-from a13n_harness_ui.configuration.views import source_view
+from a13n_harness_ui.configuration.views import agent_tool_proxy_view
 from a13n_harness_ui.extensions import HarnessUiExtensionCatalog
 from a13n_harness_ui.mcp_adapters import HarnessUiMCP
 from fastmcp import FastMCP
@@ -223,12 +223,12 @@ async def test_configuration_mutation_reads_back_static_active_dormant_direct_so
     result = await mutate_configuration_source(
         path, "agents/assistant.yaml", ResourceMutationRequest(content=yaml.safe_dump(agent))
     )
-    view = source_view(result.configuration, path, "agents/assistant.yaml")
-    assert view.agent_tool_proxy is not None
-    states = {item.resource_id: item.presentation for item in view.agent_tool_proxy.sources}
+    saved_agent = result.configuration.agents["agent-assistant"]
+    preview = agent_tool_proxy_view(result.configuration, saved_agent)
+    states = {item.resource_id: item.presentation for item in preview.sources}
     assert states == {"mcp-docs": "dormant", "plugin-memory": "direct"}
-    assert "tool_proxy" in view.content
-    assert result.configuration.agents["agent-assistant"].instructions == "Root authored instructions."
+    assert saved_agent.tool_proxy is not None
+    assert saved_agent.instructions == "Root authored instructions."
 
 
 @pytest.mark.parametrize("dormant", [False, True])

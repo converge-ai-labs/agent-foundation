@@ -53,7 +53,6 @@ class AgentToolProxyView(BaseModel):
 class ConfigurationSourceView(ConfigurationSourceInfo):
     generation_digest: str
     content: str | None
-    agent_tool_proxy: AgentToolProxyView | None = None
 
 
 class ConfigurationValidation(BaseModel):
@@ -114,11 +113,6 @@ def source_view(
                 **info.model_dump(),
                 generation_digest=source.source_digest,
                 content=source.source(relative_path).content if info.content_available else None,
-                agent_tool_proxy=(
-                    agent_tool_proxy_view(source, source.agents[info.resource_ids[0]])
-                    if info.resource_kind == "agent"
-                    else None
-                ),
             )
     raise ConfigurationError("The accepted configuration source does not exist.", code="configuration_source_not_found")
 

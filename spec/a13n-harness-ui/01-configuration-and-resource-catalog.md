@@ -157,11 +157,11 @@ Rules:
 
 A completed source write is not a promise that its bytes remain current after another writer saves. Source digests remain read/provenance facts for accepted generations and frozen Runs, not file-write preconditions. Internal SQLite head selection and immutable-object integrity follow [Local Storage](03-local-storage-and-recovery.md); last-write-wins file publication does not change Thread, continuation, or execution concurrency contracts.
 
-### Agent Tool-Proxy Editing and Preview
+### Agent Tool-Proxy Configuration and Preview
 
-Agent source readback includes an `agent_tool_proxy` static view: the Agent ID, authored grouping configuration, and configured MCP/Harness Plugin source identities with enabled membership and `active`, `dormant`, `direct`, or `disabled` presentation. It uses Agent creation defaults, not a particular Thread's sticky selections or live tools. Neither readback nor validation constructs MCP clients or discovers tools. `config show` exposes the same previews for Agents with grouping configured.
+Agent YAML owns tool-proxy groups. `config show` exposes a static preview for Agents with grouping configured: the Agent ID, authored grouping configuration, and configured MCP/Harness Plugin source identities with enabled membership and `active`, `dormant`, `direct`, or `disabled` presentation. It uses Agent creation defaults, not a particular Thread's sticky selections or live tools. Neither preview nor validation constructs MCP clients or discovers tools.
 
-The browser's group editor reads the accepted Agent source, keeps an explicit draft, and uses the existing candidate-validation and source-publication operations. It supports group creation, descriptions, rename/removal, source selection, and discovery settings, preserves unrelated Agent fields, and reads back the accepted source after saving. Failed writes retain the draft; changing source membership in a group does not activate that source. Grouping semantics and immutable Run capture belong to [Agent composition](02-agent-composition-and-snapshots.md#tool-proxy-groups). There is no alternate browser configuration store.
+Grouping semantics and immutable Run capture belong to [Agent composition](02-agent-composition-and-snapshots.md#tool-proxy-groups). Browser group editing is not implemented; the existing configuration source HTTP contract is unchanged.
 
 ## First-use Initialization
 

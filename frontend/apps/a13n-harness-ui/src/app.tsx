@@ -1,6 +1,4 @@
 import { useEffect, useState } from "react";
-import { Button, Input } from "a13n-ui";
-import { ToolProxyEditor } from "./tool-proxy-editor";
 
 const KEY_STORAGE = "a13n-harness-ui.api-key";
 
@@ -33,8 +31,6 @@ export function BrowserApp() {
   const [version, setVersion] = useState<string | null>(null);
   const [revision, setRevision] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [editingGroups, setEditingGroups] = useState(false);
-  const [groupsOpened, setGroupsOpened] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -96,8 +92,8 @@ export function BrowserApp() {
     <main>
       <h1>Harness UI</h1>
       <p>
-        Configure Agent tool groups. Conversation controls remain available in
-        the terminal.
+        WebUI foundation. Conversation and management controls are not yet
+        available.
       </p>
       {version ? (
         <>
@@ -109,17 +105,7 @@ export function BrowserApp() {
             Shared drafts, Host files, Git views, and terminals are not yet
             available.
           </p>
-          <Button
-            variant="outline"
-            onClick={() => {
-              setGroupsOpened(true);
-              setEditingGroups((value) => !value);
-            }}
-          >
-            {editingGroups ? "Close tool groups" : "Configure tool groups"}
-          </Button>{" "}
-          <Button
-            variant="ghost"
+          <button
             onClick={() => {
               try {
                 window.localStorage.removeItem(KEY_STORAGE);
@@ -132,12 +118,7 @@ export function BrowserApp() {
             }}
           >
             Forget API key
-          </Button>
-          {groupsOpened && (
-            <div hidden={!editingGroups}>
-              <ToolProxyEditor apiKey={key} />
-            </div>
-          )}
+          </button>
         </>
       ) : (
         <>
@@ -151,14 +132,14 @@ export function BrowserApp() {
           >
             <label>
               API key{" "}
-              <Input
+              <input
                 type="password"
                 autoComplete="off"
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
               />
             </label>
-            <Button type="submit">Connect</Button>
+            <button type="submit">Connect</button>
           </form>
         </>
       )}
