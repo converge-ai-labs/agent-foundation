@@ -18,6 +18,7 @@ from .repositories import (
     ChildExecutionRepository,
     ConfigurationRepository,
     EnvironmentStateRepository,
+    ProjectModelPreferenceRepository,
     ThreadRepository,
 )
 from .usage import ThreadUsageRepository
@@ -42,6 +43,7 @@ class LocalStore:
         self.database = database
         self.objects = objects
         self.configurations = ConfigurationRepository(database.sessions)
+        self.project_models = ProjectModelPreferenceRepository(database.sessions)
         self.threads = ThreadRepository(database.sessions)
         self.usage = ThreadUsageRepository(database.sessions)
         self.child_executions = ChildExecutionRepository(database.sessions)

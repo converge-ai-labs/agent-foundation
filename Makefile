@@ -124,9 +124,12 @@ harness-env:
 harness-ui-env:
 	$(call ensure-env,$(HARNESS_UI_ENV))
 
-.PHONY: cli harness-dev harness-ui-smoke
+.PHONY: cli webui harness-dev harness-ui-smoke
 cli: harness-ui-env ## Run Harness UI with workspace-local config/data (CLI_ARGS forwards options)
 	@uv run --locked --env-file "$(HARNESS_UI_ENV)" python -m dev.harness-ui.cli $(CLI_ARGS)
+
+webui: harness-ui-env a13n-harness-ui-assets ## Build and start WebUI with a generated login link (WEBUI_ARGS forwards options)
+	@uv run --locked --env-file "$(HARNESS_UI_ENV)" python -m dev.harness-ui.cli $(CLI_ARGS) webui $(WEBUI_ARGS)
 
 harness-dev: harness-env ## Run SDK observation scenarios; initialize .env if missing (HARNESS_ARGS selects a scenario)
 	@uv run --locked --env-file "$(HARNESS_ENV)" opentelemetry-instrument python dev/observation-demo/agent.py $(HARNESS_ARGS)
@@ -666,6 +669,8 @@ help: ## Show available commands
 	@printf 'Usage: make <target> [VARIABLE=value]\n\n'
 	@printf 'Common workflows:\n'
 	@printf '  make cli                           Start Harness UI; create its .env if missing\n'
+	@printf '  make webui                         Build and start WebUI; print a generated login link\n'
+	@printf '  make webui WEBUI_ARGS="--port 9000" Forward WebUI server options\n'
 	@printf '  make cli CLI_ARGS="--help"         Forward options or subcommands to Harness UI\n'
 	@printf '  make env-init                      Prepare both development .env files only\n'
 	@printf '  make dev                           Start local Service, Console, and infrastructure\n'

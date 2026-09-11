@@ -7,11 +7,16 @@ import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { AuthorizationLink } from "../../shared/authorization-link";
 import { ErrorNotice } from "../../shared/feedback";
-import { FormActions, TextAreaField } from "../../shared/form";
+import { FormActions } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
 import type { MCPPreset } from "../connections/presets";
 import { saveMCPAuthorization } from "./authorization-context";
+import {
+  HeaderFields,
+  serializeHeaders,
+  type HeaderDraft,
+} from "../../shared/header-fields";
 import { MCPCredentialFields } from "./credentials";
 
 export function CreateMCP({
@@ -34,22 +39,27 @@ export function CreateMCP({
   const [name, setName] = useState(preset?.name ?? ""),
     [endpoint, setEndpoint] = useState(preset?.endpoint ?? initialEndpoint),
     [mode, setMode] = useState<Schema["MCPAuthMode"]>(preset?.auth ?? "oauth"),
-    [names, setNames] = useState(""),
+    [headerRows, setHeaderRows] = useState<HeaderDraft[]>([
+      { id: crypto.randomUUID(), name: "", value: "" },
+    ]),
     [bearer, setBearer] = useState(""),
-    [headers, setHeaders] = useState<Record<string, string>>({}),
     [started, setStarted] = useState(false),
     [launch, setLaunch] = useState<Schema["MCPAuthorizationLaunch"]>();
-  const headerNames = Array.from(
-    new Set(
-      names
-        .split("\n")
-        .map((value) => value.trim())
-        .filter(Boolean),
-    ),
-  );
   const connect = useMutation({
     gcTime: 0,
     mutationFn: async () => {
+      const headers = Object.fromEntries(
+        Object.entries(
+          mode === "static_headers" && !created.current?.credential_configured
+            ? serializeHeaders(headerRows, [])
+            : {},
+        ).filter((entry): entry is [string, string] => entry[1] !== null),
+      );
+      const headerNames = headerRows.map((row) =>
+        row.name.trim().toLowerCase(),
+      );
+      if (mode === "static_headers" && !headerNames.length)
+        throw new Error(t("Add at least one header."));
       setStarted(true);
       onStarted();
       let connection = created.current;
@@ -117,7 +127,13 @@ export function CreateMCP({
         );
         created.current = connection;
         setBearer("");
-        setHeaders({});
+        setHeaderRows((rows) =>
+          rows.map((row) => ({
+            ...row,
+            value: "",
+            savedName: row.name.trim().toLowerCase(),
+          })),
+        );
       }
       const body = { expected_version: connection.version };
       const result = data(
@@ -192,26 +208,24 @@ export function CreateMCP({
           (value) => ({ value, label: t(`auth.${value}`) }),
         )}
       />
-      {mode === "static_headers" && !started && (
-        <TextAreaField
-          label={t("Header names")}
-          hint={t("One name per line.")}
-          value={names}
-          onChange={setNames}
-          required
-          rows={3}
-        />
-      )}
-      {!created.current?.credential_configured && (
-        <MCPCredentialFields
-          mode={mode}
-          names={headerNames}
-          bearer={bearer}
-          onBearer={setBearer}
-          headers={headers}
-          onHeaders={setHeaders}
-        />
-      )}
+      {!created.current?.credential_configured &&
+        (mode === "static_headers" ? (
+          <HeaderFields
+            rows={headerRows}
+            onChange={setHeaderRows}
+            disabled={started}
+            maxRows={16}
+          />
+        ) : (
+          <MCPCredentialFields
+            mode={mode}
+            names={[]}
+            bearer={bearer}
+            onBearer={setBearer}
+            headers={{}}
+            onHeaders={() => {}}
+          />
+        ))}
       {preset && (
         <a href={preset.docs} target="_blank" rel="noopener noreferrer">
           {t("Setup guide")}

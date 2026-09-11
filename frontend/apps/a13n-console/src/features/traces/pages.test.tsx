@@ -137,8 +137,8 @@ it("uses advertised search targets and preserves empty-page continuation", async
   );
   await user.click(screen.getByRole("button", { name: "More filters" }));
   await user.click(screen.getByRole("combobox", { name: "Search in" }));
+  expect(await screen.findByRole("option", { name: "Output" })).toBeTruthy();
   expect(screen.queryByRole("option", { name: "Input and output" })).toBeNull();
-  expect(screen.getByRole("option", { name: "Output" })).toBeTruthy();
 });
 
 it("does not call the backend data routes when query is disabled", async () => {

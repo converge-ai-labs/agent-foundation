@@ -34,6 +34,21 @@ from a13n_harness_ui.configuration.views import (
     ConfigurationValidation,
 )
 from a13n_harness_ui.errors import HarnessUiError
+from a13n_harness_ui.host_files import (
+    DirectoryCreateRequest,
+    DirectoryPage,
+    FileCapture,
+    FileCaptureRequest,
+    FileDeleteRequest,
+    FileDeletion,
+    FileEntry,
+    FileMoveRequest,
+    FileReadRequest,
+    FileText,
+    FileWriteRequest,
+    NativePath,
+    Revision,
+)
 from a13n_harness_ui.live import LiveCursor, LiveEvent, RootStreamEvent, SummaryCursor, SummaryInvalidation
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginStatus
@@ -76,7 +91,7 @@ class ListenerFeatures(SurfaceModel):
     """Implemented browser facilities, not the eventual workbench roadmap."""
 
     shared_drafts: Literal[False] = False
-    host_files: Literal[False] = False
+    host_files: bool = False
     host_git: Literal[False] = False
     host_terminal: Literal[False] = False
 
@@ -318,8 +333,14 @@ def create_webui(
     async def app_error(_request: Request, exc: HarnessUiError) -> JSONResponse:
         code = exc.code
         status = 409 if "conflict" in code or "stale" in code or "preflight_required" in code else 400
-        if code == "request_too_large":
+        if code in {"request_too_large", "host_files_too_large"}:
             status = 413
+        elif code in {"host_files_disabled", "host_files_permission_denied"}:
+            status = 403
+        elif code == "host_files_partial_failure":
+            status = 409
+        elif code == "host_files_io_error":
+            status = 500
         elif code in {"app_not_ready", "app_stopping"}:
             status = 503
         elif code.endswith("not_found"):
@@ -350,9 +371,90 @@ def create_webui(
             version=__version__,
             build_revision=os.environ.get("A13N_HARNESS_UI_BUILD_REVISION"),
             app=await app().status(),
+            features=ListenerFeatures(host_files=app().shares_computer),
             host=host,
             access="api_key" if api_key is not None else "dangerous_bypass",
         )
+
+    @server.get("/api/host/files/metadata", response_model=FileEntry)
+    async def host_file_metadata(path: NativePath) -> FileEntry:
+        return await app().host_file_metadata(path)
+
+    @server.get("/api/host/files", response_model=DirectoryPage)
+    async def host_files(
+        path: NativePath,
+        offset: Annotated[int, Query(ge=0, le=10000)] = 0,
+        limit: Annotated[int, Query(ge=1, le=500)] = 200,
+        revision: Revision | None = None,
+    ) -> DirectoryPage:
+        return await app().browse_host_files(path, offset=offset, limit=limit, revision=revision)
+
+    @server.get("/api/host/files/text", response_model=FileText)
+    async def host_file_text(path: NativePath, expected_revision: Revision | None = None) -> FileText:
+        return await app().read_host_file(FileReadRequest(path=path, expected_revision=expected_revision))
+
+    @server.put("/api/host/files/text", response_model=FileEntry, openapi_extra=_body(FileWriteRequest))
+    async def save_host_text(request: Request) -> FileEntry:
+        app().require_host_files()
+        return await app().write_host_file(await _document(request, FileWriteRequest))
+
+    @server.post("/api/host/files/directories", response_model=FileEntry, openapi_extra=_body(DirectoryCreateRequest))
+    async def create_host_directory(request: Request) -> FileEntry:
+        app().require_host_files()
+        return await app().create_host_directory(await _document(request, DirectoryCreateRequest))
+
+    @server.post("/api/host/files/move", response_model=FileEntry, openapi_extra=_body(FileMoveRequest))
+    async def move_host_file(request: Request) -> FileEntry:
+        app().require_host_files()
+        return await app().move_host_file(await _document(request, FileMoveRequest))
+
+    @server.post("/api/host/files/delete", response_model=FileDeletion, openapi_extra=_body(FileDeleteRequest))
+    async def delete_host_file(request: Request) -> FileDeletion:
+        app().require_host_files()
+        return await app().delete_host_file(await _document(request, FileDeleteRequest))
+
+    @server.put(
+        "/api/host/files/content",
+        response_model=FileEntry,
+        openapi_extra={
+            "requestBody": {
+                "required": True,
+                "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}},
+            }
+        },
+    )
+    async def upload_host_file(
+        request: Request, path: NativePath, expected_revision: Revision | None = None
+    ) -> FileEntry:
+        app().require_host_files()
+        data = bytearray()
+        async for chunk in request.stream():
+            if len(data) + len(chunk) > MAX_ATTACHMENT_BYTES:
+                raise HarnessUiError("Upload exceeds 10 MiB; no file was written.", code="request_too_large")
+            data.extend(chunk)
+        return await app().upload_host_file(path, bytes(data), expected_revision=expected_revision)
+
+    @server.get("/api/host/files/content")
+    async def download_host_file(path: NativePath, expected_revision: Revision | None = None) -> Response:
+        snapshot = await app().download_host_file(FileReadRequest(path=path, expected_revision=expected_revision))
+        return Response(
+            snapshot.data,
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{quote(Path(path).name, safe='')}",
+                "Content-Security-Policy": "sandbox; default-src 'none'",
+                "ETag": f'"{snapshot.entry.revision}"',
+            },
+        )
+
+    @server.post(
+        "/api/threads/{thread_id}/host-file-captures",
+        response_model=FileCapture,
+        openapi_extra=_body(FileCaptureRequest),
+    )
+    async def capture_host_file(thread_id: str, request: Request) -> FileCapture:
+        app().require_host_files()
+        return await app().capture_host_file(thread_id=thread_id, request=await _document(request, FileCaptureRequest))
 
     @server.get("/api/setup", response_model=SetupStatus)
     async def setup(rediscover: bool = False) -> SetupStatus:

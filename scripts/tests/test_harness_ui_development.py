@@ -249,6 +249,50 @@ def test_resource_directory_symlinks_are_not_followed(development: Path, locatio
     assert not development.exists()
 
 
+def test_webui_development_launcher_prints_a_usable_authenticated_link(development: Path, monkeypatch, capsys) -> None:
+    from urllib.parse import parse_qs, urlsplit
+
+    import httpx
+    import uvicorn
+    from fastapi import FastAPI
+
+    monkeypatch.delenv("A13N_HARNESS_UI_API_KEY", raising=False)
+    monkeypatch.setenv("CODEX_HOME", str(Path.home() / ".codex"))
+    monkeypatch.setenv("GROK_HOME", str(Path.home() / ".grok"))
+    monkeypatch.delenv("GROK_AUTH_PATH", raising=False)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(Path.home() / ".config"))
+    monkeypatch.setattr(sys, "argv", ["dev.harness-ui.cli", "webui"])
+    checked = []
+
+    async def serve(server: uvicorn.Server) -> None:
+        # Exercise the actual CLI, key selection, App and HTTP authentication,
+        # replacing only the foreground network wait with an in-process client.
+        output = capsys.readouterr().out
+        link = next(line.removeprefix("Open: ") for line in output.splitlines() if line.startswith("Open: "))
+        parts = urlsplit(link)
+        key = parse_qs(parts.fragment)["api_key"][0]
+        assert key and parts.hostname == "127.0.0.1" and parts.port == 8765
+        assert server.config.host == "127.0.0.1" and server.config.port == 8765
+        app = server.config.app
+        assert isinstance(app, FastAPI)
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=link.split("#", 1)[0]) as client,
+        ):
+            assert (await client.get("/api/status")).status_code == 401
+            status = await client.get("/api/status", headers={"Authorization": f"Bearer {key}"})
+            assert status.status_code == 200
+            assert status.json()["features"]["host_files"] is True
+        checked.append(True)
+
+    monkeypatch.setattr(uvicorn.Server, "serve", serve)
+    with pytest.raises(SystemExit) as exit_info:
+        launcher.main()
+    assert exit_info.value.code == 0 and checked == [True]
+    assert development.is_file()
+    assert not launcher.default_harness_ui_settings_path().exists()
+
+
 @pytest.mark.anyio
 async def test_user_without_configuration_can_enter_setup_through_development_launcher(
     development: Path, monkeypatch

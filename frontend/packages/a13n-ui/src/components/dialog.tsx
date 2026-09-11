@@ -202,7 +202,11 @@ export function DialogPanel({
   };
 
   return (
-    <ScrollArea className="min-h-0" overscrollContain scrollFade={scrollFade}>
+    <ScrollArea
+      className="min-h-0 [&_[data-slot=scroll-area-viewport]]:focus-visible:ring-0 [&_[data-slot=scroll-area-viewport]]:focus-visible:ring-offset-0"
+      overscrollContain
+      scrollFade={scrollFade}
+    >
       {useRender({
         defaultTagName: "div",
         props: mergeProps<"div">(defaultProps, props),

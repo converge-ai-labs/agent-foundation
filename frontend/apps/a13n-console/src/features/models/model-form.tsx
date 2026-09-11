@@ -1,3 +1,4 @@
+import { FormSection, formSectionStyles } from "../../shared/form-section";
 import { ResourceReference } from "../../shared/resource-reference";
 import { ConnectionTest } from "./connection-test";
 import { ProviderIcon } from "../../shared/provider-icon";
@@ -9,8 +10,6 @@ import {
   FormField,
   Input,
   SearchPicker,
-  SettingsRow,
-  SettingsSection,
   Switch,
   Tabs,
   TabsList,
@@ -237,65 +236,73 @@ export function ModelForm({
     );
   return (
     <form
-      className={styles.form}
+      className={formSectionStyles.form}
       onSubmit={(event) => {
         event.preventDefault();
         save.mutate();
       }}
     >
       {(original || !!upstream) && (
-        <div className={original ? styles.stack : styles.twoColumns}>
-          <FormField
-            label={t("Name")}
-            labelAction={
-              original && (
-                <ResourceReference
-                  id={original.value.id}
-                  resourceKey={original.value.key}
-                />
-              )
-            }
-          >
-            <Input
-              required
-              maxLength={128}
-              value={name}
-              onChange={(event) => {
-                setName(event.target.value);
-                setNameEdited(true);
-              }}
-            />
-          </FormField>
-          {!original && (
+        <FormSection
+          aside
+          title={t("General")}
+          description={t("How this model appears to your team.")}
+        >
+          <div className={original ? styles.stack : styles.twoColumns}>
             <FormField
-              label={t("Model key")}
-              description={t(
-                "Agents use this key to reference the model. It cannot be changed after creation.",
-              )}
+              label={t("Name")}
+              labelAction={
+                original && (
+                  <ResourceReference
+                    id={original.value.id}
+                    resourceKey={original.value.key}
+                  />
+                )
+              }
             >
               <Input
                 required
                 maxLength={128}
-                value={key}
+                value={name}
                 onChange={(event) => {
-                  setKey(event.target.value);
-                  setKeyEdited(true);
+                  setName(event.target.value);
+                  setNameEdited(true);
                 }}
               />
             </FormField>
-          )}
-        </div>
+            {!original && (
+              <FormField
+                label={t("Model key")}
+                description={t(
+                  "Agents use this key to reference the model. It cannot be changed after creation.",
+                )}
+              >
+                <Input
+                  required
+                  maxLength={128}
+                  value={key}
+                  onChange={(event) => {
+                    setKey(event.target.value);
+                    setKeyEdited(true);
+                  }}
+                />
+              </FormField>
+            )}
+          </div>
+          <FormField label={t("Description")}>
+            <Input
+              value={description}
+              placeholder={t("Optional")}
+              onChange={(event) => setDescription(event.target.value)}
+            />
+          </FormField>
+        </FormSection>
       )}
-      {(original || !!upstream) && (
-        <FormField label={t("Description")}>
-          <Input
-            value={description}
-            placeholder={t("Optional")}
-            onChange={(event) => setDescription(event.target.value)}
-          />
-        </FormField>
-      )}
-      <section className={modelStyles.modelConnection}>
+      <FormSection
+        aside
+        title={t("Connection")}
+        description={t("Provider, calling API, and model defaults.")}
+      >
         <div className={modelStyles.connectionSummary}>
           {selectedProvider && (
             <ProviderIcon
@@ -340,7 +347,7 @@ export function ModelForm({
                 <FormField label={t("Model")}>
                   <SearchPicker
                     label={t("Model")}
-                    placeholder={t("Search models…")}
+                    placeholder={t("Choose a model…")}
                     emptyMessage={t(
                       "No models found. You can still add a model manually.",
                     )}
@@ -432,25 +439,25 @@ export function ModelForm({
         )}
         {original && (
           <ConnectionTest
+            compact
             action={() => api.testModel(original.value.id)}
             dirty={dirty || save.isPending}
-            description="This makes a model request and may consume quota or incur cost."
+            description="May consume quota or incur cost."
           />
         )}
-      </section>
-      <SettingsSection variant="plain">
-        <SettingsRow
-          label={t("Enabled")}
-          controlId="model-enabled"
-          stackOnNarrow={false}
-        >
+      </FormSection>
+      <FormSection aside title={t("Availability")}>
+        <div className="flex items-center justify-between gap-3 py-1">
+          <label htmlFor="model-enabled" className="text-sm">
+            {t("Enabled")}
+          </label>
           <Switch
             id="model-enabled"
             checked={enabled}
             onCheckedChange={setEnabled}
           />
-        </SettingsRow>
-      </SettingsSection>
+        </div>
+      </FormSection>
       <ErrorNotice
         error={parameterError ? undefined : save.error}
         retry={original ? () => void reload() : undefined}

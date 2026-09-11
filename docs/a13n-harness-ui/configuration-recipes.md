@@ -66,7 +66,7 @@ Select it in **`agents/<name>.yaml`**:
 model: model-primary
 ```
 
-Use `/model default`, `/thinking default`, and `/fast reset` to remove relevant temporary overrides when checking your permanent edits. Accepted Model edits apply to later Runs; an active Run keeps its captured settings.
+Use `/model default` to clear the Project's remembered Model, and `/thinking default` and `/fast reset` to remove temporary request overrides when checking your permanent edits. Accepted Model edits apply to later Runs; an active Run keeps its captured settings.
 
 For all fields and native setting behavior, see [Model reference](models-and-authentication.md#model-file-reference).
 

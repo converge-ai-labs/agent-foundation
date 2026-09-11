@@ -6,7 +6,7 @@ Harness UI keeps persistence continuation-oriented:
 
 1. editable YAML, MCP JSON, and local Markdown files own desired resources and global defaults;
 2. data-root Content Plugin ID directories contain editable local files with optional Git provenance;
-3. SQLite owns accepted-generation indexes, Project/resource lookup projections, sticky Thread configurations, execution heads, and selected references;
+3. SQLite owns accepted-generation indexes, Project/resource lookup projections, terminal Project Model preferences, sticky Thread configurations, execution heads, and selected references;
 4. immutable content-addressed files own normalized configuration generations, resolved Run compositions, and complete continuation checkpoints;
 5. shared browser drafts, live runtime objects, presence, and native terminal sessions remain in process memory.
 
@@ -31,6 +31,12 @@ The store supports local restart and inspection, not durable work scheduling. Ha
 | Participant presence and native Host terminal sessions                                            | Process memory                | Current shared instance only                                             |
 | Root receipts, active tasks, Models, credentials, clients, adapters, streams, and shell processes | Process memory                | Current App only                                                         |
 | Logs and OpenTelemetry                                                                            | Configured process outputs    | Diagnostics only                                                         |
+
+## Project Model Preferences
+
+The App stores the last explicit terminal Model choice as one Model resource ID per Project ID in the data root's SQLite database. This is user interaction state, not a resource definition, Project YAML default, Thread configuration axis, or continuation authority. The preference can precede creation of a cwd-derived Project resource using the same deterministic identity. Resource definitions and credentials continue to resolve from the accepted configuration.
+
+Each explicit selection atomically replaces one Project's preference; reset deletes only that Project's preference. Short SQLite write transactions serialize updates with last-write-wins semantics, including across independent Apps. Different Projects never replace each other's entries. Reads, Runs, and shutdown do not write preferences. Active terminals do not subscribe to preference changes. A removed Project or Model does not turn a preference into a resource definition, and lookup never resurrects missing resources. Downgrading past this additive table discards preferences only; it does not rewrite Threads, checkpoints, or YAML. [Interactive CLI](07-interactive-cli.md#agent-selection-and-reasoning) owns selection and fallback behavior.
 
 ## Shared Browser Drafts
 

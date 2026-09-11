@@ -1,3 +1,5 @@
+import { lobeBrands, lobeIconsCdn } from "./lobe-brands.generated";
+
 /** Display identities only. These mappings never select an endpoint or account. */
 export interface Brand {
   icon: string;
@@ -6,10 +8,9 @@ export interface Brand {
   aliases?: readonly string[];
   hosts?: readonly string[];
 }
+
 const svgl = "https://svgl.app/library/";
-const lobe =
-  "https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@1.94.0/icons/";
-export const brands: Record<string, Brand> = {
+const curatedBrands: Record<string, Brand> = {
   github: {
     icon: `${svgl}github_light.svg`,
     darkIcon: `${svgl}github_dark.svg`,
@@ -83,24 +84,29 @@ export const brands: Record<string, Brand> = {
     icon: "https://composio.dev/logos/composio-black.svg",
     invertInDark: true,
   },
-  brave: { icon: `${lobe}brave-color.svg` },
-  exa: { icon: `${lobe}exa-color.svg` },
-  openai: { icon: `${lobe}openai.svg`, invertInDark: true },
-  anthropic: { icon: `${lobe}anthropic.svg`, invertInDark: true },
-  google_gemini: { icon: `${lobe}gemini-color.svg` },
-  google_vertex: { icon: `${lobe}vertexai-color.svg` },
-  azure_openai: { icon: `${lobe}azure-color.svg` },
-  aws_bedrock: { icon: `${lobe}bedrock-color.svg` },
-  openrouter: { icon: `${lobe}openrouter-color.svg` },
-  ollama: { icon: `${lobe}ollama.svg`, invertInDark: true },
-  alibaba_model_studio: { icon: `${lobe}qwen-color.svg` },
-  deepseek: { icon: `${lobe}deepseek-color.svg` },
-  moonshot: { icon: `${lobe}kimi-color.svg` },
-  zhipu: { icon: `${lobe}zhipu-color.svg` },
+  brave: { icon: `${lobeIconsCdn}brave-color.svg` },
+  exa: { icon: `${lobeIconsCdn}exa-color.svg` },
+  openai: { icon: `${lobeIconsCdn}openai.svg`, invertInDark: true },
+  anthropic: { icon: `${lobeIconsCdn}anthropic.svg`, invertInDark: true },
+  google_gemini: { icon: `${lobeIconsCdn}gemini-color.svg` },
+  google_vertex: { icon: `${lobeIconsCdn}vertexai-color.svg` },
+  azure_openai: { icon: `${lobeIconsCdn}azure-color.svg` },
+  aws_bedrock: { icon: `${lobeIconsCdn}bedrock-color.svg` },
+  openrouter: { icon: `${lobeIconsCdn}openrouter-color.svg` },
+  ollama: { icon: `${lobeIconsCdn}ollama.svg`, invertInDark: true },
+  alibaba_model_studio: { icon: `${lobeIconsCdn}qwen-color.svg` },
+  deepseek: { icon: `${lobeIconsCdn}deepseek-color.svg` },
+  moonshot: { icon: `${lobeIconsCdn}kimi-color.svg` },
+  zhipu: { icon: `${lobeIconsCdn}zhipu-color.svg` },
   "a13n.docker": {
     icon: "https://cdn.jsdelivr.net/gh/devicons/devicon@v2.17.0/icons/docker/docker-original.svg",
   },
   "a13n.e2b": { icon: "https://e2b.dev/brand/e2b-symbol-fire-orange-s.svg" },
+};
+
+export const brands: Record<string, Brand> = {
+  ...lobeBrands,
+  ...curatedBrands,
 };
 
 export function resolveBrand({
@@ -112,7 +118,9 @@ export function resolveBrand({
   alias?: string;
   endpoint?: string;
 }): Brand | undefined {
-  if (identity && brands[identity]) return brands[identity];
+  const normalizedIdentity = identity?.trim().toLowerCase();
+  if (normalizedIdentity && brands[normalizedIdentity])
+    return brands[normalizedIdentity];
   const normalized = alias?.trim().toLowerCase();
   if (normalized) {
     if (brands[normalized]) return brands[normalized];

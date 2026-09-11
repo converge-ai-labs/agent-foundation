@@ -54,6 +54,7 @@ async def _run(request: CliRequest) -> int:
             configuration_path=source.path,
             configuration_error=source.candidate_error,
             host_mode="webui" if request.command == "webui" else "local",
+            share_computer=request.command == "webui" and request.share_computer,
             codex_login=(
                 None
                 if request.command == "webui"

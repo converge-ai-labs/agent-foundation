@@ -34,12 +34,13 @@ The following command paths are literal shell subcommands. Positional arguments 
 
 Run one foreground WebUI server with bundled browser assets.
 
-| Parameter                                                       | Type / choices   | Parser default     | Meaning                                                                           |
-| --------------------------------------------------------------- | ---------------- | ------------------ | --------------------------------------------------------------------------------- |
-| `--host`                                                        | text             | `"127.0.0.1"`      | Listener IPv4 or IPv6 address.                                                    |
-| `--port`                                                        | integer 1..65535 | `8765`             |                                                                                   |
-| `--apikey, --api-key`                                           | text             | `"Sentinel.UNSET"` | Listener API key; overrides A13N_HARNESS_UI_API_KEY (visible in shell arguments). |
-| `--dangerous-skip-permissions, --dangerously-bypass-permission` | boolean          | `false`            | Disable Web authentication only; does not change Agent permissions.               |
+| Parameter                                                       | Type / choices   | Parser default     | Meaning                                                                             |
+| --------------------------------------------------------------- | ---------------- | ------------------ | ----------------------------------------------------------------------------------- |
+| `--host`                                                        | text             | `"127.0.0.1"`      | Listener IPv4 or IPv6 address.                                                      |
+| `--port`                                                        | integer 1..65535 | `8765`             |                                                                                     |
+| `--apikey, --api-key`                                           | text             | `"Sentinel.UNSET"` | Listener API key; overrides A13N_HARNESS_UI_API_KEY (visible in shell arguments).   |
+| `--dangerous-skip-permissions, --dangerously-bypass-permission` | boolean          | `false`            | Disable Web authentication only; does not change Agent permissions.                 |
+| `--share-computer` / `--no-share-computer`                      | boolean          | `true`             | Share native Host Files as the server OS account, independent of Agent permissions. |
 
 ### `update`
 
@@ -251,7 +252,7 @@ Type these in the terminal composer, not your shell. Tab completes supported syn
 | `/steer message`                        | —       | Yes        | Add guidance while the agent is working.                                  |
 | `/import`                               | —       | No         | Preview and optionally enable external subagents with parent inheritance. |
 | `/agent [agent-id]`                     | —       | No         | Switch agent, including its model, instructions, and tools.               |
-| `/model [model-id\|default]`            | —       | No         | Temporarily switch model without changing Agent or saving configuration.  |
+| `/model [model-id\|default]`            | —       | No         | Select and remember a model per Project; `default` clears the preference. |
 | `/fast [on\|off\|reset]`                | —       | No         | Toggle priority service for this session without saving configuration.    |
 | `/thinking [level]`                     | —       | No         | Show or change reasoning effort for subsequent turns.                     |
 | `/environment [mode]`                   | —       | No         | Show or select execution permissions for subsequent turns.                |

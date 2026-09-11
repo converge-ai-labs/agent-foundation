@@ -1,3 +1,4 @@
+import { ArrowLeftIcon, ArrowRightIcon } from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
 
 import { useQuery } from "@tanstack/react-query";
@@ -45,6 +46,7 @@ export function RunEvents({ runId }: { runId: string }) {
                 onClick={() => setPages((previous) => previous.slice(0, -1))}
                 type="button"
               >
+                <ArrowLeftIcon aria-hidden="true" />
                 {t("Previous")}
               </Button>
               <Button
@@ -63,6 +65,7 @@ export function RunEvents({ runId }: { runId: string }) {
                 type="button"
               >
                 {t("Next")}
+                <ArrowRightIcon aria-hidden="true" />
               </Button>
             </div>
           </>

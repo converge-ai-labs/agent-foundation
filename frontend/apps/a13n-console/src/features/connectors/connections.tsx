@@ -107,6 +107,7 @@ export function ConnectionDetails({
               )}
               {can("connector_connection.manage") ? (
                 <Tabs
+                  className="gap-5"
                   key={generation}
                   defaultValue={
                     ["pending", "action_required"].includes(query.data.status)
@@ -159,7 +160,7 @@ function ConnectionSettings({
     { workspace } = useWorkspace(),
     { t } = useTranslation(),
     key = useIdempotency(),
-    [basis] = useState(initial),
+    basis = initial,
     [name, setName] = useState(initial.name);
   function done() {
     void cache.invalidateQueries({ queryKey: ["connector-connections"] });
@@ -209,10 +210,24 @@ function ConnectionSettings({
         <ConfigurationSummary value={basis.safe_metadata} />
       )}
 
-      <section className="grid gap-3 border-t border-border pt-4">
-        <h3 className="text-sm font-medium">{t("Connection actions")}</h3>
+      <section className="flex flex-wrap items-center gap-3 rounded-lg bg-muted/40 p-3">
+        <h3 className="mr-auto text-sm font-medium">
+          {t("Connection actions")}
+        </h3>
+        {basis.status === "disabled" && (
+          <p className="order-last w-full text-sm text-muted-foreground">
+            {t(
+              "Enabling requires completed authorization. Open the Authorization tab to finish setup if needed.",
+            )}
+          </p>
+        )}
         <div className={styles.actions}>
           <Confirm
+            retry={() =>
+              void cache.invalidateQueries({
+                queryKey: ["connector-connections"],
+              })
+            }
             title={t(
               basis.status === "disabled"
                 ? "Enable connection"
@@ -224,24 +239,31 @@ function ConnectionSettings({
             trigger={t(basis.status === "disabled" ? "Enable" : "Disable")}
             action={async () => {
               const action = basis.status === "disabled" ? "enable" : "disable";
-              await client.http.POST(
-                "/api/v1/connector-connections/{connection_id}/{action}",
-                {
-                  params: {
-                    path: { connection_id: basis.id, action },
-                    header: commandHeaders(
-                      workspace.id,
-                      key.forBody({ action, ...body }),
-                    ),
+              data(
+                await client.http.POST(
+                  "/api/v1/connector-connections/{connection_id}/{action}",
+                  {
+                    params: {
+                      path: { connection_id: basis.id, action },
+                      header: commandHeaders(
+                        workspace.id,
+                        key.forBody({ action, ...body }),
+                      ),
+                    },
+                    body,
                   },
-                  body,
-                },
+                ),
               );
               done();
             }}
           />
           {(["revoke", "delete"] as const).map((action) => (
             <Confirm
+              retry={() =>
+                void cache.invalidateQueries({
+                  queryKey: ["connector-connections"],
+                })
+              }
               key={action}
               title={t(
                 action === "revoke"
@@ -253,7 +275,7 @@ function ConnectionSettings({
               )}
               trigger={t(action === "revoke" ? "Revoke" : "Delete")}
               danger
-              triggerVariant="outline"
+              triggerVariant="destructive"
               action={async () => {
                 const header = commandHeaders(
                   workspace.id,

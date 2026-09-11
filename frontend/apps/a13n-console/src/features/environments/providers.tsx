@@ -1,3 +1,5 @@
+import { useSuggestedName } from "../../shared/suggested-name";
+import { FormSection, formSectionStyles } from "../../shared/form-section";
 import { CredentialEditor } from "../../shared/credential-editor";
 import { ConfigurationSummary } from "../../shared/configuration-summary";
 import { ResourceReference } from "../../shared/resource-reference";
@@ -13,7 +15,7 @@ import { ProviderKeyLink } from "../../shared/provider-key-link";
 import { ResourceEditorButton } from "../../shared/resource-editor-button";
 import { ResourceIdentity } from "../../shared/collection";
 import { ScopeBadge } from "../../shared/scope-badge";
-import { FormField, Input, SettingsSection, ModalFrame } from "a13n-ui";
+import { FormField, Input, ModalFrame } from "a13n-ui";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -255,7 +257,7 @@ function ProviderForm({
     cache = useQueryClient(),
     { t } = useTranslation(),
     [basis] = useState(initial),
-    [name, setName] = useState(initial?.value.name ?? ""),
+    { name, setName, suggestName } = useSuggestedName(initial?.value.name),
     [type, setType] = useState(initial?.value.type ?? ""),
     [enabled, setEnabled] = useState(initial?.value.enabled ?? true),
     [configuration, setConfiguration] = useState<Record<string, unknown>>(
@@ -310,13 +312,13 @@ function ProviderForm({
   return (
     <div className={styles.stack}>
       <form
-        className={styles.form}
+        className={formSectionStyles.form}
         onSubmit={(event) => {
           event.preventDefault();
           save.mutate();
         }}
       >
-        <div className={styles.twoColumns}>
+        <FormSection>
           <FormField
             className="min-w-0 w-full"
             label={t("Name")}
@@ -329,71 +331,79 @@ function ProviderForm({
               maxLength={128}
             />
           </FormField>
-          <ProviderTypeField
-            definitions={definitions}
-            value={type}
-            readOnly={!!basis}
-            onValueChange={(value) => {
-              setType(value);
-              setConfiguration({});
-              setCredential({});
-            }}
-            labelAction={
-              type === "a13n.e2b" && (
-                <ProviderKeyLink href="https://e2b.dev/dashboard?tab=keys" />
-              )
-            }
-          />
-        </div>
-        {basis ? (
-          <>
-            {Object.keys(configuration).length > 0 && (
+        </FormSection>
+        <FormSection title={t("Connection")}>
+          <div className={styles.twoColumns}>
+            <ProviderTypeField
+              definitions={definitions}
+              value={type}
+              readOnly={!!basis}
+              onValueChange={(value) => {
+                setType(value);
+                suggestName(
+                  definitions.find((item) => item.type === value)
+                    ?.display_name ?? value,
+                );
+                setConfiguration({});
+                setCredential({});
+              }}
+              labelAction={
+                type === "a13n.e2b" && (
+                  <ProviderKeyLink href="https://e2b.dev/dashboard?tab=keys" />
+                )
+              }
+            />
+            {basis && Object.keys(configuration).length > 0 && (
               <ConfigurationSummary
+                fields
                 value={configuration}
                 schema={configSchema}
               />
             )}
-          </>
-        ) : (
-          <>
-            <SchemaFields
-              key={type}
-              schema={configSchema}
-              value={configuration}
-              onChange={setConfiguration}
-            />
-            <SchemaFields
-              secret
-              key={`${type}-credential`}
-              schema={credentialSchema}
-              value={credential}
-              onChange={setCredential}
-            />
-          </>
-        )}
+          </div>
+          {!basis && (
+            <>
+              <SchemaFields
+                key={type}
+                schema={configSchema}
+                value={configuration}
+                onChange={setConfiguration}
+              />
+              <SchemaFields
+                secret
+                key={`${type}-credential`}
+                schema={credentialSchema}
+                value={credential}
+                onChange={setCredential}
+              />
+            </>
+          )}
+          {basis && (
+            <>
+              {!!Object.keys(schema(credentialSchema.properties)).length && (
+                <CredentialEditor
+                  configured={basis.value.credential_configured}
+                  removing={removeCredential}
+                  onRemovingChange={(value) => {
+                    setRemoveCredential(value);
+                    setCredential({});
+                  }}
+                >
+                  <SchemaFields
+                    secret
+                    schema={{ ...credentialSchema, required: [] }}
+                    value={credential}
+                    onChange={setCredential}
+                  />
+                </CredentialEditor>
+              )}
+            </>
+          )}
+        </FormSection>
         {basis && (
-          <>
-            {!!Object.keys(schema(credentialSchema.properties)).length && (
-              <CredentialEditor
-                configured={basis.value.credential_configured}
-                removing={removeCredential}
-                onRemovingChange={(value) => {
-                  setRemoveCredential(value);
-                  setCredential({});
-                }}
-              >
-                <SchemaFields
-                  secret
-                  schema={{ ...credentialSchema, required: [] }}
-                  value={credential}
-                  onChange={setCredential}
-                />
-              </CredentialEditor>
-            )}
-            <SettingsSection variant="plain">
-              <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
-            </SettingsSection>
-          </>
+          <FormSection>
+            <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
+          </FormSection>
         )}
         <ErrorNotice
           error={save.error}
