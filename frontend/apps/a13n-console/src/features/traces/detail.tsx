@@ -9,10 +9,12 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading, Page, Timestamp } from "../../shared/feedback";
-import { JsonView } from "../../shared/form";
+import { TraceContent, TraceJson } from "./content";
+import { formatCost, observationCost } from "./cost";
+import { ObservationIcon } from "./identity";
 import shared from "../../shared/shared.module.css";
 import { observationRows } from "./timeline";
-import { Duration, durationMs, Severity, TelemetryStatus } from "./values";
+import { Duration, durationMs, Level, TelemetryStatus } from "./values";
 import styles from "./traces.module.css";
 
 export function TraceDetailPage() {
@@ -96,6 +98,11 @@ export function TraceDetail({ traceId }: { traceId: string }) {
   );
   byId.set(root.id, root);
   const observations = [...byId.values()];
+  const cost = observationCost(observations);
+  const costsComplete =
+    observationsQuery.isSuccess &&
+    !observationsQuery.hasNextPage &&
+    !observationsQuery.error;
   const start = Math.min(
     ...observations.map((item) => Date.parse(item.started_at)),
   );
@@ -125,17 +132,14 @@ export function TraceDetail({ traceId }: { traceId: string }) {
       }
     >
       <div className={styles.metrics}>
-        <Metric label={t("Root status")}>
-          <TelemetryStatus observation={root} />
+        <Metric label={t("Level")}>
+          <Level level={root.level} />
         </Metric>
-        <Metric label={t("Severity")}>
-          <Severity level={root.level} />
-        </Metric>
-        <Metric label={t("Root duration")}>
+        <Metric label={t("Duration")}>
           <Duration observation={root} />
         </Metric>
-        <Metric label={t("Root cost (USD)")}>
-          {root.cost_usd ?? t("Unavailable")}
+        <Metric label={t(costsComplete ? "Cost" : "Loaded cost")}>
+          <span title={cost.total ?? undefined}>{formatCost(cost.total)}</span>
         </Metric>
         <Metric label={t("Started")}>
           <Timestamp value={root.started_at} />
@@ -143,7 +147,7 @@ export function TraceDetail({ traceId }: { traceId: string }) {
       </div>
       <p className={styles.providerNote}>
         {t(
-          "Metrics describe the root observation, not trace totals. Open the run for execution outcome.",
+          "Level and duration describe the root. Cost sums each loaded observation once; missing costs are not estimated.",
         )}
       </p>
       <div className={styles.observationToolbar}>
@@ -183,11 +187,7 @@ export function TraceDetail({ traceId }: { traceId: string }) {
                     className={styles.observationName}
                     style={{ paddingInlineStart: Math.min(depth, 12) * 14 }}
                   >
-                    <span
-                      className={styles.dot}
-                      data-status={observation.status}
-                      data-level={observation.level}
-                    />
+                    <ObservationIcon observation={observation} />
                     <span>
                       {observation.name}
                       <small>
@@ -212,7 +212,7 @@ export function TraceDetail({ traceId }: { traceId: string }) {
                   </span>
                 </Button>
               }
-              size="md"
+              size="lg"
               title={observation.name}
               description={t(
                 "Telemetry content reflects the producer's content policy and backend retention.",
@@ -243,9 +243,9 @@ export function TraceDetail({ traceId }: { traceId: string }) {
         </Button>
       )}
       <p className={styles.providerNote}>
-        {t(
-          "Only loaded observations are shown. Sampling, export, and retention can leave gaps.",
-        )}
+        {t("Costs reported")}: {cost.reported} / {observations.length}.{" "}
+        {!costsComplete && t("Load all observation pages for the trace cost.")}{" "}
+        {t("Sampling, export, retention, and unreported costs can leave gaps.")}
       </p>
       <div className={styles.payloads}>
         {(["input", "output", "usage"] as const).map((key) => (
@@ -263,11 +263,15 @@ export function TraceDetail({ traceId }: { traceId: string }) {
               </>
             }
           >
-            <JsonView value={root[key]} />
+            {key === "usage" ? (
+              <TraceJson value={root.usage} />
+            ) : (
+              <TraceContent content={root[key]} compact={view === "compact"} />
+            )}
           </DisclosureSection>
         ))}
         <DisclosureSection title={<>{t("Correlation")}</>}>
-          <JsonView value={correlation} />
+          <TraceJson value={correlation} />
         </DisclosureSection>
       </div>
     </Page>
@@ -313,13 +317,19 @@ function ObservationDetails({
         <Metric label={t("Telemetry status")}>
           <TelemetryStatus observation={observation} />
         </Metric>
-        <Metric label={t("Severity")}>
-          <Severity level={observation.level} />
+        <Metric label={t("Level")}>
+          <Level level={observation.level} />
         </Metric>
-        <Metric label={t("Type")}>{observation.type}</Metric>
-        <Metric label={t("Cost (USD)")}>
-          {observation.cost_usd ?? t("Unavailable")}
+        <Metric label={t("Type")}>
+          <span className={styles.typeIdentity}>
+            <ObservationIcon observation={observation} />
+            {observation.type}
+          </span>
         </Metric>
+        <Metric label={t("Duration")}>
+          <Duration observation={observation} />
+        </Metric>
+        <Metric label={t("Cost")}>{formatCost(observation.cost_usd)}</Metric>
       </div>
       <p className={styles.identifier}>
         {observation.id}
@@ -334,12 +344,16 @@ function ObservationDetails({
         <Timestamp value={observation.started_at} /> —{" "}
         <Timestamp value={observation.ended_at} />
       </p>
-      <Metric label={t("Requested model")}>
-        {observation.model?.requested ?? t("Unavailable")}
-      </Metric>
-      <Metric label={t("Response model")}>
-        {observation.model?.response ?? t("Unavailable")}
-      </Metric>
+      {observation.model && (
+        <div className={styles.modelIdentity}>
+          <Metric label={t("Requested model")}>
+            {observation.model.requested ?? "-"}
+          </Metric>
+          <Metric label={t("Response model")}>
+            {observation.model.response ?? "-"}
+          </Metric>
+        </div>
+      )}
       {view === "compact" && (
         <p className={shared.muted}>
           {t(
@@ -361,7 +375,14 @@ function ObservationDetails({
           defaultOpen={key === "input" || key === "output"}
           title={<>{t(label)}</>}
         >
-          <JsonView value={observation[key]} />
+          {key === "input" || key === "output" ? (
+            <TraceContent
+              content={observation[key]}
+              compact={view === "compact"}
+            />
+          ) : (
+            <TraceJson value={observation[key]} />
+          )}
         </DisclosureSection>
       ))}
     </div>

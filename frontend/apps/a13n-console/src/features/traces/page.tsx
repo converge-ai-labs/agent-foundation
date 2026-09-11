@@ -25,7 +25,10 @@ import {
   Page,
   Timestamp,
 } from "../../shared/feedback";
-import { Duration, Severity, TelemetryStatus } from "./values";
+import { Duration, Level } from "./values";
+import { formatCost } from "./cost";
+import { contentPreview } from "./preview";
+import { useListCosts } from "./list-cost";
 import traceStyles from "./traces.module.css";
 function localTime(date: Date) {
   if (!Number.isFinite(date.getTime())) date = new Date();
@@ -262,7 +265,7 @@ export function TraceList({
     { workspace, basePath } = useWorkspace(),
     { t } = useTranslation();
   const query = useQuery({
-    queryKey: ["trace-list", workspace.id, filters, page.cursor],
+    queryKey: ["trace-list", workspace.id, filters, page.cursor, "full"],
     queryFn: ({ signal }) =>
       client.http
         .GET("/api/v1/workspaces/{workspace}/traces", {
@@ -276,12 +279,18 @@ export function TraceList({
               run_id: filters.run_id || undefined,
               run_attempt_id: filters.run_attempt_id || undefined,
               cursor: page.cursor,
+              view: "full",
+              limit: 25,
             },
           },
           signal,
         })
         .then(data),
   });
+  const costs = useListCosts(
+    workspace.id,
+    query.isSuccess ? query.data.items : [],
+  );
   if (query.isPending) return <Loading />;
   if (query.error instanceof ApiError && query.error.status === 503)
     return (
@@ -301,9 +310,15 @@ export function TraceList({
         }
       />
     );
-  if (query.error)
+  if (query.error || costs.error)
     return (
-      <ErrorNotice error={query.error} retry={() => void query.refetch()} />
+      <ErrorNotice
+        error={query.error ?? costs.error}
+        retry={() => {
+          void query.refetch();
+          void costs.refetch();
+        }}
+      />
     );
   return (
     <>
@@ -327,12 +342,24 @@ export function TraceList({
               render: (item) => <Timestamp value={item.root.started_at} />,
             },
             {
-              label: t("Root status"),
-              render: (item) => <TelemetryStatus observation={item.root} />,
+              label: t("Input"),
+              render: (item) => (
+                <span className={traceStyles.listPreview}>
+                  {contentPreview(item.root.input)}
+                </span>
+              ),
             },
             {
-              label: t("Severity"),
-              render: (item) => <Severity level={item.root.level} />,
+              label: t("Output"),
+              render: (item) => (
+                <span className={traceStyles.listPreview}>
+                  {contentPreview(item.root.output)}
+                </span>
+              ),
+            },
+            {
+              label: t("Level"),
+              render: (item) => <Level level={item.root.level} />,
             },
             {
               label: t("Duration"),
@@ -340,9 +367,19 @@ export function TraceList({
               render: (item) => <Duration observation={item.root} />,
             },
             {
-              label: t("Root cost (USD)"),
+              label: t("Cost"),
               align: "right",
-              render: (item) => item.root.cost_usd ?? t("Unavailable"),
+              render: (item) => (
+                <span
+                  title={t(
+                    "Reported observation costs; missing costs are not estimated.",
+                  )}
+                >
+                  {formatCost(
+                    costs.isSuccess ? (costs.data[item.id] ?? null) : null,
+                  )}
+                </span>
+              ),
             },
           ]}
         />

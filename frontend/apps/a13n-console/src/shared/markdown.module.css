@@ -67,3 +67,29 @@
 .markdown li + li {
   margin-top: 6px;
 }
+
+/* Syntax tokens inherit semantic theme colors in both light and dark modes. */
+.markdown :global(.hljs-keyword),
+.markdown :global(.hljs-selector-tag),
+.markdown :global(.hljs-literal) {
+  color: var(--a13n-accent);
+}
+.markdown :global(.hljs-string),
+.markdown :global(.hljs-regexp),
+.markdown :global(.hljs-addition) {
+  color: var(--success-foreground);
+}
+.markdown :global(.hljs-number),
+.markdown :global(.hljs-symbol),
+.markdown :global(.hljs-attr),
+.markdown :global(.hljs-title) {
+  color: var(--info-foreground);
+}
+.markdown :global(.hljs-comment),
+.markdown :global(.hljs-quote),
+.markdown :global(.hljs-meta) {
+  color: var(--a13n-muted);
+}
+.markdown :global(.hljs-deletion) {
+  color: var(--a13n-danger);
+}

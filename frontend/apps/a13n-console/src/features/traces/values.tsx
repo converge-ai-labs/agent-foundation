@@ -16,13 +16,12 @@ export function Duration({
 }: {
   observation: Schema["Observation"];
 }) {
-  const { t } = useTranslation();
   const value = durationMs(observation);
   return (
     <>
       {value === null
-        ? t("Unavailable")
-        : `${value.toLocaleString(undefined, { maximumFractionDigits: 3 })} ms`}
+        ? "-"
+        : `${(value / 1000).toLocaleString(undefined, { maximumFractionDigits: 6 })} s`}
     </>
   );
 }
@@ -32,16 +31,40 @@ export function TelemetryStatus({
 }: {
   observation: Schema["Observation"];
 }) {
-  return <StateBadge state={observation.status ?? "unavailable"} />;
+  return observation.status === null ? (
+    <>-</>
+  ) : (
+    <StateBadge state={observation.status} />
+  );
 }
 
-export function Severity({ level }: { level: string | null }) {
+export function Level({ level }: { level: string | null }) {
   const { t } = useTranslation();
-  if (level === null) return <>{t("Unavailable")}</>;
-  const variant = ["error", "fatal", "critical"].includes(level)
+  if (!level) return <>-</>;
+  const normalized = level.toLowerCase();
+  const labels: Record<string, string> = {
+    trace: "Trace level",
+    debug: "Debug",
+    default: "Info",
+    info: "Info",
+    information: "Info",
+    notice: "Notice",
+    warn: "Warning",
+    warning: "Warning",
+    error: "Error",
+    critical: "Critical",
+    fatal: "Fatal",
+  };
+  const variant = ["error", "fatal", "critical"].includes(normalized)
     ? "error"
-    : ["warn", "warning"].includes(level)
+    : ["warn", "warning"].includes(normalized)
       ? "warning"
       : "secondary";
-  return <Badge variant={variant}>{level}</Badge>;
+  return (
+    <span title={level}>
+      <Badge variant={variant}>
+        {labels[normalized] ? t(labels[normalized]) : level}
+      </Badge>
+    </span>
+  );
 }

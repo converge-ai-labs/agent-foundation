@@ -4,7 +4,7 @@
 
 a13n Service exposes an authorized, provider-neutral read boundary for RunAttempt traces. It is a thin adapter over one selected telemetry backend, not a trace store, analytics engine, usage ledger, or execution-status projection. The [OTel producer and exporter](38-observability.md) owns writes and topology; the backend owns storage, indexing, retention, and deletion. OTLP is not a query protocol: adapters use documented public read APIs.
 
-Service persists no trace, observation, provider cursor, search index, or archive. Query configuration and failures never change Agent execution, tracing, content policy, readiness, durable usage, or RunAttempt outcomes. Browser clients own tree/timeline presentation rather than another normalization or aggregation layer.
+Service persists no trace, observation, provider cursor, search index, or archive. Query configuration and failures never change Agent execution, tracing, content policy, readiness, durable usage, or RunAttempt outcomes. Browser clients own tree/timeline and content presentation without altering the normalized API values. A UI may sum reported observation-local costs for display, with explicit loaded-page and missing-value scope; this is not a Service aggregation or completeness contract.
 
 ## Read Model
 
