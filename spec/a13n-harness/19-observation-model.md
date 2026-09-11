@@ -23,6 +23,8 @@ An Observation is never execution, continuation, side-effect, result, checkpoint
 
 A Harness component owns a span only when its operation remains independently meaningful after Pydantic model and tool execution are removed. Otherwise it enriches the current owning span or retains the existing event.
 
+Built-in shell review and media-understanding Agents inherit the active Run's selected providers and content policy at invocation time. Their native Agent and model spans are descendants of the invoking tool span, including nested CodeAct tools, not new logical Harness Runs or model attempts. Disabled signals do not fall back to global Pydantic instrumentation. Same-Agent compaction retains native instrumentation beneath its compaction operation; explicit `summarize` records the supplied handoff rather than inventing a separate model call. Existing usage records remain authoritative for attribution; telemetry does not add usage records.
+
 ## Instrumentation Contract
 
 `HarnessInstrumentation` and its content-policy enum are frozen process-local public values. The following Python-like schema is conceptual and is not a wire format:

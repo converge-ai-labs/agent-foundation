@@ -126,9 +126,7 @@ harness-ui-env:
 
 .PHONY: cli harness-dev harness-ui-smoke
 cli: harness-ui-env ## Run Harness UI with workspace-local config/data (CLI_ARGS forwards options)
-	@uv run --locked --env-file "$(HARNESS_UI_ENV)" a13n-harness-ui --no-update-check \
-		--config "$(CURDIR)/var/harness-ui/a13n-harness-ui.yaml" \
-		--data-root "$(CURDIR)/var/harness-ui/data" $(CLI_ARGS)
+	@uv run --locked --env-file "$(HARNESS_UI_ENV)" python -m dev.harness-ui.cli $(CLI_ARGS)
 
 harness-dev: harness-env ## Run SDK observation scenarios; initialize .env if missing (HARNESS_ARGS selects a scenario)
 	@uv run --locked --env-file "$(HARNESS_ENV)" opentelemetry-instrument python dev/observation-demo/agent.py $(HARNESS_ARGS)

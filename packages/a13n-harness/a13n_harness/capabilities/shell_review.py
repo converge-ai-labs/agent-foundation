@@ -27,6 +27,7 @@ from pydantic_ai.usage import RunUsage, UsageLimits
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.models.structured_output import StructuredOutputAutoToolChoiceModel
+from a13n_harness.observation import _auxiliary_agent_capabilities
 from a13n_harness.usage import ProviderUsage, UsageMeasure
 
 SHELL_REVIEW_CAPABILITY_ID = "a13n.shell-review"
@@ -158,12 +159,23 @@ class AgentShellCommandReviewer:
         self._timeout_seconds = float(timeout_seconds)
         self._agent: Agent[None, ShellReviewAssessment] = Agent(
             StructuredOutputAutoToolChoiceModel(model),
-            output_type=ToolOutput(ShellReviewAssessment),
+            output_type=ToolOutput(
+                ShellReviewAssessment,
+                name="submit_shell_review",
+                description=(
+                    "Submit the final risk assessment for the supplied shell command. "
+                    "Call this tool exactly once with risk and a brief reason to complete the review, "
+                    "including low-risk commands. This only reports an assessment; "
+                    "it does not execute or authorize the command. "
+                    "Plain text or JSON text is not a valid submission."
+                ),
+            ),
             name="shell-command-review",
             system_prompt=_system_prompt(),
             model_settings=cast(ModelSettings, dict(model_settings or {})),
             retries=0,
         )
+        self._agent.instrument = False
 
     async def review(
         self,
@@ -181,6 +193,7 @@ class AgentShellCommandReviewer:
                     prompt,
                     usage=usage,
                     usage_limits=UsageLimits(request_limit=1),
+                    capabilities=_auxiliary_agent_capabilities(),
                     event_stream_handler=_drain_review_events,
                 )
         except TimeoutError as exc:

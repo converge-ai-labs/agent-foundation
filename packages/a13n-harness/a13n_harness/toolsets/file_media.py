@@ -25,6 +25,7 @@ from pydantic_ai.usage import RunUsage
 from a13n_harness.environment.models import EnvironmentPath
 from a13n_harness.errors import HarnessError
 from a13n_harness.models.inference import infer_model
+from a13n_harness.observation import _auxiliary_agent_capabilities
 from a13n_harness.usage import ProviderUsage, UsageMeasure
 
 type NativeInputMediaKind = Literal["image", "video", "audio"]
@@ -150,6 +151,7 @@ class AgentMediaUnderstandingProvider:
                 model_settings=settings,
                 retries=2,
             )
+            agent.instrument = False
             agent.output_validator(_validate_agent_output)
             self._agents[kind] = agent
 
@@ -283,7 +285,7 @@ async def _run_with_retry(
 ) -> AgentRunResult[str]:
     for attempt in range(3):
         try:
-            return await agent.run(prompt, usage=usage)
+            return await agent.run(prompt, usage=usage, capabilities=_auxiliary_agent_capabilities())
         except ModelHTTPError as exc:
             if exc.status_code not in {429, 500, 502, 503, 504} or attempt == 2:
                 raise

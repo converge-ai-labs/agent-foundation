@@ -775,6 +775,20 @@ class _LogicalRunObservation:
                     pass
 
 
+def _auxiliary_agent_capabilities() -> tuple[AbstractCapability[Any], ...]:
+    """Inherit active Run telemetry without creating another logical Run or attempt.
+
+    Attach at invocation time: auxiliary Agents can be reused across Runs with
+    different providers and content policies. Native instrumentation owns their
+    Agent/model spans under the current tool or operation span.
+    """
+    observation = _current_run_observation.get()
+    instrumentation = observation._runtime.pydantic_instrumentation if observation is not None else None
+    if instrumentation is None:
+        return ()
+    return (instrumentation, _ModelRequestObservationCapability())
+
+
 @contextmanager
 def observe_operation(
     kind: OperationKind,

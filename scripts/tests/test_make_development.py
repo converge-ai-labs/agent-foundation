@@ -13,7 +13,7 @@ import pytest
 
 REPOSITORY_ROOT = Path(__file__).parents[2]
 LAUNCHERS = [
-    ("cli", "harness-ui", ["a13n-harness-ui", "--no-update-check"]),
+    ("cli", "harness-ui", ["python", "-m", "dev.harness-ui.cli"]),
     ("harness-ui-smoke", "harness-ui", ["python", "-m", "dev.harness-ui.smoke"]),
     ("harness-dev", "harness", ["opentelemetry-instrument", "python", "dev/observation-demo/agent.py"]),
 ]
@@ -73,17 +73,7 @@ def test_launcher_initializes_environment_before_running(workspace: Path, target
     env_file = workspace / "dev" / profile / ".env"
     assert env_file.read_bytes() == Path(f"{env_file}.example").read_bytes()
     assert "Initialized" in result.stdout
-    paths = (
-        [
-            "--config",
-            str(workspace / "var/harness-ui/a13n-harness-ui.yaml"),
-            "--data-root",
-            str(workspace / "var/harness-ui/data"),
-        ]
-        if target == "cli"
-        else []
-    )
-    assert uv_calls(workspace) == [["run", "--locked", "--env-file", f"dev/{profile}/.env", *command, *paths]]
+    assert uv_calls(workspace) == [["run", "--locked", "--env-file", f"dev/{profile}/.env", *command]]
 
 
 def test_env_init_preserves_existing_files_even_with_newer_templates(workspace: Path) -> None:
@@ -159,28 +149,17 @@ def test_ui_launchers_forward_arguments(workspace: Path, target) -> None:
     result = run_make(workspace, target, 'CLI_ARGS=--config "config with spaces.yaml" webui')
     assert result.returncode == 0, result.stdout + result.stderr
     assert uv_calls(workspace)[-1][-3:] == ["--config", "config with spaces.yaml", "webui"]
-    assert "--no-update-check" in uv_calls(workspace)[-1]
     if target == "a13n-harness-ui":
+        assert "--no-update-check" in uv_calls(workspace)[-1]
         assert "--env-file" not in uv_calls(workspace)[-1]
         assert "--data-root" not in uv_calls(workspace)[-1]
         assert not (workspace / "dev/harness-ui/.env").exists()
 
 
-def test_cli_passes_explicit_data_root_despite_environment_override(workspace: Path, monkeypatch) -> None:
-    monkeypatch.setenv("A13N_HARNESS_UI_DATA_ROOT", str(workspace / "daily-use-data"))
-    result = run_make(workspace, "cli")
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert uv_calls(workspace)[-1][-2:] == ["--data-root", str(workspace / "var/harness-ui/data")]
-
-
-def test_cli_forwards_explicit_path_overrides_after_workspace_defaults(workspace: Path) -> None:
+def test_cli_forwards_explicit_path_overrides_to_development_launcher(workspace: Path) -> None:
     result = run_make(workspace, "cli", 'CLI_ARGS=--config "custom config.yaml" --data-root "custom data" webui')
     assert result.returncode == 0, result.stdout + result.stderr
-    assert uv_calls(workspace)[-1][-9:] == [
-        "--config",
-        str(workspace / "var/harness-ui/a13n-harness-ui.yaml"),
-        "--data-root",
-        str(workspace / "var/harness-ui/data"),
+    assert uv_calls(workspace)[-1][-5:] == [
         "--config",
         "custom config.yaml",
         "--data-root",

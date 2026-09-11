@@ -16,7 +16,13 @@ make cli
 - Configuration: `var/harness-ui/a13n-harness-ui.yaml`, with sibling Agent/Model and other resource directories.
 - Runtime data: `var/harness-ui/data/`, including the database, immutable objects and Threads.
 
-The entire `var/` directory is Git-ignored. The first launch starts a separate setup; subsequent launches reuse this development state. No existing configuration or history is copied, migrated or deleted. This keeps unreleased schema changes away from the installed CLI's normal `~/.a13n-harness-ui/` configuration and data. Both paths are passed explicitly, so `A13N_HARNESS_UI_DATA_ROOT` from the shell or `.env` cannot redirect the default development launch.
+The entire `var/` directory is Git-ignored. On the first launch, if the development root YAML is missing, the launcher copies `~/.a13n-harness-ui/a13n-harness-ui.yaml`, its immediate Model/Agent/extension/MCP/Project/subagent resource files, and optional `AGENTS.md`. Existing destination files are never overwritten. Subsequent launches reuse the development copy without synchronizing changes from the original. If the user root YAML is also missing, the launcher creates a minimal root and the normal interactive launch enters setup. New users of the installed CLI do not need this bootstrap: a missing default configuration already enters setup directly.
+
+API-key Models with `credential_ref` also need the Host-local key store. The first copy includes only `auth.json` from the user's data root (`A13N_HARNESS_UI_DATA_ROOT` when set, otherwise `~/.a13n-harness-ui/data/`) into the development data root, with private file permissions. It never overwrites an existing key store or prints key values. Environment-variable references remain unchanged: supply their values in the shell or development `.env`. Codex/Grok subscription authentication continues to use the same upstream product account stores; subscription tokens are not copied, and login, logout, or refresh can still affect those shared accounts.
+
+Databases, conversation history, immutable objects, logs, and installed Content Plugins are not copied. Install any required Content Plugins separately in the development data root; Python extension packages must be available in the workspace environment. Configuration bytes and external paths are preserved, not rewritten or migrated by the launcher. Invalid imported configuration remains visible for repair in the development copy instead of silently falling back to setup.
+
+Both destination paths are passed explicitly, so `A13N_HARNESS_UI_DATA_ROOT` from the shell or `.env` cannot redirect the default development runtime. The original configuration and application history are not modified. This exercises configuration compatibility and lets the retained development database follow later schema upgrades; it does **not** replay a migration from the daily-use database on every launch. Repeated migration tests require a separate disposable database snapshot, not this configuration-only bootstrap.
 
 Forward normal options or select another environment file:
 
@@ -26,7 +32,7 @@ make cli CLI_ARGS='webui'
 make cli HARNESS_UI_ENV=/absolute/path/to/.env
 ```
 
-For an intentional path override, pass `--config` and `--data-root` in `CLI_ARGS`; these follow and override the development defaults. Overriding only one leaves the other workspace-local. Do not point an unreleased build at daily-use state unless you accept that older installed versions may no longer read it.
+For an intentional path override, pass `--config` and `--data-root` in `CLI_ARGS`; these follow and override the development defaults. An explicit `--config` bypasses copying and initialization entirely, even if that file is missing. Overriding only `--data-root` retains the development configuration path and selects the destination for its initial API-key copy. Overriding only `--config` leaves runtime data workspace-local, so referenced API keys must already exist there or be added explicitly. Help and version commands do not copy configuration or credentials. Do not point an unreleased build at daily-use state unless you accept that older installed versions may no longer read it.
 
 An alternate environment file is used unchanged. If it does not exist, the launcher copies `<path>.example`; if neither exists, it stops with a setup hint. `make a13n-harness-ui` remains a separate launcher without the development `.env` or workspace-local path defaults; it uses the CLI's normal configuration/data selection and accepts `CLI_ARGS`.
 
