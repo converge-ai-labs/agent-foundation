@@ -142,12 +142,12 @@ The accepted architecture is defined in the [Harness UI specification](../../spe
 
 ## Browser UI
 
-The bundled foundation page accepts an API key, consumes and removes the convenience URL's key fragment, and displays the installed Python package version returned by `/api/status`. It retains successfully used keys in same-origin localStorage, with an explicit Forget API key action. It does not yet provide conversation, setup, shared drafts, Host Files, Git, or terminal controls. The HTTP API is available independently: `--share-computer` explicitly enables complete native Host Files operations as the server OS account. `features.host_files` reports that App gate; Git, PTY, shared drafts, and browser workbench panels remain unavailable. See the [Files API](../../docs/a13n-harness-ui/http-api.md#native-host-files) for revision conflicts, bounded transfers, deliberate deletion, and captured Thread input.
+The bundled foundation page accepts an API key, consumes and removes the convenience URL's key fragment, and displays the installed Python package version returned by `/api/status`. It retains successfully used keys in same-origin localStorage, with an explicit Forget API key action. It does not yet provide conversation, setup, shared drafts, Host Files, Git, or terminal controls. The HTTP API is available independently: WebUI enables complete native Host Files operations as the server OS account by default; `--no-share-computer` opts out. `features.host_files` reports that App gate; Git, PTY, shared drafts, and browser workbench panels remain unavailable. See the [Files API](../../docs/a13n-harness-ui/http-api.md#native-host-files) for revision conflicts, bounded transfers, deliberate deletion, and captured Thread input.
 
 ```bash
 a13n-harness-ui webui                       # 127.0.0.1:8765, generated per-process API key
 a13n-harness-ui webui --host 127.0.0.1 --port 9000
-a13n-harness-ui webui --share-computer      # Native Files API, independent of Agent Environment
+a13n-harness-ui webui --no-share-computer   # Disable the default native Files API
 ```
 
 Open the URL printed on startup stdout; static assets require no API key. Key precedence is `--apikey`, then `A13N_HARNESS_UI_API_KEY`, then a freshly generated process key. Only generated keys appear in startup stdout, together with a convenience fragment URL; supplied keys are never echoed. API clients send `Authorization: Bearer <key>` on every API request. Command-line keys may be visible to the shell and operating system. `--dangerous-skip-permissions` disables Web authentication only, not Agent permissions; combining it with a CLI or environment key is an error. `--api-key` and `--dangerously-bypass-permission` remain aliases. Conflicting repeated key values and explicitly empty keys are rejected. A non-loopback listener grants shared instance authority on a trusted network, not tenant isolation; use external TLS when needed. The server owns the App lifetime even when browsers disconnect; Ctrl+C or SIGTERM stops the server and closes the App. `/healthz` reports process liveness and `/readyz` reports App readiness without requiring credentials or revealing configuration. Missing model configuration does not block readiness for setup.
@@ -156,7 +156,7 @@ The browser assets ship inside the wheel. End users do not need Node.js or a sep
 
 ### Docker
 
-The initial non-root image packages the application, Python, Bash, Git, curl, and the system CA store. The default container command does not enable native sharing. Explicit `webui --host 0.0.0.0 --share-computer` exposes the container's Files API and mounted paths, not an Agent Environment; native PTY and browser panels remain unavailable. The full development-image target is described in the [distribution specification](../../spec/a13n-harness-ui/webui/03-distribution.md). There is no Node.js runtime requirement, privileged mode, Docker socket, or separate service/database prerequisite.
+The initial non-root image packages the application, Python, Bash, Git, curl, and the system CA store. The default container command enables native sharing and exposes the container's Files API and mounted paths, not an Agent Environment. Override it with `webui --host 0.0.0.0 --no-share-computer` to disable sharing; native PTY and browser panels remain unavailable. The full development-image target is described in the [distribution specification](../../spec/a13n-harness-ui/webui/03-distribution.md). There is no Node.js runtime requirement, privileged mode, Docker socket, or separate service/database prerequisite.
 
 ```bash
 # Published image, loopback port, and named persistent config/data/work volumes:

@@ -345,7 +345,7 @@ Every finite HTTP `/api` request and SSE connection authenticates with `Authoriz
 
 `--api-key` and `--dangerously-bypass-permission` are compatibility spellings of the corresponding canonical options, not independent settings or alternate access schemes. Conflicting repeated option values are rejected.
 
-`--share-computer` independently enables [native Host files, Git views, and PTY](webui/02-host-computer-sharing.md). Without it their backend operations are unavailable. The authenticated status projection reports this enablement so the browser distinguishes disabled sharing from an unavailable operation.
+The WebUI command defaults to [native computer sharing](webui/02-host-computer-sharing.md), independently of authentication and Agent permissions. `--no-share-computer` makes the native backend operations unavailable; `--share-computer` explicitly selects the default. The authenticated status projection reports this enablement so the browser distinguishes disabled sharing from an unavailable operation.
 
 Bind address, API-key selection, the dangerous bypass, and native computer-sharing enablement are executable-bound Web-surface inputs rather than desired-resource configuration. All authenticated application behavior still uses the same `HarnessUiApp` configuration, commands, queries, receipts, and live hubs as the CLI; the HTTP adapter cannot introduce surface-only business settings.
 

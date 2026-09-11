@@ -57,7 +57,7 @@ class CliRequest:
     web_port: int = 8765
     web_api_key: str | None = field(default=None, repr=False)
     dangerously_bypass_permission: bool = False
-    share_computer: bool = False
+    share_computer: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,9 +177,10 @@ def cli(
     help="Disable Web authentication only; does not change Agent permissions.",
 )
 @click.option(
-    "--share-computer",
-    is_flag=True,
-    help="Enable native Host Files as the server OS account, independent of Agent permissions.",
+    "--share-computer/--no-share-computer",
+    default=True,
+    show_default=True,
+    help="Share native Host Files as the server OS account, independent of Agent permissions.",
 )
 @click.pass_context
 def webui_command(

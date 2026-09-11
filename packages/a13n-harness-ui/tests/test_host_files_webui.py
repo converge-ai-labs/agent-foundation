@@ -186,9 +186,7 @@ async def test_host_files_http_end_to_end_and_captured_input_survives_source_cha
             assert (await client.get(f"/api/threads/{thread.thread_id}/attachments/{handle}")).content == data
 
 
-def test_share_computer_cli_option_reaches_app_and_defaults_off(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_share_computer_cli_option_reaches_app_and_defaults_on(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import a13n_harness_ui.webui as webui
 
     observed = []
@@ -201,12 +199,32 @@ def test_share_computer_cli_option_reaches_app_and_defaults_off(
     config = tmp_path / "settings.yaml"
     config.write_text('schema_version: "1"\n')
     base = ["--config", str(config), "--data-root", str(tmp_path / "state"), "webui", "--dangerous-skip-permissions"]
-    assert CliRequest().share_computer is False
-    for flags in ([], ["--share-computer"]):
+    assert CliRequest().share_computer is True
+    for flags in ([], ["--share-computer"], ["--no-share-computer"]):
         result = CliRunner().invoke(cli, base + flags)
         assert result.exit_code == 0, result.output
-    assert observed == [False, True]
-    assert "--share-computer" in CliRunner().invoke(cli, ["webui", "--help"]).output
+    assert observed == [True, True, False]
+    help_text = CliRunner().invoke(cli, ["webui", "--help"]).output
+    assert "--share-computer" in help_text and "--no-share-computer" in help_text
+
+
+def test_nonwebui_cli_does_not_inherit_sharing_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import a13n_harness_ui.cli_runtime as runtime
+
+    observed = []
+
+    async def management(app, *args, **kwargs):
+        observed.append(app.shares_computer)
+        return 0
+
+    monkeypatch.setattr(runtime, "_run_management", management)
+    config = tmp_path / "settings.yaml"
+    config.write_text('schema_version: "1"\n')
+    result = CliRunner().invoke(
+        cli, ["--config", str(config), "--data-root", str(tmp_path / "state"), "config", "validate"]
+    )
+    assert result.exit_code == 0, result.output
+    assert observed == [False]
 
 
 @pytest.mark.anyio

@@ -136,7 +136,11 @@ def _path(value: str) -> Path:
 
 
 def _revision(info: os.stat_result) -> str:
-    fields = (info.st_dev, info.st_ino, info.st_mode, info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+    # Windows stat uses creation time for ctime and infers execute bits from the
+    # filename; fstat does neither. Compare their common native metadata instead.
+    mode = info.st_mode & ~0o111 if os.name == "nt" else info.st_mode
+    changed_ns = info.st_birthtime_ns if os.name == "nt" else info.st_ctime_ns
+    fields = (info.st_dev, info.st_ino, mode, info.st_nlink, info.st_size, info.st_mtime_ns, changed_ns)
     return hashlib.sha256(repr(fields).encode()).hexdigest()
 
 
@@ -192,7 +196,11 @@ def _snapshot(request: FileReadRequest, limit: int) -> FileSnapshot:
         after = os.fstat(stream.fileno())
     if len(data) > limit:
         raise _error("too_large", f"File exceeds the {limit}-byte transfer limit.")
-    if _revision(after) != entry.revision or _entry(path).revision != entry.revision:
+    if (
+        _revision(after) != entry.revision
+        or after.st_ctime_ns != before.st_ctime_ns
+        or _entry(path).revision != entry.revision
+    ):
         raise _error("conflict", "File changed while reading it; no snapshot was returned.")
     return FileSnapshot(entry, str(path), data)
 
@@ -327,8 +335,6 @@ class HostFiles:
                     "type_invalid",
                     "Save to a regular file or an absent path; select a symlink's resolved target explicitly.",
                 )
-            if current is not None and target.stat().st_nlink > 1:
-                raise _error("type_invalid", "Atomic replacement of a multiply linked file is unsupported.")
             fd, temporary = tempfile.mkstemp(prefix=".a13n-write-", dir=target.parent)
             try:
                 with os.fdopen(fd, "wb") as stream:
@@ -378,7 +384,6 @@ class HostFiles:
             source = _path(request.path)
             destination = _path(request.destination)
             _expect(source, request.expected_revision)
-            _expect(destination, None)
             _rename_no_replace(source, destination)
             return _entry(destination)
 
@@ -439,7 +444,7 @@ class HostFiles:
                         if (now.st_dev, now.st_ino) != identities[item.path]:
                             raise _error("conflict", "An entry was replaced during deletion.")
                         if item.kind == "directory" and request.recursive:
-                            if not stat.S_ISDIR(now.st_mode) or (now.st_dev, now.st_ino) != identities[item.path]:
+                            if not stat.S_ISDIR(now.st_mode):
                                 raise _error("conflict", "A directory was replaced during deletion.")
                         elif _revision(now) != observed_links.get((now.st_dev, now.st_ino), item.revision):
                             raise _error("conflict", "An entry changed during deletion.")

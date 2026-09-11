@@ -90,7 +90,8 @@ async def test_symlinks_are_visible_read_targets_explicit_and_delete_does_not_fo
     link = tmp_path / "link"
     link.symlink_to(target)
     entry = await files.metadata(str(link))
-    assert entry.kind == "symlink" and entry.link_target == str(target)
+    assert entry.kind == "symlink" and entry.link_target is not None
+    assert Path(entry.link_target).resolve() == target.resolve()
     text = await files.read_text(FileReadRequest(path=str(link)))
     assert text.resolved_path == str(target) and text.text == "target"
     with pytest.raises(HarnessUiError):
@@ -295,6 +296,38 @@ async def test_move_never_overwrites_concurrent_destination(tmp_path: Path, monk
         await files.move(FileMoveRequest(path=str(source), destination=str(destination), expected_revision=revision))
     assert failure.value.code == "host_files_conflict"
     assert source.read_bytes() == b"source" and destination.read_bytes() == b"external"
+
+
+@pytest.mark.parametrize("name", ["plain", "file.txt", "script.cmd", "program.exe"])
+async def test_saved_files_have_matching_path_and_handle_revisions(tmp_path: Path, name: str) -> None:
+    files = HostFiles(enabled=True)
+    path = tmp_path / name
+    saved = await files.write(str(path), b"created", expected_revision=None)
+    # Creation uses a temporary hard link; removing it changes native metadata.
+    snapshot = await files.download(FileReadRequest(path=str(path), expected_revision=saved.revision))
+    assert snapshot.data == b"created" and snapshot.entry.revision == saved.revision
+    saved = await files.write(str(path), b"replaced", expected_revision=saved.revision)
+    assert (await files.read_text(FileReadRequest(path=str(path), expected_revision=saved.revision))).text == "replaced"
+
+
+async def test_atomic_save_replaces_only_selected_hardlink(tmp_path: Path) -> None:
+    files = HostFiles(enabled=True)
+    selected, alias = tmp_path / "selected", tmp_path / "alias"
+    selected.write_bytes(b"original")
+    os.link(selected, alias)
+    observed = await files.metadata(str(selected))
+    alias_observed = await files.metadata(str(alias))
+    saved = await files.write(str(selected), b"edited", expected_revision=observed.revision)
+    assert selected.read_bytes() == b"edited" and alias.read_bytes() == b"original"
+    assert not os.path.samefile(selected, alias)
+    assert selected.stat().st_nlink == alias.stat().st_nlink == 1
+    assert (
+        await files.download(FileReadRequest(path=str(selected), expected_revision=saved.revision))
+    ).data == b"edited"
+    with pytest.raises(HarnessUiError) as failure:
+        await files.write(str(alias), b"stale", expected_revision=alias_observed.revision)
+    assert failure.value.code == "host_files_conflict"
+    assert alias.read_bytes() == b"original"
 
 
 async def test_recursive_delete_tracks_its_own_hardlink_changes(tmp_path: Path) -> None:

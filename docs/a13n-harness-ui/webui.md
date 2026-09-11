@@ -4,15 +4,15 @@ Harness UI's HTTP server shares the local `HarnessUiApp` with the terminal produ
 
 ## Start the server
 
-The bundled foundation page accepts the instance API key and displays the installed Python package version returned by the server. It does not yet provide conversation, setup, shared drafts, Host Files, Git, or terminal controls; those browser controls remain unavailable. The HTTP API is independent: native Host Files is available with explicit computer sharing, while Git, terminal, and shared drafts remain unavailable.
+The bundled foundation page accepts the instance API key and displays the installed Python package version returned by the server. It does not yet provide conversation, setup, shared drafts, Host Files, Git, or terminal controls; those browser controls remain unavailable. The HTTP API is independent: native Host Files is enabled by default, while Git, terminal, and shared drafts remain unavailable.
 
 ```bash
 a13n-harness-ui webui                       # 127.0.0.1:8765, generated per-process API key
 a13n-harness-ui webui --host 127.0.0.1 --port 9000
-a13n-harness-ui webui --share-computer      # Native Files API as the server OS account
+a13n-harness-ui webui --no-share-computer   # Opt out of native computer sharing
 ```
 
-`--share-computer` enables native file browsing, editing, transfer, creation, move, deletion, and captured Thread input through the [Files API](http-api.md#native-host-files). It does not enable Git, PTY, shared drafts, or browser workbench panels in this release. Paths refer to the server account or container mounts, regardless of the Agent's Environment. Project roots are navigation starts, not filesystem confinement. Omit the option to keep native operations unavailable even when authentication is bypassed.
+WebUI enables native file browsing, editing, transfer, creation, move, deletion, and captured Thread input through the [Files API](http-api.md#native-host-files) by default; `--share-computer` explicitly selects that default. It does not enable Git, PTY, shared drafts, or browser workbench panels in this release. Paths refer to the server account or container mounts, regardless of the Agent's Environment. Project roots are navigation starts, not filesystem confinement. Use `--no-share-computer` to keep native operations unavailable even when authentication is bypassed. Embedded Apps and the bare terminal CLI do not enable native sharing implicitly.
 
 ## Authentication and key retention
 
@@ -28,7 +28,7 @@ Non-loopback listening grants shared instance authority on a trusted network, no
 
 The GHCR image is `ghcr.io/converge-ai-labs/a13n-harness-ui`: `dev` follows main, releases use `X.Y.Z`, and RCs use `X.Y.Z-rc.N` without advancing `latest`. Python and the page display RC metadata as `X.Y.ZrcN`. Development builds display source version `0.0.0` with a separate Git revision. For persistent configuration, data, and work mounts with loopback-only port publishing, use the repository's `deploy/compose/a13n-harness-ui.yaml`. The image runs as UID/GID `10001:10001`; bind mounts must be writable by that account. Do not remove its volumes when preserving data. Restart rotates generated keys; supply the API-key environment variable at runtime when a stable key is needed.
 
-The browser assets ship inside the wheel. End users do not need Node.js or a separate frontend checkout. For repository development, run `make a13n-harness-ui-assets` before `uv run --locked a13n-harness-ui webui`.
+The browser assets ship inside the wheel. End users do not need Node.js or a separate frontend checkout. For repository development, use `make webui`: it builds and installs the bundled assets, then starts the foreground server with isolated configuration/data in `var/harness-ui/`. No manual API key is required: without a supplied CLI or environment key, stdout contains a directly usable login link. Authentication is still required. Use `make webui WEBUI_ARGS='--port 9000 --no-share-computer'` to forward server options; `CLI_ARGS` forwards global options before the subcommand. See the [development guide](https://github.com/converge-ai-labs/agent-foundation/blob/main/dev/harness-ui/README.md) for configuration seeding and environment overrides.
 
 ## Options and ownership
 
