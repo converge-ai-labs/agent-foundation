@@ -426,3 +426,154 @@ async def test_http_restart_keeps_durable_threads_not_listener_keys(tmp_path: Pa
                 assert (
                     await client.get("/api/status", headers={"Authorization": "Bearer before-restart"})
                 ).status_code == 401
+
+
+@pytest.mark.anyio
+async def test_configuration_lifecycle_over_real_http(tmp_path: Path, account_home: None) -> None:
+    del account_home
+    from .test_project_defaults import _project
+
+    root = _write_configuration(tmp_path)
+
+    @asynccontextmanager
+    async def factory():
+        async with open_harness_ui_app(
+            _settings(tmp_path / "state"),
+            configuration_path=root,
+            host_mode="webui",
+        ) as app:
+            app._root_runs._executor._agents = _CompletedReconstructor()
+            yield app
+
+    async with (
+        _network_server(create_webui(factory, api_key="key")) as url,
+        httpx.AsyncClient(trust_env=False, base_url=url, headers={"Authorization": "Bearer key"}) as client,
+    ):
+        endpoint = "/api/configuration/sources/projects/main.yaml"
+        blocked = await client.put(endpoint, json={"content": "invalid"}, headers={"Authorization": "Bearer wrong"})
+        assert blocked.status_code == 401
+        assert (await client.get("/api/configuration/sources")).json()["generation_digest"]
+        saved = (await client.get(endpoint)).json()
+        assert saved["writable"] and saved["content_available"]
+        content = _project(tmp_path / "workspace", {"environment_profile": "environment-native", "mcp_servers": []})
+        checked = await client.post(
+            "/api/configuration/validate", params={"path": "projects/main.yaml"}, json={"content": content}
+        )
+        assert checked.status_code == 200, checked.text
+        assert (await client.get(endpoint)).json()["source_digest"] == saved["source_digest"]
+        written = await client.put(endpoint, json={"content": content})
+        assert written.status_code == 200, written.text
+        projects = (await client.get("/api/projects")).json()
+        assert projects[0]["defaults"] == {"environment_profile": "environment-native", "mcp_servers": []}
+        created_preview = (await client.post("/api/threads/preview", json={})).json()
+        created = await client.post("/api/threads", json={})
+        assert created.status_code == 200, created.text
+        thread = created.json()
+        thread_id = thread["thread_id"]
+        assert thread["configuration"] == created_preview
+        changed_content = _project(tmp_path / "workspace", {"environment_profile": "environment-sandbox"})
+        assert (await client.put(endpoint, json={"content": changed_content})).status_code == 200
+        assert (await client.get(f"/api/threads/{thread_id}")).json()["thread"]["configuration"][
+            "environment_profile_id"
+        ] == "environment-native"
+        preview = (await client.get(f"/api/threads/{thread_id}/project-defaults")).json()
+        request = {"expected_version": preview["expected_version"], "defaults_digest": preview["defaults_digest"]}
+        applied = await client.post(f"/api/threads/{thread_id}/project-defaults", json=request)
+        assert applied.status_code == 200, applied.text
+        assert applied.json()["configuration"]["environment_profile_id"] == "environment-sandbox"
+        assert (await client.post(f"/api/threads/{thread_id}/project-defaults", json=request)).status_code == 409
+        patched = await client.patch(
+            f"/api/threads/{thread_id}/configuration",
+            json={"expected_version": 2, "patch": {"project_id": None, "environment_profile_id": "environment-native"}},
+        )
+        assert patched.status_code == 200, patched.text
+        assert patched.json()["configuration"]["project_id"] is None
+        stale = await client.patch(
+            f"/api/threads/{thread_id}/configuration",
+            json={"expected_version": 2, "patch": {"project_id": "project-main"}},
+        )
+        assert stale.status_code == 409, stale.text
+        assert stale.json()["error"]["code"] == "thread_configuration_conflict"
+        assert (await client.get(f"/api/threads/{thread_id}")).json()["thread"]["configuration"] == patched.json()[
+            "configuration"
+        ]
+        duplicate = await client.patch(
+            f"/api/threads/{thread_id}/configuration",
+            json={"expected_version": 3, "patch": {"mcp_server_ids": ["mcp-one", "mcp-one"]}},
+        )
+        assert duplicate.status_code == 400
+        assert (
+            await client.patch(
+                f"/api/threads/{thread_id}/configuration", json={"expected_version": 3, "patch": {"agent_id": None}}
+            )
+        ).status_code == 400
+        submitted = await client.post(f"/api/threads/{thread_id}/submit", json={"prompt": "Use the configured thread."})
+        assert submitted.status_code == 200, submitted.text
+        receipt = submitted.json()["receipt_id"]
+        with fail_after(5):
+            while (await client.get(f"/api/operations/{receipt}")).json()["status"] in ("preparing", "running"):
+                await sleep(0.01)
+        # Reads show accepted content; a broken external source can be repaired by replacement.
+        (tmp_path / "projects/main.yaml").write_text("broken: [")
+        repaired = await client.put(endpoint, json={"content": content})
+        assert repaired.status_code == 200, repaired.text
+        assert (
+            await client.post(
+                "/api/configuration/validate", params={"path": "../outside.yaml"}, json={"content": content}
+            )
+        ).status_code == 400
+        assert (await client.delete("/api/configuration/sources/a13n-harness-ui.yaml")).status_code == 400
+        unused = "/api/configuration/sources/agents/unused.yaml"
+        assert (
+            await client.put(
+                unused, json={"content": 'schema_version: "1"\nkind: agent\nid: agent-unused\nname: Unused\n'}
+            )
+        ).status_code == 200
+        assert (await client.delete(unused)).status_code == 200
+        assert (await client.delete(unused)).status_code == 200
+        assert (await client.get(unused)).status_code == 404
+
+
+@pytest.mark.anyio
+async def test_configuration_source_views_omit_mcp_literals(tmp_path: Path, account_home: None) -> None:
+    del account_home
+    root = _write_configuration(tmp_path)
+    target = tmp_path / "mcp/private.json"
+    target.parent.mkdir()
+    target.write_text(
+        json.dumps({"mcpServers": {"private": {"command": "unused", "env": {"TOKEN": "private-literal"}}}})
+    )
+
+    @asynccontextmanager
+    async def factory():
+        async with open_harness_ui_app(
+            _settings(tmp_path / "state"), configuration_path=root, host_mode="webui"
+        ) as app:
+            yield app
+
+    async with (
+        _network_server(create_webui(factory, api_key="key")) as url,
+        httpx.AsyncClient(trust_env=False, base_url=url, headers={"Authorization": "Bearer key"}) as client,
+    ):
+        catalog = await client.get("/api/configuration/sources")
+        source = await client.get("/api/configuration/sources/mcp/private.json")
+        assert source.status_code == 200, source.text
+        assert source.json()["content"] is None
+        assert source.json()["content_available"] is False
+        assert source.json()["writable"] is True
+        assert "private-literal" not in catalog.text + source.text
+        unknown = await client.get("/api/configuration/sources/auth.json")
+        assert unknown.status_code == 404
+
+
+def test_configuration_command_and_preview_schemas_are_distinct() -> None:
+    def forbidden():
+        raise AssertionError("Schema export opened the App")
+
+    document = openapi_document(create_webui(forbidden, api_key="key"))
+    schemas = document["components"]["schemas"]
+    preview_patch = schemas["ProjectDefaultsPreview"]["properties"]["patch"]["$ref"].rsplit("/", 1)[1]
+    command_patch = schemas["ThreadConfigurationMutationInput"]["properties"]["patch"]["$ref"].rsplit("/", 1)[1]
+    assert preview_patch != command_patch
+    assert "agent_source" in schemas[preview_patch]["properties"]
+    assert "agent_id" in schemas[command_patch]["properties"]

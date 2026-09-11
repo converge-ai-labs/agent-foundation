@@ -62,6 +62,7 @@ from a13n_harness_ui.surfaces import (
     ThreadSummary,
 )
 from a13n_harness_ui.thread_projection import ThreadProjectionService
+from a13n_harness_ui.thread_service import RootThreadDefaults, resolve_thread_configuration
 
 _MAX_PATH_SCAN = 10_000
 _MAX_SKILLS = 512
@@ -488,10 +489,11 @@ class TerminalProjectionService:
         context_kind: Literal["draft", "idle", "active"] = "draft"
         if thread_id is None:
             selected = defaults or NewThreadDefaults()
-            project_id = (
-                selected.project_id if "project_id" in selected.model_fields_set else source.document.defaults.project
+            resolved = resolve_thread_configuration(
+                source, RootThreadDefaults(**selected.model_dump(exclude_unset=True))
             )
-            agent_id = selected.agent_id or source.document.defaults.agent
+            project_id = resolved.project_id
+            agent_id = resolved.agent_source.id
         else:
             thread = await self._store.threads.get(thread_id)
             if thread is None:

@@ -47,12 +47,20 @@ from a13n_harness_ui.configuration import (
     mutate_configuration_source,
     preview_external_subagent_import,
 )
+from a13n_harness_ui.configuration.mutation import validate_configuration_source
 from a13n_harness_ui.configuration.setup import (
     SetupPreview,
     SetupPublication,
     SetupSelection,
     preview_setup,
     publish_setup,
+)
+from a13n_harness_ui.configuration.views import (
+    ConfigurationSourceCatalog,
+    ConfigurationSourceView,
+    ConfigurationValidation,
+    source_catalog,
+    source_view,
 )
 from a13n_harness_ui.content_plugins import ContentPluginStore
 from a13n_harness_ui.environment_profiles import BUILT_IN_ENVIRONMENT_PROFILES
@@ -102,6 +110,7 @@ from a13n_harness_ui.setup import EnvironmentReadiness, SetupProvider, SetupStat
 from a13n_harness_ui.storage import (
     AgentResourceSource,
     LocalStore,
+    ThreadConfiguration,
     ThreadConfigurationMutation,
     open_local_store,
 )
@@ -122,6 +131,8 @@ from a13n_harness_ui.surfaces import (
     LaunchProjectResolution,
     NewThreadDefaults,
     NotePage,
+    ProjectDefaultsApply,
+    ProjectDefaultsPreview,
     ProjectPathCompletionPage,
     ProjectSummary,
     QuestionResponse,
@@ -393,6 +404,28 @@ class HarnessUiApp:
                     continue
                 self._configuration_fingerprint = fingerprint
                 await self._reload_configuration_from_path()
+
+    async def configuration_sources(self) -> ConfigurationSourceCatalog:
+        """List the accepted generation, not a live filesystem or credential inventory."""
+        async with self._operation():
+            return source_catalog(await self._configurations.current(), self._require_configuration_path())
+
+    async def configuration_source(self, *, relative_path: str) -> ConfigurationSourceView:
+        async with self._operation():
+            return source_view(await self._configurations.current(), self._require_configuration_path(), relative_path)
+
+    async def validate_configuration(
+        self, *, relative_path: str, request: ResourceMutationRequest
+    ) -> ConfigurationValidation:
+        async with self._operation(), self._configuration_lock:
+            candidate = await validate_configuration_source(
+                self._require_configuration_path(),
+                relative_path,
+                request,
+                validate_candidate=self._configurations.validate,
+                content_plugin_root=self._content_plugin_root,
+            )
+            return ConfigurationValidation(candidate_digest=candidate.source_digest)
 
     async def mutate_configuration(
         self,
@@ -770,6 +803,31 @@ class HarnessUiApp:
             await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
             return await self._projections.get_thread(thread.thread_id)
 
+    async def preview_thread_configuration(
+        self, *, defaults: NewThreadDefaults | RootThreadDefaults | None = None
+    ) -> ThreadConfiguration:
+        """Resolve creation without allocating a Thread or publishing its initial state."""
+        async with self._operation():
+            selected = (
+                RootThreadDefaults(**defaults.model_dump(exclude_unset=True))
+                if isinstance(defaults, NewThreadDefaults)
+                else defaults
+            )
+            return await self._threads.preview_creation(selected)
+
+    async def preview_project_defaults(self, *, thread_id: str) -> ProjectDefaultsPreview:
+        async with self._operation():
+            return await self._threads.preview_project_defaults(thread_id)
+
+    async def apply_project_defaults(self, *, thread_id: str, request: ProjectDefaultsApply) -> ThreadSummary:
+        # Serialize with this App's generation acceptance, not with Agent execution.
+        async with self._operation(), self._configuration_lock:
+            await self._threads.apply_project_defaults(
+                thread_id=thread_id, expected_version=request.expected_version, defaults_digest=request.defaults_digest
+            )
+            await self._summary_hub.publish(kind="thread", thread_id=thread_id)
+            return await self._projections.get_thread(thread_id)
+
     async def get_thread(self, thread_id: str) -> ThreadDetail:
         async with self._operation():
             return await self._projections.detail(thread_id)
@@ -819,6 +877,11 @@ class HarnessUiApp:
         mutation: ThreadConfigurationMutation,
     ) -> ThreadSummary:
         async with self._operation():
+            thread = await self._threads.get(thread_id)
+            if thread.parent_thread_id is not None:
+                raise AppStateError(
+                    "Child Threads are managed through their parent execution.", code="child_thread_scoped"
+                )
             await self._threads.update_configuration(
                 thread_id=thread_id,
                 mutation=mutation,
@@ -837,14 +900,7 @@ class HarnessUiApp:
         if "agent_id" in patch.model_fields_set:
             assert patch.agent_id is not None
             values["agent_source"] = AgentResourceSource(id=patch.agent_id)
-        for surface_name, stored_name in (
-            ("environment_profile_id", "environment_profile_id"),
-            ("harness_plugin_ids", "harness_plugin_ids"),
-            ("environment_run_extension_ids", "environment_run_extension_ids"),
-            ("mcp_server_ids", "mcp_server_ids"),
-        ):
-            if surface_name in patch.model_fields_set:
-                values[stored_name] = getattr(patch, surface_name)
+        values.update(patch.model_dump(exclude_unset=True, exclude={"agent_id"}))
         stored = StoredThreadConfigurationPatch.model_validate(values, strict=True)
         return await self.update_thread_configuration(
             thread_id=thread_id,

@@ -407,6 +407,25 @@ class ProjectRoot(StrictModel):
         return str(expanded.resolve(strict=False))
 
 
+class ProjectDefaults(StrictModel):
+    """One creation combination; omission falls back and empty lists select none."""
+
+    agent: ResourceId | None = Field(default=None, exclude_if=lambda value: value is None)
+    environment_profile: ResourceId | None = Field(default=None, exclude_if=lambda value: value is None)
+    harness_plugins: tuple[ResourceId, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
+    environment_run_extensions: tuple[ResourceId, ...] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    mcp_servers: tuple[ResourceId, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
+
+    @model_validator(mode="after")
+    def _valid_selections(self) -> Self:
+        for name, value in self.model_dump().items():
+            if isinstance(value, tuple) and len(value) != len(set(value)):
+                raise ValueError(f"Project defaults.{name} must be unique and ordered")
+        return self
+
+
 class ProjectResource(StrictModel):
     schema_version: Literal["1"]
     kind: Literal["project"]
@@ -414,6 +433,7 @@ class ProjectResource(StrictModel):
     name: str = Field(min_length=1, max_length=256)
     position: int = Field(default=0)
     roots: tuple[ProjectRoot, ...] = Field(min_length=1, max_length=64)
+    defaults: ProjectDefaults = Field(default_factory=ProjectDefaults)
 
     @model_validator(mode="after")
     def _valid_resource(self) -> Self:
@@ -508,6 +528,26 @@ class LoadedHarnessUiConfiguration(StrictModel):
             _require_reference(item, self.environment_run_extensions, "defaults.environment_run_extensions")
         for item in defaults.mcp_servers:
             _require_reference(item, self.mcp_servers, "defaults.mcp_servers")
+
+        for project in self.projects.values():
+            selected = project.defaults
+            _require_reference(selected.agent, self.agents, f"{project.id}.defaults.agent")
+            if (
+                selected.environment_profile is not None
+                and built_in_environment_profile(selected.environment_profile) is None
+            ):
+                _require_reference(
+                    selected.environment_profile,
+                    self.environment_profiles,
+                    f"{project.id}.defaults.environment_profile",
+                )
+            for values, resources, name in (
+                (selected.harness_plugins, self.harness_plugins, "harness_plugins"),
+                (selected.environment_run_extensions, self.environment_run_extensions, "environment_run_extensions"),
+                (selected.mcp_servers, self.mcp_servers, "mcp_servers"),
+            ):
+                for item in values or ():
+                    _require_reference(item, resources, f"{project.id}.defaults.{name}")
 
         for agent in self.agents.values():
             if agent.model is not None:
@@ -645,6 +685,7 @@ __all__ = [
     "ModelAuthentication",
     "ModelResource",
     "ProcessConfiguration",
+    "ProjectDefaults",
     "ProjectResource",
     "ProjectRoot",
     "SourceDocument",

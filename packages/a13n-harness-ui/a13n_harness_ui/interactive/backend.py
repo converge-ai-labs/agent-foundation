@@ -24,10 +24,15 @@ from a13n_harness_ui.environment_profiles import (
     local_sandbox_supported,
     require_supported_local_profile,
 )
-from a13n_harness_ui.errors import HarnessUiError
+from a13n_harness_ui.errors import HarnessUiError, ThreadError
 from a13n_harness_ui.live import LiveEvent, root_context_samples, root_model_usage
 from a13n_harness_ui.model_adapters import service_tier_setting
-from a13n_harness_ui.storage import AgentResourceSource, ThreadConfigurationMutation, ThreadConfigurationPatch
+from a13n_harness_ui.storage import (
+    AgentResourceSource,
+    ThreadConfiguration,
+    ThreadConfigurationMutation,
+    ThreadConfigurationPatch,
+)
 from a13n_harness_ui.surfaces import (
     NewThreadDefaults,
     RootOperationStatus,
@@ -98,10 +103,35 @@ class SessionBackend:
             return False
         if self.thread_id is not None:
             thread = thread or (await self.app.get_thread(self.thread_id)).thread
-        return self._refresh_status(configuration, thread)
+        draft = None
+        if thread is None:
+            try:
+                draft = await self._draft_configuration()
+            except ThreadError as exc:
+                if exc.code != "thread_agent_missing":
+                    raise
+        return self._refresh_status(configuration, thread, draft=draft)
 
-    def _refresh_status(self, configuration: LoadedHarnessUiConfiguration, thread: ThreadSummary | None) -> bool:
-        agent_id = self.agent_id or configuration.document.defaults.agent
+    async def _draft_configuration(self) -> ThreadConfiguration:
+        projects = await self.app.cwd_project_ids(self.directory)
+        # No exact match means ensure_session will create a new, empty-default Project.
+        # Ambiguity remains an explicit error at creation rather than selecting a Project.
+        return await self.app.preview_thread_configuration(
+            defaults=NewThreadDefaults(
+                project_id=next(iter(projects)) if len(projects) == 1 else None,
+                agent_id=self.agent_id,
+                environment_profile_id=self.environment,
+            )
+        )
+
+    def _refresh_status(
+        self,
+        configuration: LoadedHarnessUiConfiguration,
+        thread: ThreadSummary | None,
+        *,
+        draft: ThreadConfiguration | None = None,
+    ) -> bool:
+        agent_id = None if draft is None else draft.agent_source.id
         if thread is not None:
             agent_id = thread.configuration.agent_source.id
             self.status.session_id = self.thread_id
@@ -111,7 +141,9 @@ class SessionBackend:
         model_id = self.overrides.model_id or (None if agent is None else agent.model)
         model = configuration.models.get(model_id or "")
         self.status.environment = (
-            self.environment or configuration.document.defaults.environment_profile or "environment-native"
+            draft.environment_profile_id
+            if draft is not None
+            else self.environment or configuration.document.defaults.environment_profile or "environment-native"
         )
         if model is None:
             self.status.model = "not configured"
@@ -256,6 +288,7 @@ class SessionBackend:
             )
             self.thread_id = thread.thread_id
             self.status.session_id = thread.thread_id
+            await self.refresh(thread=thread)
         return self.thread_id
 
     async def new(self) -> str:
@@ -440,9 +473,11 @@ class SessionBackend:
             configuration = await self.app.current_configuration()
             if configuration is None:
                 raise ValueError("No accepted configuration.")
-            agent_id = self.agent_id or configuration.document.defaults.agent
-            if self.thread_id is not None:
-                agent_id = (await self.app.get_thread(self.thread_id)).thread.configuration.agent_source.id
+            agent_id = (
+                (await self._draft_configuration()).agent_source.id
+                if self.thread_id is None
+                else (await self.app.get_thread(self.thread_id)).thread.configuration.agent_source.id
+            )
             source = next((item for item in configuration.sources if item.resource_id == agent_id), None)
             if source is None:
                 raise ValueError("The selected Agent has no editable source.")

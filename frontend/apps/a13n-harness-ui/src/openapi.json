@@ -336,6 +336,361 @@
         }
       }
     },
+    "/api/configuration/sources": {
+      "get": {
+        "summary": "Configuration Sources",
+        "operationId": "configuration_sources_api_configuration_sources_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationSourceCatalog"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/configuration/sources/{relative_path}": {
+      "get": {
+        "summary": "Configuration Source",
+        "operationId": "configuration_source_api_configuration_sources__relative_path__get",
+        "parameters": [
+          {
+            "name": "relative_path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Relative Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationSourceView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Put Source",
+        "operationId": "put_source_api_configuration_sources__relative_path__put",
+        "parameters": [
+          {
+            "name": "relative_path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Relative Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationPublication"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceMutationRequest"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete Source",
+        "operationId": "delete_source_api_configuration_sources__relative_path__delete",
+        "parameters": [
+          {
+            "name": "relative_path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Relative Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationPublication"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/configuration/validate": {
+      "post": {
+        "summary": "Validate Source",
+        "operationId": "validate_source_api_configuration_validate_post",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationValidation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceMutationRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/preview": {
+      "post": {
+        "summary": "Preview Thread",
+        "operationId": "preview_thread_api_threads_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewThreadDefaults"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadConfiguration"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/configuration": {
+      "patch": {
+        "summary": "Patch Configuration",
+        "operationId": "patch_configuration_api_threads__thread_id__configuration_patch",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThreadConfigurationMutationInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/project-defaults": {
+      "get": {
+        "summary": "Project Defaults",
+        "operationId": "project_defaults_api_threads__thread_id__project_defaults_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectDefaultsPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Apply Project Defaults",
+        "operationId": "apply_project_defaults_api_threads__thread_id__project_defaults_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectDefaultsApply"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects": {
       "get": {
         "summary": "Projects",
@@ -1193,6 +1548,38 @@
   },
   "components": {
     "schemas": {
+      "AgentResourceSource": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "agent",
+            "title": "Kind",
+            "default": "agent"
+          },
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "AgentResourceSource"
+      },
+      "AgentSource": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/AgentResourceSource"
+          },
+          {
+            "$ref": "#/components/schemas/MarkdownSubagentSource"
+          }
+        ]
+      },
       "AgentSourceView": {
         "properties": {
           "kind": {
@@ -1723,6 +2110,192 @@
           "status"
         ],
         "title": "ChildToolCallView"
+      },
+      "ConfigurationPublication": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "created",
+              "updated",
+              "deleted",
+              "unchanged"
+            ],
+            "title": "Action"
+          },
+          "relative_path": {
+            "type": "string",
+            "title": "Relative Path"
+          },
+          "source_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Digest"
+          },
+          "generation_digest": {
+            "type": "string",
+            "title": "Generation Digest"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "action",
+          "relative_path",
+          "source_digest",
+          "generation_digest"
+        ],
+        "title": "ConfigurationPublication"
+      },
+      "ConfigurationSourceCatalog": {
+        "properties": {
+          "generation_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation Digest"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigurationSourceInfo"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "generation_digest",
+          "sources"
+        ],
+        "title": "ConfigurationSourceCatalog"
+      },
+      "ConfigurationSourceInfo": {
+        "properties": {
+          "relative_path": {
+            "type": "string",
+            "title": "Relative Path"
+          },
+          "source_digest": {
+            "type": "string",
+            "title": "Source Digest"
+          },
+          "resource_kind": {
+            "type": "string",
+            "title": "Resource Kind"
+          },
+          "resource_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Resource Ids"
+          },
+          "writable": {
+            "type": "boolean",
+            "title": "Writable"
+          },
+          "content_available": {
+            "type": "boolean",
+            "title": "Content Available"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "relative_path",
+          "source_digest",
+          "resource_kind",
+          "resource_ids",
+          "writable",
+          "content_available"
+        ],
+        "title": "ConfigurationSourceInfo"
+      },
+      "ConfigurationSourceView": {
+        "properties": {
+          "relative_path": {
+            "type": "string",
+            "title": "Relative Path"
+          },
+          "source_digest": {
+            "type": "string",
+            "title": "Source Digest"
+          },
+          "resource_kind": {
+            "type": "string",
+            "title": "Resource Kind"
+          },
+          "resource_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Resource Ids"
+          },
+          "writable": {
+            "type": "boolean",
+            "title": "Writable"
+          },
+          "content_available": {
+            "type": "boolean",
+            "title": "Content Available"
+          },
+          "generation_digest": {
+            "type": "string",
+            "title": "Generation Digest"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "relative_path",
+          "source_digest",
+          "resource_kind",
+          "resource_ids",
+          "writable",
+          "content_available",
+          "generation_digest",
+          "content"
+        ],
+        "title": "ConfigurationSourceView"
+      },
+      "ConfigurationValidation": {
+        "properties": {
+          "candidate_digest": {
+            "type": "string",
+            "title": "Candidate Digest"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "candidate_digest"
+        ],
+        "title": "ConfigurationValidation"
       },
       "ContentMetadata": {
         "properties": {
@@ -2538,6 +3111,223 @@
         ],
         "title": "LoginStatus"
       },
+      "MarkdownSubagentSource": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "markdown",
+            "title": "Kind",
+            "default": "markdown"
+          },
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "MarkdownSubagentSource"
+      },
+      "ProjectDefaults": {
+        "properties": {
+          "agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "environment_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "harness_plugins": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ResourceId"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Harness Plugins"
+          },
+          "environment_run_extensions": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ResourceId"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Run Extensions"
+          },
+          "mcp_servers": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ResourceId"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mcp Servers"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ProjectDefaults",
+        "description": "One creation combination; omission falls back and empty lists select none."
+      },
+      "ProjectDefaultsPatch": {
+        "properties": {
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "agent_source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "environment_profile_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Profile Id"
+          },
+          "harness_plugin_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Harness Plugin Ids"
+          },
+          "environment_run_extension_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Run Extension Ids"
+          },
+          "mcp_server_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mcp Server Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ProjectDefaultsPatch",
+        "description": "Stored-axis preview patch, distinct from the root selection command schema."
+      },
+      "ProjectDefaultsPreview": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "defaults_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Defaults Digest"
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          },
+          "patch": {
+            "$ref": "#/components/schemas/ProjectDefaultsPatch"
+          },
+          "current": {
+            "$ref": "#/components/schemas/ThreadConfiguration"
+          },
+          "replacement": {
+            "$ref": "#/components/schemas/ThreadConfiguration"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "thread_id",
+          "project_id",
+          "defaults_digest",
+          "expected_version",
+          "patch",
+          "current",
+          "replacement"
+        ],
+        "title": "ProjectDefaultsPreview"
+      },
       "ProjectSummary": {
         "properties": {
           "project_id": {
@@ -2576,6 +3366,9 @@
               }
             ],
             "title": "Last Active At"
+          },
+          "defaults": {
+            "$ref": "#/components/schemas/ProjectDefaults"
           }
         },
         "additionalProperties": false,
@@ -3631,6 +4424,69 @@
         "title": "ThreadAttachment",
         "description": "A Thread-scoped handle; paths are resolved by the App, never by clients."
       },
+      "ThreadConfiguration": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "agent_source": {
+            "$ref": "#/components/schemas/AgentSource"
+          },
+          "environment_profile_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Environment Profile Id"
+          },
+          "harness_plugin_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Harness Plugin Ids",
+            "default": []
+          },
+          "environment_run_extension_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Environment Run Extension Ids",
+            "default": []
+          },
+          "mcp_server_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Mcp Server Ids",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "agent_source",
+          "environment_profile_id"
+        ],
+        "title": "ThreadConfiguration"
+      },
       "ThreadConfigurationView": {
         "properties": {
           "version": {
@@ -4658,6 +5514,237 @@
         ],
         "title": "LoginRequest"
       },
+      "ResourceMutationRequest": {
+        "additionalProperties": false,
+        "description": "Replacement content for a create or update.",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "ResourceMutationRequest",
+        "type": "object"
+      },
+      "NewThreadDefaults": {
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "agent_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
+          },
+          "environment_profile_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Profile Id"
+          },
+          "harness_plugin_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Harness Plugin Ids"
+          },
+          "environment_run_extension_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Run Extension Ids"
+          },
+          "mcp_server_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mcp Server Ids"
+          }
+        },
+        "title": "NewThreadDefaults",
+        "type": "object"
+      },
+      "ThreadConfigurationPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "agent_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
+          },
+          "environment_profile_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Profile Id"
+          },
+          "harness_plugin_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Harness Plugin Ids"
+          },
+          "environment_run_extension_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Run Extension Ids"
+          },
+          "mcp_server_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mcp Server Ids"
+          }
+        },
+        "title": "ThreadConfigurationPatch",
+        "type": "object"
+      },
+      "ThreadConfigurationMutationInput": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_version": {
+            "minimum": 1,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "patch": {
+            "$ref": "#/components/schemas/ThreadConfigurationPatch"
+          }
+        },
+        "required": [
+          "expected_version",
+          "patch"
+        ],
+        "title": "ThreadConfigurationMutationInput",
+        "type": "object"
+      },
+      "ProjectDefaultsApply": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_version": {
+            "minimum": 1,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "defaults_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Defaults Digest",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_version",
+          "defaults_digest"
+        ],
+        "title": "ProjectDefaultsApply",
+        "type": "object"
+      },
       "ApprovalDecision": {
         "additionalProperties": false,
         "properties": {
@@ -4845,94 +5932,6 @@
           "responses"
         ],
         "title": "DecisionResponseBatch",
-        "type": "object"
-      },
-      "NewThreadDefaults": {
-        "additionalProperties": false,
-        "properties": {
-          "project_id": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Project Id"
-          },
-          "agent_id": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Agent Id"
-          },
-          "environment_profile_id": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Environment Profile Id"
-          },
-          "harness_plugin_ids": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Harness Plugin Ids"
-          },
-          "environment_run_extension_ids": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Environment Run Extension Ids"
-          },
-          "mcp_server_ids": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Mcp Server Ids"
-          }
-        },
-        "title": "NewThreadDefaults",
         "type": "object"
       },
       "CreateThreadRequest": {

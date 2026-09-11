@@ -274,6 +274,12 @@ Thread title and archive state share a metadata head independent from sticky con
 
 Failures are presentation-safe structured values with bounded code, message, details, and retry hint. Root operation outcomes contain scalar or JSON output, status, usage projection, continuation selection, Environment-state publication summaries, and cleanup failures; they never contain a native `HarnessRunResult`, `HarnessState`, deferred request object, or `Exception`.
 
+### Configuration Sources and Defaults
+
+The App exposes accepted configuration source metadata and individual source views, creation configuration preview, exact root-Thread configuration mutation, and Project-default preview/apply. Source views identify their accepted generation and do not claim to be the current files on disk. MCP source bodies are unavailable rather than an editable redacted replacement; literal credentials and compatible account stores are not exposed through these queries. Only approved immediate source paths support replacement or deletion, using the configuration owner's last-write-wins contract. A mutation response reports the completed source action and subsequently accepted generation separately from the submitted source digest; it does not promise those bytes remain current after another editor writes.
+
+Thread creation previews use the same per-axis resolution as creation and pre-Thread Skill queries. They allocate no persistent Thread. Explicit root-Thread patches support Project selection and clearing as well as Agent, Environment profile, Plugin, Run Extension, and MCP selections; omitted axes retain exact saved values. Child configuration remains parent-scoped. Project-default apply uses the version and default-combination digest described by [Projects and Threads](04-projects-threads-and-environments.md#project-creation-configuration), not a source-file write condition.
+
 ## Host-only Thread Collaboration Capability
 
 `ThreadCollaborationCapability` is an App-injected, root-only optional embedding capability. It exposes bounded cross-Thread collaboration, not storage access, process supervision, or durable scheduling. The public resource catalog cannot select it. The existing embedding selector `host_mode="webui"` opts into this capability; it does not start a WebUI or HTTP server. The stock interactive and one-shot CLI use terminal mode and do not inject it. Children never receive it.

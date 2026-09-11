@@ -61,7 +61,16 @@ These are all schema-listed operations; the grouped table preserves method disti
 | `POST /api/auth/logins`                                    | Start provider login                                |
 | `GET /api/auth/logins/{session_id}`                        | Read provider login progress                        |
 | `DELETE /api/auth/logins/{session_id}`                     | Cancel/remove the selected login session            |
-| `GET /api/projects`                                        | Available Projects                                  |
+| `GET /api/configuration/sources`                           | Accepted source metadata                            |
+| `GET /api/configuration/sources/{relative_path}`           | Accepted source content where available             |
+| `PUT /api/configuration/sources/{relative_path}`           | Validate and publish source replacement             |
+| `DELETE /api/configuration/sources/{relative_path}`        | Validate and remove a non-root source               |
+| `POST /api/configuration/validate`                         | Validate source replacement without publication     |
+| `POST /api/threads/preview`                                | Resolve new Thread selections without creating one  |
+| `PATCH /api/threads/{thread_id}/configuration`             | Versioned exact configuration change                |
+| `GET /api/threads/{thread_id}/project-defaults`            | Preview the selected Project's configured defaults  |
+| `POST /api/threads/{thread_id}/project-defaults`           | Apply reviewed defaults with version/digest checks  |
+| `GET /api/projects`                                        | Available Projects and creation defaults            |
 | `GET /api/selectors`                                       | Configuration selection options                     |
 | `GET /api/threads`                                         | Query/page Threads                                  |
 | `POST /api/threads`                                        | Create using optional defaults/title                |
@@ -79,7 +88,36 @@ These are all schema-listed operations; the grouped table preserves method disti
 | `GET /api/threads/{thread_id}/events`                      | Focused SSE snapshot/events                         |
 | `GET /api/events`                                          | Summary SSE invalidations                           |
 
-`GET /api/openapi.json`, `/healthz`, `/readyz`, and static navigation/assets are additional non-schema-listed boundaries. Serving an application shell at a recognized browser route does not implement that screen. Shared drafts, Host Files, Host Git, and Host terminal flags are currently false. Python child-control and Thread-configuration mutation methods have no corresponding HTTP routes.
+`GET /api/openapi.json`, `/healthz`, `/readyz`, and static navigation/assets are additional non-schema-listed boundaries. Serving an application shell at a recognized browser route does not implement that screen. Shared drafts, Host Files, Host Git, and Host terminal flags are currently false. Python child-control methods still have no corresponding HTTP routes.
+
+## Configure Projects and Threads
+
+Configuration source queries describe the **accepted generation**, which may differ from invalid or newly edited files on disk. `GET /api/configuration/sources` lists relative paths, resource IDs, digests, and editability; the path-specific GET includes source text when available. MCP source text is withheld (`content: null`, `content_available: false`) because it can contain literal credentials. Do not save that null as a replacement. Account credential stores are not configuration sources.
+
+Create or replace an approved source with `PUT /api/configuration/sources/{relative_path}` and `{"content":"..."}`. `POST /api/configuration/validate?path=projects/work.yaml` accepts the same body for validation only; it publishes nothing. Both validate the resulting complete candidate, so replacement can repair a malformed source and deletion can remove an invalid unused source. Other invalid files still block publication. Root deletion, traversal, symlink sources, and arbitrary Host paths are not allowed.
+
+Source saves use last-write-wins, **not** an expected source digest. Validation does not reserve the file. The publication response distinguishes the source digest written from the subsequent generation digest; another editor may write later. A failed/disconnected response is not proof that no file was written. Inspect current status and accepted sources before retrying.
+
+Preview creation without allocating a Thread:
+
+```bash
+curl --fail-with-body "$HUI_URL/api/threads/preview" \
+  -H "Authorization: Bearer $HUI_API_KEY" \
+  -H 'Content-Type: application/json' \
+  --data '{"project_id":null}'
+```
+
+This request body is `NewThreadDefaults` directly, whereas Thread creation nests it under `defaults`. The preview resolves the exact Agent, Environment, Plugin, Run Extension, and MCP selections from current configuration; creation resolves again rather than reserving that preview. Null Project suppresses the global Project default. Project defaults are shown by `/api/projects`; existing Thread selections are shown in Thread detail.
+
+`PATCH /api/threads/{thread_id}/configuration` accepts `expected_version` and `patch`. Supported patch fields are `project_id`, `agent_id`, `environment_profile_id`, `harness_plugin_ids`, `environment_run_extension_ids`, and `mcp_server_ids`. Omission preserves the saved value, `project_id: null` clears the Project, and an empty list selects none. Changing Agent does not implicitly replace other saved axes. These root-Thread commands do not modify child Threads or an already captured Run.
+
+To apply the selected Project's configured defaults:
+
+1. GET `/api/threads/{thread_id}/project-defaults` and inspect `current`, `replacement`, and `patch`.
+2. POST to the same path with the returned `expected_version` and `defaults_digest`.
+3. On 409, refresh the preview rather than automatically accepting newer values.
+
+Only Project-specified axes are applied, not all lower-priority creation defaults. An empty combination has no apply action. This operation uses Thread concurrency checks; it does not change source-file last-write-wins semantics.
 
 ## Metadata, decisions, and attachments
 

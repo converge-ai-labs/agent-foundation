@@ -25,21 +25,32 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from a13n_harness_ui import __version__
 from a13n_harness_ui.app import AppState, AppStatus, HarnessUiApp
+from a13n_harness_ui.configuration import ResourceMutationRequest
 from a13n_harness_ui.configuration.setup import SetupPreview, SetupPublication, SetupSelection
+from a13n_harness_ui.configuration.views import (
+    ConfigurationPublication,
+    ConfigurationSourceCatalog,
+    ConfigurationSourceView,
+    ConfigurationValidation,
+)
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.live import LiveCursor, LiveEvent, SummaryCursor, SummaryInvalidation
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginStatus
 from a13n_harness_ui.setup import EnvironmentReadiness, SetupStatus
+from a13n_harness_ui.storage import ThreadConfiguration
 from a13n_harness_ui.surfaces import (
     DecisionBatchView,
     DecisionResponseBatch,
     NewThreadDefaults,
+    ProjectDefaultsApply,
+    ProjectDefaultsPreview,
     ProjectSummary,
     RootControlResult,
     RootOperationView,
     RootRunReceipt,
     SurfaceModel,
+    ThreadConfigurationMutationInput,
     ThreadDetail,
     ThreadFocusSnapshot,
     ThreadMetadataMutation,
@@ -381,6 +392,73 @@ def create_webui(
     @server.delete("/api/auth/logins/{session_id}", response_model=LoginStatus)
     async def cancel_login(session_id: str) -> LoginStatus:
         return await app().cancel_login(session_id)
+
+    @server.get("/api/configuration/sources", response_model=ConfigurationSourceCatalog)
+    async def configuration_sources() -> ConfigurationSourceCatalog:
+        return await app().configuration_sources()
+
+    @server.get("/api/configuration/sources/{relative_path:path}", response_model=ConfigurationSourceView)
+    async def configuration_source(relative_path: str) -> ConfigurationSourceView:
+        return await app().configuration_source(relative_path=relative_path)
+
+    @server.post(
+        "/api/configuration/validate",
+        response_model=ConfigurationValidation,
+        openapi_extra=_body(ResourceMutationRequest),
+    )
+    async def validate_source(
+        request: Request, path: Annotated[str, Query(min_length=1, max_length=4096)]
+    ) -> ConfigurationValidation:
+        return await app().validate_configuration(
+            relative_path=path, request=await _document(request, ResourceMutationRequest)
+        )
+
+    @server.put(
+        "/api/configuration/sources/{relative_path:path}",
+        response_model=ConfigurationPublication,
+        openapi_extra=_body(ResourceMutationRequest),
+    )
+    async def put_source(relative_path: str, request: Request) -> ConfigurationPublication:
+        result = await app().mutate_configuration(
+            relative_path=relative_path, request=await _document(request, ResourceMutationRequest)
+        )
+        return ConfigurationPublication.from_result(result)
+
+    @server.delete("/api/configuration/sources/{relative_path:path}", response_model=ConfigurationPublication)
+    async def delete_source(relative_path: str) -> ConfigurationPublication:
+        return ConfigurationPublication.from_result(await app().delete_configuration(relative_path=relative_path))
+
+    @server.post("/api/threads/preview", response_model=ThreadConfiguration, openapi_extra=_body(NewThreadDefaults))
+    async def preview_thread(request: Request) -> ThreadConfiguration:
+        return await app().preview_thread_configuration(defaults=await _document(request, NewThreadDefaults))
+
+    @server.patch(
+        "/api/threads/{thread_id}/configuration",
+        response_model=ThreadSummary,
+        openapi_extra=_body(ThreadConfigurationMutationInput),
+    )
+    async def patch_configuration(thread_id: str, request: Request) -> ThreadSummary:
+        return await app().patch_thread_configuration(
+            thread_id=thread_id, mutation=await _document(request, ThreadConfigurationMutationInput)
+        )
+
+    @server.get(
+        "/api/threads/{thread_id}/project-defaults",
+        response_model=ProjectDefaultsPreview,
+        response_model_exclude_unset=True,
+    )
+    async def project_defaults(thread_id: str) -> ProjectDefaultsPreview:
+        return await app().preview_project_defaults(thread_id=thread_id)
+
+    @server.post(
+        "/api/threads/{thread_id}/project-defaults",
+        response_model=ThreadSummary,
+        openapi_extra=_body(ProjectDefaultsApply),
+    )
+    async def apply_project_defaults(thread_id: str, request: Request) -> ThreadSummary:
+        return await app().apply_project_defaults(
+            thread_id=thread_id, request=await _document(request, ProjectDefaultsApply)
+        )
 
     @server.get("/api/projects", response_model=tuple[ProjectSummary, ...])
     async def projects() -> tuple[ProjectSummary, ...]:

@@ -42,7 +42,7 @@ _MAX_YAML_NODES = 100_000
 _MAX_YAML_DEPTH = 64
 _STABLE_READ_ATTEMPTS = 3
 # Version normalized snapshots independently of user-owned source byte digests.
-_NORMALIZATION_VERSION = "2"
+_NORMALIZATION_VERSION = "3"
 _YAML_DIRECTORIES = ("models", "extensions", "mcp", "agents", "projects")
 _RESOURCE_TYPES: dict[str, type[Any]] = {
     "models": ModelResource,

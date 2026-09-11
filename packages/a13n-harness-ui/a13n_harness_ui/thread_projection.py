@@ -276,6 +276,7 @@ class ThreadProjectionService:
                 position=project.position,
                 roots=tuple(root.path for root in project.roots),
                 last_active_at=recency.get(project.id),
+                defaults=project.defaults,
             )
             for project in sorted(source.projects.values(), key=lambda item: (item.position, item.id))
         )
