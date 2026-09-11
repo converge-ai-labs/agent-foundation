@@ -215,9 +215,7 @@ class MCPOAuthClient:
                 raise MCPOAuthError("unsupported_token_endpoint_auth_method")
             secret = client.client_secret.get_secret_value() if client.client_secret is not None else None
             return _ClientRegistration(None, client.client_id, secret, client.token_endpoint_auth_method, None, None)
-        if metadata.get("client_id_metadata_document_supported") is True:
-            if "none" not in supported_auth_methods:
-                raise MCPOAuthError("unsupported_token_endpoint_auth_method")
+        if metadata.get("client_id_metadata_document_supported") is True and "none" in supported_auth_methods:
             return _ClientRegistration(None, client_metadata_url, None, "none", None, None)
         endpoint = await self._metadata_endpoint(metadata, "registration_endpoint", required=False)
         if endpoint is None:
@@ -378,15 +376,25 @@ class MCPOAuthClient:
 
     async def _resource_metadata(self, endpoint: str, advertised: str | None) -> dict[str, Any]:
         candidates = [(advertised, endpoint)] if advertised is not None else _resource_metadata_locations(endpoint)
+        mismatch: MCPOAuthError | None = None
         for candidate, expected_resource in candidates:
             try:
                 metadata = await self._get_json(candidate)
-                if metadata.get("resource") != expected_resource:
+                resource = metadata.get("resource")
+                if resource != expected_resource and not _metadata_resource_covers_endpoint(
+                    endpoint,
+                    candidate,
+                    resource,
+                ):
                     raise MCPOAuthError("resource_mismatch")
                 return metadata
             except MCPOAuthError as error:
-                if advertised is not None or error.code != "metadata_not_found":
+                if advertised is not None or error.code not in {"metadata_not_found", "resource_mismatch"}:
                     raise
+                if error.code == "resource_mismatch":
+                    mismatch = error
+        if mismatch is not None:
+            raise mismatch
         raise MCPOAuthError("protected_resource_metadata_missing")
 
     async def _authorization_metadata(self, issuer: str) -> dict[str, Any]:
@@ -566,6 +574,36 @@ def _resource_metadata_locations(endpoint: str) -> tuple[tuple[str, str], ...]:
     root_location = f"{origin}/.well-known/oauth-protected-resource"
     locations = ((path_location, endpoint), (root_location, origin))
     return locations[:1] if path_location == root_location else locations
+
+
+def _metadata_resource_covers_endpoint(endpoint: str, metadata_url: str, resource: object) -> bool:
+    if not isinstance(resource, str):
+        return False
+    endpoint_parts = urlsplit(endpoint)
+    resource_parts = urlsplit(resource)
+    if resource_parts.username is not None or resource_parts.password is not None or resource_parts.fragment:
+        return False
+    try:
+        resource_port = resource_parts.port
+    except ValueError:
+        return False
+    if (
+        endpoint_parts.scheme.lower(),
+        endpoint_parts.hostname,
+        endpoint_parts.port,
+    ) != (
+        resource_parts.scheme.lower(),
+        resource_parts.hostname,
+        resource_port,
+    ):
+        return False
+    resource_path = resource_parts.path.rstrip("/")
+    endpoint_path = endpoint_parts.path.rstrip("/")
+    if resource_path and endpoint_path != resource_path and not endpoint_path.startswith(f"{resource_path}/"):
+        return False
+    if resource_parts.query and resource_parts.query != endpoint_parts.query:
+        return False
+    return any(location == metadata_url for location, _ in _resource_metadata_locations(resource))
 
 
 def _supported_token_auth_methods(metadata: dict[str, Any]) -> tuple[OAuthTokenAuthMethod, ...]:
