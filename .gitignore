@@ -3,7 +3,7 @@ discussion/
 local-reference/
 tmp/
 
-# Local runtime storage and caches
+# Local runtime storage and caches, including make cli config/data in var/harness-ui/
 /var/
 
 # Machine-specific Service configuration, selected with SERVICE_CONFIG

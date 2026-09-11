@@ -11,15 +11,24 @@ make cli
 
 `make cli` and `make harness-ui-smoke` create `dev/harness-ui/.env` from its sibling `.env.example` when missing. Existing private files are never overwritten, including when the template changes. `make env-init` prepares both Harness development profiles without starting an application or infrastructure.
 
-`make cli` runs `uv run --locked --env-file dev/harness-ui/.env a13n-harness-ui --no-update-check`. Startup update detection is disabled for this local development command. It retains the CLI's normal configuration selection; the environment file does not replace Agent/Model YAML or write to `~/.a13n-harness-ui/`. Forward normal options or select another environment file:
+`make cli` runs the workspace version with startup update detection disabled and explicit workspace-local paths:
+
+- Configuration: `var/harness-ui/a13n-harness-ui.yaml`, with sibling Agent/Model and other resource directories.
+- Runtime data: `var/harness-ui/data/`, including the database, immutable objects and Threads.
+
+The entire `var/` directory is Git-ignored. The first launch starts a separate setup; subsequent launches reuse this development state. No existing configuration or history is copied, migrated or deleted. This keeps unreleased schema changes away from the installed CLI's normal `~/.a13n-harness-ui/` configuration and data. Both paths are passed explicitly, so `A13N_HARNESS_UI_DATA_ROOT` from the shell or `.env` cannot redirect the default development launch.
+
+Forward normal options or select another environment file:
 
 ```bash
 make cli CLI_ARGS='--help'
-make cli CLI_ARGS='--config /path/to/a13n-harness-ui.yaml webui'
+make cli CLI_ARGS='webui'
 make cli HARNESS_UI_ENV=/absolute/path/to/.env
 ```
 
-An alternate environment file is used unchanged. If it does not exist, the launcher copies `<path>.example`; if neither exists, it stops with a setup hint. Use `make a13n-harness-ui` to run without loading the development `.env`; it also accepts `CLI_ARGS`.
+For an intentional path override, pass `--config` and `--data-root` in `CLI_ARGS`; these follow and override the development defaults. Overriding only one leaves the other workspace-local. Do not point an unreleased build at daily-use state unless you accept that older installed versions may no longer read it.
+
+An alternate environment file is used unchanged. If it does not exist, the launcher copies `<path>.example`; if neither exists, it stops with a setup hint. `make a13n-harness-ui` remains a separate launcher without the development `.env` or workspace-local path defaults; it uses the CLI's normal configuration/data selection and accepts `CLI_ARGS`.
 
 Unlike the SDK development launcher, this command needs no `opentelemetry-instrument` wrapper. `open_harness_ui_app()` initializes an App-owned OTLP/HTTP tracing provider when tracing is enabled and no global Host provider exists. It passes that same provider to root and child Harness builds and drains it after App tasks finish. Explicitly supplied or preconfigured Host providers remain externally owned.
 
