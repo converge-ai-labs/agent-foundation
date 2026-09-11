@@ -141,14 +141,14 @@ live-test-round-two: sync ## Run isolated HTTP fault/recovery journeys with Dock
 
 .PHONY: live-test-performance
 live-test-performance: sync ## Measure long-session latency with disposable PG, Redis and S3
-	@uv run --locked python -m pytest dev/live_tests/test_36_long_session.py --live-performance -v --tb=short -o log_cli=true -o log_cli_level=INFO --log-disable=httpx2 $(LIVE_TEST_ARGS)
+	@uv run --locked python -m pytest dev/live_tests/performance/test_36_long_session.py --live-performance -v --tb=short -o log_cli=true -o log_cli_level=INFO --log-disable=httpx2 $(LIVE_TEST_ARGS)
 
 live-test-management: sync ## Run isolated Service/Harness management journeys with Docker dependencies
 	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests --live-management -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)
 
 .PHONY: live-test-providers
 live-test-providers: sync ## Run optional configured real Providers in disposable local labs
-	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests/test_31_real_providers.py --live-providers -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)
+	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests/providers/test_31_real_providers.py --live-providers -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)
 
 live-test-check: sync ## Validate live-test support without contacting services
 	@uv run --locked ruff check --no-fix dev/live_tests

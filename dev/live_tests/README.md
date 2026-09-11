@@ -2,18 +2,73 @@
 
 These opt-in tests send real HTTP requests to separate local Control and Worker processes. Control accepts Native API requests; Worker readiness is checked over HTTP, and execution is dispatched through the real queue. The tests never call Worker execution internals or use an in-process ASGI transport for live journeys.
 
-| File                           | Journey                                                                                                        |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| `test_01_basic_run.py`         | Acceptance, execution, result, attempts, usage and retained items                                              |
-| `test_02_continuation.py`      | Successor Run reconstructs conversation context                                                                |
-| `test_03_tools_environment.py` | Real local shell writes and reads a file                                                                       |
-| `test_04_stream_reconnect.py`  | Disconnect during execution and resume with Last-Event-ID                                                      |
-| `test_05_idempotency.py`       | Concurrent duplicate submission and changed-intent conflict                                                    |
-| `test_06_steer.py`             | Idempotent mid-tool input has one durable inbox row and one occurrence in the actual model request; no new Run |
-| `test_07_interrupt.py`         | Interrupt model I/O and tool execution; verify teardown                                                        |
-| `test_08_approval.py`          | Approve/reject pending work through a successor Run                                                            |
+| File                                               | Journey                                                                                                        |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `harness_integration/test_01_basic_run.py`         | Acceptance, execution, result, attempts, usage and retained items                                              |
+| `harness_integration/test_02_continuation.py`      | Successor Run reconstructs conversation context                                                                |
+| `harness_integration/test_03_tools_environment.py` | Real local shell writes and reads a file                                                                       |
+| `protocol/test_04_stream_reconnect.py`             | Disconnect during execution and resume with Last-Event-ID                                                      |
+| `control/test_05_idempotency.py`                   | Concurrent duplicate submission and changed-intent conflict                                                    |
+| `control/test_06_steer.py`                         | Idempotent mid-tool input has one durable inbox row and one occurrence in the actual model request; no new Run |
+| `control/test_07_interrupt.py`                     | Interrupt model I/O and tool execution; verify teardown                                                        |
+| `control/test_08_approval.py`                      | Approve/reject pending work through a successor Run                                                            |
 
 The first round has ten live cases because interrupt and approval each have two variants. The deterministic OpenAI-compatible model fixture controls timing and expected answers. This tests Foundation orchestration and real tool execution, not external model quality or provider compatibility. The approval tool comes from a trusted plugin loaded into the Worker at startup.
+
+## Test organization
+
+Tests are grouped by their primary feature, independently of their execution opt-in. The original filenames and case numbers are retained for traceability; numbers are historical labels, not a global sequence or an execution dependency.
+
+| Directory               | Primary responsibility                                                           | Modules | Collected cases |
+| ----------------------- | -------------------------------------------------------------------------------- | ------: | --------------: |
+| `environment/`          | Environment selection, access, files, providers, lifecycle and shared Worker use |      22 |             366 |
+| `control/`              | Run commands, waiting, inbox, queue, branches and acceptance races               |      21 |             193 |
+| `run_recovery/`         | Worker ownership, persistence, budgets, dependency failures and drain            |       8 |             653 |
+| `harness_integration/`  | Service configuration and resources reaching real Harness execution              |      10 |              28 |
+| `model/`                | Frozen Model settings and current Provider settings between requests             |       1 |               3 |
+| `protocol/`             | Native and Hosted streams, reconnect and recovery projection                     |       3 |              13 |
+| `iam/`                  | Workspace isolation, current authority and revocation                            |       3 |              10 |
+| `providers/`            | Optional real search, model, environment and Connector accounts                  |       1 |              15 |
+| `observability/`        | Cross-layer evidence and telemetry failure isolation                             |       1 |               2 |
+| `performance/`          | Long-session operation latency and retained-history correctness                  |       1 |               1 |
+| `infrastructure_tests/` | Offline tests of fixtures, configuration, parsers and cleanup                    |      11 |             213 |
+
+Counts are a collection snapshot: 82 modules and 1,497 parameterized cases, including inherited lifecycle cases and cases skipped unless explicitly enabled. A category does not enable infrastructure: the existing `--live*` fixture gates still apply. Mixed modules remain intact: `test_26_output_and_client_tools.py` and `test_32_multiworker_resources.py` live under `harness_integration/`, while `providers/test_31_real_providers.py` retains its real-account matrix.
+
+Subpackages inherit the root `conftest.py`. Feature-owned helpers live beside their tests; shared lab infrastructure lives in `infrastructure/`. The isolated launcher recursively selects the same first-round filenames and keeps their filename order.
+
+```sh
+# Offline support and full discovery checks; no opt-in infrastructure:
+make live-test-check
+# Control includes both core and fault-lab tests; enable the desired gate:
+uv run --locked python -m pytest dev/live_tests/control --live-round-two
+# A focused management category:
+uv run --locked python -m pytest dev/live_tests/model --live-management
+```
+
+## Helper ownership
+
+Use the primary responsibility of a helper to choose its location:
+
+- Put feature-specific scenarios, model scripts, plugins, native observers and host extensions beside that feature's tests. For example, Control owns its inbox and fork helpers, Environment owns lifecycle/file fixtures and its fixture Dockerfile, and Protocol owns SSE parsers and contract oracles even when other suites consume them.
+- Put shared clients, lab composition, storage setup, resource provisioning and fault barriers in `infrastructure/`. Its `host.py` composes feature extensions; this is deliberate test-host composition, not a requirement that feature code be independent.
+- Keep tests of all those helpers in `infrastructure_tests/`. This directory contains offline test cases, not the helper implementations themselves.
+- Keep `conftest.py`, `manage.py` and `isolated.py` at the root as the common pytest and command entry points. Private `.state/` and `providers.local.toml` remain at their existing ignored locations; the example configuration stays beside them.
+
+| Location               | Helpers                                                                                                                                                                                                                                                                                                                         |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `control/`             | `approval_plugin.py`, `async_children_model.py`, `control_children.py`, `control_fault_host.py`, `control_support.py`, `fixture_inbox.py`, `fork_fault_host.py`, `fork_support.py`, `queue_fault_host.py`                                                                                                                       |
+| `environment/`         | `docker_lifecycle_host.py`, `e2b_host.py`, `e2b_support.py`, `environment_backends.py`, `environment_host.py`, `environment_worker_host.py`, `environment_workers.py`, `file_backends.py`, `file_contract.py`, `file_resource_worker.py`, `lifecycle_cases.py`, `lifecycle_host.py`, `lifecycle_support.py`, `service_cases.py` |
+| `harness_integration/` | `fixture_connectivity.py`, `management_model.py`                                                                                                                                                                                                                                                                                |
+| `iam/`                 | `native_iam.py`, `run_fault_identity.py`                                                                                                                                                                                                                                                                                        |
+| `infrastructure/`      | `client.py`, `config.py`, `fixture_model.py`, `fixture_peer.py`, `host.py`, `local_storage.py`, `management_packages.py`, `management_support.py`, `round_two_lab.py`, `round_two_model.py`, `round_two_resources.py`, `run_faults.py`, `tcp_proxy.py`                                                                          |
+| `observability/`       | `fixture_telemetry.py`                                                                                                                                                                                                                                                                                                          |
+| `performance/`         | `long_session_host.py`, `long_session_model.py`                                                                                                                                                                                                                                                                                 |
+| `protocol/`            | `hosted_client.py`, `stream.py`, `stream_contract.py`                                                                                                                                                                                                                                                                           |
+| `providers/`           | `provider_config.py`, `real_providers.py`                                                                                                                                                                                                                                                                                       |
+| `run_recovery/`        | `resilience_plugin.py`, `run_fault_evidence.py`, `run_fault_host.py`, `run_fault_mcp.py`, `run_fault_model.py`, `run_fault_plugin.py`, `run_fault_support.py`                                                                                                                                                                   |
+
+The Environment fixture image is built from `environment/file_resources.Dockerfile` using the repository root as its build context. It copies `environment/file_resource_worker.py` into the existing standalone container entrypoint. Model scripts follow the scenario they drive; a mock model does not belong in `model/` merely because it emits model responses.
 
 ## Local state
 
@@ -23,7 +78,7 @@ Before submitting changes, `git ls-files -- dev/live_tests/.state dev/live_tests
 
 ## Installed test plugins
 
-The explicit live-test Worker host builds one immutable factory catalog from `approval_plugin.py` and `resilience_plugin.py` before serving. It supplies this catalog through the Service's trusted `Components.plugin_factory_catalog` composition boundary. Control does not import these factories. This uses plugin code already present in the checkout; setup never builds, uploads, or installs code through HTTP. Restart the Worker after changing a fixture plugin.
+The explicit live-test Worker host builds one immutable factory catalog from `control/approval_plugin.py` and `run_recovery/resilience_plugin.py` before serving. It supplies this catalog through the Service's trusted `Components.plugin_factory_catalog` composition boundary. Control does not import these factories. This uses plugin code already present in the checkout; setup never builds, uploads, or installs code through HTTP. Restart the Worker after changing a fixture plugin.
 
 Agent configuration selects `live.approval` or `live.resilience` using `instance_name`, `plugin_key`, and `config`. Control stores the authored selection; the Worker validates and normalizes it before execution. A missing factory or invalid configuration fails the Run before model or tool effects. See the [installed plugin contract](../../spec/a13n-service/36-installed-harness-plugins.md).
 
@@ -75,13 +130,13 @@ make live-test-providers LIVE_TEST_ARGS='-k "configured_model and openrouter"'
 make live-test-providers LIVE_TEST_ARGS='-k configured_search_exa'
 # Run only the four Brave search cases:
 make live-test-providers LIVE_TEST_ARGS='-k configured_search_brave'
-# Run only Brave's mock LLM tool-call/result/final-answer journey:
-make live-test-providers LIVE_TEST_ARGS='-k "configured_search_brave and mock_llm"'
-# Select Exa's mock LLM journey by combining the provider ID and case name:
-make live-test-providers LIVE_TEST_ARGS='-k "configured_search_exa and mock_llm"'
+# Run Brave's single-result boundary with the full mock LLM round trip:
+make live-test-providers LIVE_TEST_ARGS='-k "configured_search_brave and single-result"'
+# Select Exa's corresponding single-result boundary:
+make live-test-providers LIVE_TEST_ARGS='-k "configured_search_exa and single-result"'
 ```
 
-`test_31_real_providers.py` is also collected by `make live-test` and `make live-test-round-two`. `make live-test-local` runs the first-round files only; run `make live-test-providers` alongside it for external integration coverage. Existing timing, fault injection and management assertions always retain their deterministic dependencies, even when all sections are configured. `make live-test-check` never reads this private file or contacts these providers.
+`providers/test_31_real_providers.py` is also collected by `make live-test` and `make live-test-round-two`. `make live-test-local` runs the first-round files only; run `make live-test-providers` alongside it for external integration coverage. Existing timing, fault injection and management assertions always retain their deterministic dependencies, even when all sections are configured. `make live-test-check` never reads this private file or contacts these providers.
 
 Each enabled section starts its own disposable PostgreSQL, Redis, object-storage bucket, Control and Worker lab. Initialization creates the Provider and associated resources through Control HTTP, persisting credentials encrypted in that lab's database. No external credentials are copied into retained lab configuration.
 
@@ -101,16 +156,16 @@ api_key = "YOUR_BRAVE_API_KEY"
 
 Exa (`configured_search_exa`) and Brave (`configured_search_brave`) each run the same four cases using their production Search Provider adapter against its fixed official HTTPS endpoint. Brave requires an API key with Web Search access. The two sections are independent: each case uses only its selected account's key and never falls back to the other provider. Each case creates a saved Workspace account through Control in its own disposable lab. The three Run cases create a local direct-local Environment and an Agent with an explicit `search.provider_id`; the scripted local model selects the real Harness `search` tool. No paid Model, cloud Environment, Connector or browser authorization is required.
 
-| Case                                  | Flow and acceptance checks                                                                                                                                                                                                                                                                    |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `account_probe`                       | Read the saved account, require `credential_configured=true` without credential disclosure, call its `/test` endpoint, and require `success=true`, null error code and a timezone-aware `checked_at`. Reading again must return the unchanged account.                                        |
-| `run[requested-limit]`                | Search for `Python asyncio documentation` with `num=2` and Agent `max_results=3`; require a completed Run and 1–2 actual tool results.                                                                                                                                                        |
-| `run[domain-and-agent-limit]`         | Use the same query with `num=10`, Agent `max_results=2` and `include_domains=["python.org"]`; require 1–2 results, all from `python.org` or its subdomains.                                                                                                                                   |
-| `mock_llm_tool_call_and_final_answer` | Submit a user request through a real Run. Require the mock LLM's streamed `search` call with the intended query and `num=1`, a matching `tool_call_id` on the real search response, one official Python source, and a final public Run output equal to the search result received by the LLM. |
+| Case                          | Flow and acceptance checks                                                                                                                                                                                                                                                                    |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `account_probe`               | Read the saved account, require `credential_configured=true` without credential disclosure, call its `/test` endpoint, and require `success=true`, null error code and a timezone-aware `checked_at`. Reading again must return the unchanged account.                                        |
+| `run[requested-limit]`        | Search for `Python asyncio documentation` with `num=2` and Agent `max_results=3`; require a completed Run and 1–2 actual tool results.                                                                                                                                                        |
+| `run[domain-and-agent-limit]` | Use the same query with `num=10`, Agent `max_results=2` and `include_domains=["python.org"]`; require 1–2 results, all from `python.org` or its subdomains.                                                                                                                                   |
+| `run[single-result]`          | Submit a user request through a real Run. Require the mock LLM's streamed `search` call with the intended query and `num=1`, a matching `tool_call_id` on the real search response, one official Python source, and a final public Run output equal to the search result received by the LLM. |
 
 Run assertions read the actual tool result from the subsequent model request, require `ok=true`, a matching `showing` count, nonempty titles, HTTP(S) URLs with hostnames and string snippets. An empty result fails these known-query smoke cases; a failed tool cannot pass merely because the scripted model completed. Ranking, exact titles, snippet wording and an exact result count are deliberately not fixed because the upstream index changes. Domain checks verify the final disclosed results; the adapter's offline contract tests separately verify the outgoing Exa `includeDomains` request field. Brave applies the domain restriction locally to its returned candidates; this live assertion covers the final disclosed results for both providers, without claiming Brave sends an upstream domain filter.
 
-The dedicated mock LLM case verifies the full cycle: the first Chat Completions request advertises `search` and contains no tool result; the next model request contains the assistant's tool call and its matching response. The mock LLM echoes that response in its streamed final answer, and the test decodes the public Run output and compares it with the actual tool result. The selected source URL must not already appear in the first model request. Only tool selection and arguments are scripted; provider transport, search results, Harness execution and Run persistence are real. This verifies protocol and result propagation, not LLM search judgment or answer quality.
+Every search Run parameter verifies the full mock LLM cycle: the first Chat Completions request advertises `search` and contains no tool result; the next model request contains the assistant's tool call and its matching response. The mock LLM echoes that response in its streamed final answer, and the test decodes the public Run output and compares it with the actual tool result. None of the selected source URLs may already appear in the first model request. Only tool selection and arguments are scripted; provider transport, search results, Harness execution and Run persistence are real. This verifies protocol and result propagation, not LLM search judgment or answer quality.
 
 With no failures this suite makes four upstream search requests per configured provider (eight when both are configured), which can consume provider quota: one account probe and one per Run. The production Run path may retry transient errors under its existing bounded policy; these tests add no retries. Probe failures, quota errors and timeouts fail explicitly when configured. Missing or entirely blank `[search]` or `[brave_search]` skips that provider's four cases before starting infrastructure; partial or invalid configuration fails. `make live-test-check` verifies configuration and opt-in guards offline without reading the private configuration or contacting Exa or Brave.
 
@@ -172,7 +227,7 @@ make live-test-local
 make live-test-local LIVE_TEST_ARGS='-k "environment_tool or stream_disconnect"'
 ```
 
-This entry point creates fresh PostgreSQL, Redis and RustFS containers, applies committed migrations, provisions the first-round resources through Control HTTP, and starts separate Control and Worker processes on new loopback ports. It does not use an existing installation's database, credentials or service listeners. Test subprocesses explicitly bypass proxies for loopback, including macOS system proxies, so interrupt checks observe the Worker's actual model connection. RustFS uses the digest pinned in `local_storage.py`; the first invocation may need to download images. Startup allows 10 seconds for its loopback port mapping and replaces a container with a missing mapping, up to three startup attempts. This handles Docker Desktop host-port collisions; each failed owned container is removed before retrying. Once mapped, startup waits for the authenticated S3 API, then runs the Service's unchanged conditional-write/delete and concurrent-write probes.
+This entry point creates fresh PostgreSQL, Redis and RustFS containers, applies committed migrations, provisions the first-round resources through Control HTTP, and starts separate Control and Worker processes on new loopback ports. It does not use an existing installation's database, credentials or service listeners. Test subprocesses explicitly bypass proxies for loopback, including macOS system proxies, so interrupt checks observe the Worker's actual model connection. RustFS uses the digest pinned in `infrastructure/local_storage.py`; the first invocation may need to download images. Startup allows 10 seconds for its loopback port mapping and replaces a container with a missing mapping, up to three startup attempts. This handles Docker Desktop host-port collisions; each failed owned container is removed before retrying. Once mapped, startup waits for the authenticated S3 API, then runs the Service's unchanged conditional-write/delete and concurrent-write probes.
 
 For Environment failures, private Worker and Control logs include `managed_tool_resource_resolution_failed`, `environment_lifecycle_failed`, or `run_attempt_execution_failed`. Their `exception_chain` fields retain exception types, stack locations, numeric HTTP status/OS error codes when available, and causes suppressed by provider wrappers. Run, tool-call, Environment and operation IDs identify the relevant boundary. Routine diagnostics omit exception messages, locals, source lines and payloads; model-visible errors remain bounded.
 
@@ -219,16 +274,16 @@ For the local model fixture, set `A13N_SERVICE_MODEL_PRIVATE_ENDPOINT_CIDRS='["1
 
 ## Second round: persistence, concurrency and faults
 
-| File                             | Variants and acceptance evidence                                                                                                                                                                                |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `test_09_failures.py`            | Model authentication failure, model read timeout, and exhausted tool retries: bounded failed Run, diagnostic failure, no tool effect, released capacity                                                         |
-| `test_10_worker_recovery.py`     | SIGKILL and suspended stale owner with one or three simultaneous replacement contenders: one successor Attempt, same Run/input/revision, checkpointed effect retained once, immutable replaced Attempt and seal |
-| `test_11_graceful_shutdown.py`   | SIGTERM: clean process exit, no new claims, ordinary completion or planned handoff, replacement Worker drains pending work                                                                                      |
-| `test_12_worker_competition.py`  | Four ready Workers released together for one Run, plus two one-slot Workers and four slow Runs: one successful Attempt per Run, one checkpointed effect, bounded admission                                      |
-| `test_13_queue_retry_fork.py`    | Busy-Thread FIFO consumption, explicit Retry after repairing the upstream, Fork retaining context in a separate Thread; original history remains immutable                                                      |
-| `test_14_async_subagents.py`     | Two durable children; independently gated arrival at accepted/running/completed/waiting (approval and client tool)/failed/cancelled parents; durable consumption or suppression                                 |
-| `test_15_dependency_outages.py`  | Worker-only PostgreSQL, Redis and object-store connection cuts: prove the cut was exercised, restore and restart, validate terminal state and continued service availability                                    |
-| `test_16_workspace_isolation.py` | Another User in the same Organization and a different Workspace: valid own access, denied reads/stream/control, no unauthorized state changes                                                                   |
+| File                                         | Variants and acceptance evidence                                                                                                                                                                                |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `run_recovery/test_09_failures.py`           | Model authentication failure, model read timeout, and exhausted tool retries: bounded failed Run, diagnostic failure, no tool effect, released capacity                                                         |
+| `run_recovery/test_10_worker_recovery.py`    | SIGKILL and suspended stale owner with one or three simultaneous replacement contenders: one successor Attempt, same Run/input/revision, checkpointed effect retained once, immutable replaced Attempt and seal |
+| `run_recovery/test_11_graceful_shutdown.py`  | SIGTERM: clean process exit, no new claims, ordinary completion or planned handoff, replacement Worker drains pending work                                                                                      |
+| `run_recovery/test_12_worker_competition.py` | Four ready Workers released together for one Run, plus two one-slot Workers and four slow Runs: one successful Attempt per Run, one checkpointed effect, bounded admission                                      |
+| `control/test_13_queue_retry_fork.py`        | Busy-Thread FIFO consumption, explicit Retry after repairing the upstream, Fork retaining context in a separate Thread; original history remains immutable                                                      |
+| `control/test_14_async_subagents.py`         | Two durable children; independently gated arrival at accepted/running/completed/waiting (approval and client tool)/failed/cancelled parents; durable consumption or suppression                                 |
+| `run_recovery/test_15_dependency_outages.py` | Worker-only PostgreSQL, Redis and object-store connection cuts: prove the cut was exercised, restore and restart, validate terminal state and continued service availability                                    |
+| `iam/test_16_workspace_isolation.py`         | Another User in the same Organization and a different Workspace: valid own access, denied reads/stream/control, no unauthorized state changes                                                                   |
 
 Case 14 fixes the destination status before releasing either child's model response. The accepted destination is an explicit continuation of the completed spawning Run; draining child Workers finish their existing work without claiming that continuation. Waiting cases retain pending actions and child inbox entries until explicit feedback, then check that the successor's first model request contains no child results. Failed and cancelled spawning Runs suppress results while their independent children finish normally. Assertions read real HTTP model observations and an authenticated, read-only test inbox endpoint backed by the actual PostgreSQL records. The test never writes database state to manufacture a Run status. These cases cover all six Run statuses; they do not enumerate every selected-head, queue, crash, or child-outcome combination in the async-subagent contract.
 
@@ -257,18 +312,20 @@ Static/support checks establish fixture correctness and collection only. Report 
 Cases 37–42 add 66 P0/P1 variants under the same `--live-round-two` opt-in. Select them without the earlier journeys:
 
 ```sh
-uv run --locked python -m pytest dev/live_tests/test_3[789]_run_*.py dev/live_tests/test_4[012]_run_*.py \
+uv run --locked python -m pytest dev/live_tests/run_recovery/test_3[79]_run_*.py dev/live_tests/run_recovery/test_42_run_*.py \
+  dev/live_tests/control/test_38_run_*.py dev/live_tests/control/test_40_run_*.py \
+  dev/live_tests/iam/test_41_run_*.py \
   --live-round-two -v --tb=short -o log_cli=true -o log_cli_level=INFO
 ```
 
-| File                                         | Priority and acceptance evidence                                                                                                                                                                                                                                                                                                                                                                     |
-| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `test_37_run_persistence_faults.py`          | P0: crash before/after a real tool effect with and without tool-owned idempotency; lost initial/progress/completed object-write responses; adopt a completed candidate after Worker death before SQL sealing. P1: missing, malformed, incompatible-schema and integrity-invalid recovery state; removed plugin factory and incompatible installed plugin state.                                      |
-| `test_38_run_control_faults.py`              | P0: crash before/after receipt publication, exactly one incorporated Steer, late Steer and async child results continue the same Run, and Interrupt supersedes pending receipts despite published candidate state.                                                                                                                                                                                   |
-| `test_39_run_budgets_and_drain.py`           | P0: zero/exhausted Attempt budgets, accepted deadline expiry, persisted model usage and retry backoff across replacement. P1: transient conditional-write/unavailability errors, bounded preparation failure, forced planned drain, drain timeout and checkpoint latency across lease renewal.                                                                                                       |
-| `test_40_run_acceptance_and_queue_faults.py` | P1: Control death before/after acceptance with the same idempotency key; queue handoff before COMMIT, rollback after SQL mutations and lost COMMIT response; permanently invalid head is failed and the next queued intent progresses.                                                                                                                                                               |
-| `test_41_run_authority_faults.py`            | P0: disabled/downgraded Service Account or deleted bound Secret before first claim and replacement preparation; MCP/Connector revocation between model request and tool dispatch prevents remote calls.                                                                                                                                                                                              |
-| `test_42_run_dependency_faults.py`           | P1: actual model HTTP 429/503 retry limits, truncated/malformed streams and timeout; real plugin exceptions/timeouts; repeated PostgreSQL/object disconnects, sustained object outage, lost database renewal cancelling an unreleased tool, and Redis Steer/Interrupt while retaining the original Worker process; MCP error and external effect followed by a failed response without blind replay. |
+| File                                                 | Priority and acceptance evidence                                                                                                                                                                                                                                                                                                                                                                     |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `run_recovery/test_37_run_persistence_faults.py`     | P0: crash before/after a real tool effect with and without tool-owned idempotency; lost initial/progress/completed object-write responses; adopt a completed candidate after Worker death before SQL sealing. P1: missing, malformed, incompatible-schema and integrity-invalid recovery state; removed plugin factory and incompatible installed plugin state.                                      |
+| `control/test_38_run_control_faults.py`              | P0: crash before/after receipt publication, exactly one incorporated Steer, late Steer and async child results continue the same Run, and Interrupt supersedes pending receipts despite published candidate state.                                                                                                                                                                                   |
+| `run_recovery/test_39_run_budgets_and_drain.py`      | P0: zero/exhausted Attempt budgets, accepted deadline expiry, persisted model usage and retry backoff across replacement. P1: transient conditional-write/unavailability errors, bounded preparation failure, forced planned drain, drain timeout and checkpoint latency across lease renewal.                                                                                                       |
+| `control/test_40_run_acceptance_and_queue_faults.py` | P1: Control death before/after acceptance with the same idempotency key; queue handoff before COMMIT, rollback after SQL mutations and lost COMMIT response; permanently invalid head is failed and the next queued intent progresses.                                                                                                                                                               |
+| `iam/test_41_run_authority_faults.py`                | P0: disabled/downgraded Service Account or deleted bound Secret before first claim and replacement preparation; MCP/Connector revocation between model request and tool dispatch prevents remote calls.                                                                                                                                                                                              |
+| `run_recovery/test_42_run_dependency_faults.py`      | P1: actual model HTTP 429/503 retry limits, truncated/malformed streams and timeout; real plugin exceptions/timeouts; repeated PostgreSQL/object disconnects, sustained object outage, lost database renewal cancelling an unreleased tool, and Redis Steer/Interrupt while retaining the original Worker process; MCP error and external effect followed by a failed response without blind replay. |
 
 Model failure assertions include Service transport retries and the five total Harness ModelAttempts enabled by Service reconstruction. Persistent 429/503 rejection therefore stops after 15 HTTP requests in one Service RunAttempt; stream/timeout recovery stops after five. Protocol cases use a 60-second lease to separate protocol recovery from the short-lease takeover cases. Truncation uses the independent TLS peer so an upstream connection failure reaches the real model client without Service HTTP middleware. The Redis Steer case confirms durable acceptance during the outage, then restores transport before completion because Redis also owns live publication leases; Interrupt is checked while the relay remains cut.
 
@@ -285,24 +342,24 @@ The matrix verifies named transitions and observable effects; it is not a line-c
 Cases 45–52 provide 97 variants for the control boundaries in the table below; the queue suites described afterward add 29, and the Fork independence suites add 42. They share the isolated fault lab and `--live-round-two` opt-in. Run the control suites with:
 
 ```sh
-uv run --locked python -m pytest dev/live_tests/test_4[56789]_control_*.py dev/live_tests/test_5[0123456]_control_*.py \
+uv run --locked python -m pytest dev/live_tests/control/test_4[56789]_control_*.py dev/live_tests/control/test_5[0123456]_control_*.py \
   --live-round-two -v --tb=short -o log_cli=true -o log_cli_level=INFO
 ```
 
-| File                               | Variants | Boundary and acceptance evidence                                                                                                                                                                                                                                                                                                                       |
-| ---------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `test_45_control_acceptance.py`    | 22       | Steer/Interrupt before and after first claim; completed sealing wins against late control; stale Interrupt versions fail without helper retries; Continue/Fork/Retry/Feedback/waiting Continue lose responses before and after commit; ineligible lifecycle states reject commands without mutation.                                                   |
-| `test_46_control_waiting.py`       | 13       | Steer on both sides of waiting sealing; default resolution plus new input preserves queue and defers inbox; multiple waiting rounds with Worker death before first response or after checkpoint; applied input/effect recovery; partial, reversed, empty and null mixed feedback; stale/invalid feedback and forbidden execution overrides are atomic. |
-| `test_47_control_concurrency.py`   | 12       | Different commands prepare from the same Thread version, with exactly one committed advancement; same-key successors reconcile one receipt; Fork and Continue advance independently from the same historical state while preserving separate Environment choices.                                                                                      |
-| `test_48_control_branches.py`      | 15       | Historical Continue abandons waiting inbox while preserving queue; root/continued cancelled Retry retains its original parent and discards old Steer; failed/cancelled × absent/completed/waiting head × empty/nonempty queue admission matrix.                                                                                                        |
-| `test_49_control_queue.py`         | 12       | Late Steer invalidates prepared handoff; PATCH/DELETE/reorder win before consumption or conflict after it; concurrent explicit consumers reconcile against background recovery; concurrent enqueue allocates unique FIFO positions; stale versions and recoverable revision blockers preserve editable intent.                                         |
-| `test_50_control_inbox.py`         | 9        | Identical text with distinct Steer identities remains duplicated in FIFO; concurrent count overflow has no partial admission and capacity is reclaimed by consumption/cancellation; byte limit minus one/exact/plus one; deleted binary source fails before the model; lost Steer/Interrupt replies replay across Control restart.                     |
-| `test_51_control_child_results.py` | 5        | Alternating Steer/child-result FIFO reaches real model context; cancelled-origin results arriving before cancellation or after Retry remain suppressed while fresh children deliver; blocked queue takes precedence over automatic child-result continuation; historical Continue supersedes child results and Steer together.                         |
-| `test_52_control_steer_races.py`   | 9        | Both commit orders for Steer versus Feedback/waiting Continue and Interrupt/final failure; consumption commits before Interrupt without losing the consumed status or exact checkpoint receipt.                                                                                                                                                        |
+| File                                       | Variants | Boundary and acceptance evidence                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `control/test_45_control_acceptance.py`    | 22       | Steer/Interrupt before and after first claim; completed sealing wins against late control; stale Interrupt versions fail without helper retries; Continue/Fork/Retry/Feedback/waiting Continue lose responses before and after commit; ineligible lifecycle states reject commands without mutation.                                                   |
+| `control/test_46_control_waiting.py`       | 13       | Steer on both sides of waiting sealing; default resolution plus new input preserves queue and defers inbox; multiple waiting rounds with Worker death before first response or after checkpoint; applied input/effect recovery; partial, reversed, empty and null mixed feedback; stale/invalid feedback and forbidden execution overrides are atomic. |
+| `control/test_47_control_concurrency.py`   | 12       | Different commands prepare from the same Thread version, with exactly one committed advancement; same-key successors reconcile one receipt; Fork and Continue advance independently from the same historical state while preserving separate Environment choices.                                                                                      |
+| `control/test_48_control_branches.py`      | 15       | Historical Continue abandons waiting inbox while preserving queue; root/continued cancelled Retry retains its original parent and discards old Steer; failed/cancelled × absent/completed/waiting head × empty/nonempty queue admission matrix.                                                                                                        |
+| `control/test_49_control_queue.py`         | 12       | Late Steer invalidates prepared handoff; PATCH/DELETE/reorder win before consumption or conflict after it; concurrent explicit consumers reconcile against background recovery; concurrent enqueue allocates unique FIFO positions; stale versions and recoverable revision blockers preserve editable intent.                                         |
+| `control/test_50_control_inbox.py`         | 9        | Identical text with distinct Steer identities remains duplicated in FIFO; concurrent count overflow has no partial admission and capacity is reclaimed by consumption/cancellation; byte limit minus one/exact/plus one; deleted binary source fails before the model; lost Steer/Interrupt replies replay across Control restart.                     |
+| `control/test_51_control_child_results.py` | 5        | Alternating Steer/child-result FIFO reaches real model context; cancelled-origin results arriving before cancellation or after Retry remain suppressed while fresh children deliver; blocked queue takes precedence over automatic child-result continuation; historical Continue supersedes child results and Steer together.                         |
+| `control/test_52_control_steer_races.py`   | 9        | Both commit orders for Steer versus Feedback/waiting Continue and Interrupt/final failure; consumption commits before Interrupt without losing the consumed status or exact checkpoint receipt.                                                                                                                                                        |
 
-`test_53_control_queue_races.py` adds 18 variants: background recovery and explicit consume both publish candidate initial state before either commits; enqueue competes with completed/waiting/failed/cancelled sealing in both orders; a new submission cannot bypass an existing queue during completed-Thread recovery; Interrupt competes with prepared completion handoff; and Retry or historical Continue competes with background consumption. Each race checks both winning orders, the selected parent, queue and Thread versions, and absence of the losing candidate Run. A rejected stale submission is also retried with the current Thread version to check immediate acceptance versus queue admission.
+`control/test_53_control_queue_races.py` adds 18 variants: background recovery and explicit consume both publish candidate initial state before either commits; enqueue competes with completed/waiting/failed/cancelled sealing in both orders; a new submission cannot bypass an existing queue during completed-Thread recovery; Interrupt competes with prepared completion handoff; and Retry or historical Continue competes with background consumption. Each race checks both winning orders, the selected parent, queue and Thread versions, and absence of the losing candidate Run. A rejected stale submission is also retried with the current Thread version to check immediate acceptance versus queue admission.
 
-`test_54_control_queue_edges.py` adds 11 variants: three observed recovery scans leave a waiting head's queue untouched, including after failed/cancelled Feedback; a recoverable queue head blocks its tail while another Thread drains, then PATCH or DELETE unblocks it; two requests compete for the last queue slot, with replay at capacity and reuse after deletion or consumption; and consumed entries remain immutable after their Runs fail/cancel and Control restarts, while the next entry continues from the preserved completed or null head.
+`control/test_54_control_queue_edges.py` adds 11 variants: three observed recovery scans leave a waiting head's queue untouched, including after failed/cancelled Feedback; a recoverable queue head blocks its tail while another Thread drains, then PATCH or DELETE unblocks it; two requests compete for the last queue slot, with replay at capacity and reuse after deletion or consumption; and consumed entries remain immutable after their Runs fail/cancel and Control restarts, while the next entry continues from the preserved completed or null head.
 
 Run the queue additions independently with:
 
@@ -314,11 +371,11 @@ The Fork independence suites test both directions: one operation remains at an o
 
 Most variants require the peer to finish execution before release. When a checkpoint publication or replacement state read/writer claim is paused, Fork must finish HTTP acceptance before release; both Runs must execute successfully afterward. These object operations have bounded request or Run-local reconciliation deadlines, so those variants measure acceptance independence without turning the pause into a dependency-timeout test.
 
-| File                               | Variants | Independent operations and evidence                                                                                                                                                                                                                                                                                            |
-| ---------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `test_54_control_fork_commands.py` | 16       | Fork versus Continue, historical ContinueFrom, Steer, Interrupt, Feedback, waiting Continue and Retry; two distinct Forks sharing an Environment, with inherited and overridden execution settings. Each direction checks lineage, separate Thread identity, unchanged source state and isolated inbox/model context.          |
-| `test_55_control_fork_recovery.py` | 20       | Fork versus model/tool/checkpoint I/O and completed/waiting/failed sealing; replacement Attempt state reads and writer claims before/after publication; planned Worker drain/handoff. Real Worker death must recover with the next writer fence, while drain must yield and hand off once; both retain the actual tool effect. |
-| `test_56_control_fork_queue.py`    | 6        | Fork versus explicit queue consumption and completion handoff, including a shared Environment. Both queued entries must drain in FIFO order with the correct parent, while the Fork retains a separate empty queue and source Thread state remains unchanged while paused.                                                     |
+| File                                       | Variants | Independent operations and evidence                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `control/test_54_control_fork_commands.py` | 16       | Fork versus Continue, historical ContinueFrom, Steer, Interrupt, Feedback, waiting Continue and Retry; two distinct Forks sharing an Environment, with inherited and overridden execution settings. Each direction checks lineage, separate Thread identity, unchanged source state and isolated inbox/model context.          |
+| `control/test_55_control_fork_recovery.py` | 20       | Fork versus model/tool/checkpoint I/O and completed/waiting/failed sealing; replacement Attempt state reads and writer claims before/after publication; planned Worker drain/handoff. Real Worker death must recover with the next writer fence, while drain must yield and hand off once; both retain the actual tool effect. |
+| `control/test_56_control_fork_queue.py`    | 6        | Fork versus explicit queue consumption and completion handoff, including a shared Environment. Both queued entries must drain in FIFO order with the correct parent, while the Fork retains a separate empty queue and source Thread state remains unchanged while paused.                                                     |
 
 Run these suites independently with:
 
@@ -355,21 +412,21 @@ The new admission barriers run after input preparation but before the final tran
 
 This round adds 45 live variants in 13 independently selectable files. Cases 19, 28, 29 and 30 are intentionally excluded. All management resources are created through public HTTP APIs, and each enabled test uses its own isolated lab with the same automatic RustFS setup and optional loopback S3 override as round two.
 
-| File                                 | Acceptance evidence                                                                                                                                                                                                                                          |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `test_17_agent_revisions.py`         | Update after Run acceptance but before Worker claim; current and explicit old revisions reach the model; per-Run overrides do not alter stored revisions; stale writes are rejected                                                                          |
-| `test_18_plugin_execution.py`        | Installed factory selections produce a real file effect; an unbound Agent has no plugin tool; missing factories and invalid configuration fail Worker preparation before model/tool execution                                                                |
-| `test_20_environment_templates.py`   | Explicit old/current recipes read different files; `on_run` versus `on_use` is observed before tool execution; simultaneous first reads use one logical target/generation; unused lazy selection stays unprepared; explicit null overrides the Agent default |
-| `test_21_environment_lifecycle.py`   | Stop/reopen preserves backing generation; delete/rebuild advances it; stale process handles fail; Continue, Retry, Fork and Feedback inherit correctly; changing the Thread default does not change a historical Fork source                                 |
-| `test_22_environment_access.py`      | No environment, read-only, read-write and full access have the expected file/Shell surface; actual read/write/Shell bytes agree; forged unadvertised writes produce no file                                                                                  |
-| `test_23_model_updates.py`           | Accepted Model settings/upstream remain frozen; a new Run receives new settings; the next request of a running Agent uses rotated Provider credentials/new endpoint or is denied after disable                                                               |
-| `test_24_skill_execution.py`         | Real ZIP document and attachment uploads; accepted latest version freezes before update; later current and explicit pinned bindings materialize/read correct files; cross-Workspace package reads and absent Environment are denied                          |
-| `test_25_asset_execution.py`         | File bytes materialize into the Environment and PNG bytes enter the model request unchanged; deletion before Worker claim blocks delivery; explicit publication produces an immutable downloadable Asset linked to its Run, with cross-Workspace denial      |
-| `test_26_output_and_client_tools.py` | Structured output advertises the authored schema and enforces JSON Schema validation and native retry bounds; external client tool waits and resumes with actual supplied data; malformed, duplicate and stale feedback cannot create extra successors       |
-| `test_27_connectivity_execution.py`  | Production MCP client and Composio adapter connect to local HTTP peers; selected tools, arguments and credential hashes agree; disabling/revoking the connection prevents later dispatch                                                                     |
-| `test_31_observability.py`           | Actual OTLP/HTTP exports correlate Service Attempt, Harness, model and tool spans; durable Items, SSE and model usage agree; rejecting trace exports with HTTP 503 does not change the result or repeat the effect                                           |
-| `test_32_multiworker_resources.py`   | Three Workers retain accepted Agent/Model/Template selections while live resource disablement or connection revocation blocks later dispatch, including after Worker replacement                                                                             |
-| `test_33_multiworker_iam.py`         | Native session/key revocation denies reads, downloads, commands, approval and SSE continuation; three replacement Workers reauthorize the persisted User; regrant does not resurrect revoked keys                                                            |
+| File                                                     | Acceptance evidence                                                                                                                                                                                                                                          |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `harness_integration/test_17_agent_revisions.py`         | Update after Run acceptance but before Worker claim; current and explicit old revisions reach the model; per-Run overrides do not alter stored revisions; stale writes are rejected                                                                          |
+| `harness_integration/test_18_plugin_execution.py`        | Installed factory selections produce a real file effect; an unbound Agent has no plugin tool; missing factories and invalid configuration fail Worker preparation before model/tool execution                                                                |
+| `environment/test_20_environment_templates.py`           | Explicit old/current recipes read different files; `on_run` versus `on_use` is observed before tool execution; simultaneous first reads use one logical target/generation; unused lazy selection stays unprepared; explicit null overrides the Agent default |
+| `environment/test_21_environment_lifecycle.py`           | Stop/reopen preserves backing generation; delete/rebuild advances it; stale process handles fail; Continue, Retry, Fork and Feedback inherit correctly; changing the Thread default does not change a historical Fork source                                 |
+| `environment/test_22_environment_access.py`              | No environment, read-only, read-write and full access have the expected file/Shell surface; actual read/write/Shell bytes agree; forged unadvertised writes produce no file                                                                                  |
+| `model/test_23_model_updates.py`                         | Accepted Model settings/upstream remain frozen; a new Run receives new settings; the next request of a running Agent uses rotated Provider credentials/new endpoint or is denied after disable                                                               |
+| `harness_integration/test_24_skill_execution.py`         | Real ZIP document and attachment uploads; accepted latest version freezes before update; later current and explicit pinned bindings materialize/read correct files; cross-Workspace package reads and absent Environment are denied                          |
+| `harness_integration/test_25_asset_execution.py`         | File bytes materialize into the Environment and PNG bytes enter the model request unchanged; deletion before Worker claim blocks delivery; explicit publication produces an immutable downloadable Asset linked to its Run, with cross-Workspace denial      |
+| `harness_integration/test_26_output_and_client_tools.py` | Structured output advertises the authored schema and enforces JSON Schema validation and native retry bounds; external client tool waits and resumes with actual supplied data; malformed, duplicate and stale feedback cannot create extra successors       |
+| `harness_integration/test_27_connectivity_execution.py`  | Production MCP client and Composio adapter connect to local HTTP peers; selected tools, arguments and credential hashes agree; disabling/revoking the connection prevents later dispatch                                                                     |
+| `observability/test_31_observability.py`                 | Actual OTLP/HTTP exports correlate Service Attempt, Harness, model and tool spans; durable Items, SSE and model usage agree; rejecting trace exports with HTTP 503 does not change the result or repeat the effect                                           |
+| `harness_integration/test_32_multiworker_resources.py`   | Three Workers retain accepted Agent/Model/Template selections while live resource disablement or connection revocation blocks later dispatch, including after Worker replacement                                                                             |
+| `iam/test_33_multiworker_iam.py`                         | Native session/key revocation denies reads, downloads, commands, approval and SSE continuation; three replacement Workers reauthorize the persisted User; regrant does not resurrect revoked keys                                                            |
 
 ```sh
 make image-sandbox
@@ -391,7 +448,7 @@ These tests do not exercise external model inference quality, hosted OAuth user 
 
 ## Five-backend Environment matrix
 
-`test_28_environment_backends.py` adds 15 separately selected journeys for `a13n.local-envd`, `a13n.docker`, `a13n.e2b`, `a13n.http-envd`, and `a13n.websocket-envd`. Each backend runs tools/access, template/preparation, and lifecycle/continuity journeys. The access journey checks read-only, read-write, and full ceilings, actual file/Shell results, and forged tool calls whose prohibited filesystem effects must remain absent. The existing case 22 continues to cover explicit no-environment selection.
+`environment/test_28_environment_backends.py` adds 15 separately selected journeys for `a13n.local-envd`, `a13n.docker`, `a13n.e2b`, `a13n.http-envd`, and `a13n.websocket-envd`. Each backend runs tools/access, template/preparation, and lifecycle/continuity journeys. The access journey checks read-only, read-write, and full ceilings, actual file/Shell results, and forged tool calls whose prohibited filesystem effects must remain absent. The existing case 22 continues to cover explicit no-environment selection.
 
 | Backend        | Template and preparation                                               | Lifecycle                                                                                                          |
 | -------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
@@ -430,21 +487,21 @@ Case 33 adds a separate Control process using unmodified native IAM over the sam
 
 The opt-in E2B suite adds 28 cases alongside the five-backend matrix. It uses our native E2B adapter and the installed official `e2b` SDK. Lifecycle effects use the E2B cloud API; command, process and file operations use E2B's own envd through that SDK. These tests do not use the `a13n-envd` daemon.
 
-| Test file                          | Cases | Observable contract                                                                                                                                                                                                                                                                                                                                                                                             |
-| ---------------------------------- | ----: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `test_32_e2b_lifecycle.py`         |    13 | Inert entry/close; concurrent and repeated prepare; exact/idempotent destroy; real TTL extension without shortening and execution past the old expiry; pause/resume of an in-memory process value; passive paused-state observation; stale facets after close; reconnect with retained output offsets; managed rebuild versus external missing target; metadata recovery and conflicts; native timeout deletion |
-| `test_33_e2b_faults.py`            |     9 | Lost create response recovered by metadata; known state retained after readiness failure; lost pause/kill/set-timeout responses reconciled without repeating effects; prepare/recover serialized with close, including cancellation                                                                                                                                                                             |
-| `test_34_e2b_service_lifecycle.py` |     6 | Worker renewal during an active Run; automatic idle pause/delete without waking; two concurrent first-use Runs sharing one target; Worker killed after create before state publication; stop/delete racing with new use across publication                                                                                                                                                                      |
+| Test file                                      | Cases | Observable contract                                                                                                                                                                                                                                                                                                                                                                                             |
+| ---------------------------------------------- | ----: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `environment/test_32_e2b_lifecycle.py`         |    13 | Inert entry/close; concurrent and repeated prepare; exact/idempotent destroy; real TTL extension without shortening and execution past the old expiry; pause/resume of an in-memory process value; passive paused-state observation; stale facets after close; reconnect with retained output offsets; managed rebuild versus external missing target; metadata recovery and conflicts; native timeout deletion |
+| `environment/test_33_e2b_faults.py`            |     9 | Lost create response recovered by metadata; known state retained after readiness failure; lost pause/kill/set-timeout responses reconciled without repeating effects; prepare/recover serialized with close, including cancellation                                                                                                                                                                             |
+| `environment/test_34_e2b_service_lifecycle.py` |     6 | Worker renewal during an active Run; automatic idle pause/delete without waking; two concurrent first-use Runs sharing one target; Worker killed after create before state publication; stop/delete racing with new use across publication                                                                                                                                                                      |
 
 Run the complete suite or one layer:
 
 ```sh
 make live-test-management LIVE_TEST_ARGS='--live-environments -k test_e2b'
 # Direct adapters and fault injection need an E2B account but no Docker lab.
-uv run --locked python -m pytest dev/live_tests/test_32_e2b_lifecycle.py \
-  dev/live_tests/test_33_e2b_faults.py --live-environments
+uv run --locked python -m pytest dev/live_tests/environment/test_32_e2b_lifecycle.py \
+  dev/live_tests/environment/test_33_e2b_faults.py --live-environments
 # Service cases additionally start disposable PostgreSQL, Redis, Control and Worker.
-uv run --locked python -m pytest dev/live_tests/test_34_e2b_service_lifecycle.py --live-environments
+uv run --locked python -m pytest dev/live_tests/environment/test_34_e2b_service_lifecycle.py --live-environments
 ```
 
 Use the private `[environment]` configuration described above. Without `--live-environments`, these cases skip before reading credentials or starting infrastructure. An absent environment section also skips them. Service Runs use the deterministic local model; no paid model account is required.
@@ -453,7 +510,7 @@ Independent SDK `get_info`/metadata-list observations check native sandbox IDs, 
 
 Fault cases deliberately inject local response loss or a readiness failure after real cloud work. The opt-in test Host also provides an authenticated, Workspace-scoped lifecycle evidence route and one-shot barriers after real create/pause/kill effects but before Service publication. The crash case kills the actual Worker and waits for its successor to reconcile the abandoned operation. The E2B and Docker lifecycle labs explicitly install these shared evidence and publication-barrier hooks.
 
-Cleanup tracks test-owned Environment identities and exact sandbox IDs, discovers targets whose create result was lost (including paused targets and multiple discovery pages), attempts all owned deletions, and verifies cloud absence. Cleanup errors fail the test. `test_e2b_support.py` checks opt-in, ownership, retry bounds and cleanup failure behavior offline.
+Cleanup tracks test-owned Environment identities and exact sandbox IDs, discovers targets whose create result was lost (including paused targets and multiple discovery pages), attempts all owned deletions, and verifies cloud absence. Cleanup errors fail the test. `infrastructure_tests/test_e2b_support.py` checks opt-in, ownership, retry bounds and cleanup failure behavior offline.
 
 This covers the lifecycle SDK surface used by our adapter: `list`, `get_info`, `create`, `connect`, `is_running`, `pause`, `set_timeout` and `kill`. It does not claim coverage of every E2B SDK feature, template, region or account quota. Deterministic credential denial, malformed state and policy/error mapping remain covered in `packages/a13n-environment/tests/test_e2b_lifecycle.py`; cloud outages, rate limits and permission failures are not induced against the real account.
 
@@ -469,7 +526,7 @@ Four ready Worker processes are paused before accepting one Run, then released t
 
 Every recovery variant, the four-Worker claim race, and the two-Worker capacity case run 100 times by default (600 cases total). Each numbered pytest case owns a fresh lab, Worker processes, and Runs, with independent cleanup and retained process logs. Test IDs use `round-001` through `round-100` to identify failures; no separate repetition flag or stress mode is required.
 
-`test_36_long_session.py` measures one Thread accumulating real sequential Runs through separate Control/Worker processes, PostgreSQL, Redis and S3. It runs only with `--live-performance`. The lab uses the default 30-second Worker lease.
+`performance/test_36_long_session.py` measures one Thread accumulating real sequential Runs through separate Control/Worker processes, PostgreSQL, Redis and S3. It runs only with `--live-performance`. The lab uses the default 30-second Worker lease.
 
 ```sh
 # Grow one Thread to 1, 1,000 and 10,000 real Runs, measuring at each checkpoint.
@@ -508,10 +565,10 @@ Chain creation, evidence probes, failure injection/repair and deliberate barrier
 
 ### E2B file boundaries and OS failures
 
-`test_35_e2b_files.py` adds 26 real-sandbox cases, selected with the same `--live-environments` opt-in and private E2B configuration. No Service lab or model account is required:
+`environment/test_35_e2b_files.py` adds 26 real-sandbox cases, selected with the same `--live-environments` opt-in and private E2B configuration. No Service lab or model account is required:
 
 ```sh
-uv run --locked python -m pytest dev/live_tests/test_35_e2b_files.py --live-environments
+uv run --locked python -m pytest dev/live_tests/environment/test_35_e2b_files.py --live-environments
 ```
 
 The cases cover:
@@ -529,7 +586,7 @@ Guest-helper missing, denied and wrong-type failures assert their specific `envi
 
 ### File and lifecycle boundaries across environment providers
 
-`test_42_environment_files.py` runs 25 file cases against each of Direct Local, Local Envd, HTTP Envd, reverse-WebSocket Envd and Docker (125 cases). It covers traversal, outside-root symlinks, read-only mutations, missing paths, file/directory mismatches, real POSIX permissions, writable capabilities and aborted create/replace/append streams. Independent native snapshots include hidden staging files and outside-root sentinels.
+`environment/test_42_environment_files.py` runs 25 file cases against each of Direct Local, Local Envd, HTTP Envd, reverse-WebSocket Envd and Docker (125 cases). It covers traversal, outside-root symlinks, read-only mutations, missing paths, file/directory mismatches, real POSIX permissions, writable capabilities and aborted create/replace/append streams. Independent native snapshots include hidden staging files and outside-root sentinels.
 
 Expectations follow each provider's semantics:
 
@@ -538,9 +595,9 @@ Expectations follow each provider's semantics:
 - Read-only EIP mutations are unadvertised and return unsupported; Direct Local returns denied. Both reject before consuming streamed input.
 - Wrong-type errors use each provider's defined error family, while every case checks that neither source nor destination was changed.
 
-`test_44_environment_lifecycle.py` adds 21 real-backend cases: closed file facets, fresh scopes, close racing successful/cancelled preparation, Docker stop/start, metadata recovery without waking a target, managed versus external target loss, and lost create/stop/delete responses reconciled against the real Docker engine. Direct Local and Local Envd start a fresh generation over the retained workspace; closing a remote adapter leaves its external daemon alive. Docker stop/start does not assert E2B's process-memory preservation. E2B-specific TTL renewal remains in the dedicated cloud suite.
+`environment/test_44_environment_lifecycle.py` adds 21 real-backend cases: closed file facets, fresh scopes, close racing successful/cancelled preparation, Docker stop/start, metadata recovery without waking a target, managed versus external target loss, and lost create/stop/delete responses reconciled against the real Docker engine. Direct Local and Local Envd start a fresh generation over the retained workspace; closing a remote adapter leaves its external daemon alive. Docker stop/start does not assert E2B's process-memory preservation. E2B-specific TTL renewal remains in the dedicated cloud suite.
 
-`test_50_local_docker_lifecycle.py` adds 23 native lifecycle cases:
+`environment/test_50_local_docker_lifecycle.py` adds 23 native lifecycle cases:
 
 | Provider     | Cases | Observable contract                                                                                                                                                                                                                                                                                                                                            |
 | ------------ | ----: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -548,9 +605,9 @@ Expectations follow each provider's semantics:
 | Local Envd   |     8 | The same local boundaries; cancellation/error after actual daemon launch cleans private resources; externally killed idle or active daemon cleans its child tree, fences process/output references and permits a fresh generation                                                                                                                              |
 | Docker       |    11 | Inert and concurrent preparation; failed/cancelled readiness preserves the exact created target; forged container identity and ambiguous real metadata cannot redirect ownership; repeated destruction through fresh adapters preserves bind data and other containers; close/rebind preserves process/stdin/output while stop/start changes native generation |
 
-`test_51_docker_service_lifecycle.py` adds five Service cases over real Docker, PostgreSQL, Redis, Control and Worker processes: active-use protection followed by idle stop/delete without waking or resetting the idle clock; concurrent access to an exclusively admitted EIP Session; Worker death after native creation but before state publication; and stop/delete publication racing new Run use. The successor Worker must recover the same unpublished container and backing generation. A stopped container is reused; a deleted one is replaced with one new backing generation.
+`environment/test_51_docker_service_lifecycle.py` adds five Service cases over real Docker, PostgreSQL, Redis, Control and Worker processes: active-use protection followed by idle stop/delete without waking or resetting the idle clock; concurrent access to an exclusively admitted EIP Session; Worker death after native creation but before state publication; and stop/delete publication racing new Run use. The successor Worker must recover the same unpublished container and backing generation. A stopped container is reused; a deleted one is replaced with one new backing generation.
 
-E2B permits concurrent SDK attachments; Docker HTTP EIP admits one Session. Docker contention must preserve the current owner and unique container, report unavailability to the competing tool call, and allow reuse after owner close. It does not assert that two independent Runs can simultaneously operate one Docker daemon. Shared retention and crash scenarios live in `lifecycle_cases.py` with native identity/state observations supplied by each provider fixture.
+E2B permits concurrent SDK attachments; Docker HTTP EIP admits one Session. Docker contention must preserve the current owner and unique container, report unavailability to the competing tool call, and allow reuse after owner close. It does not assert that two independent Runs can simultaneously operate one Docker daemon. Shared retention and crash scenarios live in `environment/lifecycle_cases.py` with native identity/state observations supplied by each provider fixture.
 
 Local Envd close after an external SIGKILL reports `provider_cleanup_failed` when clean EIP closure cannot be confirmed; the test independently checks process exit, private-directory removal, workspace preservation and successful fresh preparation. Closed EIP process and port facets must expose public Environment errors rather than leaking client Session exceptions.
 
@@ -560,61 +617,61 @@ Build the current native daemon and sandbox image, then opt in:
 make rust-build
 make image-sandbox SANDBOX_IMAGE=a13n-sandbox:file-tests
 LIVE_TEST_SANDBOX_IMAGE=a13n-sandbox:file-tests uv run --locked python -m pytest \
-  dev/live_tests/test_42_environment_files.py \
-  dev/live_tests/test_44_environment_lifecycle.py \
-  dev/live_tests/test_50_local_docker_lifecycle.py \
-  dev/live_tests/test_51_docker_service_lifecycle.py --live-environments
+  dev/live_tests/environment/test_42_environment_files.py \
+  dev/live_tests/environment/test_44_environment_lifecycle.py \
+  dev/live_tests/environment/test_50_local_docker_lifecycle.py \
+  dev/live_tests/environment/test_51_docker_service_lifecycle.py --live-environments
 ```
 
 `A13N_ENVD_TEST_BINARY` can select a daemon binary instead of `target/debug/a13n-envd`. Tests own temporary workspaces, daemon processes and uniquely labelled Docker targets; cleanup verifies that owned containers are absent. Permission cases require POSIX and non-root execution. Network file-only fixtures use authenticated loopback connections with command execution disabled; they do not assert shell isolation or resistance to hostile concurrent namespace changes.
 
-`test_43_environment_storage.py` exercises real kernel ENOSPC for Direct Local, Local Envd, HTTP and reverse-WebSocket transfers. Each case uses an owned non-root Linux container with a 1 MiB tmpfs, no network, bounded memory and process count. It verifies failed create/replace/append publication, original content, hidden-stage cleanup and successful writing after capacity is freed. No host filesystem is filled; the four cases require Docker and this separate fixture image:
+`environment/test_43_environment_storage.py` exercises real kernel ENOSPC for Direct Local, Local Envd, HTTP and reverse-WebSocket transfers. Each case uses an owned non-root Linux container with a 1 MiB tmpfs, no network, bounded memory and process count. It verifies failed create/replace/append publication, original content, hidden-stage cleanup and successful writing after capacity is freed. No host filesystem is filled; the four cases require Docker and this separate fixture image:
 
 ```sh
-docker build -f dev/live_tests/file_resources.Dockerfile \
+docker build -f dev/live_tests/environment/file_resources.Dockerfile \
   --build-arg SANDBOX_IMAGE=a13n-sandbox:file-tests \
   -t a13n-file-resources:local .
-uv run --locked python -m pytest dev/live_tests/test_43_environment_storage.py --live-environments
+uv run --locked python -m pytest dev/live_tests/environment/test_43_environment_storage.py --live-environments
 ```
 
 `LIVE_TEST_FILE_RESOURCE_IMAGE` overrides the fixture image. The container logs emit JSON evidence with capacity, kernel errno, provider errors, preservation and recovery results. All four retain a usable session after the failed transfer; the test explicitly submits a new write after releasing capacity. HTTP transfer responses carry no acknowledged byte offset, so a failed HTTP response must not be converted into a synthetic acknowledged offset or a successful commit.
 
-`test_52_remote_envd_failures.py` adds six real HTTP/reverse-WebSocket cases: clean close/rebind retains a native process, stdin and byte-offset output; SIGKILL/restart fences old process and output identities while retaining files; and cutting an owned TCP proxy after a command changes native state returns an error without replaying that command. Reverse WebSocket reconnects with the same daemon generation and permits process rebind. An abandoned HTTP Session remains exclusively admitted, so a fresh adapter must reject takeover until the external operator restarts the daemon.
+`environment/test_52_remote_envd_failures.py` adds six real HTTP/reverse-WebSocket cases: clean close/rebind retains a native process, stdin and byte-offset output; SIGKILL/restart fences old process and output identities while retaining files; and cutting an owned TCP proxy after a command changes native state returns an error without replaying that command. Reverse WebSocket reconnects with the same daemon generation and permits process rebind. An abandoned HTTP Session remains exclusively admitted, so a fresh adapter must reject takeover until the external operator restarts the daemon.
 
-`test_53_docker_boundaries.py` adds 21 real Docker cases. Missing bootstrap directories/credentials and corrupt manifests/configuration are exercised against prepare, reconcile, stop and destroy. Each rejects the operation without changing the exact running target, then recovers after the fixture restores its material. Four Engine transport-loss cases distinguish unknown reachability from absence. The final case destroys and recreates a container over the same external named volume and independently verifies its retained contents. Docker Desktop bind inspection translates its VM `/host_mnt` prefix back to the macOS Host path; volume identity remains the exact external volume name.
+`environment/test_53_docker_boundaries.py` adds 21 real Docker cases. Missing bootstrap directories/credentials and corrupt manifests/configuration are exercised against prepare, reconcile, stop and destroy. Each rejects the operation without changing the exact running target, then recovers after the fixture restores its material. Four Engine transport-loss cases distinguish unknown reachability from absence. The final case destroys and recreates a container over the same external named volume and independently verifies its retained contents. Docker Desktop bind inspection translates its VM `/host_mnt` prefix back to the macOS Host path; volume identity remains the exact external volume name.
 
-`test_54_docker_storage.py` adds full Docker Provider ENOSPC over a fixture-owned 1 MiB tmpfs named volume. Its create/replace/append failures, native errno 28, unchanged file hashes, staging cleanup and successful retry are checked through the production Provider plus independent native evidence. Build its image target and run both storage suites:
+`environment/test_54_docker_storage.py` adds full Docker Provider ENOSPC over a fixture-owned 1 MiB tmpfs named volume. Its create/replace/append failures, native errno 28, unchanged file hashes, staging cleanup and successful retry are checked through the production Provider plus independent native evidence. Build its image target and run both storage suites:
 
 ```sh
-docker build -f dev/live_tests/file_resources.Dockerfile \
+docker build -f dev/live_tests/environment/file_resources.Dockerfile \
   --build-arg SANDBOX_IMAGE=a13n-sandbox:file-tests \
   --target docker-sandbox -t a13n-file-resources:docker .
-uv run --locked python -m pytest dev/live_tests/test_43_environment_storage.py \
-  dev/live_tests/test_54_docker_storage.py --live-environments
+uv run --locked python -m pytest dev/live_tests/environment/test_43_environment_storage.py \
+  dev/live_tests/environment/test_54_docker_storage.py --live-environments
 ```
 
 `LIVE_TEST_DOCKER_RESOURCE_IMAGE` overrides the Docker Provider fixture image. The Local Envd storage container permits nested user/PID namespaces and proc mounts with fixture-only unconfined seccomp/AppArmor and empty masked/read-only system path lists. The native Local Envd isolation requirement remains enabled.
 
-`test_55_remote_envd_service_failures.py` runs four corresponding remote faults through real Control, Worker, PostgreSQL, Redis and Harness tool calls. It cuts the carrier or kills the external daemon only after observing the command's native effect, checks a typed tool error and failed Run when cleanup cannot be confirmed, then verifies a fresh Run against the same registered Environment. The side effect occurs once, workspace files remain, and Service does not stop an externally owned daemon. Reverse WebSocket recovery waits for an actual new carrier after bounded daemon backoff.
+`environment/test_55_remote_envd_service_failures.py` runs four corresponding remote faults through real Control, Worker, PostgreSQL, Redis and Harness tool calls. It cuts the carrier or kills the external daemon only after observing the command's native effect, checks a typed tool error and failed Run when cleanup cannot be confirmed, then verifies a fresh Run against the same registered Environment. The side effect occurs once, workspace files remain, and Service does not stop an externally owned daemon. Reverse WebSocket recovery waits for an actual new carrier after bounded daemon backoff.
 
 ```sh
 LIVE_TEST_SANDBOX_IMAGE=a13n-sandbox:file-tests uv run --locked python -m pytest \
-  dev/live_tests/test_52_remote_envd_failures.py \
-  dev/live_tests/test_53_docker_boundaries.py \
-  dev/live_tests/test_55_remote_envd_service_failures.py --live-environments
+  dev/live_tests/environment/test_52_remote_envd_failures.py \
+  dev/live_tests/environment/test_53_docker_boundaries.py \
+  dev/live_tests/environment/test_55_remote_envd_service_failures.py --live-environments
 ```
 
 ### Multiple Workers sharing one Environment
 
 Cases 56–60 start two independent Worker processes and verify their distinct persisted Worker IDs for each assigned Run. PostgreSQL, Redis, object storage, Harness execution and native targets remain real. Lifecycle barriers pause outside database transactions; authenticated observation routes only read fixture-owned records. Crashes use process-group SIGKILL, and resurrection cases use SIGSTOP/SIGCONT across an actual lease expiry.
 
-| Suite                                        | Applicable cases | Coverage                                                                                                                                                                                                                                     |
-| -------------------------------------------- | ---------------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `test_56_environment_worker_sharing.py`      |               32 | Sequential reuse, both preparation modes racing for first use, concurrent scopes versus exclusive Sessions, cancellation/crash isolation, six consecutive handoffs                                                                           |
-| `test_57_environment_worker_lifecycle.py`    |               21 | Two maintainers racing with new use; create-before-effect, native-created and committed crash boundaries; stale publication and stale stop dispatch; renewal beyond native expiry; simultaneous resume/rebuild; stopped-target capacity      |
-| `test_58_environment_worker_policy.py`       |                8 | Shared active capacity, last-slot admission, aggregate approval waiting and idle time, Provider disable, access ceilings on previously writable Workers, Host affinity, Run-local process/stdin/output references, unrelated-target progress |
-| `test_59_environment_worker_dependencies.py` |                3 | One-Worker and simultaneous database partitions without native replay, then current HTTP Envd credential rotation on both Workers                                                                                                            |
-| `test_60_environment_worker_authority.py`    |                4 | Current service-account status/role, historical Environment selection after Thread-default changes, concurrent native atomic renames                                                                                                         |
+| Suite                                                    | Applicable cases | Coverage                                                                                                                                                                                                                                     |
+| -------------------------------------------------------- | ---------------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `environment/test_56_environment_worker_sharing.py`      |               26 | Sequential reuse, both preparation modes racing for first use, concurrent scopes versus exclusive Sessions, cancellation/crash isolation, six consecutive handoffs                                                                           |
+| `environment/test_57_environment_worker_lifecycle.py`    |               21 | Two maintainers racing with new use; create-before-effect, native-created and committed crash boundaries; stale publication and stale stop dispatch; renewal beyond native expiry; simultaneous resume/rebuild; stopped-target capacity      |
+| `environment/test_58_environment_worker_policy.py`       |                8 | Shared active capacity, last-slot admission, aggregate approval waiting and idle time, Provider disable, access ceilings on previously writable Workers, Host affinity, Run-local process/stdin/output references, unrelated-target progress |
+| `environment/test_59_environment_worker_dependencies.py` |                3 | One-Worker and simultaneous database partitions without native replay, then current HTTP Envd credential rotation on both Workers                                                                                                            |
+| `environment/test_60_environment_worker_authority.py`    |                4 | Current service-account status/role, historical Environment selection after Thread-default changes, concurrent native atomic renames                                                                                                         |
 
 The sharing matrix covers Direct Local, Local Envd, Docker, E2B, HTTP Envd and reverse-WebSocket Envd. Ten combinations are inapplicable: externally registered daemons have no managed first-create operation, and single-Session providers cannot exercise two concurrently admitted users. Docker additionally has no native TTL renewal. These eleven combinations are explicitly skipped; missing E2B configuration produces separate, explicit skips.
 
@@ -626,20 +683,20 @@ Build the Rust daemon and sandbox image as above, configure E2B in the private p
 
 ```sh
 LIVE_TEST_SANDBOX_IMAGE=a13n-sandbox:file-tests uv run --locked python -m pytest \
-  dev/live_tests/test_56_environment_worker_sharing.py \
-  dev/live_tests/test_57_environment_worker_lifecycle.py \
-  dev/live_tests/test_58_environment_worker_policy.py \
-  dev/live_tests/test_59_environment_worker_dependencies.py \
-  dev/live_tests/test_60_environment_worker_authority.py --live-environments
+  dev/live_tests/environment/test_56_environment_worker_sharing.py \
+  dev/live_tests/environment/test_57_environment_worker_lifecycle.py \
+  dev/live_tests/environment/test_58_environment_worker_policy.py \
+  dev/live_tests/environment/test_59_environment_worker_dependencies.py \
+  dev/live_tests/environment/test_60_environment_worker_authority.py --live-environments
 ```
 
 Use `-k docker`, `-k e2b`, or another provider name to select matrix cases. Dependency and authority suites have provider-independent names and should be run explicitly when using those filters. Exact owned labels/metadata drive Docker/E2B cleanup, including unpublished native targets; no shared infrastructure or unrelated target is stopped.
 
 ## Native SSE and Hosted AG-UI protocol contracts
 
-`test_04_protocol_streams.py` consumes real Native and Hosted HTTP SSE with the scripted OpenAI-compatible model, separate Control/Worker processes, and real storage. It covers Unicode/newline text deltas, two tool calls and their results, model failure, explicit cancellation, disconnect/reconnect, approval/rejection, waiting feedback under a new external Run ID, idempotent replay, and invalid input/conflicting reuse without extra accepted Runs.
+`protocol/test_04_protocol_streams.py` consumes real Native and Hosted HTTP SSE with the scripted OpenAI-compatible model, separate Control/Worker processes, and real storage. It covers Unicode/newline text deltas, two tool calls and their results, model failure, explicit cancellation, disconnect/reconnect, approval/rejection, waiting feedback under a new external Run ID, idempotent replay, and invalid input/conflicting reuse without extra accepted Runs.
 
-The consumer oracle in `stream_contract.py` imports the pinned upstream `ag_ui.core.Event` schema, never the Service event model, observer, serializer, projector, or visibility registry. Its assertions derive from:
+The consumer oracle in `protocol/stream_contract.py` imports the pinned upstream `ag_ui.core.Event` schema, never the Service event model, observer, serializer, projector, or visibility registry. Its assertions derive from:
 
 - [AG-UI event semantics](https://docs.ag-ui.com/concepts/events) and the upstream schema version pinned by the Harness release group;
 - [Native Streaming](../../spec/a13n-service/21-native-streaming-and-notifications.md): SSE framing, heartbeat checkpoints, and exclusive cursor replay;
@@ -647,9 +704,9 @@ The consumer oracle in `stream_contract.py` imports the pinned upstream `ag_ui.c
 - [Lifecycle and Stream Persistence](../../spec/a13n-service/24-lifecycle-and-stream-persistence.md): required versioned envelopes, provenance, and ordered recovery boundaries;
 - [Stream Protocol](../../spec/a13n-stream-protocol/00-overview.md): explicit text/tool lifecycles and model-only input visibility.
 
-`test_stream_contract.py` uses hand-authored wire examples and deliberate corruptions to prove that missing fields, unsupported versions, malformed AG-UI payloads, broken message/tool order, identity changes, duplicate terminals, private execution data, and replay gaps cannot pass the oracle. Additive Native fields remain valid; Hosted cursors are opaque and never parsed as Redis IDs.
+`infrastructure_tests/test_stream_contract.py` uses hand-authored wire examples and deliberate corruptions to prove that missing fields, unsupported versions, malformed AG-UI payloads, broken message/tool order, identity changes, duplicate terminals, private execution data, and replay gaps cannot pass the oracle. Additive Native fields remain valid; Hosted cursors are opaque and never parsed as Redis IDs.
 
-`test_10_protocol_recovery.py` kills an owned Worker after a real tool checkpoint, then verifies the replacement boundary in both protocols, exclusive replay on either side, stable source event identity, one external lifecycle, and no repeated tool effect. The model is mocked; the process failure and recovery are real.
+`protocol/test_10_protocol_recovery.py` kills an owned Worker after a real tool checkpoint, then verifies the replacement boundary in both protocols, exclusive replay on either side, stable source event identity, one external lifecycle, and no repeated tool effect. The model is mocked; the process failure and recovery are real.
 
 ```bash
 make live-test-local LIVE_TEST_ARGS='-k "event_contracts or hosted"'

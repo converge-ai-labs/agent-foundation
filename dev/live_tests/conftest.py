@@ -4,8 +4,8 @@ import anyio
 import httpx2
 import pytest
 
-from .client import LiveClient
-from .config import load_config
+from .infrastructure.client import LiveClient
+from .infrastructure.config import load_config
 
 
 def pytest_addoption(parser):
@@ -36,7 +36,7 @@ async def long_session(request):
         raise pytest.UsageError("--session-runs requires integers between 1 and 100000") from error
     if not 1 <= message_bytes <= 2048 or not 1 <= samples <= 1000:
         raise pytest.UsageError("Require message bytes 1..2048, samples 1..1000")
-    from .round_two_lab import open_lab
+    from .infrastructure.round_two_lab import open_lab
 
     async with open_lab(long_session={"message_bytes": message_bytes, "context_window": 32768}) as lab:
         lab.client.http.timeout = httpx2.Timeout(120)
@@ -72,7 +72,7 @@ async def live(request):
 async def round_two(request):
     if not request.config.getoption("--live-round-two"):
         pytest.skip("Opt in with make live-test-round-two; no fault injection runs by default")
-    from .round_two_lab import open_lab
+    from .infrastructure.round_two_lab import open_lab
 
     async with open_lab() as lab:
         yield lab
@@ -82,8 +82,8 @@ async def round_two(request):
 async def management(request):
     if not request.config.getoption("--live-management"):
         pytest.skip("Opt in with make live-test-management; no management resources are changed by default")
-    from .management_support import ManagementJourney
-    from .round_two_lab import open_lab
+    from .infrastructure.management_support import ManagementJourney
+    from .infrastructure.round_two_lab import open_lab
 
     async with open_lab(suite="management") as lab:
         yield ManagementJourney(lab)
@@ -93,8 +93,8 @@ async def management(request):
 async def run_faults(request):
     if not request.config.getoption("--live-round-two"):
         pytest.skip("Opt in with --live-round-two for process and persistence fault tests")
-    from .round_two_lab import open_lab
-    from .run_fault_support import RunFaultJourney
+    from .infrastructure.round_two_lab import open_lab
+    from .run_recovery.run_fault_support import RunFaultJourney
 
     options = getattr(request, "param", {})
     async with open_lab(suite="management", run_faults=options) as lab:
@@ -110,8 +110,8 @@ async def run_faults(request):
 async def control(request):
     if not request.config.getoption("--live-round-two"):
         pytest.skip("Opt in with --live-round-two for control transition and concurrency journeys")
-    from .control_support import ControlJourney
-    from .round_two_lab import open_lab
+    from .control.control_support import ControlJourney
+    from .infrastructure.round_two_lab import open_lab
 
     options = {"control": getattr(request, "param", {}), "identity_management": True}
     async with open_lab(suite="management", run_faults=options) as lab:
@@ -143,7 +143,7 @@ async def configured_provider(request):
         for option in ("--live", "--live-round-two", "--live-management", "--live-providers")
     ):
         pytest.skip("Opt in with a live-test target; private Provider configuration is not read by offline checks")
-    from .provider_config import OpenConnectorSettings, load_provider_settings
+    from .providers.provider_config import OpenConnectorSettings, load_provider_settings
 
     section = "connector" if slack else selection
     configuration = (
@@ -159,7 +159,7 @@ async def configured_provider(request):
     if upstream_model is not None:
         if settings.provider != "openrouter":
             pytest.skip("The GPT/Gemini/Claude matrix requires model.provider=openrouter")
-    from .real_providers import configured_provider_lab
+    from .providers.real_providers import configured_provider_lab
 
     async with configured_provider_lab("search" if section == "brave_search" else section, settings) as configured:
         yield configured
@@ -169,7 +169,7 @@ async def configured_provider(request):
 def e2b_settings(request):
     if not request.config.getoption("--live-environments"):
         pytest.skip("Opt in with --live-environments for real E2B lifecycle tests")
-    from .provider_config import load_provider_settings
+    from .providers.provider_config import load_provider_settings
 
     settings = load_provider_settings().environment
     if settings is None:
@@ -179,7 +179,7 @@ def e2b_settings(request):
 
 @pytest.fixture
 async def e2b_sandboxes(e2b_settings):
-    from .e2b_support import E2BSandboxes
+    from .environment.e2b_support import E2BSandboxes
 
     sandboxes = E2BSandboxes(e2b_settings)
     try:

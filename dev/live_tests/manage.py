@@ -20,9 +20,9 @@ from a13n_service.process.server import serve_app
 from a13n_service.storage import transaction
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
 
-from .client import LiveClient
-from .config import CONFIG, STATE, load_config, save_config
-from .host import authenticated_control, local_app, settings_for
+from .infrastructure.client import LiveClient
+from .infrastructure.config import CONFIG, STATE, load_config, save_config
+from .infrastructure.host import authenticated_control, local_app, settings_for
 
 
 async def initialize() -> None:
