@@ -125,14 +125,15 @@ async def test_search_paging_context_crlf_and_per_file_limit(tmp_path, search_fi
 
 
 @pytest.mark.anyio
-async def test_single_file_search_filters_paging_and_context(tmp_path, search_files):
-    (tmp_path / "Makefile").write_text("before\nharness-ui\nafter\ntest:\n")
+@pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
+async def test_single_file_search_filters_paging_and_context(tmp_path, search_files, newline):
+    (tmp_path / "Makefile").write_bytes(newline.join(["before", "harness-ui", "after", "test:", ""]).encode())
     (tmp_path / "other").write_text("harness-ui\n")
     arguments = dict(root="/Makefile", pattern="harness-ui|^test", regex=True, context_lines=1)
     whole = await search_files("search", **arguments)
     assert [match["path"] for match in whole["matches"]] == ["/Makefile", "/Makefile"]
     assert [match["line"] for match in whole["matches"]] == [2, 4]
-    assert whole["matches"][0]["context"] == "before\nharness-ui\nafter\n"
+    assert whole["matches"][0]["context"] == newline.join(["before", "harness-ui", "after", ""])
     pages = [await search_files("search", **arguments, offset=offset, max_matches=1) for offset in range(3)]
     assert [page["has_more"] for page in pages] == [True, False, False]
     assert [match for page in pages for match in page["matches"]] == whole["matches"]
