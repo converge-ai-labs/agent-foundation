@@ -216,6 +216,10 @@ def _cwd_project_ids(source: LoadedHarnessUiConfiguration, directory: str) -> tu
     return tuple(sorted(project.id for project in source.projects.values() if project.roots[0].path == directory))
 
 
+def _new_cwd_project_id(directory: str) -> str:
+    return "project-cwd-" + hashlib.sha256(directory.encode()).hexdigest()[:20]
+
+
 class HarnessUiApp:
     """The only application boundary shared by Harness UI surfaces."""
 
@@ -559,6 +563,38 @@ class HarnessUiApp:
         source = await self.current_configuration()
         return () if source is None else _cwd_project_ids(source, str(normalized))
 
+    async def cwd_model_preference(
+        self, directory: Path, *, project_id: str | None = None
+    ) -> tuple[str, str | None] | None:
+        """Read the launch Project's Model preference without creating resources.
+
+        A resumed Project disambiguates exact-root matches. An unmatched directory
+        uses the same prospective identity as first submission. Ambiguity has no
+        implicit preference; a missing Model ID is returned for the UI to explain.
+        """
+        normalized = await to_thread.run_sync(lambda: directory.resolve(strict=True))
+        async with self._operation():
+            source = await self._configurations.current()
+            if source is None:
+                return None
+            matches = _cwd_project_ids(source, str(normalized))
+            if project_id not in matches:
+                if len(matches) > 1:
+                    return None
+                project_id = matches[0] if matches else _new_cwd_project_id(str(normalized))
+            assert project_id is not None
+            return project_id, await self._store.project_models.get(project_id)
+
+    async def remember_project_model(self, *, project_id: str, model_id: str | None) -> None:
+        """Persist an explicit terminal choice; None clears it. No YAML is changed."""
+        async with self._operation():
+            source = await self._configurations.current()
+            if source is None:
+                raise AppStateError("Configure a model first.", code="configuration_unavailable")
+            if model_id is not None and model_id not in source.models:
+                raise AppStateError("The selected Model no longer exists.", code="model_missing")
+            await self._store.project_models.set(project_id, model_id)
+
     async def ensure_cwd_project(self, directory: Path) -> str:
         """Select or create an ordinary Project without retargeting saved Threads.
 
@@ -569,7 +605,7 @@ class HarnessUiApp:
         if not normalized.is_dir():
             raise AppStateError("Project root must be a directory.", code="project_root_invalid")
         root = str(normalized)
-        project_id = "project-cwd-" + hashlib.sha256(root.encode()).hexdigest()[:20]
+        project_id = _new_cwd_project_id(root)
         source = await self.current_configuration()
         if source is None:
             raise AppStateError("Configure a model with /setup first.", code="configuration_unavailable")

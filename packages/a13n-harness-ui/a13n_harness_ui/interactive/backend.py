@@ -71,6 +71,7 @@ class SessionBackend:
         self.thread_id = request.thread_id
         self.agent_id = request.agent_id
         self.overrides = RunModelOverrides()
+        self._model_preference_project_id: str | None = None
         self.environment = request.environment_profile_id or (
             environment_profile_id_for_mode(request.environment_mode) if request.environment_mode else None
         )
@@ -95,7 +96,27 @@ class SessionBackend:
         if self.thread_id is not None:
             await self.resume(self.thread_id)
             return self.status.model != "not configured"
+        await self._restore_project_model()
         return await self.refresh()
+
+    async def _restore_project_model(self, project_id: str | None = None) -> None:
+        # Automation and an explicit launch Agent never inherit interactive memory.
+        if self.request.command is not None or self.request.agent_id is not None:
+            return
+        preference = await self.app.cwd_model_preference(self.directory, project_id=project_id)
+        if preference is None or preference[0] == self._model_preference_project_id:
+            return
+        scope, model_id = preference
+        configuration = await self.app.current_configuration()
+        if configuration is None:
+            return
+        if model_id is not None and model_id not in configuration.models:
+            self.status.notices.append(
+                f"Remembered Model {model_id} is unavailable; using the Agent's configured model."
+            )
+            model_id = None
+        self.overrides = RunModelOverrides(model_id=model_id)
+        self._model_preference_project_id = scope
 
     async def refresh(self, *, thread: ThreadSummary | None = None) -> bool:
         configuration = await self.app.current_configuration()
@@ -220,11 +241,26 @@ class SessionBackend:
         model_id = None if selected == "default" else selected
         if model_id is not None and model_id not in configuration.models:
             raise ValueError("Unknown model. Use /model to see available choices.")
+        if self.request.command is None:
+            project_id = None
+            if self.thread_id is not None:
+                project_id = (await self.app.get_thread(self.thread_id)).thread.configuration.project_id
+            preference = await self.app.cwd_model_preference(self.directory, project_id=project_id)
+            if preference is None:
+                raise ValueError("Multiple Projects match this directory. Resume a session before choosing a model.")
+            await self.app.remember_project_model(project_id=preference[0], model_id=model_id)
+            self._model_preference_project_id = preference[0]
+        # Publish memory before changing the local selection; failed writes retain it.
         # Switching models drops model-specific reasoning, not the selected Agent.
         self.overrides = RunModelOverrides(model_id=model_id)
         self.status.context_tokens = None
         await self.refresh()
-        return f"Model · {self.status.model} · session only"
+        scope = (
+            "session only"
+            if self.request.command is not None
+            else ("project preference cleared" if model_id is None else "remembered for this project")
+        )
+        return f"Model · {self.status.model} · {scope}"
 
     async def thinking(self, selected: str | None) -> str:
         if selected is not None:
@@ -333,6 +369,7 @@ class SessionBackend:
                     patch=ThreadConfigurationPatch(project_id=project_id),
                 ),
             )
+        await self._restore_project_model(thread.configuration.project_id)
         # All fallible I/O precedes the local selection change.
         self.thread_id = selected
         self.status.restore_usage(totals.root)
@@ -505,7 +542,7 @@ class SessionBackend:
             if configuration is None:
                 return ()
             return (
-                Choice("default", "Agent default", "Clear the temporary model override"),
+                Choice("default", "Agent default", "Clear this project's remembered model"),
                 *(Choice(item.id, item.name, item.route) for item in configuration.models.values()),
             )
         if kind == "agent":

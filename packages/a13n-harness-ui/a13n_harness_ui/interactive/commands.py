@@ -98,7 +98,7 @@ COMMANDS = (
     ),
     Command(
         "model",
-        "Temporarily switch model without changing Agent or saving configuration.",
+        "Select and remember a model per Project; default clears the preference.",
         "[model-id|default]",
         maximum=1,
     ),

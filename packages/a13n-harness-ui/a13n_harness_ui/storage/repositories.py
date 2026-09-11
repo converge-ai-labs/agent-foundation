@@ -32,11 +32,35 @@ from .models import (
     ConfigurationSourceRecord,
     CurrentConfigurationRecord,
     EnvironmentBindingRecord,
+    ProjectModelPreferenceRecord,
     ResourceIndexRecord,
     ThreadConfigurationRecord,
     ThreadRecord,
 )
 from .objects import ObjectKind, ObjectRef
+
+
+class ProjectModelPreferenceRepository:
+    """Last explicit Model choice per Project, independent of resource definitions."""
+
+    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+        self._sessions = sessions
+
+    async def get(self, project_id: str) -> str | None:
+        async with short_session(self._sessions) as session:
+            record = await session.get(ProjectModelPreferenceRecord, project_id)
+            return None if record is None else record.model_id
+
+    async def set(self, project_id: str, model_id: str | None) -> None:
+        async with transaction(self._sessions) as session:
+            record = await session.get(ProjectModelPreferenceRecord, project_id)
+            if model_id is None:
+                if record is not None:
+                    await session.delete(record)
+            elif record is None:
+                session.add(ProjectModelPreferenceRecord(project_id=project_id, model_id=model_id))
+            else:
+                record.model_id = model_id
 
 
 class ConfigurationRepository:
