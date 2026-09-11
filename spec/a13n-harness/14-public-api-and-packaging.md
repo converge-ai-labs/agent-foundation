@@ -18,7 +18,7 @@ The package root is a closed primary code-first facade. It exports only the valu
 | Input                         | `NativeRunInput`, `RunInputValue`, `SemanticRunInput`, `RunInputFactory`, `RunPreparationContext`, `DeferredToolResume`                                                                                                   |
 | Environment selection         | `Environment`, `EnvironmentMount`, `EnvironmentAccess`                                                                                                                                                                    |
 | Direct plugins                | `AbstractHarnessPlugin`, `PluginOrdering`                                                                                                                                                                                 |
-| Model and recovery            | `infer_model`, `RunModelResolver`, `ModelRecoveryPolicy`                                                                                                                                                                  |
+| Model and recovery            | `infer_model`, `RunModelResolver`, `ModelRecoveryPolicy`, `ToolRecoveryMode`                                                                                                                                              |
 | Observation                   | `HarnessInstrumentation`, `HarnessObservationContext`, `HarnessTraceContent`                                                                                                                                              |
 | State, execution, and results | `HarnessState`, `HarnessRunStream`, `HarnessRunResult`, `SafeFailure`, `AgentStreamEventProtocol`, `HarnessEvent`, `HarnessExtensionEvent`, `HarnessRunResultEvent`, `HarnessStreamEvent`                                 |
 | Errors                        | `HarnessError`, `DefinitionError`, `IdentityError`, `InputError`, `ModelResolutionError`, `PluginError`, `RunCleanupError`, `RunError`, `StateError`                                                                      |
@@ -46,7 +46,7 @@ The package root is a closed primary code-first facade. It exports only the valu
 | `a13n_harness.plugins`               | Complete plugin middleware protocol                                                              |
 | `a13n_harness.pricing`               | Bundled/current pricing catalogs and model-cost Capability family                                |
 | `a13n_harness.state`                 | Advanced context and Capability state values                                                     |
-| `a13n_harness.tools`                 | Managed tool invocation and event helpers                                                        |
+| `a13n_harness.tools`                 | Tool recovery declarations, managed tool invocation, and event helpers                           |
 | `a13n_harness.toolsets`              | First-party reusable Toolsets, including the standard async subagent dispatcher                  |
 | `a13n_harness.usage`                 | Usage attribution, ledger, and `intersect_usage_limits`                                          |
 
@@ -192,7 +192,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         environment_run_extensions: Sequence[EnvironmentRunExtension] = (),
         previous_state: HarnessState | None = None,
-        execute_pending_tools: bool | Literal["auto"] = False,
+        tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -209,7 +209,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         environment_run_extensions: Sequence[EnvironmentRunExtension] = (),
         previous_state: HarnessState | None = None,
-        execute_pending_tools: bool | Literal["auto"] = False,
+        tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -217,7 +217,9 @@ class ExecutableAgent[OutputT]:
 
 ```
 
-`execute_pending_tools` defaults to closing unanswered restored tool calls with unknown results. `True` retains native pending-call execution; `"auto"` selects explicitly marked tools from a trailing complete response as defined by [Restored Pending Tool Calls](10-snapshot-and-resume.md#restored-pending-tool-calls).
+`ToolRecoveryMode`, exported from `a13n_harness`, is `Literal["declared", "never", "always"]`. `tool_recovery` selects replay or unknown-result closure as defined by [Restored Pending Tool Calls](10-snapshot-and-resume.md#restored-pending-tool-calls). It replaces `execute_pending_tools`; migrate `False` to `"never"`, `True` to `"always"`, and `"auto"` to `"declared"`. The default is declaration-based recovery.
+
+`a13n_harness.tools.recovery_retryable(function_or_tool)` returns a native `Tool` carrying the recovery-retryable declaration. It supports decorator and function-call syntax. Existing tools are copied with their settings and other metadata preserved; the helper does not mutate its argument or wrap the execution function. `RECOVERY_RETRY_SAFE_METADATA_KEY` remains available for native tool metadata integrations.
 
 An immediate input and `input_factory` are mutually exclusive. Omitting both passes no new user input, which permits continuation from imported messages. `deferred_resume` is a separate Harness correlation envelope around native Pydantic requests and results rather than user content. It requires a compatible prior state and current tool surface; after preflight, only its native results are consumed by the first `ModelAttempt`. A supplied `RunUsage` remains the one accumulator shared across all internal `ModelAttempt` values; otherwise the Harness creates a fresh value. Native `UsageLimits` are passed to every attempt and remain monotonic through the shared accumulator.
 

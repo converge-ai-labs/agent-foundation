@@ -19,6 +19,7 @@ from a13n_harness.tools.metadata import (
     ToolEffect,
     ToolOutputPolicy,
     ToolResourceResolver,
+    recovery_retryable,
 )
 from a13n_harness.tools.policy import (
     ApprovalVerifier,
@@ -61,4 +62,5 @@ __all__ = [
     "ToolOutputPolicy",
     "ToolResourceResolver",
     "current_invocation_scope",
+    "recovery_retryable",
 ]

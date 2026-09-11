@@ -150,21 +150,27 @@ Each synthesized failed result says:
 
 This transformation closes the public conversation shape. It does not claim that the external operation failed, did not execute, rolled back, or is safe to repeat.
 
-Interrupted-history normalization does not alter provider-suspended responses. Provider-suspended continuation remains native Pydantic behavior. Ordinary restored history follows the separate pending-call policy below.
+Interrupted-history normalization does not alter provider-suspended responses. Provider-suspended continuation remains native Pydantic behavior. On import, unanswered ordinary calls instead follow the pending-call policy below; results already closed during export remain closed.
 
 ## Restored Pending Tool Calls
 
-`ExecutableAgent.run()` and `stream()` accept `execute_pending_tools: bool | Literal["auto"] = False` as a per-run continuation option, separate from `HarnessState` and model-attempt retry policy. Before the first model attempt, restored ordinary tool calls without recorded results are closed with the same unknown-effect `ToolReturnPart` values used for interrupted history. This applies to a trailing complete model response and to missing results in its trailing request. Existing tool returns and retry results are preserved, and the supplied state is not mutated. Fresh tool calls generated during the new run execute normally.
+`ExecutableAgent.run()` and `stream()` accept `tool_recovery: ToolRecoveryMode = "declared"`, where `ToolRecoveryMode` is `Literal["declared", "never", "always"]`. This per-run continuation option is separate from `HarnessState` and model-attempt retry policy.
 
-With `execute_pending_tools=True`, the Harness leaves ordinary pending history to native Pydantic continuation. A trailing complete model response resumes through `CallToolsNode` when no new input is supplied. This opt-in does not override interrupted-history repair or authorize execution independently of the current tool surface and policy.
+| Mode         | Decision for each unanswered restored ordinary call                        |
+| ------------ | -------------------------------------------------------------------------- |
+| `"declared"` | Execute only when the current tool declares recovery retry safety.         |
+| `"never"`    | Close the call with an unknown-effect failed `ToolReturnPart`.             |
+| `"always"`   | Execute when the current tool is available, regardless of its declaration. |
 
-With `execute_pending_tools="auto"`, a trailing complete `ModelResponse` resumes through native tool execution without new input. For each restored ordinary call, the mandatory tool boundary reads `a13n.harness.recovery_retry_safe` from the freshly assembled `ToolDefinition.metadata`. Only boolean `True` permits that call to proceed through ordinary validation, approval, and dispatch. An absent, false, or non-boolean value closes the call with the existing unknown-effect failed return before argument validation. The decision applies only to the retained calls, not subsequent model-generated calls. `RECOVERY_RETRY_SAFE_METADATA_KEY` from `a13n_harness.tools` names this metadata key; native `SetToolMetadata` can select tools by name or owning `capability_id`.
+The policy applies to the latest response and its trailing partial tool results, including an interrupted frontier. Existing `ToolReturnPart` and `RetryPromptPart` results are preserved. Already synthesized unknown results are not reopened. Missing or currently unavailable tools receive unknown-effect failed results. The supplied state is not mutated, original call IDs remain stable, and fresh model-generated calls execute normally. New input may accompany recovery; retained calls are processed before the next model request.
 
-The declaration asserts that repeating the operation is acceptable despite an unknown earlier outcome. It grants no approval and is not inferred from `effects`, `idempotency`, a tool name, or provider annotations. It adds no dispatch retry loop. Automatic execution is limited to a response-only checkpoint: an interrupted boundary or a trailing request containing partial results retains existing results and closes unanswered calls as unknown, including marked calls. These histories are not converted into synthetic approval continuations.
+In `"declared"` mode, only boolean `True` at `a13n.harness.recovery_retry_safe` in the freshly prepared `ToolDefinition.metadata` permits replay. Absent, false, or non-boolean declarations close the call before argument validation. `RECOVERY_RETRY_SAFE_METADATA_KEY` names the metadata key. `recovery_retryable()` declares individual functions or native tools, including tools supplied dynamically by Capabilities and Plugins. The Host need not enumerate those tools.
 
-A validated `deferred_resume` retains its exact pending calls for native result and approval processing instead of closing them as unknown. Provider-suspended responses also retain their native continuation semantics. Neither path requires `execute_pending_tools=True`.
+The declaration asserts that repetition is acceptable despite an unknown earlier outcome. It is not inferred from effects, idempotency, names, or provider annotations, and adds no dispatch retry loop. Recovery uses native Pydantic AI deferred continuation and `ToolApproved` as programmatic replay permission, retaining recorded results within the original batch. Argument validation runs through native execution. Current static approval requirements and external deferral remain effective. Managed invocation policy and resource resolution evaluate fresh authority; recovery permission does not supply resource-bound approval evidence or bypass a current denial or approval requirement.
 
-The default changes ordinary response-only continuation from automatic tool execution to unknown-result closure. Hosts that intentionally execute those retained calls must opt in. A checkpoint without a result proves neither execution nor non-execution; even a call that never started receives an unknown result. This policy does not prevent a later model decision from requesting the operation again and does not establish exactly-once effects.
+A validated `deferred_resume` retains its exact pending calls for native result and approval processing, independently of `tool_recovery`. Provider-suspended responses retain their native continuation semantics. Recovery does not reinterpret either path.
+
+A checkpoint without a result proves neither execution nor non-execution. This policy does not prevent a later model decision from requesting the operation again and does not establish exactly-once effects.
 
 ## System Prompt Reconciliation
 

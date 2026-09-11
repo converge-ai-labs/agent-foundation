@@ -5,13 +5,15 @@ from __future__ import annotations
 import asyncio
 import inspect
 import random
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
+from typing import Literal
 
 from pydantic_ai.exceptions import (
     ModelAPIError,
     RunCancelled,
+    ToolFailed,
     UnexpectedModelBehavior,
     UsageLimitExceeded,
 )
@@ -35,6 +37,7 @@ from pydantic_ai.messages import (
     ToolCallPart,
     ToolReturnPart,
 )
+from pydantic_ai.tools import DeferredToolResult, DeferredToolResults, ToolApproved
 
 from a13n_harness.errors import HarnessError
 from a13n_harness.input import RunInputValue
@@ -55,6 +58,62 @@ INTERRUPTED_TOOL_RESULT = (
     "No tool result was recorded because execution was interrupted. The operation may have "
     "partially or fully completed. Check the current state before deciding whether to retry it."
 )
+
+
+type ToolRecoveryMode = Literal["declared", "never", "always"]
+
+
+@dataclass(slots=True)
+class ToolRecoveryPlan:
+    """One restored batch, its native continuation, and its remaining decisions."""
+
+    mode: ToolRecoveryMode
+    messages: tuple[ModelMessage, ...]
+    pending: dict[str, ToolCallPart] = field(default_factory=dict)
+    results: DeferredToolResults | None = None
+    native_results: dict[str, DeferredToolResult | Literal["skip"]] | None = None
+
+    def resolve(self, declarations: Mapping[str, bool]) -> None:
+        """Resolve this native batch once from its freshly prepared tool surface."""
+        if self.native_results is None:
+            return
+        for call_id, call in tuple(self.pending.items()):
+            if call.tool_name not in declarations or (self.mode == "declared" and not declarations[call.tool_name]):
+                self.native_results[call_id] = ToolFailed(INTERRUPTED_TOOL_RESULT)
+                self.pending.pop(call_id)
+        self.native_results = None
+
+
+def prepare_tool_recovery(messages: Sequence[ModelMessage], mode: ToolRecoveryMode) -> ToolRecoveryPlan:
+    """Retain recorded results and resume only unanswered calls through native dispatch."""
+    normalized, _ = normalize_interrupted_history(
+        messages, close_pending_tools=mode == "never", close_tool_calls=mode == "never"
+    )
+    plan = ToolRecoveryPlan(mode, normalized)
+    if mode == "never" or not normalized:
+        return plan
+    response_index = next(
+        (index for index in range(len(normalized) - 1, -1, -1) if isinstance(normalized[index], ModelResponse)),
+        None,
+    )
+    if response_index is None:
+        return plan
+    response = normalized[response_index]
+    assert isinstance(response, ModelResponse)
+    if response.state == "suspended":
+        return plan
+    result_parts = [
+        part
+        for message in normalized[response_index + 1 :]
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+    ]
+    plan.pending = {call.tool_call_id: call for call in _missing_tool_calls(response, result_parts)}
+    if plan.pending:
+        # Native approval values select exact calls for validation and dispatch. The
+        # Harness boundary separately enforces recovery policy and fresh approvals.
+        plan.results = DeferredToolResults(approvals={call_id: ToolApproved() for call_id in plan.pending})
+    return plan
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,6 +258,7 @@ def normalize_interrupted_history(
     *,
     response_tracker: InterruptedResponseTracker | None = None,
     close_pending_tools: bool = False,
+    close_tool_calls: bool = True,
 ) -> tuple[tuple[ModelMessage, ...], int]:
     """Close interrupted calls, optionally including unanswered calls in restored history."""
     normalized = list(response_tracker.sanitize(messages) if response_tracker is not None else messages)
@@ -212,19 +272,31 @@ def normalize_interrupted_history(
         if tail.state == "interrupted" and not _native_parts_are_balanced(tail.parts):
             normalized.pop()
             return tuple(normalized), 0
+        if not close_tool_calls:
+            return tuple(normalized), 0
         missing = _missing_tool_calls(tail, ())
         if missing:
             normalized.append(ModelRequest(parts=[_failed_tool_result(call) for call in missing]))
         return tuple(normalized), len(missing)
 
     if isinstance(tail, ModelRequest) and (tail.state == "interrupted" or close_pending_tools):
-        response = next(
-            (message for message in reversed(normalized[:-1]) if isinstance(message, ModelResponse)),
+        response_index = next(
+            (index for index in range(len(normalized) - 2, -1, -1) if isinstance(normalized[index], ModelResponse)),
             None,
         )
-        if response is None or response.state == "suspended":
+        if response_index is None or not close_tool_calls:
             return tuple(normalized), 0
-        missing = _missing_tool_calls(response, tail.parts)
+        response = normalized[response_index]
+        assert isinstance(response, ModelResponse)
+        if response.state == "suspended":
+            return tuple(normalized), 0
+        result_parts = [
+            part
+            for message in normalized[response_index + 1 :]
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+        ]
+        missing = _missing_tool_calls(response, result_parts)
         if missing:
             normalized[-1] = replace(
                 tail,

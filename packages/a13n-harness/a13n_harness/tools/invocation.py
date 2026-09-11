@@ -16,9 +16,9 @@ from uuid import uuid4
 
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue, TypeAdapter, ValidationError
-from pydantic_ai import RunContext, TextContent, ToolReturn
-from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, RawToolArgs
-from pydantic_ai.exceptions import ApprovalRequired, ToolFailed
+from pydantic_ai import CallToolsNode, RunContext, TextContent, ToolReturn
+from pydantic_ai.capabilities import AbstractCapability, AgentNode, CapabilityOrdering, ValidatedToolArgs
+from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ToolFailed
 from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults, ToolDefinition, ToolDenied
@@ -46,7 +46,6 @@ from a13n_harness.context import AgentContext
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.errors import DefinitionError
 from a13n_harness.events import HarnessExtensionEvent
-from a13n_harness.recovery import INTERRUPTED_TOOL_RESULT
 from a13n_harness.tools._output import (
     FINAL_TOOL_OUTPUT_HARD_CHARS,
     is_acknowledged_tool_output,
@@ -165,26 +164,37 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
     def get_wrapper_toolset(self, toolset: AbstractToolset[AgentContext]) -> AbstractToolset[AgentContext]:
         return ToolExecutionBoundaryToolset(toolset)
 
+    async def before_node_run(
+        self, ctx: RunContext[AgentContext], *, node: AgentNode[AgentContext]
+    ) -> AgentNode[AgentContext]:
+        recovery = ctx.deps._tool_recovery
+        if recovery is not None and recovery.pending and isinstance(node, CallToolsNode):
+            recovery.native_results = node.tool_call_results
+        return node
+
     async def before_model_request(
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
     ) -> ModelRequestContext:
         # Recovery applies only before the model makes its next decision.
-        ctx.deps._pending_tool_recovery.clear()
+        if (recovery := ctx.deps._tool_recovery) is not None:
+            recovery.pending.clear()
+            recovery.native_results = None
         return request_context
 
-    async def before_tool_validate(
+    async def after_tool_validate(
         self,
         ctx: RunContext[AgentContext],
         *,
         call: ToolCallPart,
         tool_def: ToolDefinition,
-        args: RawToolArgs,
-    ) -> RawToolArgs:
-        pending = ctx.deps._pending_tool_recovery
-        if call.tool_call_id in pending:
-            pending.remove(call.tool_call_id)
-            if (tool_def.metadata or {}).get(RECOVERY_RETRY_SAFE_METADATA_KEY) is not True:
-                raise ToolFailed(INTERRUPTED_TOOL_RESULT)
+        args: ValidatedToolArgs,
+    ) -> ValidatedToolArgs:
+        recovery = ctx.deps._tool_recovery
+        if recovery is not None and call.tool_call_id in recovery.pending:
+            if tool_def.kind == "unapproved":
+                raise ApprovalRequired()
+            if tool_def.kind == "external":
+                raise CallDeferred()
         return args
 
     async def handle_deferred_tool_calls(
@@ -267,6 +277,13 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
 
         ctx.deps._record_managed_tool_surface({tool_name: tool_id for tool_id, tool_name in managed_ids.items()})
         _validate_resume_surface(ctx, normalized)
+        if (recovery := ctx.deps._tool_recovery) is not None:
+            recovery.resolve(
+                {
+                    name: (tool.tool_def.metadata or {}).get(RECOVERY_RETRY_SAFE_METADATA_KEY) is True
+                    for name, tool in normalized.items()
+                }
+            )
         return normalized
 
     async def call_tool(
@@ -278,6 +295,11 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
     ) -> Any:
         if _TOOL_EXECUTION_DISABLED.get():
             raise ToolFailed("Tool execution is disabled during context compaction.")
+        recovery = ctx.deps._tool_recovery
+        if recovery is not None and ctx.tool_call_id in recovery.pending:
+            # Native ToolApproved authorizes replay. Current managed policy still
+            # evaluates a fresh invocation, without borrowed approval evidence.
+            ctx = replace(ctx, tool_call_approved=False)
         tool_def = tool.tool_def
         if tool_def.kind == "external":
             return await self.wrapped.call_tool(name, tool_args, ctx, tool)

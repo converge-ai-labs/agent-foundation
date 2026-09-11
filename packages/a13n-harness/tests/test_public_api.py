@@ -65,6 +65,7 @@ def test_root_facade_is_the_exact_primary_code_first_api() -> None:
         "StateError",
         "SubagentDefinition",
         "SubagentIdentityPolicy",
+        "ToolRecoveryMode",
         "__version__",
         "derive_child_identity",
         "infer_model",
