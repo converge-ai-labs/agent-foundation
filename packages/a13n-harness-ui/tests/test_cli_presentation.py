@@ -46,6 +46,44 @@ def test_semantic_markdown_reflows_and_reuses_completed_cache() -> None:
     assert transcript.blocks[first].rows is not cache
 
 
+@pytest.mark.parametrize("variant", ["auto", "dark", "light"])
+@pytest.mark.parametrize("width", [32, 100])
+@pytest.mark.parametrize("prefix", ["Error [root_operation_failed]:", "Error:", "Warning:"])
+def test_system_errors_highlight_summary_without_emphasizing_diagnostics(variant, width, prefix) -> None:
+    from a13n_harness_ui.interactive.theme import prompt_toolkit_style_rules
+    from prompt_toolkit.styles import Style
+
+    theme = resolve_theme(variant, environ={})
+    styles = Style.from_dict(prompt_toolkit_style_rules(theme))
+    attention = styles.get_attrs_for_style_str("class:activity.waiting").color
+    muted = styles.get_attrs_for_style_str("class:activity.muted").color
+    transcript = Transcript()
+    transcript.theme = theme
+    heading = f"{prefix} Unexpected OperationalError."
+    detail = "Diagnostic report: /tmp/example.json.\nNothing was uploaded."
+    try:
+        block_id = transcript.append(f"{heading}\n{detail}", kind="notice")
+        transcript.render(width)
+        fragments = [(style, text) for row in transcript.rows for style, text in row if text.strip()]
+        highlighted = "".join(
+            text for style, text in fragments if styles.get_attrs_for_style_str(style).color == attention
+        )
+        secondary = "".join(text for style, text in fragments if styles.get_attrs_for_style_str(style).color == muted)
+        assert "".join(highlighted.split()) == "".join(f"System · {heading}".split())
+        assert "".join(secondary.split()) == "".join(detail.split())
+
+        transcript.replace(block_id, "Guidance sent.")
+        transcript.render(width)
+        assert not any(
+            styles.get_attrs_for_style_str(style).color == attention
+            for row in transcript.rows
+            for style, text in row
+            if text.strip()
+        )
+    finally:
+        transcript.close()
+
+
 @pytest.mark.parametrize("variant", ["dark", "light"])
 def test_theme_covers_transcript_composer_and_selection(variant: str) -> None:
     from a13n_harness_ui.interactive.theme import prompt_toolkit_style_rules
