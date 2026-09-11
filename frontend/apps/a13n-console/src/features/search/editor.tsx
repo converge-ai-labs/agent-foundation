@@ -22,6 +22,7 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { allPages, data, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
+import { ResourceIdentity } from "../../shared/collection";
 import { FormActions } from "../../shared/form";
 import styles from "../../shared/shared.module.css";
 import { searchApi, type SearchScope } from "./api";
@@ -91,7 +92,12 @@ export function SearchProviderEditor({
           definitions.data &&
           (readOnly ? (
             <div className={styles.stack}>
-              <p>{resource.data?.value.name}</p>
+              {resource.data && (
+                <ResourceIdentity
+                  name={resource.data.value.name}
+                  resourceId={resource.data.value.id}
+                />
+              )}
               {extra}
             </div>
           ) : (
@@ -220,6 +226,12 @@ export function SearchProviderForm({
         save.mutate();
       }}
     >
+      {original && (
+        <ResourceIdentity
+          name={original.value.name}
+          resourceId={original.value.id}
+        />
+      )}
       <FormField label={t("Name")}>
         <Input
           required

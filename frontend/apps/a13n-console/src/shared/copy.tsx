@@ -10,9 +10,11 @@ import styles from "./copy.module.css";
 export function CopyButton({
   value,
   iconOnly = false,
+  copyLabel,
 }: {
   value: string;
   iconOnly?: boolean;
+  copyLabel?: string;
 }) {
   const { t } = useTranslation();
   const copy = useMutation({
@@ -23,7 +25,9 @@ export function CopyButton({
     const timer = window.setTimeout(() => copy.reset(), 1500);
     return () => window.clearTimeout(timer);
   }, [copy.isSuccess, copy.reset]);
-  const label = t(copy.isSuccess ? "Copied" : iconOnly ? "Copy ID" : "Copy");
+  const label = copy.isSuccess
+    ? t("Copied")
+    : (copyLabel ?? t(iconOnly ? "Copy ID" : "Copy"));
   return (
     <span className={styles.control}>
       <Button

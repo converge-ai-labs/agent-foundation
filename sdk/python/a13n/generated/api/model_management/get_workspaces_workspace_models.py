@@ -6,6 +6,7 @@ import httpx2 as httpx
 
 from ...client import AuthenticatedClient, Client
 from ...models.error_response import ErrorResponse
+from ...models.get_workspaces_workspace_models_scope_type_0 import GetWorkspacesWorkspaceModelsScopeType0
 from ...models.model_collection import ModelCollection
 from ...types import UNSET, Response, Unset
 
@@ -18,6 +19,7 @@ def build_request(
     query: str | Unset | None = UNSET,
     provider_id: str | Unset | None = UNSET,
     enabled: bool | Unset | None = UNSET,
+    scope: GetWorkspacesWorkspaceModelsScopeType0 | Unset | None = UNSET,
 ) -> dict[str, Any]:
 
     params: dict[str, Any] = {}
@@ -51,6 +53,15 @@ def build_request(
     else:
         json_enabled = enabled
     params["enabled"] = json_enabled
+
+    json_scope: str | Unset | None
+    if isinstance(scope, Unset):
+        json_scope = UNSET
+    elif isinstance(scope, GetWorkspacesWorkspaceModelsScopeType0):
+        json_scope = scope.value
+    else:
+        json_scope = scope
+    params["scope"] = json_scope
 
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
@@ -103,6 +114,7 @@ def sync_detailed(
     query: str | Unset | None = UNSET,
     provider_id: str | Unset | None = UNSET,
     enabled: bool | Unset | None = UNSET,
+    scope: GetWorkspacesWorkspaceModelsScopeType0 | Unset | None = UNSET,
 ) -> Response[ErrorResponse | ModelCollection]:
     """List Models
 
@@ -113,6 +125,7 @@ def sync_detailed(
         query (None | str | Unset):
         provider_id (None | str | Unset):
         enabled (bool | None | Unset):
+        scope (GetWorkspacesWorkspaceModelsScopeType0 | None | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -129,6 +142,7 @@ def sync_detailed(
         query=query,
         provider_id=provider_id,
         enabled=enabled,
+        scope=scope,
     )
 
     response = client.get_httpx_client().request(
@@ -147,6 +161,7 @@ def sync(
     query: str | Unset | None = UNSET,
     provider_id: str | Unset | None = UNSET,
     enabled: bool | Unset | None = UNSET,
+    scope: GetWorkspacesWorkspaceModelsScopeType0 | Unset | None = UNSET,
 ) -> ErrorResponse | ModelCollection | None:
     """List Models
 
@@ -157,6 +172,7 @@ def sync(
         query (None | str | Unset):
         provider_id (None | str | Unset):
         enabled (bool | None | Unset):
+        scope (GetWorkspacesWorkspaceModelsScopeType0 | None | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -174,6 +190,7 @@ def sync(
         query=query,
         provider_id=provider_id,
         enabled=enabled,
+        scope=scope,
     ).parsed
 
 
@@ -186,6 +203,7 @@ async def asyncio_detailed(
     query: str | Unset | None = UNSET,
     provider_id: str | Unset | None = UNSET,
     enabled: bool | Unset | None = UNSET,
+    scope: GetWorkspacesWorkspaceModelsScopeType0 | Unset | None = UNSET,
 ) -> Response[ErrorResponse | ModelCollection]:
     """List Models
 
@@ -196,6 +214,7 @@ async def asyncio_detailed(
         query (None | str | Unset):
         provider_id (None | str | Unset):
         enabled (bool | None | Unset):
+        scope (GetWorkspacesWorkspaceModelsScopeType0 | None | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -212,6 +231,7 @@ async def asyncio_detailed(
         query=query,
         provider_id=provider_id,
         enabled=enabled,
+        scope=scope,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -228,6 +248,7 @@ async def asyncio(
     query: str | Unset | None = UNSET,
     provider_id: str | Unset | None = UNSET,
     enabled: bool | Unset | None = UNSET,
+    scope: GetWorkspacesWorkspaceModelsScopeType0 | Unset | None = UNSET,
 ) -> ErrorResponse | ModelCollection | None:
     """List Models
 
@@ -238,6 +259,7 @@ async def asyncio(
         query (None | str | Unset):
         provider_id (None | str | Unset):
         enabled (bool | None | Unset):
+        scope (GetWorkspacesWorkspaceModelsScopeType0 | None | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -256,5 +278,6 @@ async def asyncio(
             query=query,
             provider_id=provider_id,
             enabled=enabled,
+            scope=scope,
         )
     ).parsed

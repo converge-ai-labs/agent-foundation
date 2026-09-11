@@ -328,7 +328,7 @@ PATCH /api/v1/workspaces/{workspace}/models/{model_id}
 POST  /api/v1/workspaces/{workspace}/models/{model_id}/test
 ```
 
-Provider and Model collections use cursor pagination with deterministic `updated_at desc, id desc` ordering. Provider filters include name, type, and enabled state. Model filters include name/key, `provider_id`, and enabled state.
+Provider and Model collections use cursor pagination with deterministic `updated_at desc, id desc` ordering. Provider filters include name, type, and enabled state. Model filters include name/key, `provider_id`, enabled state, and Organization-versus-Workspace ownership on Workspace collections.
 
 `discover-models` takes no pagination input and returns a `ModelDiscovery` with API-keyed `settings_schemas` and one `items` array containing the complete Provider catalog, ordered by `upstream_model` ascending with duplicate IDs consolidated. This transient command result is not an ordinary paginated resource collection. The response has no `next_cursor`, enumeration identity, or persisted catalog snapshot. The service follows upstream pagination internally, allowing at most 100 upstream pages, 4 MiB per upstream response, 10,000 unique models, and 32 MiB of serialized discovery output, under the operation deadline. A bound or upstream failure returns a safe operation error rather than truncated results. Filtering non-generative entries does not stop upstream traversal. Unsupported discovery returns `model_discovery_unsupported`.
 

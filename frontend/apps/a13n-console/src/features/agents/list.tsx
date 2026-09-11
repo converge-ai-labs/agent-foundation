@@ -128,6 +128,8 @@ export function Agents() {
                     to={agent.key}
                     name={agent.name}
                     description={agent.description || undefined}
+                    resourceId={agent.id}
+                    resourceKey={agent.key}
                     icon={
                       <AgentAvatar
                         name={agent.name}

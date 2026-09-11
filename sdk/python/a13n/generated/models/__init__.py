@@ -181,6 +181,7 @@ from .extended_agent_card_policy import ExtendedAgentCardPolicy
 from .fork_run_request import ForkRunRequest
 from .function_call import FunctionCall
 from .get_auth_csrf_response_browser_proof_api_v1_auth_csrf_get import GetAuthCsrfResponseBrowserProofApiV1AuthCsrfGet
+from .get_workspaces_workspace_models_scope_type_0 import GetWorkspacesWorkspaceModelsScopeType0
 from .get_workspaces_workspace_skills_source_kind_type_0 import GetWorkspacesWorkspaceSkillsSourceKindType0
 from .git_hub_revision_source import GitHubRevisionSource
 from .git_hub_skill_import_provenance import GitHubSkillImportProvenance
@@ -668,6 +669,7 @@ __all__ = (
     "ForkRunRequest",
     "FunctionCall",
     "GetAuthCsrfResponseBrowserProofApiV1AuthCsrfGet",
+    "GetWorkspacesWorkspaceModelsScopeType0",
     "GetWorkspacesWorkspaceSkillsSourceKindType0",
     "GitHubRevisionSource",
     "GitHubSkillImportProvenance",

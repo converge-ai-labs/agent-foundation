@@ -83,6 +83,7 @@ export function SearchProviders({ scope }: { scope: SearchScope }) {
                     <ResourceIdentity
                       name={item.name}
                       description={item.type}
+                      resourceId={item.id}
                     />
                   </div>
                 ),

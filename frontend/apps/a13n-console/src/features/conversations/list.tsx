@@ -28,7 +28,10 @@ export function SessionList({
   const [search, setSearch] = useSearchParams();
   const filters = readSessionFilters(search);
   return (
-    <Page title={t("Sessions")}>
+    <Page
+      title={t("Sessions")}
+      description={t("Review conversations and runs across your workspace.")}
+    >
       <SessionFilterBar search={search} setSearch={setSearch} />
       <ErrorNotice error={notificationError} retry={reconnect} />
       <SessionResults key={search.toString()} filters={filters} />

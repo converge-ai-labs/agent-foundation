@@ -85,6 +85,7 @@ export function ConnectorConnections() {
                   <ResourceIdentity
                     name={item.name}
                     description={item.connector_key}
+                    resourceId={item.id}
                     icon={<PlugIcon size={17} />}
                   />
                 ),
@@ -236,6 +237,7 @@ function ConnectionSettings({
   const body = { expected_version: basis.version };
   return (
     <div className={styles.stack}>
+      <ResourceIdentity name={basis.name} resourceId={basis.id} />
       <StateBadge state={basis.status} />
       <form
         className={styles.form}

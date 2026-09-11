@@ -88,6 +88,33 @@ async def test_shared_models_resolve_by_bare_key_and_use_owned_credentials(
         )
 
 
+async def test_workspace_model_collection_filters_by_owner_scope(model_service, org_admin, org_provider):
+    organization_model = await model_service.create(
+        actor=org_admin,
+        workspace_id=None,
+        request=model_request(org_provider.id, "shared"),
+    )
+    workspace_model = await model_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=model_request(org_provider.id, "local"),
+    )
+
+    organization_models = await model_service.list(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        owner_scope="organization",
+    )
+    workspace_models = await model_service.list(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        owner_scope="workspace",
+    )
+
+    assert organization_models.items == (organization_model,)
+    assert workspace_models.items == (workspace_model,)
+
+
 @pytest.mark.parametrize("organization_first", [True, False])
 async def test_model_key_conflicts_in_both_directions(model_service, org_admin, org_provider, organization_first):
     first_actor, first_scope = (org_admin, None) if organization_first else (actor(), WORKSPACE_ID)

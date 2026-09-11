@@ -112,6 +112,7 @@ export function AgentDetail() {
       back={`${basePath}/agents`}
       name={agent.name}
       agentId={agent.id}
+      agentKey={agent.key}
       imageUrl={agent.image_url}
       description={agent.description ?? ""}
       environment={

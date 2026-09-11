@@ -2351,6 +2351,24 @@ func (e PostWorkspacesWorkspaceAgentsAgentActionParamsAction) Valid() bool {
 	}
 }
 
+// Defines values for GetWorkspacesWorkspaceModelsParamsScope.
+const (
+	GetWorkspacesWorkspaceModelsParamsScopeOrganization GetWorkspacesWorkspaceModelsParamsScope = "organization"
+	GetWorkspacesWorkspaceModelsParamsScopeWorkspace    GetWorkspacesWorkspaceModelsParamsScope = "workspace"
+)
+
+// Valid indicates whether the value is a known member of the GetWorkspacesWorkspaceModelsParamsScope enum.
+func (e GetWorkspacesWorkspaceModelsParamsScope) Valid() bool {
+	switch e {
+	case GetWorkspacesWorkspaceModelsParamsScopeOrganization:
+		return true
+	case GetWorkspacesWorkspaceModelsParamsScopeWorkspace:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GetWorkspacesWorkspaceSkillsParamsSourceKind.
 const (
 	GetWorkspacesWorkspaceSkillsParamsSourceKindGithub GetWorkspacesWorkspaceSkillsParamsSourceKind = "github"
@@ -6315,12 +6333,16 @@ type PatchWorkspacesWorkspaceModelProvidersProviderIdParams struct {
 
 // GetWorkspacesWorkspaceModelsParams defines parameters for GetWorkspacesWorkspaceModels.
 type GetWorkspacesWorkspaceModelsParams struct {
-	Limit      *int    `form:"limit,omitempty" json:"limit,omitempty"`
-	Cursor     *string `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Query      *string `form:"query,omitempty" json:"query,omitempty"`
-	ProviderId *string `form:"provider_id,omitempty" json:"provider_id,omitempty"`
-	Enabled    *bool   `form:"enabled,omitempty" json:"enabled,omitempty"`
+	Limit      *int                                     `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor     *string                                  `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Query      *string                                  `form:"query,omitempty" json:"query,omitempty"`
+	ProviderId *string                                  `form:"provider_id,omitempty" json:"provider_id,omitempty"`
+	Enabled    *bool                                    `form:"enabled,omitempty" json:"enabled,omitempty"`
+	Scope      *GetWorkspacesWorkspaceModelsParamsScope `form:"scope,omitempty" json:"scope,omitempty"`
 }
+
+// GetWorkspacesWorkspaceModelsParamsScope defines parameters for GetWorkspacesWorkspaceModels.
+type GetWorkspacesWorkspaceModelsParamsScope string
 
 // PatchWorkspacesWorkspaceModelsModelIdParams defines parameters for PatchWorkspacesWorkspaceModelsModelId.
 type PatchWorkspacesWorkspaceModelsModelIdParams struct {
@@ -30769,6 +30791,18 @@ func NewGetWorkspacesWorkspaceModelsRequest(server string, workspace string, par
 		if params.Enabled != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "enabled", *params.Enabled, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Scope != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "scope", *params.Scope, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {

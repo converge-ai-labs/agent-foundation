@@ -22,6 +22,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { ErrorNotice } from "../../shared/feedback";
 import { TextAreaField } from "../../shared/form";
+import { ResourceReference } from "../../shared/resource-reference";
 import { jsonObject } from "../../shared/validation";
 import styles from "./agents.module.css";
 import { AgentSearchSelection } from "../search/selection";
@@ -46,6 +47,7 @@ export function AgentForm({
   identityAction,
   imageUrl,
   agentId,
+  agentKey,
   imagePicker,
   environment,
   metadata,
@@ -71,6 +73,7 @@ export function AgentForm({
   identityAction?: ReactNode;
   imageUrl?: string | null;
   agentId?: string;
+  agentKey?: string;
   imagePicker?: (name: string) => ReactNode;
   environment?: ReactNode;
   metadata?: ReactNode;
@@ -160,6 +163,9 @@ export function AgentForm({
               className={`${styles.agentIcon} text-base`}
             />
             <h1>{creating ? t("Create agent") : initialName}</h1>
+            {agentId && (
+              <ResourceReference id={agentId} resourceKey={agentKey} />
+            )}
             {identityAction && (
               <fieldset
                 disabled={pending || dirty}

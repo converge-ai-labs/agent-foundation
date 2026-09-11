@@ -32,7 +32,6 @@ The following routes are relative to `/:organizationKey/:workspaceKey`:
 | Models               | `models`, `models/providers`                                       | Models and configured Providers                                            |
 | Search               | `search-providers`                                                 | Provider accounts, tests, and references                                   |
 | Skills               | `skills`, `skills/:skillId`                                        | Uploads, resources, and immutable revisions                                |
-| Assets               | `assets`                                                           | Published binary content and logical deletion                              |
 | Environments         | `environments`, `environments/providers`, `environments/instances` | Templates, Provider configuration, actual runtime targets                  |
 | Application Accounts | `application-accounts`, `application-accounts/:accountId`          | Provider reception and object-specific routing                             |
 | Connectors           | `connectors`, `connectors/providers`                               | Connections, configured Providers, setup, and discovery                    |
@@ -58,7 +57,7 @@ One-time API credentials are displayed only at creation. Save them in an appropr
 
 ## Current limits
 
-Usage and Schedules are marked coming soon. Console does not provide Plugin, Secret, or Hook editors. Editing supported fields preserves existing hidden configuration; the absence of an editor does not mean the corresponding Service field is absent.
+Usage and Schedules are marked coming soon. Console does not provide Asset management or Plugin, Secret, or Hook editors. Editing supported fields preserves existing hidden configuration; the absence of an editor does not mean the corresponding Service field is absent.
 
 Trace querying requires both backend configuration and a trusted Service access authorizer. A configured exporter or reachable Langfuse UI is insufficient. MCP OAuth also has [callback requirements](identity.md#browser-oauth-callbacks); a provider redirect alone cannot bypass session/CSRF validation.
 

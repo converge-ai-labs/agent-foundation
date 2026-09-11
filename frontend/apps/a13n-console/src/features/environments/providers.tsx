@@ -117,6 +117,7 @@ export function EnvironmentProviders({ scope }: { scope: EnvironmentScope }) {
                     <ProviderIcon key={item.type} type={item.type} />
                     <ResourceIdentity
                       name={item.name}
+                      resourceId={item.id}
                       description={String(
                         providerTypes.data?.items.find(
                           (entry) => entry.type === item.type,
@@ -313,6 +314,9 @@ function ProviderForm({
   });
   return (
     <div className={styles.stack}>
+      {basis && (
+        <ResourceIdentity name={basis.value.name} resourceId={basis.value.id} />
+      )}
       <form
         className={styles.form}
         onSubmit={(event) => {

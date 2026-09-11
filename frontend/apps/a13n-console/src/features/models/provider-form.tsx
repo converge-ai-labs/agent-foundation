@@ -22,6 +22,7 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
+import { ResourceIdentity } from "../../shared/collection";
 import { FormActions } from "../../shared/form";
 import { SchemaFields } from "../../shared/schema-fields";
 import styles from "../../shared/shared.module.css";
@@ -135,6 +136,12 @@ export function ProviderForm({
         save.mutate();
       }}
     >
+      {original && (
+        <ResourceIdentity
+          name={original.value.name}
+          resourceId={original.value.id}
+        />
+      )}
       <FormField className="min-w-0 w-full" label={t("Name")}>
         <Input
           required={true}

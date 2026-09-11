@@ -21,6 +21,7 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { allPages, data, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
+import { ResourceIdentity } from "../../shared/collection";
 import { FormActions } from "../../shared/form";
 import styles from "../../shared/shared.module.css";
 import { jsonObject, validateSettings } from "../../shared/validation";
@@ -243,6 +244,13 @@ export function ModelForm({
         save.mutate();
       }}
     >
+      {original && (
+        <ResourceIdentity
+          name={original.value.name}
+          resourceId={original.value.id}
+          resourceKey={original.value.key}
+        />
+      )}
       <div className={modelStyles.connectionSummary}>
         {selectedProvider && (
           <ProviderIcon

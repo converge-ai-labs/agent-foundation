@@ -7,13 +7,20 @@ export function modelApi(client: Client, scope: ModelScope) {
     organization_id = scope.id,
     workspace_id = scope.id;
   return {
-    models: (signal: AbortSignal, cursor?: string, query?: string) =>
+    models: (
+      signal: AbortSignal,
+      cursor?: string,
+      query?: string,
+      provider_id?: string,
+      enabled?: boolean,
+      owner_scope?: "organization" | "workspace",
+    ) =>
       org
         ? client.http
             .GET("/api/v1/organizations/{organization}/models", {
               params: {
                 path: { organization: organization_id },
-                query: { cursor, limit: 30, query },
+                query: { cursor, limit: 30, query, provider_id, enabled },
               },
               signal,
             })
@@ -22,7 +29,14 @@ export function modelApi(client: Client, scope: ModelScope) {
             .GET("/api/v1/workspaces/{workspace}/models", {
               params: {
                 path: { workspace: workspace_id },
-                query: { cursor, limit: 30, query },
+                query: {
+                  cursor,
+                  limit: 30,
+                  query,
+                  provider_id,
+                  enabled,
+                  scope: owner_scope,
+                },
               },
               signal,
             })

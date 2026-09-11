@@ -92,7 +92,12 @@ class AssetCatalog:
             if source_kind is not None:
                 query = query.where(AssetRecord.source_kind == source_kind.value)
             if source_run_id is not None:
-                await require_readable_run(session, actor=actor, run_id=source_run_id)
+                await require_readable_run(
+                    session,
+                    actor=actor,
+                    workspace_id=workspace_id,
+                    run_id=source_run_id,
+                )
                 query = query.where(
                     AssetRecord.source_run_attempt_id.in_(
                         select(RunAttemptRecord.id).where(
@@ -117,7 +122,12 @@ class AssetCatalog:
                 ).all()
             )
             page = records[:limit]
-            assets = await project_assets(session, actor=actor, records=page)
+            assets = await project_assets(
+                session,
+                actor=actor,
+                workspace_id=workspace_id,
+                records=page,
+            )
             next_cursor = None
             if len(records) > limit and page:
                 next_cursor = encode_asset_cursor(
@@ -210,4 +220,11 @@ class AssetCatalog:
             )
             if record is None:
                 raise asset_not_found()
-            return (await project_assets(session, actor=actor, records=(record,)))[0]
+            return (
+                await project_assets(
+                    session,
+                    actor=actor,
+                    workspace_id=workspace_id,
+                    records=(record,),
+                )
+            )[0]

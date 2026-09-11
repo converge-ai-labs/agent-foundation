@@ -137,8 +137,14 @@
 .resourceIdentity {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
   min-width: 180px;
+}
+.resourceIdentityLink {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
 }
 .resourceIcon {
   display: inline-grid;
@@ -155,6 +161,11 @@
   min-width: 0;
 }
 .resourceCopy strong {
+  display: block;
+  max-width: min(420px, 40vw);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-weight: 500;
   font-size: 14px;
 }

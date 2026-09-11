@@ -15,6 +15,7 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
+import { ResourceIdentity } from "../../shared/collection";
 import { Confirm, FormActions, JsonView } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
@@ -150,6 +151,7 @@ export function MCPSettings({
   });
   return (
     <div className={styles.stack}>
+      <ResourceIdentity name={basis.name} resourceId={basis.id} />
       <p className={styles.muted}>{basis.endpoint_url}</p>
       <StateBadge state={basis.status} />
       <form

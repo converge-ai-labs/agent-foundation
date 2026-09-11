@@ -80,6 +80,7 @@ export function MCPPage() {
                   <ResourceIdentity
                     name={item.name}
                     description={item.endpoint_url}
+                    resourceId={item.id}
                     icon={<TreeStructureIcon size={17} />}
                   />
                 ),

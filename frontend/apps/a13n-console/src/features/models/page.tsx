@@ -1,11 +1,12 @@
 import { useResourceRows } from "../../shared/resource-modal";
 import { ScopeBadge } from "../../shared/scope-badge";
 import { ManageProvidersLink } from "../providers/manage-link";
-import { FormField, Input } from "a13n-ui";
+import { Button, FormField, Input, SearchPicker } from "a13n-ui";
 
 import { useQuery } from "@tanstack/react-query";
 import { ProviderIcon } from "../../shared/provider-icon";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router";
 import { PageActions } from "../../shared/page-actions";
 
 import { useTranslation } from "react-i18next";
@@ -47,12 +48,58 @@ export function Models({ scope }: { scope: ModelScope }) {
     { can, organization, organizationAdmin } = useAccess(),
     client = useClient(),
     page = useCursor(),
-    [search, setSearch] = useState("");
+    [searchParams, setSearchParams] = useSearchParams();
   const api = modelApi(client, scope);
+  const committedQuery = searchParams.get("q") ?? "";
+  const [search, setSearch] = useState(committedQuery);
+  useEffect(() => setSearch(committedQuery), [committedQuery]);
+  const providerId = searchParams.get("provider_id") ?? "";
+  const requestedScope = searchParams.get("scope");
+  const ownerScope =
+    scope.kind === "workspace" &&
+    (requestedScope === "organization" || requestedScope === "workspace")
+      ? requestedScope
+      : null;
+  const requestedStatus = searchParams.get("status");
+  const status =
+    requestedStatus === "enabled" || requestedStatus === "disabled"
+      ? requestedStatus
+      : null;
+  const enabled =
+    status === "enabled" ? true : status === "disabled" ? false : undefined;
+  const filterKeys = ["q", "provider_id", "scope", "status"];
+  const hasFilters = filterKeys.some((key) => searchParams.has(key));
+  const updateFilters = (patch: Record<string, string>) => {
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous);
+      for (const [key, value] of Object.entries(patch)) {
+        if (value) next.set(key, value);
+        else next.delete(key);
+      }
+      return next;
+    });
+    page.reset();
+  };
   const query = useQuery({
-    queryKey: ["models", scope.kind, scope.id, page.cursor, search],
+    queryKey: [
+      "models",
+      scope.kind,
+      scope.id,
+      page.cursor,
+      committedQuery,
+      providerId,
+      enabled,
+      ownerScope,
+    ],
     queryFn: ({ signal }) =>
-      api.models(signal, page.cursor, search || undefined),
+      api.models(
+        signal,
+        page.cursor,
+        committedQuery || undefined,
+        providerId || undefined,
+        enabled,
+        ownerScope ?? undefined,
+      ),
   });
   const providers = useQuery({
     queryKey: ["model-provider-choices", scope.kind, scope.id],
@@ -73,7 +120,7 @@ export function Models({ scope }: { scope: ModelScope }) {
             scope={scope}
             onSaved={(model) => {
               setSearch(model.key);
-              page.reset();
+              updateFilters({ q: model.key });
             }}
           />
         )}
@@ -90,22 +137,104 @@ export function Models({ scope }: { scope: ModelScope }) {
           {...rows.control}
         />
       )}
-      <div className={styles.filters}>
+      <div className="mb-1 flex flex-wrap items-center gap-2">
         <FormField
-          className="min-w-0 w-full"
+          className="w-full min-w-0 sm:w-80"
           label={t("Search models")}
-          hideLabel={true}
+          hideLabel
         >
           <Input
             placeholder={t("Name or model key…")}
             value={search}
             onChange={(event) => {
-              setSearch(event.target.value);
-              page.reset();
+              const value = event.target.value;
+              setSearch(value);
+              updateFilters({ q: value.trim() });
             }}
             type="search"
+            maxLength={128}
           />
         </FormField>
+        <div className="w-48">
+          <SearchPicker
+            label={t("Provider")}
+            placeholder={t("All providers")}
+            emptyMessage={t("No matching providers")}
+            groups={[
+              {
+                label: t("Providers"),
+                options: [
+                  { value: "all", label: t("All providers") },
+                  ...(providers.data ?? []).map((provider) => ({
+                    value: provider.id,
+                    label: provider.name,
+                    keywords: [provider.type],
+                    icon: <ProviderIcon type={provider.type} />,
+                  })),
+                ],
+              },
+            ]}
+            value={providerId || "all"}
+            onValueChange={(value) =>
+              updateFilters({ provider_id: value === "all" ? "" : value })
+            }
+          />
+        </div>
+        {scope.kind === "workspace" && (
+          <div className="w-40">
+            <SearchPicker
+              label={t("Scope")}
+              placeholder={t("All scopes")}
+              emptyMessage={t("No results")}
+              groups={[
+                {
+                  label: t("Scope"),
+                  options: [
+                    { value: "all", label: t("All scopes") },
+                    { value: "workspace", label: t("Workspace") },
+                    { value: "organization", label: t("Organization") },
+                  ],
+                },
+              ]}
+              value={ownerScope ?? "all"}
+              onValueChange={(value) =>
+                updateFilters({ scope: value === "all" ? "" : value })
+              }
+            />
+          </div>
+        )}
+        <div className="w-40">
+          <SearchPicker
+            label={t("Status")}
+            placeholder={t("All statuses")}
+            emptyMessage={t("No results")}
+            groups={[
+              {
+                label: t("Status"),
+                options: [
+                  { value: "all", label: t("All statuses") },
+                  { value: "enabled", label: t("Enabled") },
+                  { value: "disabled", label: t("Disabled") },
+                ],
+              },
+            ]}
+            value={status ?? "all"}
+            onValueChange={(value) =>
+              updateFilters({ status: value === "all" ? "" : value })
+            }
+          />
+        </div>
+        {hasFilters && (
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setSearch("");
+              updateFilters({ q: "", provider_id: "", scope: "", status: "" });
+            }}
+          >
+            {t("Clear filters")}
+          </Button>
+        )}
       </div>
       {query.isPending ? (
         <Loading />
@@ -130,7 +259,11 @@ export function Models({ scope }: { scope: ModelScope }) {
                   label: t("Model"),
                   tone: "primary",
                   render: (item) => (
-                    <ResourceIdentity name={item.name} description={item.key} />
+                    <ResourceIdentity
+                      name={item.name}
+                      resourceId={item.id}
+                      resourceKey={item.key}
+                    />
                   ),
                 },
                 {
@@ -146,6 +279,7 @@ export function Models({ scope }: { scope: ModelScope }) {
                         <ResourceIdentity
                           name={provider.name}
                           description={provider.type}
+                          resourceId={provider.id}
                         />
                       </div>
                     ) : (
@@ -185,9 +319,11 @@ export function Models({ scope }: { scope: ModelScope }) {
         </>
       ) : (
         <Empty
-          title={t("No models yet")}
+          title={t(hasFilters ? "No matching models" : "No models yet")}
           description={t(
-            "Add a provider, then save a model alias for your agents.",
+            hasFilters
+              ? "Change or clear the search and filters."
+              : "Add a provider, then save a model alias for your agents.",
           )}
         />
       )}

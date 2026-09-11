@@ -4,7 +4,6 @@ import {
   HeartIcon,
   CubeIcon,
   PlugsConnectedIcon,
-  FileIcon,
   ChatsIcon,
   MonitorIcon,
   TreeStructureIcon,
@@ -27,7 +26,6 @@ export const navigationGroups: {
     entries: [
       ["models", "Models", CubeIcon],
       ["skills", "Skills", PuzzlePieceIcon],
-      ["assets", "Assets", FileIcon],
       [
         "environments",
         "Environments",

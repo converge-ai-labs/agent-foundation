@@ -77,6 +77,7 @@ export function Providers({ scope }: { scope: ModelScope }) {
                     <ResourceIdentity
                       name={item.name}
                       description={item.type}
+                      resourceId={item.id}
                     />
                   </div>
                 ),

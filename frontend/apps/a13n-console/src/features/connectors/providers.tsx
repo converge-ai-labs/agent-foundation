@@ -100,6 +100,7 @@ export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
                     <ResourceIdentity
                       name={item.name}
                       description={item.type}
+                      resourceId={item.id}
                     />
                   </div>
                 ),
@@ -216,6 +217,7 @@ function ProviderEditor({
             <ResourceIdentity
               name={resource.data.name}
               description={resource.data.type}
+              resourceId={resource.data.id}
             />
             <ConnectorCatalog provider={resource.data} />
           </div>
@@ -316,6 +318,7 @@ function ProviderForm({
   });
   return (
     <div className={styles.stack}>
+      {basis && <ResourceIdentity name={basis.name} resourceId={basis.id} />}
       <form
         className={styles.form}
         onSubmit={(event) => {
