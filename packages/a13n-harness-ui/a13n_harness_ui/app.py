@@ -75,6 +75,22 @@ from a13n_harness_ui.extensions import (
     EnvironmentProjectAdapter,
     HarnessUiExtensionCatalog,
 )
+from a13n_harness_ui.file_context import context_text
+from a13n_harness_ui.host_files import (
+    DirectoryCreateRequest,
+    DirectoryPage,
+    FileCapture,
+    FileCaptureRequest,
+    FileDeleteRequest,
+    FileDeletion,
+    FileEntry,
+    FileMoveRequest,
+    FileReadRequest,
+    FileSnapshot,
+    FileText,
+    FileWriteRequest,
+    HostFiles,
+)
 from a13n_harness_ui.live import (
     HarnessUiLiveHub,
     HarnessUiSummaryHub,
@@ -216,6 +232,10 @@ def _cwd_project_ids(source: LoadedHarnessUiConfiguration, directory: str) -> tu
     return tuple(sorted(project.id for project in source.projects.values() if project.roots[0].path == directory))
 
 
+def _new_cwd_project_id(directory: str) -> str:
+    return "project-cwd-" + hashlib.sha256(directory.encode()).hexdigest()[:20]
+
+
 class HarnessUiApp:
     """The only application boundary shared by Harness UI surfaces."""
 
@@ -246,6 +266,7 @@ class HarnessUiApp:
         codex_login: CodexLoginCallback | None,
         grok_login: GrokLoginCallback | None,
         candidate_error: HarnessUiError | None = None,
+        share_computer: bool = False,
     ) -> None:
         self._settings = settings
         self._store = store
@@ -259,6 +280,7 @@ class HarnessUiApp:
         self._projections = projections
         self._terminal_projections = terminal_projections
         self._thread_files = thread_files
+        self._host_files = HostFiles(enabled=share_computer)
         self._root_runs = root_runs
         self._subagent_operator = subagent_operator
         self._live_hub = live_hub
@@ -559,6 +581,38 @@ class HarnessUiApp:
         source = await self.current_configuration()
         return () if source is None else _cwd_project_ids(source, str(normalized))
 
+    async def cwd_model_preference(
+        self, directory: Path, *, project_id: str | None = None
+    ) -> tuple[str, str | None] | None:
+        """Read the launch Project's Model preference without creating resources.
+
+        A resumed Project disambiguates exact-root matches. An unmatched directory
+        uses the same prospective identity as first submission. Ambiguity has no
+        implicit preference; a missing Model ID is returned for the UI to explain.
+        """
+        normalized = await to_thread.run_sync(lambda: directory.resolve(strict=True))
+        async with self._operation():
+            source = await self._configurations.current()
+            if source is None:
+                return None
+            matches = _cwd_project_ids(source, str(normalized))
+            if project_id not in matches:
+                if len(matches) > 1:
+                    return None
+                project_id = matches[0] if matches else _new_cwd_project_id(str(normalized))
+            assert project_id is not None
+            return project_id, await self._store.project_models.get(project_id)
+
+    async def remember_project_model(self, *, project_id: str, model_id: str | None) -> None:
+        """Persist an explicit terminal choice; None clears it. No YAML is changed."""
+        async with self._operation():
+            source = await self._configurations.current()
+            if source is None:
+                raise AppStateError("Configure a model first.", code="configuration_unavailable")
+            if model_id is not None and model_id not in source.models:
+                raise AppStateError("The selected Model no longer exists.", code="model_missing")
+            await self._store.project_models.set(project_id, model_id)
+
     async def ensure_cwd_project(self, directory: Path) -> str:
         """Select or create an ordinary Project without retargeting saved Threads.
 
@@ -569,7 +623,7 @@ class HarnessUiApp:
         if not normalized.is_dir():
             raise AppStateError("Project root must be a directory.", code="project_root_invalid")
         root = str(normalized)
-        project_id = "project-cwd-" + hashlib.sha256(root.encode()).hexdigest()[:20]
+        project_id = _new_cwd_project_id(root)
         source = await self.current_configuration()
         if source is None:
             raise AppStateError("Configure a model with /setup first.", code="configuration_unavailable")
@@ -927,6 +981,68 @@ class HarnessUiApp:
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
             return await self._projections.get_thread(thread_id)
 
+    @property
+    def shares_computer(self) -> bool:
+        return self._host_files.enabled
+
+    def require_host_files(self) -> None:
+        self._host_files.require_enabled()
+
+    async def host_file_metadata(self, path: str) -> FileEntry:
+        async with self._operation():
+            return await self._host_files.metadata(path)
+
+    async def browse_host_files(
+        self, path: str, *, offset: int = 0, limit: int = 200, revision: str | None = None
+    ) -> DirectoryPage:
+        async with self._operation():
+            return await self._host_files.browse(path, offset=offset, limit=limit, revision=revision)
+
+    async def read_host_file(self, request: FileReadRequest) -> FileText:
+        async with self._operation():
+            return await self._host_files.read_text(request)
+
+    async def download_host_file(self, request: FileReadRequest) -> FileSnapshot:
+        async with self._operation():
+            return await self._host_files.download(request)
+
+    async def write_host_file(self, request: FileWriteRequest) -> FileEntry:
+        async with self._operation():
+            self.require_host_files()
+            return await self._host_files.write_text(request)
+
+    async def upload_host_file(self, path: str, data: bytes, *, expected_revision: str | None = None) -> FileEntry:
+        async with self._operation():
+            return await self._host_files.write(path, data, expected_revision=expected_revision)
+
+    async def create_host_directory(self, request: DirectoryCreateRequest) -> FileEntry:
+        async with self._operation():
+            return await self._host_files.create_directory(request)
+
+    async def move_host_file(self, request: FileMoveRequest) -> FileEntry:
+        async with self._operation():
+            return await self._host_files.move(request)
+
+    async def delete_host_file(self, request: FileDeleteRequest) -> FileDeletion:
+        async with self._operation():
+            return await self._host_files.delete(request)
+
+    async def capture_host_file(self, *, thread_id: str, request: FileCaptureRequest) -> FileCapture:
+        async with self._operation():
+            self.require_host_files()
+            await self._threads.get(thread_id)
+            selected = await self._host_files.capture(request)
+            attachment = await self._thread_files.stage(
+                thread_id,
+                AttachmentUpload(
+                    name=Path(selected.source.path).name,
+                    data=selected.data,
+                    media_type="application/octet-stream",
+                    source=selected.source,
+                ),
+            )
+            return FileCapture(attachment=attachment, prompt_text=context_text(selected.source, selected.data))
+
     async def stage_thread_attachment(self, *, thread_id: str, upload: AttachmentUpload) -> ThreadAttachment:
         async with self._operation():
             await self._threads.get(thread_id)
@@ -971,12 +1087,19 @@ class HarnessUiApp:
             await self._thread_files.retain(thread_id, item.attachment_id)
             path = f"attachments/{item.attachment_id}/content"
             metadata = {"harness_ui": {"attachment": item.model_dump(), "mount": "thread-files", "path": path}}
+            source_description = (
+                "" if item.source is None else f" Selected Host source: {item.source.model_dump_json()}."
+            )
             parts.append(
                 TextContent(
-                    f"Attachment {item.name!r} ({item.media_type}): {path} on the thread-files Environment mount.",
+                    f"Attachment {item.name!r} ({item.media_type}): {path} on the thread-files Environment mount.{source_description}",
                     metadata=metadata,
                 )
             )
+            if item.source is not None:
+                captured_text = context_text(item.source, data)
+                if captured_text is not None:
+                    parts.append(TextContent(captured_text, metadata=metadata))
             if item.media_type.startswith("image/"):
                 parts.append(BinaryContent(data=data, media_type=item.media_type, vendor_metadata=metadata))
         await self._thread_files.touch(thread_id)
@@ -1565,6 +1688,7 @@ async def open_harness_ui_app(
     *,
     configuration_path: Path | None = None,
     host_mode: Literal["local", "webui"] = "local",
+    share_computer: bool = False,
     configuration_error: ConfigurationError | None = None,
     codex_login: CodexLoginCallback | None = None,
     grok_scope: str | None = None,
@@ -1770,6 +1894,7 @@ async def open_harness_ui_app(
                 codex_login=codex_login,
                 grok_login=grok_login,
                 candidate_error=candidate_error,
+                share_computer=share_computer,
             )
             if host_mode == "webui":
                 thread_tools = ThreadToolController(

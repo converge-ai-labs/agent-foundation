@@ -42,12 +42,6 @@
   align-self: flex-start;
   justify-self: start;
 }
-.modelConnection {
-  display: grid;
-  gap: 16px;
-  padding-block: 18px;
-  border-block: 1px solid var(--a13n-border-soft);
-}
 .connectionSummary {
   display: flex;
   align-items: center;

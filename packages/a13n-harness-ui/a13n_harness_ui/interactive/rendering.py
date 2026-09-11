@@ -69,6 +69,7 @@ class Status:
     session_id: str | None = None
     usage: BoundedRequestUsage | None = None
     requests: int = 0
+    notices: list[str] = field(default_factory=list)
     _usage_ids: set[str] = field(default_factory=set)
 
     def reset_usage(self) -> None:

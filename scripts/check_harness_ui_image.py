@@ -78,7 +78,8 @@ def check(image: str) -> None:
             "import importlib.metadata; print(importlib.metadata.version('a13n-harness-ui'))",
         )
         assert status["version"] == installed
-        assert not any(status["features"].values())
+        assert status["features"]["host_files"] is True
+        assert not any(value for name, value in status["features"].items() if name != "host_files")
         assert docker("exec", name, "sh", "-c", "command -v git; command -v bash")
         for path in targets.values():
             docker("exec", name, "sh", "-c", f"printf persisted > {path}/smoke-marker")

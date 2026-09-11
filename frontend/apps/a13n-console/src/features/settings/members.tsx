@@ -352,7 +352,7 @@ function AddMember({
         <FormField label={t("Member")}>
           <SearchPicker
             label={t("Member")}
-            placeholder={t("Find a member…")}
+            placeholder={t("Choose a member…")}
             emptyMessage={t("No members found")}
             value={userId}
             groups={[

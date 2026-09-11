@@ -1,10 +1,7 @@
-// @vitest-environment jsdom
-import { afterEach, expect, it } from "vitest";
-import { cleanup, fireEvent, render } from "@testing-library/react";
-import { resolveBrand, brands } from "./brands";
-import { BrandIcon } from "./brand-icon";
+import { fireEvent, render } from "@testing-library/react";
+import { expect, it } from "vitest";
+import { BrandIcon, brands, resolveBrand } from "../src";
 
-afterEach(cleanup);
 it("uses canonical identities, exact aliases and exact hosts without substring matches", () => {
   expect(resolveBrand({ identity: "github", alias: "notion" })).toBe(
     brands.github,
@@ -22,6 +19,19 @@ it("uses canonical identities, exact aliases and exact hosts without substring m
     }),
   ).toBeUndefined();
 });
+
+it("includes the complete LobeHub catalog and its common name variants", () => {
+  expect(Object.keys(brands).length).toBeGreaterThanOrEqual(322);
+  expect(resolveBrand({ identity: " AdobeFirefly " })).toBe(
+    brands.adobefirefly,
+  );
+  expect(resolveBrand({ alias: "adobe-firefly" })).toBe(brands.adobefirefly);
+  expect(resolveBrand({ alias: "Firefly (Adobe)" })).toBe(brands.adobefirefly);
+  expect(brands.adobefirefly.icon).toContain(
+    "@lobehub/icons-static-svg@1.95.0/icons/adobefirefly-color.svg",
+  );
+});
+
 it("falls back from a failed brand image to a safe provider logo then a generic icon", () => {
   const { container } = render(
     <BrandIcon identity="github" logo="https://logos.example/github.png" />,
@@ -37,6 +47,7 @@ it("falls back from a failed brand image to a safe provider logo then a generic 
   expect(container.querySelector("img")).toBeNull();
   expect(container.querySelector("svg")).not.toBeNull();
 });
+
 it("never loads an unsafe provider logo", () => {
   const { container } = render(
     <BrandIcon logo="https://user:secret@logos.example/icon.svg" />,

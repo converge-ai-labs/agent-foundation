@@ -1,3 +1,5 @@
+import { useSuggestedName } from "../../shared/suggested-name";
+import { FormSection, formSectionStyles } from "../../shared/form-section";
 import { ResourceReference } from "../../shared/resource-reference";
 import { Identifier } from "../../shared/copy";
 import { ProviderTypeField } from "../../shared/provider-type-field";
@@ -10,15 +12,7 @@ import { ProviderKeyLink } from "../../shared/provider-key-link";
 import { ResourceEditorButton } from "../../shared/resource-editor-button";
 import { ApiError } from "@converge.ai/a13n";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Button,
-  FormField,
-  Input,
-  ReadOnlyField,
-  SettingsSection,
-  SettingsRow,
-  ModalFrame,
-} from "a13n-ui";
+import { Button, FormField, Input, ReadOnlyField, ModalFrame } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -159,7 +153,7 @@ export function SearchProviderForm({
     cache = useQueryClient();
   const [original, setOriginal] = useState(resource),
     [type, setType] = useState(resource?.value.type ?? "brave"),
-    [name, setName] = useState(resource?.value.name ?? ""),
+    { name, setName, suggestName } = useSuggestedName(resource?.value.name),
     [credential, setCredential] = useState(""),
     [enabled, setEnabled] = useState(resource?.value.enabled ?? true);
   const [reconciling, setReconciling] = useState(false),
@@ -240,14 +234,14 @@ export function SearchProviderForm({
   const conflict = save.error instanceof ApiError && save.error.status === 412;
   return (
     <form
-      className={styles.form}
+      className={formSectionStyles.form}
       onSubmit={(event) => {
         event.preventDefault();
         event.stopPropagation();
         save.mutate();
       }}
     >
-      <div className={styles.twoColumns}>
+      <FormSection>
         <FormField
           label={t("Name")}
           labelAction={original && <ResourceReference id={original.value.id} />}
@@ -259,45 +253,51 @@ export function SearchProviderForm({
             onChange={(event) => setName(event.target.value)}
           />
         </FormField>
+      </FormSection>
+      <FormSection title={t("Connection")}>
         <ProviderTypeField
           definitions={definitions}
           value={type}
           readOnly={!!original}
           onValueChange={(value) => {
             setType(value);
+            suggestName(
+              definitions.find((item) => item.type === value)?.display_name ??
+                value,
+            );
             setCredential("");
           }}
           labelAction={
             definition && <ProviderKeyLink href={definition.setup_url} />
           }
         />
-      </div>
-      <FormField
-        label={t("API Key")}
-        description={t(
-          original
-            ? "Leave empty to keep the current credential."
-            : "The key is stored securely and cannot be read back.",
-        )}
-      >
-        <Input
-          type="password"
-          placeholder={
-            original?.value.credential_configured
-              ? t("Saved credential · enter to replace")
-              : undefined
-          }
-          autoComplete="off"
-          required={!original}
-          value={credential}
-          onChange={(event) => setCredential(event.target.value)}
-        />
-      </FormField>
-      {extra}
+        <FormField
+          label={t("API Key")}
+          description={t(
+            original
+              ? "Leave empty to keep the current credential."
+              : "The key is stored securely and cannot be read back.",
+          )}
+        >
+          <Input
+            type="password"
+            placeholder={
+              original?.value.credential_configured
+                ? t("Saved credential · enter to replace")
+                : undefined
+            }
+            autoComplete="off"
+            required={!original}
+            value={credential}
+            onChange={(event) => setCredential(event.target.value)}
+          />
+        </FormField>
+        {extra}
+      </FormSection>
       {original && (
-        <SettingsSection variant="plain">
+        <FormSection>
           <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
-        </SettingsSection>
+        </FormSection>
       )}
       <ErrorNotice error={reloadError ?? save.error ?? reconcileError} />
       {conflict && (
@@ -388,13 +388,7 @@ export function SearchProviderTest({
   });
   return (
     <div>
-      <SettingsRow
-        stackOnNarrow={false}
-        label={t("Connection")}
-        description={t(
-          "Check the saved connection. May consume provider quota.",
-        )}
-      >
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <Button
           type="button"
           size="sm"
@@ -405,7 +399,10 @@ export function SearchProviderTest({
         >
           {t(test.isPending ? "Testing…" : "Check connection")}
         </Button>
-      </SettingsRow>
+        <span className="text-xs text-muted-foreground">
+          {t("May consume quota or incur cost.")}
+        </span>
+      </div>
       {test.data && (
         <p role="status">
           {test.data.success

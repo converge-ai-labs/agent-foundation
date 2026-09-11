@@ -39,6 +39,8 @@ At execution time, trusted adapters reconstruct native Python objects and call `
 
 Harness owns only its narrow middleware-plugin configuration envelope. It is not a universal Agent or Environment configuration language.
 
+For large tool collections, the Host can offer direct versus grouped presentation in its own configuration and assemble one `ToolProxyCapability(groups=...)` from concrete sources at build time. [ToolProxy Host integration](tool-proxy.md#host-integration) describes source factories, configuration/UI responsibilities, and plugin contribution support without runtime interception.
+
 ## Build and Reuse
 
 A worker can cache a built executable for one exact trusted definition revision and reuse it across non-overlapping or supported concurrent runs. Each run still receives fresh bindings:

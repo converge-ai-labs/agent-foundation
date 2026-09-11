@@ -698,6 +698,7 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
         _AsyncSubagentCapability,
         _InlineSubagentCapability,
     )
+    from a13n_harness.capabilities.tool_proxy import TOOL_PROXY_CAPABILITY_ID, _ToolProxySurfaceCapability
     from a13n_harness.capabilities.web import (
         WEB_CAPABILITY_ID,
         WEB_RUN_CAPABILITY_ID,
@@ -765,6 +766,10 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
         CLIENT_TOOLS_RUN_CAPABILITY_ID: (
             (ClientToolsRunCapability,),
             provenance.run_ids,
+        ),
+        TOOL_PROXY_CAPABILITY_ID: (
+            (_ToolProxySurfaceCapability,),
+            provenance.definition_ids,
         ),
         CODEACT_CAPABILITY_ID: (
             (CodeActCapability,),
@@ -1504,13 +1509,16 @@ async def _emit_best_effort(
 def _validate_final_toolset_wrapper_order(toolset: AbstractToolset[AgentContext]) -> None:
     from a13n_harness.tools.surface import ToolSurfaceToolset
     from a13n_harness.toolsets.codeact import CodeActToolset
+    from a13n_harness.toolsets.tool_proxy import ToolProxySurfaceToolset
 
     current = toolset
     if isinstance(current, CodeActToolset):
         current = current.wrapped
+    if isinstance(current, ToolProxySurfaceToolset):
+        current = current.wrapped
     if not isinstance(current, ToolSurfaceToolset):
         raise DefinitionError(
-            "Only CodeAct may wrap the mandatory tool surface inside the execution boundary.",
+            "Only CodeAct and ToolProxy may wrap the mandatory tool surface inside the execution boundary.",
             code="tool_surface_order_invalid",
             details={"toolset_type": type(current).__name__},
         )

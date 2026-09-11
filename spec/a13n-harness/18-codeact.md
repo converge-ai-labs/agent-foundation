@@ -116,16 +116,23 @@ Each sandbox callback:
 2. admits the call under the per-execution count and concurrency limits before host argument materialization;
 3. validates the converted argument value against the CodeAct value boundary;
 4. creates a fresh nested tool-call identity;
-5. invokes `ToolManager.validate_tool_call(..., wrap_validation_errors=False)`;
-6. classifies the call as started only after validation succeeds;
-7. invokes `ToolManager.execute_tool_call(..., wrap_validation_errors=False)`; and
-8. converts the completed result back through the bounded CodeAct value boundary.
+5. invokes `ToolManager.handle_call(..., wrap_validation_errors=False)`, retaining native validation and execution as one dispatch operation;
+6. observes native validation/execution hooks to distinguish rejected arguments from a started invocation; and
+7. converts the completed result back through the bounded CodeAct value boundary.
 
 This path preserves the current prepared tool, custom validators, Capability validation/execution hooks, managed authorization and credentials, owning wrappers such as the Harness execution boundary, approval handlers that resolve inline, tracing, business usage producers, and Pydantic successful-call accounting. It never fabricates a second managed invocation or usage record.
 
 `CodeActConfig.max_tool_calls` limits admitted nested attempts in one runner execution. Pydantic `UsageLimits.tool_calls_limit` remains independently authoritative for the parent run. Each successful nested call is counted by `ToolManager`; the Harness does not directly mutate successful usage. The runner must reject work before dispatch when the current public Pydantic usage contract proves that the projected outer plus nested call cannot fit. A callback may already have contributed successful usage while its after-execution hooks are still pending. If the conservative projection cannot fit while callbacks are pending, admission waits for them to settle and recomputes the projection before rejecting or dispatching. Waiting is cancellation- and deadline-bound; the Harness never adjusts Pydantic usage counters itself.
 
 `max_concurrency` covers conversion, validation hooks, and execution for admitted callbacks. A nested tool marked sequential is a barrier with respect to other nested calls in that execution, and a parent run-wide sequential execution policy remains authoritative.
+
+### ToolProxy Composition
+
+[Grouped ToolProxy discovery](07-tool-execution.md#grouped-toolproxy-discovery) can precede CodeAct without expanding its model-facing directory into every grouped schema. Only the two proxy controls are exported as sandbox callables for grouped sources; grouped canonical names are not separately exported. Ungrouped eligible tools keep their ordinary declarations. Search returns exact current schemas and target eligibility on demand, including when search and call happen within one runner execution.
+
+For a proxy call callback, the existing CodeAct bridge resolves the exact `(group, tool, arguments)` envelope against the same prepared manager, independently checks the target's typed CodeAct eligibility and fixed exclusions, and invokes that original target through the normal nested path. A true policy on the call control does not grant eligibility to its targets. The proxy envelope is syntax in this path, not an additional dispatched tool: validation/execution hooks, managed policy, events, and native successful-call usage apply to the actual target. One successful runner with one target consumes two successful calls, or three if the program also searches once. Each search or target callback consumes one admitted CodeAct tool attempt.
+
+Both `run_code` and `run_program` use this path and the same bounded value, cancellation, side-effect uncertainty, and unresolved-deferral behavior. Proxy call callbacks remain conservatively sequential barriers, including inside `asyncio.gather`. Completing a sequential callback does not turn its async callable into a plain synchronous return; every host call remains awaitable.
 
 ## Runner Isolation
 

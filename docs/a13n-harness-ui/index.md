@@ -58,17 +58,17 @@ Start with [common configuration recipes](configuration-recipes.md) for copyable
 
 ## Daily controls
 
-| Task                                     | In chat                        |
-| ---------------------------------------- | ------------------------------ |
-| See available commands                   | `/help`                        |
-| Switch Agent                             | `/agent`                       |
-| Try another configured Model temporarily | `/model`                       |
-| Change reasoning or priority service     | `/thinking`, `/fast`           |
-| Change execution permissions             | `/environment`                 |
-| Inspect current configuration and usage  | `/status`                      |
-| Browse saved conversations               | `/resume`                      |
-| Add guidance while work is running       | Type a message and press Enter |
-| Cancel work                              | Ctrl+C or `/cancel`            |
+| Task                                    | In chat                        |
+| --------------------------------------- | ------------------------------ |
+| See available commands                  | `/help`                        |
+| Switch Agent                            | `/agent`                       |
+| Select and remember a Model per Project | `/model`                       |
+| Change reasoning or priority service    | `/thinking`, `/fast`           |
+| Change execution permissions            | `/environment`                 |
+| Inspect current configuration and usage | `/status`                      |
+| Browse saved conversations              | `/resume`                      |
+| Add guidance while work is running      | Type a message and press Enter |
+| Cancel work                             | Ctrl+C or `/cancel`            |
 
 See [Use the terminal](everyday-use.md) for attachments, approvals, questions, history, and recovery. Add reusable resources outside chat with `a13n-harness-ui add model` or `a13n-harness-ui add agent`.
 

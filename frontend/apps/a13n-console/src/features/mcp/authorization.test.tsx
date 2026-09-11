@@ -2,7 +2,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
-import { MCPAuthorization } from "./authorization";
+import { MCPEditor } from "./editor";
 import type { Schema } from "../../shared/api";
 
 const http = vi.hoisted(() => ({ GET: vi.fn(), POST: vi.fn(), PUT: vi.fn() }));
@@ -10,6 +10,7 @@ vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     workspace: { id: "ws_test" },
+    can: () => true,
     basePath: "/workspace/test",
   }),
 }));
@@ -60,18 +61,21 @@ it("uses the saved app and refreshed version for reconnect after authorization f
     if (path.endsWith("authorize")) throw new Error("Provider unavailable");
     return { data: failed, response: new Response() };
   });
+  const cache = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, staleTime: Infinity },
+      mutations: { retry: false },
+    },
+  });
+  cache.setQueryData(["mcp-connections", "ws_test", initial.id], initial);
   render(
-    <QueryClientProvider
-      client={
-        new QueryClient({
-          defaultOptions: {
-            queries: { retry: false },
-            mutations: { retry: false },
-          },
-        })
-      }
-    >
-      <MCPAuthorization initial={initial} reload={vi.fn()} />
+    <QueryClientProvider client={cache}>
+      <MCPEditor
+        connectionId={initial.id}
+        controlledOpen
+        onClose={vi.fn()}
+        onCleanup={vi.fn()}
+      />
     </QueryClientProvider>,
   );
   const user = userEvent.setup();
@@ -97,9 +101,7 @@ it("uses the saved app and refreshed version for reconnect after authorization f
   expect(
     http.POST.mock.calls.find(([path]) => path.endsWith("authorize"))?.[1].body,
   ).toEqual({ expected_version: 2 });
-  await user.click(
-    screen.getByRole("button", { name: "Reconnect and verify tools" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Verify connection" }));
   await waitFor(() =>
     expect(
       http.POST.mock.calls.find(([path]) => path.endsWith("reconnect"))?.[1]

@@ -65,6 +65,7 @@ nav:
           - Environments: a13n-harness/environments.md
           - State and Resume: a13n-harness/state-and-resume.md
           - MCP tools: a13n-harness/mcp.md
+          - Grouped ToolProxy: a13n-harness/tool-proxy.md
           - Multimedia understanding: a13n-harness/multimedia-understanding.md
           - Delegation and CodeAct: a13n-harness/delegation-and-codeact.md
           - Skills: a13n-harness/skills.md

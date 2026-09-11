@@ -1,12 +1,11 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { Button } from "a13n-ui";
+import { BrandIcon, Button } from "a13n-ui";
 import { useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { allPages, data, type Schema } from "../../shared/api";
-import { BrandIcon } from "../../shared/brand-icon";
 import { ResourceIdentity, ResourceTable } from "../../shared/collection";
 import {
   Empty,
@@ -15,7 +14,6 @@ import {
   Page,
   StateBadge,
 } from "../../shared/feedback";
-import { JsonView } from "../../shared/form";
 import { ConnectionDetails } from "../connectors/connections";
 import { MCPEditor } from "../mcp/editor";
 import { ManageProvidersLink } from "../providers/manage-link";
@@ -119,8 +117,27 @@ export function ConnectionsPage() {
     >
       {cleanup && (
         <div role="status">
-          <h3>{t("Cleanup result")}</h3>
-          <JsonView value={cleanup} />
+          <h3>
+            {t(
+              cleanup.local_status === "deleted"
+                ? "Connection deleted"
+                : "Connection revoked",
+            )}
+          </h3>
+          <p>
+            {t(
+              {
+                not_required:
+                  "Local access is disabled. No external authorization needed cleanup.",
+                succeeded:
+                  "Local access is disabled and external authorization was removed.",
+                failed:
+                  "Local access is disabled, but external cleanup failed. Remove the authorization with your provider.",
+                unknown:
+                  "Local access is disabled. External cleanup could not be confirmed; check with your provider.",
+              }[cleanup.remote_status],
+            )}
+          </p>
           <Button
             variant="outline"
             size="sm"

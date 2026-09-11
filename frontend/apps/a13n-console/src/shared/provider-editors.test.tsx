@@ -131,10 +131,12 @@ it.each(cases)(
         name: connector ? "Composio" : type,
       }),
     );
-    await user.type(
-      screen.getByRole("textbox", { name: "Name" }),
-      "New provider",
-    );
+    const nameField = screen.getByRole("textbox", {
+      name: "Name",
+    }) as HTMLInputElement;
+    expect(nameField.value).toBe(connector ? "Composio" : type);
+    await user.clear(nameField);
+    await user.type(nameField, "New provider");
     const credentials = {
       api_key: connector ? "test-project" : "test-environment",
     };

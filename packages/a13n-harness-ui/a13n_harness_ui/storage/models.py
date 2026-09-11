@@ -64,6 +64,13 @@ class ResourceIndexRecord(Base):
     normalized_digest: Mapped[str] = mapped_column(String(_DIGEST), nullable=False)
 
 
+class ProjectModelPreferenceRecord(Base):
+    __tablename__ = "project_model_preference"
+
+    project_id: Mapped[str] = mapped_column(String(_ID), primary_key=True)
+    model_id: Mapped[str] = mapped_column(String(_ID), nullable=False)
+
+
 class ThreadRecord(Base):
     __tablename__ = "thread"
 

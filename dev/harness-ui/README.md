@@ -9,9 +9,9 @@ make langfuse-up
 make cli
 ```
 
-`make cli` and `make harness-ui-smoke` create `dev/harness-ui/.env` from its sibling `.env.example` when missing. Existing private files are never overwritten, including when the template changes. `make env-init` prepares both Harness development profiles without starting an application or infrastructure.
+`make cli`, `make webui`, and `make harness-ui-smoke` create `dev/harness-ui/.env` from its sibling `.env.example` when missing. Existing private files are never overwritten, including when the template changes. `make env-init` prepares both Harness development profiles without starting an application or infrastructure.
 
-`make cli` runs the workspace version with startup update detection disabled and explicit workspace-local paths:
+`make cli` and `make webui` run the workspace version with startup update detection disabled and explicit workspace-local paths:
 
 - Configuration: `var/harness-ui/a13n-harness-ui.yaml`, with sibling Agent/Model and other resource directories.
 - Runtime data: `var/harness-ui/data/`, including the database, immutable objects and Threads.
@@ -28,9 +28,12 @@ Forward normal options or select another environment file:
 
 ```bash
 make cli CLI_ARGS='--help'
-make cli CLI_ARGS='webui'
+make webui
+make webui WEBUI_ARGS='--port 9000 --no-share-computer'
 make cli HARNESS_UI_ENV=/absolute/path/to/.env
 ```
+
+`make webui` builds and installs the bundled browser assets before starting the foreground server. It passes no API key and does not skip authentication: without a CLI or `A13N_HARNESS_UI_API_KEY` environment key, the server generates a fresh key and prints a directly usable login link. A supplied key retains normal precedence and is not echoed. The default listener is `127.0.0.1:8765`, and native computer sharing is on; `WEBUI_ARGS` forwards server options such as `--host`, `--port`, and `--no-share-computer`. Ctrl+C stops the server. No browser is opened automatically.
 
 For an intentional path override, pass `--config` and `--data-root` in `CLI_ARGS`; these follow and override the development defaults. An explicit `--config` bypasses copying and initialization entirely, even if that file is missing. Overriding only `--data-root` retains the development configuration path and selects the destination for its initial API-key copy. Overriding only `--config` leaves runtime data workspace-local, so referenced API keys must already exist there or be added explicitly. Help and version commands do not copy configuration or credentials. Do not point an unreleased build at daily-use state unless you accept that older installed versions may no longer read it.
 

@@ -15,10 +15,7 @@ export function CredentialEditor({
 }) {
   const { t } = useTranslation();
   return (
-    <section
-      className="grid gap-3 border-t border-border pt-4"
-      aria-label={t("Credentials")}
-    >
+    <section className="grid gap-3" aria-label={t("Credentials")}>
       {configured !== undefined && (
         <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
           <span>

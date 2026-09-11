@@ -186,7 +186,9 @@ A plugin has three distinct phases:
 
 Run middleware must preserve single-consumer streaming and yield exactly one structurally valid result candidate. Use `try/finally` for plugin-owned cleanup. Do not swallow cancellation or convert cleanup failure into clean completion.
 
-Plugins can contribute native Capabilities at Agent binding. They should not implement a second tool dispatcher, message history, usage accumulator, or Environment lifecycle.
+Plugins can contribute native Capabilities at Agent binding. Harness calls `get_capabilities()` on the instance returned by `for_agent()`; do not extract contributions before that binding. They should not implement a second tool dispatcher, message history, usage accumulator, or Environment lifecycle.
+
+To support optional grouped presentation, a plugin can expose source factories or a presentation option for its contribution. A Host-owned composition layer can aggregate selected sources into one `ToolProxyCapability(groups=...)`, while retaining required middleware and leaving unrelated tools direct. This requires an explicit plugin integration interface, not generic lookup or interception of arbitrary plugins. See [ToolProxy plugin-contributed sources](tool-proxy.md#plugin-contributed-sources) for an example and duplicate-installation boundaries.
 
 ## Environment Inputs and Advanced Bindings
 

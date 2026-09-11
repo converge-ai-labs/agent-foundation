@@ -2,17 +2,14 @@ import { CubeIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 import { resolveBrand } from "./brands";
 
-export function BrandIcon({
-  identity,
-  alias,
-  endpoint,
-  logo,
-}: {
+export interface BrandIconProps {
   identity?: string;
   alias?: string;
   endpoint?: string;
   logo?: string | null;
-}) {
+}
+
+export function BrandIcon({ identity, alias, endpoint, logo }: BrandIconProps) {
   const brand = resolveBrand({ identity, alias, endpoint });
   const [failed, setFailed] = useState<readonly string[]>([]);
   const src =
@@ -48,6 +45,7 @@ export function BrandIcon({
     </span>
   );
 }
+
 function safeLogo(value?: string | null): string | undefined {
   if (!value) return undefined;
   try {

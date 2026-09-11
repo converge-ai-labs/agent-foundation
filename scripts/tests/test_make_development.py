@@ -43,6 +43,11 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         "sys.exit(37 if os.environ.get('FAIL_COMMAND') in args else 0)\n"
     )
     uv.chmod(0o755)
+    # The same recorder stands in for asset tooling, not the foreground server.
+    shutil.copy2(uv, bin_dir / "pnpm")
+    (tmp_path / "frontend").mkdir()
+    for name in ("package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml"):
+        (tmp_path / "frontend" / name).touch()
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setenv("UV_CALL_LOG", str(tmp_path / "uv-calls.jsonl"))
     for name in ("MAKEFLAGS", "MFLAGS", "MAKEFILES", "FAIL_COMMAND", "HARNESS_ENV", "HARNESS_UI_ENV"):
@@ -166,6 +171,42 @@ def test_cli_forwards_explicit_path_overrides_to_development_launcher(workspace:
         "custom data",
         "webui",
     ]
+
+
+@pytest.mark.parametrize("options", [[], ["--port", "9000", "--no-share-computer"]])
+def test_webui_builds_assets_then_launches_without_authentication_override(workspace: Path, options) -> None:
+    result = run_make(
+        workspace,
+        "webui",
+        'CLI_ARGS=--config "custom config.yaml"',
+        f"WEBUI_ARGS={' '.join(options)}",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = uv_calls(workspace)
+    build = next(i for i, call in enumerate(calls) if "build" in call)
+    prepare = next(i for i, call in enumerate(calls) if "scripts/prepare-a13n-harness-ui-assets.py" in call)
+    assert build < prepare < len(calls) - 1
+    assert calls[-1] == [
+        "run",
+        "--locked",
+        "--env-file",
+        "dev/harness-ui/.env",
+        "python",
+        "-m",
+        "dev.harness-ui.cli",
+        "--config",
+        "custom config.yaml",
+        "webui",
+        *options,
+    ]
+    assert "--apikey" not in calls[-1] and "--dangerous-skip-permissions" not in calls[-1]
+
+
+def test_webui_asset_failure_prevents_server_start(workspace: Path, monkeypatch) -> None:
+    monkeypatch.setenv("FAIL_COMMAND", "build")
+    result = run_make(workspace, "webui")
+    assert result.returncode != 0
+    assert not any("dev.harness-ui.cli" in call for call in uv_calls(workspace))
 
 
 def test_cli_configuration_and_data_are_git_ignored() -> None:

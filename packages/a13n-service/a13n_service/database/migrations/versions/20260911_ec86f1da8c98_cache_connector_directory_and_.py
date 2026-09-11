@@ -18,7 +18,12 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Apply the schema change."""
-    op.add_column("connector_providers", sa.Column("setup_claims_json", sa.JSON(), nullable=False))
+    op.add_column(
+        "connector_providers",
+        sa.Column("setup_claims_json", sa.JSON(), nullable=False, server_default=sa.text("'{}'")),
+    )
+    with op.batch_alter_table("connector_providers") as batch:
+        batch.alter_column("setup_claims_json", server_default=None)
     op.add_column("connector_providers", sa.Column("directory_json", sa.JSON(), nullable=True))
     op.add_column("connector_providers", sa.Column("directory_updated_at", sa.DateTime(timezone=True), nullable=True))
 

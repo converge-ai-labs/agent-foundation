@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
-import { ErrorNotice, StateBadge } from "../../shared/feedback";
+import { ErrorNotice } from "../../shared/feedback";
 import { FormActions } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
@@ -15,16 +15,18 @@ import styles from "../../shared/shared.module.css";
 export function MCPAuthorization({
   initial,
   reload,
+  onConnectionChange,
 }: {
   initial: Schema["MCPConnection"];
   reload: () => Promise<void>;
+  onConnectionChange: (connection: Schema["MCPConnection"]) => void;
 }) {
   const client = useClient(),
     cache = useQueryClient(),
     { workspace } = useWorkspace(),
     { t } = useTranslation(),
     key = useIdempotency(),
-    [basis, setBasis] = useState(initial),
+    basis = initial,
     [bearer, setBearer] = useState(""),
     [headers, setHeaders] = useState<Record<string, string>>({});
   const credentials = useMutation({
@@ -75,11 +77,23 @@ export function MCPAuthorization({
     },
   });
   return (
-    <div className={styles.stack}>
-      <StateBadge state={basis.status} />
+    <div className="grid justify-items-start gap-4">
+      <div className="grid gap-1">
+        <h3 className="text-sm font-medium">{t(`auth.${basis.auth_mode}`)}</h3>
+        <p className="text-sm text-muted-foreground">
+          {t(
+            basis.auth_mode === "none"
+              ? "This server does not require credentials. Verify the connection to refresh its available tools."
+              : "Manage the credentials used to access this server.",
+          )}
+        </p>
+      </div>
       {basis.auth_mode === "oauth" ? (
         <>
-          <MCPOAuthSetup connection={basis} onConnectionChange={setBasis} />
+          <MCPOAuthSetup
+            connection={basis}
+            onConnectionChange={onConnectionChange}
+          />
           <Button variant="outline" onClick={() => void reload()} type="button">
             {t("Refresh connection")}
           </Button>
@@ -120,7 +134,7 @@ export function MCPAuthorization({
         onClick={() => reconnect.mutate()}
         type="button"
       >
-        {t("Reconnect and verify tools")}
+        {t("Verify connection")}
       </Button>
       <ErrorNotice
         error={credentials.error ?? reconnect.error}

@@ -1,3 +1,5 @@
+import { useSuggestedName } from "../../shared/suggested-name";
+import { FormSection, formSectionStyles } from "../../shared/form-section";
 import { ResourceModalTitle } from "../../shared/resource-modal-title";
 import { CredentialEditor } from "../../shared/credential-editor";
 import { ConfigurationSummary } from "../../shared/configuration-summary";
@@ -14,8 +16,6 @@ import { ResourceIdentity } from "../../shared/collection";
 import { ScopeBadge } from "../../shared/scope-badge";
 import {
   Button,
-  SettingsSection,
-  SettingsRow,
   FormField,
   ReadOnlyField,
   DisclosureSection,
@@ -265,7 +265,7 @@ function ProviderForm({
     { t } = useTranslation(),
     key = useIdempotency(),
     [basis] = useState(initial),
-    [name, setName] = useState(initial?.name ?? ""),
+    { name, setName, suggestName } = useSuggestedName(initial?.name),
     [enabled, setEnabled] = useState(initial?.status === "active"),
     [type, setType] = useState(initial?.type ?? ""),
     [configuration, setConfiguration] = useState<Record<string, unknown>>(
@@ -332,13 +332,13 @@ function ProviderForm({
   return (
     <div className={styles.stack}>
       <form
-        className={styles.form}
+        className={formSectionStyles.form}
         onSubmit={(event) => {
           event.preventDefault();
           save.mutate();
         }}
       >
-        <div className={styles.twoColumns}>
+        <FormSection>
           <FormField className="min-w-0 w-full" label={t("Name")}>
             <Input
               required={true}
@@ -347,106 +347,113 @@ function ProviderForm({
               maxLength={128}
             />
           </FormField>
+        </FormSection>
+        <FormSection title={t("Connection")}>
           <ProviderTypeField
             definitions={definitions}
             value={type}
             readOnly={!!basis}
             onValueChange={(value) => {
               setType(value);
+              suggestName(
+                definitions.find((item) => item.type === value)?.display_name ??
+                  value,
+              );
               setConfiguration({});
               setCredentials({});
             }}
           />
-        </div>
-        {basis ? (
-          <>
-            {Object.keys(configuration).length > 0 && (
-              <div className={styles.stack}>
-                {typeof configuration.endpoint === "string" && (
-                  <ReadOnlyField label={t("Endpoint")}>
-                    {configuration.endpoint}
-                  </ReadOnlyField>
-                )}
-                <DisclosureSection title={t("Configuration details")}>
-                  <ConfigurationSummary
-                    value={Object.fromEntries(
-                      Object.entries(configuration).filter(
-                        ([key]) => key !== "endpoint",
-                      ),
-                    )}
-                    schema={definition?.configuration_schema}
+          {basis ? (
+            <>
+              {Object.keys(configuration).length > 0 && (
+                <div className={styles.stack}>
+                  {typeof configuration.endpoint === "string" && (
+                    <ReadOnlyField label={t("Endpoint")}>
+                      {configuration.endpoint}
+                    </ReadOnlyField>
+                  )}
+                  <DisclosureSection title={t("Configuration details")}>
+                    <ConfigurationSummary
+                      value={Object.fromEntries(
+                        Object.entries(configuration).filter(
+                          ([key]) => key !== "endpoint",
+                        ),
+                      )}
+                      schema={definition?.configuration_schema}
+                    />
+                  </DisclosureSection>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {definition && (
+                <>
+                  <SchemaFields
+                    key={type}
+                    schema={definition.configuration_schema}
+                    value={configuration}
+                    onChange={setConfiguration}
                   />
-                </DisclosureSection>
-              </div>
-            )}
-          </>
-        ) : (
-          <>
-            {definition && (
-              <>
-                <SchemaFields
-                  key={type}
-                  schema={definition.configuration_schema}
-                  value={configuration}
-                  onChange={setConfiguration}
-                />
+                  <SchemaFields
+                    secret
+                    key={`${type}-credentials`}
+                    schema={definition.credential_schema}
+                    value={credentials}
+                    onChange={setCredentials}
+                  />
+                </>
+              )}
+            </>
+          )}
+          {basis &&
+            definition &&
+            Object.keys(definition.credential_schema.properties ?? {}).length >
+              0 && (
+              <CredentialEditor configured={basis.credential_configured}>
                 <SchemaFields
                   secret
-                  key={`${type}-credentials`}
-                  schema={definition.credential_schema}
+                  schema={{ ...definition.credential_schema, required: [] }}
                   value={credentials}
                   onChange={setCredentials}
                 />
-              </>
+              </CredentialEditor>
             )}
-          </>
-        )}
-        {basis &&
-          definition &&
-          Object.keys(definition.credential_schema.properties ?? {}).length >
-            0 && (
-            <CredentialEditor configured={basis.credential_configured}>
-              <SchemaFields
-                secret
-                schema={{ ...definition.credential_schema, required: [] }}
-                value={credentials}
-                onChange={setCredentials}
-              />
-            </CredentialEditor>
-          )}
-        {basis && (
-          <SettingsSection variant="plain">
-            <SettingsRow
-              stackOnNarrow={false}
-              label={t("Connection")}
-              description={t(
-                "Check the saved connection. May consume provider quota.",
+          {basis && (
+            <>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  loading={test.isPending}
+                  disabled={
+                    save.isPending ||
+                    name !== basis.name ||
+                    enabled !== (basis.status === "active") ||
+                    Object.keys(credentials).length > 0
+                  }
+                  onClick={() => test.mutate()}
+                  type="button"
+                >
+                  {t("Check connection")}
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  {t("May consume quota or incur cost.")}
+                </span>
+              </div>
+              <ErrorNotice error={test.error} retry={() => void reload()} />
+              {test.data && (
+                <p role="status" className={styles.muted}>
+                  {t("Connection verified")}
+                </p>
               )}
-            >
-              <Button
-                size="sm"
-                variant="outline"
-                loading={test.isPending}
-                disabled={
-                  save.isPending ||
-                  name !== basis.name ||
-                  enabled !== (basis.status === "active") ||
-                  Object.keys(credentials).length > 0
-                }
-                onClick={() => test.mutate()}
-                type="button"
-              >
-                {t("Check connection")}
-              </Button>
-            </SettingsRow>
-            <ErrorNotice error={test.error} retry={() => void reload()} />
-            {test.data && (
-              <p role="status" className={styles.muted}>
-                {t("Connection verified")}
-              </p>
-            )}
+            </>
+          )}
+        </FormSection>
+        {basis && (
+          <FormSection>
             <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
-          </SettingsSection>
+          </FormSection>
         )}
         <ErrorNotice
           error={save.error}

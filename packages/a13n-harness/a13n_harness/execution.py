@@ -98,6 +98,7 @@ from a13n_harness.capabilities.steering import (
     SteeringCapability,
 )
 from a13n_harness.capabilities.subagents import SUBAGENT_CAPABILITY_ID, SubagentCapability
+from a13n_harness.capabilities.tool_proxy import TOOL_PROXY_CAPABILITY_ID, _ToolProxySurfaceCapability
 from a13n_harness.capabilities.web import (
     WEB_CAPABILITY_ID,
     WEB_RUN_CAPABILITY_ID,
@@ -2890,6 +2891,7 @@ def _validate_built_capability_tree(
         CLIENT_TOOLS_CAPABILITY_ID,
         CLIENT_TOOLS_RUN_CAPABILITY_ID,
         CODEACT_CAPABILITY_ID,
+        TOOL_PROXY_CAPABILITY_ID,
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
         SHELL_REVIEW_CAPABILITY_ID,
         FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID,
@@ -3036,6 +3038,7 @@ def _validate_built_capability_tree(
             in (
                 ClientToolsCapability,
                 CodeActCapability,
+                _ToolProxySurfaceCapability,
                 DynamicEnvironmentCapability,
                 ShellReviewCapability,
                 RuntimeContextCapability,
@@ -3073,11 +3076,13 @@ def _validate_built_capability_tree(
     )
     if surface_index is not None:
         for capability in leaves[:surface_index]:
-            if isinstance(capability, ToolExecutionBoundaryCapability | CodeActCapability):
+            if isinstance(
+                capability, ToolExecutionBoundaryCapability | CodeActCapability | _ToolProxySurfaceCapability
+            ):
                 continue
             if type(capability).get_wrapper_toolset is not AbstractCapability.get_wrapper_toolset:
                 raise DefinitionError(
-                    "Only CodeAct and the tool execution boundary may wrap the mandatory tool surface.",
+                    "Only ToolProxy, CodeAct, and the tool execution boundary may wrap the mandatory tool surface.",
                     code="tool_surface_order_invalid",
                     details={"capability_type": type(capability).__name__},
                 )
@@ -3224,6 +3229,7 @@ def _validate_capability_source(
         CLIENT_TOOLS_CAPABILITY_ID,
         CLIENT_TOOLS_RUN_CAPABILITY_ID,
         CODEACT_CAPABILITY_ID,
+        TOOL_PROXY_CAPABILITY_ID,
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
         SHELL_REVIEW_CAPABILITY_ID,
         FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID,
@@ -3254,30 +3260,35 @@ def _validate_capability_source(
                 details={"source": source},
             )
         allowed = (
-            source == "definition"
-            and (
-                isinstance(capability, AbstractModelCostCapability)
-                or type(capability)
-                in (
-                    ClientToolsCapability,
-                    CodeActCapability,
-                    DynamicEnvironmentCapability,
-                    ShellReviewCapability,
-                    RuntimeContextCapability,
-                    WorkspaceOutlineCapability,
-                    FileContextCapability,
-                    HandoffCapability,
-                    CompactionCapability,
-                    UserInteractionCapability,
-                    SkillsCapability,
-                    MediaCapability,
-                    DocumentsCapability,
-                    WebCapability,
-                    WorkingStateCapability,
-                    SubagentCapability,
+            (
+                source == "definition"
+                and (
+                    isinstance(capability, AbstractModelCostCapability)
+                    or type(capability)
+                    in (
+                        ClientToolsCapability,
+                        CodeActCapability,
+                        _ToolProxySurfaceCapability,
+                        DynamicEnvironmentCapability,
+                        ShellReviewCapability,
+                        RuntimeContextCapability,
+                        WorkspaceOutlineCapability,
+                        FileContextCapability,
+                        HandoffCapability,
+                        CompactionCapability,
+                        UserInteractionCapability,
+                        SkillsCapability,
+                        MediaCapability,
+                        DocumentsCapability,
+                        WebCapability,
+                        WorkingStateCapability,
+                        SubagentCapability,
+                    )
                 )
             )
-        ) or (source == "run" and type(capability) in run_types)
+            or (source == "plugin" and type(capability) is _ToolProxySurfaceCapability)
+            or (source == "run" and type(capability) in run_types)
+        )
         reserved_type = isinstance(
             capability,
             ToolExecutionBoundaryCapability
@@ -3291,6 +3302,7 @@ def _validate_capability_source(
             | ClientToolsCapability
             | ClientToolsRunCapability
             | CodeActCapability
+            | _ToolProxySurfaceCapability
             | DynamicEnvironmentCapability
             | ShellReviewCapability
             | RuntimeContextCapability
