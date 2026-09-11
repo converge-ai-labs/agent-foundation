@@ -168,6 +168,42 @@ subagents:
 
 A referenced Agent can have its own explicit children. Cycles such as `agent-coder → agent-reviewer → agent-coder` are invalid. The same immediate roster name cannot appear twice. Child work stays within the application's existing Project, Environment, lifecycle, and authorization rules; an Agent reference is not an escalation mechanism.
 
+## Tool proxy groups
+
+Group large MCP and Harness Plugin tool collections without loading every tool schema into the model context. Edit **the Agent file**, not root defaults or a separate group resource:
+
+```yaml
+# In agents/assistant.yaml; referenced resources must already exist.
+tool_proxy:
+  groups:
+    knowledge:
+      description: Search project documents and organizational memory
+      mcp_servers: [mcp-docs]
+      harness_plugins: [plugin-memory]
+  config:
+    search_name: search_proxy_tools
+    call_name: call_proxy_tool
+    max_results: 10
+    max_search_bytes: 32768
+```
+
+`config` is optional. Group names start with a letter, contain up to 32 letters, digits, underscores or hyphens, and cannot contain `__`. Descriptions must be nonblank and at most 512 characters. Select exact resource IDs, including distinct IDs for multiple instances of the same plugin. A source belongs to one group only. Different sources in a group must have distinct tool names; collisions fail rather than inventing aliases.
+
+**Grouping does not enable sources.** Agent `mcp_servers` and `harness_plugins` remain creation defaults, and existing Threads retain their sticky source selections. A referenced disabled source is dormant. Enabled sources not listed in a group remain direct. Empty groups produce no discovery controls. Content Plugins provide skills and subagents; they are not Harness Plugin tool sources.
+
+In the browser, choose **Configure tool groups**, select the Agent, and add, edit, rename, or remove groups. Select sources and review the grouped, dormant, and direct counts. These are static source counts using Agent defaults, not live tool counts or a particular Thread's selection. **Save groups** validates the complete configuration, writes the existing Agent source, and reads it back. A failed save retains the draft. Other Agent settings remain intact. Changes apply to subsequent Runs, never the active Run.
+
+```console
+a13n-harness-ui config validate
+a13n-harness-ui config show --format json
+```
+
+`config show` includes `tool_proxy_previews` for configured Agents. Preview and validation do not connect to MCP or discover tools.
+
+When using an exact `tools` allowlist, list the canonical target names such as `knowledge__lookup`, not just `call_proxy_tool`. Proxy controls do not authorize every member. Renaming a group changes those canonical names, so update any affected allowlists. Existing CodeAct policy is preserved; grouping does not make an ineligible tool CodeAct-callable. See [ToolProxy discovery and execution](../a13n-harness/tool-proxy.md).
+
+Independent Agent children use their own groups. Markdown children inherit the parent's grouping plan and their existing source/tool restrictions. Older saved Runs without a grouping plan retain direct presentation.
+
 ## Names and references at a glance
 
 | Value              | Example                     | Used for                                                               |

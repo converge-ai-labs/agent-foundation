@@ -823,6 +823,16 @@ _UniqueSafeLoader.add_constructor(
 
 
 def _validation_error(code: str, message: str, path: Path, exc: ValidationError) -> ConfigurationError:
+    # These authored diagnostics contain source IDs and group/configuration names,
+    # not arbitrary resource payloads or credential validation inputs.
+    from .models import _ToolProxyConfigurationError
+
+    for error in exc.errors(include_input=False, include_url=False):
+        cause = error.get("ctx", {}).get("error")
+        if isinstance(cause, _ToolProxyConfigurationError):
+            code = "tool_proxy_invalid"
+            message = str(cause)
+            break
     return ConfigurationError(
         message,
         code=code,

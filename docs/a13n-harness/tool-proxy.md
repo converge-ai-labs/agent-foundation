@@ -184,7 +184,32 @@ Grouping does not grant CodeAct eligibility. The bridge resolves the target and 
 
 ## Host integration
 
-The Host decides presentation when constructing the Agent definition. Harness accepts concrete Toolset or Capability instances; it does not resolve plugin IDs into sources, scan installed plugins for tools, or take over their runtime execution.
+The Host decides presentation when constructing the Agent definition. For already constructed sources, use `ToolProxyCapability`. To group ordinary Harness Plugin contributions alongside selected Capabilities, pass a typed `ToolProxyPlan` to `AgentDefinition.tool_proxy` or `HarnessBuilder.build(tool_proxy=...)`. Harness retains plugin ownership during its normal once-only binding; no plugin scan or special source factory API is needed.
+
+```python
+from a13n_harness import AgentDefinition, AgentSpec
+from a13n_harness.capabilities import ToolProxyPlan, ToolProxySelection
+from pydantic_ai.capabilities import MCP
+
+source = MCP("https://mcp.example.com/mcp", native=False, local=True)
+definition = AgentDefinition(
+    agent=AgentSpec(model="openai:gpt-5"),
+    output_type=str,
+    capabilities=(source,),
+    tool_proxy=ToolProxyPlan(
+        groups={
+            "knowledge": ToolProxySelection(
+                description="Find project documentation",
+                capabilities=(source,),
+            )
+        }
+    ),
+)
+```
+
+To include plugin contributions, add `plugins=("plugin-docs",)` to the selection and supply that exact plugin instance through the definition's `plugins`. Multiple instances of the same plugin class are selected by their distinct IDs. Every selected Capability must already be in the definition, and every selected plugin must be available to its builder. Unlisted sources stay direct. Do not install the same source both through a concrete-source proxy and through a build plan.
+
+Grouping retains native sibling ordering, explicit IDs, state, hooks, and custom container instructions; a group does not turn its independent sources into one atomic ordering node. The plan is immutable and consumed during construction.
 
 A Host that exposes JSON, YAML, an API, or a configuration UI should provide:
 
@@ -215,7 +240,9 @@ The groups mapping is consumed at construction. To change presentation, build a 
 
 ### Plugin-contributed sources
 
-`AbstractHarnessPlugin.get_capabilities()` is a contribution boundary, not a general-purpose source lookup API. ToolProxy explicitly supports this construction source; grouping does not make otherwise disallowed reserved Capabilities valid plugin contributions. Harness calls it on the Agent-bound plugin after `for_agent()`. A plugin that owns its sources can accept a presentation option or expose a source factory that a Host composition layer can use. Aggregate all selected groups at one composition point rather than installing one proxy per plugin.
+`AbstractHarnessPlugin.get_capabilities()` is a contribution boundary, not a general-purpose source lookup API. Prefer `ToolProxyPlan` to group existing plugins without changing them. Harness calls each plugin's `for_agent()` and `get_capabilities()` exactly once and validates the original source before grouping. Middleware remains installed, and grouping never authorizes reserved capabilities.
+
+A plugin can alternatively own its presentation using `ToolProxyCapability`, as below. Aggregate groups at one composition point rather than installing competing proxy surfaces.
 
 The following Host-owned plugin illustrates that boundary. Its factory constructs source definitions once per executable; `get_capabilities()` selects direct versus grouped presentation. Source run binding remains native:
 
@@ -260,7 +287,7 @@ Here source names also serve as group names; a Host with separate source IDs and
 
 Pass `HostToolsPlugin(source_factory=build_sources, group_descriptions={"crm": "Customer records"})` through `HarnessBuilder.build(plugins=(plugin,))`, where `build_sources` is your trusted factory returning the named Capabilities. Passing an empty `group_descriptions` keeps every source direct. Do not also pass those sources through `capabilities=`.
 
-For an existing third-party middleware plugin, use its supported configuration/composition interface. If it always contributes tools directly and exposes no such interface, those tools remain direct until the plugin or Host integration provides one. Do not call another plugin's `get_capabilities()` manually before native `for_agent()`, instantiate its sources a second time, or remove the plugin when its middleware is still needed. When separating sources from middleware, the plugin must explicitly support suppressing its original contribution while remaining installed. See [Plugin lifecycle](plugins.md#plugin-lifecycle) and [hosting](hosting.md#reconstruct-trusted-definitions).
+For an existing third-party middleware plugin, a `ToolProxyPlan` selects its ordinary contributions by exact plugin ID. Do not call its `get_capabilities()` manually, instantiate its sources a second time, or remove the plugin when its middleware is still needed. See [Plugin lifecycle](plugins.md#plugin-lifecycle) and [hosting](hosting.md#reconstruct-trusted-definitions). Harness UI exposes this build plan through [Agent tool proxy groups](../a13n-harness-ui/agents-and-subagents.md#tool-proxy-groups).
 
 ## Execution, usage, and limitations
 
@@ -270,4 +297,4 @@ For an existing third-party middleware plugin, use its supported configuration/c
 - **Inline approval only:** native handlers can approve or deny within the current invocation. Unresolved approval or external deferral fails the proxy call rather than suspending a nested continuation. Expose tools requiring cross-turn Host interaction directly.
 - **Supported targets:** local function tools, including locally executed MCP tools and inline approval-gated tools. External/client tools, provider-native tools, control/output tools, CodeAct runners, and deferred-loading tools are not supported as grouped targets.
 - **Uncertain effects:** cancellation and unexpected failures do not roll back work. Check provider state before retrying a mutation.
-- **Code-first scope:** these APIs compose through `HarnessBuilder` or `AgentDefinition`; they do not add a built-in `AgentSpec` serialization name or Harness UI configuration resource.
+- **Composition scope:** these APIs compose through `HarnessBuilder` or `AgentDefinition`, not a built-in `AgentSpec` serialization name. Harness UI owns its separate per-Agent YAML selection schema; no standalone proxy-group resource is created.

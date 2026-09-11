@@ -98,7 +98,12 @@ from a13n_harness.capabilities.steering import (
     SteeringCapability,
 )
 from a13n_harness.capabilities.subagents import SUBAGENT_CAPABILITY_ID, SubagentCapability
-from a13n_harness.capabilities.tool_proxy import TOOL_PROXY_CAPABILITY_ID, _ToolProxySurfaceCapability
+from a13n_harness.capabilities.tool_proxy import (
+    TOOL_PROXY_CAPABILITY_ID,
+    ToolProxyPlan,
+    _ToolProxyGroupCapability,
+    _ToolProxySurfaceCapability,
+)
 from a13n_harness.capabilities.web import (
     WEB_CAPABILITY_ID,
     WEB_RUN_CAPABILITY_ID,
@@ -485,6 +490,7 @@ class AgentDefinition[OutputT]:
     model: Model | None = None
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
     plugins: tuple[AbstractHarnessPlugin, ...] = ()
+    tool_proxy: ToolProxyPlan | None = None
     subagents: tuple[SubagentDefinition, ...] = ()
     model_recovery: ModelRecoveryPolicy = field(default_factory=ModelRecoveryPolicy)
 
@@ -522,6 +528,8 @@ class AgentDefinition[OutputT]:
         object.__setattr__(self, "agent", self.agent.model_copy(deep=True))
         object.__setattr__(self, "capabilities", tuple(self.capabilities))
         object.__setattr__(self, "plugins", tuple(self.plugins))
+        if self.tool_proxy is not None and not isinstance(self.tool_proxy, ToolProxyPlan):
+            raise TypeError("tool_proxy must be ToolProxyPlan or None")
         subagents = tuple(self.subagents)
         if not all(isinstance(child, SubagentDefinition) for child in subagents):
             raise DefinitionError(
@@ -767,6 +775,7 @@ class HarnessBuilder:
         model: Model | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         plugins: Sequence[AbstractHarnessPlugin] = (),
+        tool_proxy: ToolProxyPlan | None = None,
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
         pricing_catalog: PricingCatalog | None = None,
@@ -783,6 +792,7 @@ class HarnessBuilder:
         model: Model | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         plugins: Sequence[AbstractHarnessPlugin] = (),
+        tool_proxy: ToolProxyPlan | None = None,
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
         pricing_catalog: PricingCatalog | None = None,
@@ -798,6 +808,7 @@ class HarnessBuilder:
         model: Model | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         plugins: Sequence[AbstractHarnessPlugin] = (),
+        tool_proxy: ToolProxyPlan | None = None,
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
         pricing_catalog: PricingCatalog | None = None,
@@ -815,6 +826,7 @@ class HarnessBuilder:
                 or model is not None
                 or capabilities
                 or plugins
+                or tool_proxy is not None
                 or subagents
                 or model_recovery is not None
             ):
@@ -835,6 +847,7 @@ class HarnessBuilder:
             model=model,
             capabilities=tuple(capabilities),
             plugins=tuple(plugins),
+            tool_proxy=tool_proxy,
             subagents=tuple(subagents),
             model_recovery=model_recovery if model_recovery is not None else ModelRecoveryPolicy(),
         )
@@ -867,11 +880,16 @@ class HarnessBuilder:
         )
         subagents = SubagentCollection({child.declaration.name: child for child in built_children})
         configured_plugins = self._create_configured_plugins()
-        plugins, plugin_capabilities = bind_agent_plugins((*definition.plugins, *configured_plugins))
+        plugins, contributions = bind_agent_plugins((*definition.plugins, *configured_plugins))
+        plugin_capabilities = tuple(capability for sources in contributions.values() for capability in sources)
         _validate_capability_source(plugin_capabilities, source="plugin")
+        _validate_capability_source(definition.capabilities, source="definition")
+        selected_capabilities = (*definition.capabilities, *plugin_capabilities)
+        if definition.tool_proxy is not None:
+            selected_capabilities = definition.tool_proxy._compose(selected_capabilities, contributions)
         authored_capabilities = _resolve_model_characteristics_capabilities(
             definition.agent,
-            (*definition.capabilities, *plugin_capabilities),
+            selected_capabilities,
         )
         model_characteristics = (
             definition.agent.model_characteristics if isinstance(definition.agent, HarnessAgentSpec) else None
@@ -3076,6 +3094,10 @@ def _validate_built_capability_tree(
     )
     if surface_index is not None:
         for capability in leaves[:surface_index]:
+            # Membership adds no global wrapper; its original nodes are visited
+            # separately below and retain the same surface-order validation.
+            if type(capability) is _ToolProxyGroupCapability:
+                continue
             if isinstance(
                 capability, ToolExecutionBoundaryCapability | CodeActCapability | _ToolProxySurfaceCapability
             ):

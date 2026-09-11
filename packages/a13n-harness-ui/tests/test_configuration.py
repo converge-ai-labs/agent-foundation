@@ -474,3 +474,51 @@ async def test_long_markdown_filename_has_bounded_file_diagnostic(tmp_path: Path
     assert invalid.value.code == "configuration_markdown_invalid"
     assert invalid.value.details["path"].endswith(filename)
     assert len(invalid.value.details["path"]) <= 4096
+
+
+@pytest.mark.parametrize("reference", ["mcp-missing", "plugin-memory"])
+async def test_proxy_group_references_require_the_configured_resource_kind(tmp_path: Path, reference: str) -> None:
+    path = _write_source_tree(
+        tmp_path,
+        resources={
+            "extensions/memory.yaml": """schema_version: "1"
+kind: harness_plugin
+id: plugin-memory
+name: Memory
+plugin_key: vendor.memory
+""",
+            "agents/main.yaml": f"""schema_version: "1"
+kind: agent
+id: agent-main
+name: Main
+tool_proxy:
+  groups:
+    knowledge:
+      description: Knowledge tools
+      mcp_servers: [{reference}]
+""",
+        },
+    )
+    with pytest.raises(ConfigurationError, match=r"tool_proxy\.groups\.knowledge\.mcp_servers"):
+        await load_harness_ui_configuration(path)
+
+
+@pytest.mark.parametrize("config", [{"max_results": True}, {"search_name": "invalid name"}, {"unexpected": 1}])
+def test_proxy_config_uses_native_validation(config: dict) -> None:
+    from a13n_harness_ui.configuration.models import AgentToolProxy
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        AgentToolProxy.model_validate({"config": config})
+
+
+def test_proxy_rejects_duplicate_membership_and_copies_lists() -> None:
+    from a13n_harness_ui.configuration.models import AgentToolProxy
+    from pydantic import ValidationError
+
+    group = {"description": "Knowledge tools", "mcp_servers": ["mcp-docs"]}
+    with pytest.raises(ValidationError, match="selected more than once"):
+        AgentToolProxy.model_validate({"groups": {"first": group, "second": group}})
+    proxy = AgentToolProxy.model_validate({"groups": {"knowledge": group}})
+    group["mcp_servers"].clear()
+    assert proxy.groups["knowledge"].mcp_servers == ("mcp-docs",)

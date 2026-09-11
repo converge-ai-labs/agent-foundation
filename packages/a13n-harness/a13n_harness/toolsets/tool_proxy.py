@@ -68,6 +68,15 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
 
     group: str
     group_description: str
+    source_label: str
+
+    @property
+    def label(self) -> str:
+        return f"ToolProxy group {self.group!r} source {self.source_label!r}"
+
+    @property
+    def tool_name_conflict_hint(self) -> str:
+        return "Give the source tools distinct names or select separate ToolProxy groups."
 
     def __post_init__(self) -> None:
         validate_group(self.group, self.group_description)

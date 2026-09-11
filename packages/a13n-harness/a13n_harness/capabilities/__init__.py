@@ -96,7 +96,7 @@ from .subagents import (
     SubagentWaitRequest,
     SubagentWaitResult,
 )
-from .tool_proxy import ToolProxyCapability, ToolProxyConfig, ToolProxyGroup
+from .tool_proxy import ToolProxyCapability, ToolProxyConfig, ToolProxyGroup, ToolProxyPlan, ToolProxySelection
 from .web import (
     WEB_SCRAPE_BACKEND_ENV,
     WEB_SCRAPE_BACKEND_PRIORITY_ENV,
@@ -253,6 +253,8 @@ __all__ = [
     "ToolProxyCapability",
     "ToolProxyConfig",
     "ToolProxyGroup",
+    "ToolProxyPlan",
+    "ToolProxySelection",
     "UserInteractionCapability",
     "UserQuestion",
     "UserQuestionAnswers",

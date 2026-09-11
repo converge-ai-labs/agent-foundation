@@ -13,7 +13,8 @@ flowchart LR
     Config[Explicit or opted-in plugin context] --> Builder[HarnessBuilder]
     Definition --> Builder
     Builder --> Plugins[Create configured plugins, bind all plugins, and collect Capabilities]
-    Plugins --> FromSpec[Agent.from_spec]
+    Plugins --> Presentation[Apply optional ToolProxyPlan to selected sources]
+    Presentation --> FromSpec[Agent.from_spec]
     FromSpec --> Executable[ExecutableAgent]
 ```
 
@@ -30,6 +31,7 @@ class AgentDefinition[OutputT]:
     model: Model | None = None
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
     plugins: tuple[AbstractHarnessPlugin, ...] = ()
+    tool_proxy: ToolProxyPlan | None = None
     subagents: tuple[SubagentDefinition, ...] = ()
     model_recovery: ModelRecoveryPolicy = ModelRecoveryPolicy()
 
@@ -49,8 +51,11 @@ class AgentDefinition[OutputT]:
 | `model`          | Optional concrete native Model used instead of string selection in `AgentSpec`                                             |
 | `capabilities`   | The only top-level feature plane; each native Capability owns feature activation, Toolset composition, settings, and hooks |
 | `plugins`        | Trusted concrete Harness middleware instances supplied directly with this definition                                       |
+| `tool_proxy`     | Optional immutable presentation plan selecting existing Capability objects and exact plugin IDs; never activates sources   |
 | `subagents`      | Named complete process-local child definitions and authored edge ceilings                                                  |
 | `model_recovery` | Optional bounded `ModelAttempt` policy for recoverable model interruption inside one logical Harness Run                   |
+
+[Grouped ToolProxy Discovery](07-tool-execution.md#grouped-toolproxy-discovery) owns plan selection, grouping, and native composition semantics. Plugin contributions are collected once before applying the plan; the plan does not introduce another feature or execution plane.
 
 Construction deep-copies `AgentSpec` and freezes the collection fields as tuples. `AgentDefinition.with_updates()` returns a new fully validated definition after exact top-level replacement. It accepts one optional field-name mapping plus keyword overrides, rejects unknown fields and fields supplied through both inputs, and runs the ordinary constructor invariants over the complete result. Retained and replacement `AgentSpec` values follow the constructor's deep-copy rule, and collection fields are frozen as tuples; arbitrary Models, Capabilities, plugins, output objects, and other trusted native values retain their identities under the existing reentrancy contract rather than being blanket-deep-copied. The original definition is never mutated.
 

@@ -1,6 +1,6 @@
 # Harness UI WebUI
 
-This private frontend implements the Harness UI browser authentication/status foundation. It consumes an access-key fragment, authenticates against `/api/status`, checks the API version, displays runtime/build information, and lets the user forget a saved key. It does not provide browser chat, setup editors, shared drafts, Host Files, Git, or terminal controls. Agent execution remains in the Python App, not the browser.
+This private frontend implements Harness UI browser authentication/status and Agent tool-proxy group editing. It consumes an access-key fragment, authenticates against `/api/status`, checks the API version, displays runtime/build information, and lets the user forget a saved key. The group editor reads accepted Agent sources, preserves unrelated YAML fields/comments, validates candidates, publishes through the existing source API, and reads back the result. It provides static grouped/dormant/direct source previews, not tool discovery. It does not provide browser chat, general setup editors, shared drafts, Host Files, Git, or terminal controls. Agent execution remains in the Python App, not the browser.
 
 The npm package name is `a13n-harness-ui-webui`. It is not published to npm and does not have an independent version or release workflow. Repository automation builds this application and copies `dist/` into the generated `a13n_harness_ui/static/` package tree for the `a13n-harness-ui` Python wheel and sdist. Neither generated directory is committed. A wheel rebuilt from the sdist does not require Node.js.
 

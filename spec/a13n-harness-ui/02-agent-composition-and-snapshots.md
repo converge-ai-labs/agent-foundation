@@ -155,6 +155,7 @@ class AgentResource(BaseModel):
     harness_plugins: tuple[PluginId, ...] | None
     mcp_servers: tuple[McpServerId, ...] | None
     tools: tuple[str, ...] | None
+    tool_proxy: AgentToolProxy | None = None
     subagents: tuple[SubagentSelection, ...]
 ```
 
@@ -166,7 +167,7 @@ The resolver freezes exact `system_prompt` and `instructions` values separately 
 
 `capabilities` uses the complete configurable catalog defined by [Extension and Capability Discovery](01a-extension-discovery-and-management.md#capability-catalog). Each selection names one serialization key and capability-owned JSON configuration. A Capability owns the Toolsets, instructions, hooks, settings, and lifecycle it contributes; Harness UI does not create a competing Toolset plugin system.
 
-`tools`, when present, applies an exact model-visible tool allowlist after selected Capability, Harness Plugin, and MCP contributions are composed, subject to mandatory Harness tool-surface rules. `null` uses the Host's default contributed surface. For the release-owned Full Control (`environment-native`) profile only, that default declares managed `filesystem.mkdir`, `filesystem.remove`, `filesystem.copy`, and `filesystem.move` superseded by managed `environment.shell_exec`, including when auxiliary file-only mounts are present. Harness hides those tools only when the Shell target survives preparation. The default applies independently to each root or child node whose resolved `tools` is `null`; it does not alter explicit tool lists, Sandbox/custom profiles, or execution permissions. Unmanaged tools and unrelated managed tools are not selected by visible-name resemblance. An empty list exposes none of the optional contributed tools while preserving mandatory Harness infrastructure. Unknown tool names fail composition rather than being silently ignored.
+`tools`, when present, applies an exact canonical target tool allowlist after selected Capability, Harness Plugin, and MCP contributions are composed, subject to mandatory Harness tool-surface rules. `null` uses the Host's default contributed surface. For the release-owned Full Control (`environment-native`) profile only, that default declares managed `filesystem.mkdir`, `filesystem.remove`, `filesystem.copy`, and `filesystem.move` superseded by managed `environment.shell_exec`, including when auxiliary file-only mounts are present. Harness hides those tools only when the Shell target survives preparation. The default applies independently to each root or child node whose resolved `tools` is `null`; it does not alter explicit tool lists, Sandbox/custom profiles, or execution permissions. Unmanaged tools and unrelated managed tools are not selected by visible-name resemblance. An empty list exposes none of the optional contributed tools while preserving mandatory Harness infrastructure. Unknown tool names fail composition rather than being silently ignored.
 
 Agent `harness_plugins` and `mcp_servers` provide defaults when a new Thread is initialized from that Agent. Their three-state source semantics are:
 
@@ -177,6 +178,18 @@ Agent `harness_plugins` and `mcp_servers` provide defaults when a new Thread is 
 | non-empty list    | Select exactly these resource IDs in order                   |
 
 Once initialized, a Thread stores exact lists. Later Agent or global-default selection changes do not silently rewrite that Thread's lists; an explicit Thread patch does.
+
+### Tool Proxy Groups
+
+An Agent may declare `tool_proxy.groups`, a mapping from group names to `description`, `mcp_servers`, and `harness_plugins`, plus optional `tool_proxy.config` matching Harness `ToolProxyConfig`. These are presentation selections, not reusable resource definitions or source activation. There is no global, Project, or Thread grouping override. Content Plugins contribute skills/subagents, not Harness Plugin tool sources.
+
+Each referenced source must exist in the configured catalog with the specified kind and may belong to at most one group. At capture time, membership intersects the node's enabled source IDs. Configured but disabled sources remain dormant and are never enabled by grouping. Unlisted enabled sources remain direct. A group can mix MCP sources and several exact Harness Plugin instances. An absent or empty mapping preserves direct behavior; groups with no surviving prepared tools expose no controls. Duplicate local tools in a group fail rather than gaining implicit aliases.
+
+The resolver captures the selected plan on each `ResolvedAgentNode`, containing only IDs, descriptions, and discovery settings. Independent Agent children own their own plan; Markdown children inherit the parent plan intersected with their selected sources. Reconstruction uses the captured plan, resolves MCP IDs to the same inert `HarnessUiMCP` instances already selected, and passes a typed Harness build plan with exact plugin IDs. It neither calls plugin contribution methods nor extracts Toolsets early. Native binding, middleware, credentials, recovery, and concurrent Run isolation retain their owners.
+
+Exact `tools` filtering applies to the actual callable target directory before proxy controls are generated. Grouped names are `group__tool`; renaming a group requires explicit allowlist updates. Listing `call_proxy_tool` or `search_proxy_tools` alone grants no member access. Source CodeAct eligibility is unchanged. [Harness ToolProxy](../a13n-harness/07-tool-execution.md#grouped-toolproxy-discovery) owns discovery, target restrictions, and native execution semantics.
+
+Legacy nodes missing `tool_proxy` mean direct presentation. Reading them does not insert a serialized field, replace their stored composition digest/reference, or rewrite history. Changes affect subsequent Runs only.
 
 ## Subagent Resources and Selection
 

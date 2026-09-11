@@ -2955,6 +2955,82 @@
         ],
         "title": "AgentSummary"
       },
+      "AgentToolProxy": {
+        "properties": {
+          "groups": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/AgentToolProxyGroup"
+            },
+            "type": "object",
+            "title": "Groups"
+          },
+          "config": {
+            "$ref": "#/components/schemas/ToolProxyConfig"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AgentToolProxy"
+      },
+      "AgentToolProxyGroup": {
+        "properties": {
+          "description": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Description"
+          },
+          "mcp_servers": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceId"
+            },
+            "type": "array",
+            "title": "Mcp Servers",
+            "default": []
+          },
+          "harness_plugins": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceId"
+            },
+            "type": "array",
+            "title": "Harness Plugins",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "description"
+        ],
+        "title": "AgentToolProxyGroup"
+      },
+      "AgentToolProxyView": {
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id"
+          },
+          "tool_proxy": {
+            "$ref": "#/components/schemas/AgentToolProxy"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/ToolProxySourceView"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "agent_id",
+          "tool_proxy",
+          "sources"
+        ],
+        "title": "AgentToolProxyView",
+        "description": "Static source membership; never connects to MCP or discovers tools."
+      },
       "ApiKeyStatus": {
         "properties": {
           "credential_ref": {
@@ -3675,6 +3751,16 @@
               }
             ],
             "title": "Content"
+          },
+          "agent_tool_proxy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentToolProxyView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -7282,6 +7368,89 @@
           "root_activity"
         ],
         "title": "ThreadSummary"
+      },
+      "ToolProxyConfig": {
+        "properties": {
+          "search_name": {
+            "type": "string",
+            "title": "Search Name",
+            "default": "search_proxy_tools"
+          },
+          "call_name": {
+            "type": "string",
+            "title": "Call Name",
+            "default": "call_proxy_tool"
+          },
+          "max_results": {
+            "type": "integer",
+            "title": "Max Results",
+            "default": 10
+          },
+          "max_search_bytes": {
+            "type": "integer",
+            "title": "Max Search Bytes",
+            "default": 32768
+          }
+        },
+        "type": "object",
+        "title": "ToolProxyConfig",
+        "description": "Names and bounded discovery settings for one Agent's proxy surface."
+      },
+      "ToolProxySourceView": {
+        "properties": {
+          "resource_id": {
+            "type": "string",
+            "title": "Resource Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "mcp_server",
+              "harness_plugin"
+            ],
+            "title": "Kind"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "presentation": {
+            "type": "string",
+            "enum": [
+              "active",
+              "dormant",
+              "direct",
+              "disabled"
+            ],
+            "title": "Presentation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "resource_id",
+          "name",
+          "kind",
+          "enabled",
+          "group",
+          "presentation"
+        ],
+        "title": "ToolProxySourceView"
       },
       "TranscriptEntry": {
         "properties": {

@@ -26,6 +26,9 @@
     "vitest": "^5.0.0"
   },
   "dependencies": {
+    "a13n-ui": "workspace:*",
+    "@phosphor-icons/react": "^2.1.10",
+    "yaml": "^2.4.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   }

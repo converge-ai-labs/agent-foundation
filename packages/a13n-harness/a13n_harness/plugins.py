@@ -209,15 +209,16 @@ class BoundPluginContext:
 
 def bind_agent_plugins(
     plugins: Sequence[AbstractHarnessPlugin],
-) -> tuple[tuple[AbstractHarnessPlugin, ...], tuple[AbstractCapability[AgentContext], ...]]:
-    """Order, Agent-bind, validate, and collect Capability contributions."""
+) -> tuple[tuple[AbstractHarnessPlugin, ...], dict[str, tuple[AbstractCapability[AgentContext], ...]]]:
+    """Order and Agent-bind once, retaining exact contribution ownership."""
     ordered = _order_plugins(plugins)
     bound: list[AbstractHarnessPlugin] = []
-    capabilities: list[AbstractCapability[AgentContext]] = []
+    contributions: dict[str, tuple[AbstractCapability[AgentContext], ...]] = {}
     for plugin in ordered:
         replacement = plugin.for_agent()
         _validate_replacement(plugin, replacement, phase="agent")
         bound.append(replacement)
+        capabilities: list[AbstractCapability[AgentContext]] = []
         for capability in replacement.get_capabilities():
             if not isinstance(capability, AbstractCapability):
                 raise PluginError(
@@ -226,7 +227,8 @@ def bind_agent_plugins(
                     details={"plugin_id": replacement.plugin_id},
                 )
             capabilities.append(capability)
-    return tuple(bound), tuple(capabilities)
+        contributions[replacement.plugin_id] = tuple(capabilities)
+    return tuple(bound), contributions
 
 
 async def bind_run_plugins(

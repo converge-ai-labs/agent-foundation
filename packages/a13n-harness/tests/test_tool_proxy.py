@@ -8,7 +8,14 @@ from typing import Any
 
 import pytest
 from a13n_harness import AbstractHarnessPlugin, AgentContext, AgentSpec, HarnessBuilder, RunBindings
-from a13n_harness.capabilities import CodeActCapability, ToolProxyCapability, ToolProxyConfig, ToolProxyGroup
+from a13n_harness.capabilities import (
+    CodeActCapability,
+    ToolProxyCapability,
+    ToolProxyConfig,
+    ToolProxyGroup,
+    ToolProxyPlan,
+    ToolProxySelection,
+)
 from a13n_harness.toolsets import CodeActPolicyToolset, CodeActToolPolicy
 from pydantic_ai import RunContext, Tool, ToolDefinition, ToolReturn
 from pydantic_ai.capabilities import AbstractCapability, Capability, ToolSearch
@@ -56,6 +63,8 @@ async def _run(
     bindings: RunBindings | None = None,
     usage_limits: UsageLimits | None = None,
     toolset_instructions: bool = True,
+    tool_proxy: ToolProxyPlan | None = None,
+    plugins: tuple[AbstractHarnessPlugin, ...] = (),
 ):
     requests = 0
     returns: list[ToolReturnPart] = []
@@ -78,6 +87,8 @@ async def _run(
         output_type=str,
         model=FunctionModel(stream_function=model),
         capabilities=capabilities,
+        tool_proxy=tool_proxy,
+        plugins=plugins,
     )
     result = await executable.run("test", bindings=bindings or RunBindings.embedded())
     return result, returns
@@ -162,7 +173,8 @@ async def test_groups_support_same_local_name_and_configurable_control_names() -
     assert returns[2].content == "docs"
 
 
-async def test_codeact_can_search_and_call_proxy_without_expanding_business_catalog() -> None:
+@pytest.mark.parametrize("use_plan", [False, True])
+async def test_codeact_can_search_and_call_proxy_without_expanding_business_catalog(use_plan: bool) -> None:
     calls: list[int] = []
 
     def double(value: int) -> int:
@@ -179,10 +191,14 @@ async def test_codeact_can_search_and_call_proxy_without_expanding_business_cata
     source = """found = await search_proxy_tools(query='double', group='crm')
 match = found['tools'][0]
 await call_proxy_tool(group=match['group'], tool=match['tool'], arguments={'value': 21})"""
+    capability = Capability(toolsets=[CodeActPolicyToolset(FunctionToolset([double]), CodeActToolPolicy(default=True))])
     result, returns = await _run(
-        (CodeActCapability(), _group(double)),
+        (CodeActCapability(), capability if use_plan else _group(double)),
         [("run_code", {"code": source})],
         inspect=inspect,
+        tool_proxy=ToolProxyPlan(groups={"crm": ToolProxySelection("CRM operations", capabilities=(capability,))})
+        if use_plan
+        else None,
     )
     assert result.output_or_raise() == "done"
     assert returns[-1].content == 42
@@ -513,7 +529,7 @@ async def test_final_directory_rejects_deferral_added_by_outer_capability() -> N
         return "not loaded"
 
     source = Capability(
-        toolsets=[_GroupedToolset(FunctionToolset([hidden]), "late", "Deferred source")],
+        toolsets=[_GroupedToolset(FunctionToolset([hidden]), "late", "Deferred source", "late-source")],
         id="late-source",
         defer_loading=True,
     )
@@ -610,7 +626,10 @@ async def test_large_groups_keep_model_surface_constant_and_search_bounded(codea
     assert surfaces[0] == surfaces[1]
 
 
-async def test_proxy_run_program_reads_source_and_dispatches_through_current_manager(tmp_path: Path) -> None:
+@pytest.mark.parametrize("use_plan", [False, True])
+async def test_proxy_run_program_reads_source_and_dispatches_through_current_manager(
+    tmp_path: Path, use_plan: bool
+) -> None:
     from a13n_environment import DirectLocalProviderConfiguration, DirectLocalRootConfiguration
     from a13n_harness.environment import EnvironmentAction, EnvironmentPermissionSet
     from a13n_harness.environment.advanced import create_environment_runtime
@@ -645,9 +664,13 @@ async def test_proxy_run_program_reads_source_and_dispatches_through_current_man
         calls.append(value)
         return value * 2
 
+    capability = Capability(toolsets=[CodeActPolicyToolset(FunctionToolset([double]), CodeActToolPolicy(default=True))])
     result, returns = await _run(
-        (CodeActCapability(), _group(double)),
+        (CodeActCapability(), capability if use_plan else _group(double)),
         [("run_program", {"path": "/workspace/job.codeact.py", "inputs": {"value": 21}})],
+        tool_proxy=ToolProxyPlan(groups={"crm": ToolProxySelection("CRM operations", capabilities=(capability,))})
+        if use_plan
+        else None,
         bindings=RunBindings.embedded(environment=environment),
         usage_limits=UsageLimits(tool_calls_limit=3),
     )
@@ -957,3 +980,323 @@ def test_grouping_does_not_authorize_reserved_source_capabilities(plugin_source:
         )
     assert error.value.code == "capability_scope_invalid"
     assert error.value.details["source"] == ("plugin" if plugin_source else "definition")
+
+
+async def test_grouped_combined_preserves_independent_native_ordering_and_instructions() -> None:
+    from pydantic_ai.capabilities import CapabilityOrdering, CombinedCapability
+
+    events: list[str] = []
+
+    class Outer(Capability):
+        def get_ordering(self):
+            return CapabilityOrdering(position="outermost")
+
+        async def before_run(self, ctx):
+            events.append("outer")
+
+    class Inner(Capability):
+        def get_ordering(self):
+            return CapabilityOrdering(position="innermost")
+
+        async def before_run(self, ctx):
+            events.append("inner")
+
+    class Container(CombinedCapability):
+        def get_instructions(self):
+            return "Custom container instructions."
+
+    source = Container([Outer(id="outer"), Inner(id="inner")])
+    proxy = ToolProxyCapability(groups={"ordered": ToolProxyGroup(source, "Ordered tools")})
+
+    def inspect(_step, info):
+        assert "Custom container instructions." in info.instructions
+
+    result, _ = await _run((proxy,), [], inspect=inspect)
+    assert result.output_or_raise() == "done"
+    assert events == ["outer", "inner"]
+
+
+@pytest.mark.parametrize("instance_ordering", [False, True])
+async def test_build_plan_preserves_cross_group_order_and_plugin_binding(instance_ordering: bool) -> None:
+    from a13n_harness.capabilities import ToolProxyPlan, ToolProxySelection
+    from pydantic_ai.capabilities import CapabilityOrdering
+
+    events: list[str] = []
+
+    class First(Capability):
+        async def before_run(self, ctx):
+            events.append("first")
+
+    first = First(id="first")
+
+    class Middle(Capability):
+        def get_ordering(self):
+            return CapabilityOrdering(wrapped_by=(first if instance_ordering else First,))
+
+        async def before_run(self, ctx):
+            events.append("middle")
+
+    middle = Middle(id="middle")
+
+    class Last(Capability):
+        def get_ordering(self):
+            return CapabilityOrdering(wrapped_by=(middle if instance_ordering else Middle,))
+
+        async def before_run(self, ctx):
+            events.append("last")
+
+    last = Last(id="last")
+
+    class Plugin(AbstractHarnessPlugin):
+        @property
+        def plugin_id(self):
+            return "ordered-plugin"
+
+        def for_agent(self):
+            events.append("plugin:bind")
+            return self
+
+        def get_capabilities(self):
+            events.append("plugin:collect")
+            return (last,)
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=lambda messages, info: _text_stream()),
+        capabilities=(middle, first),
+        plugins=(Plugin(),),
+        tool_proxy=ToolProxyPlan(
+            groups={
+                "ordered": ToolProxySelection("Ordered tools", capabilities=(first,), plugins=("ordered-plugin",)),
+            }
+        ),
+    )
+    result = await executable.run("test", bindings=RunBindings.embedded())
+    assert result.output_or_raise() == "done"
+    assert events == ["plugin:bind", "plugin:collect", "first", "middle", "last"]
+
+
+async def _text_stream() -> AsyncIterator[str]:
+    yield "done"
+
+
+async def test_plan_groups_exact_plugin_instances_and_keeps_unlisted_sources_direct() -> None:
+    events: list[str] = []
+
+    @dataclass
+    class Plugin(AbstractHarnessPlugin):
+        name: str
+
+        @property
+        def plugin_id(self):
+            return self.name
+
+        def for_agent(self):
+            events.append(f"bind:{self.name}")
+            return self
+
+        def get_capabilities(self):
+            events.append(f"collect:{self.name}")
+
+            def identify() -> str:
+                return self.name
+
+            return (Capability(id=self.name, toolsets=[FunctionToolset([identify])]),)
+
+    def local() -> str:
+        return "local"
+
+    source = Capability(id="host-source", toolsets=[FunctionToolset([local])])
+    result, returns = await _run(
+        (source,),
+        [
+            ("call_proxy_tool", {"group": "first", "tool": "identify", "arguments": {}}),
+            ("call_proxy_tool", {"group": "second", "tool": "identify", "arguments": {}}),
+            ("call_proxy_tool", {"group": "first", "tool": "local", "arguments": {}}),
+            ("identify", {}),
+        ],
+        plugins=(Plugin("plugin-one"), Plugin("plugin-two"), Plugin("plugin-direct")),
+        tool_proxy=ToolProxyPlan(
+            groups={
+                "second": ToolProxySelection("Second account", plugins=("plugin-two",)),
+                "first": ToolProxySelection(
+                    "First account and Host tools", capabilities=(source,), plugins=("plugin-one",)
+                ),
+            }
+        ),
+    )
+    assert result.output_or_raise() == "done"
+    assert [item.content for item in returns] == ["plugin-one", "plugin-two", "local", "plugin-direct"]
+    assert events == [
+        "bind:plugin-one",
+        "collect:plugin-one",
+        "bind:plugin-two",
+        "collect:plugin-two",
+        "bind:plugin-direct",
+        "collect:plugin-direct",
+    ]
+
+
+async def test_plan_duplicate_tool_error_names_group_and_both_plugin_instances() -> None:
+    from pydantic_ai.exceptions import UserError
+
+    @dataclass
+    class Plugin(AbstractHarnessPlugin):
+        name: str
+
+        @property
+        def plugin_id(self):
+            return self.name
+
+        def get_capabilities(self):
+            def lookup() -> str:
+                return self.name
+
+            return (Capability(toolsets=[FunctionToolset([lookup])]),)
+
+    from a13n_harness.plugins import bind_agent_plugins
+    from pydantic_ai import Agent
+
+    _, contributions = bind_agent_plugins((Plugin("plugin-one"), Plugin("plugin-two")))
+    sources = tuple(source for values in contributions.values() for source in values)
+    plan = ToolProxyPlan(
+        groups={
+            "account": ToolProxySelection("Account tools", plugins=("plugin-one", "plugin-two")),
+        }
+    )
+    agent = Agent(
+        FunctionModel(stream_function=lambda messages, info: _text_stream()),
+        capabilities=plan._compose(sources, contributions),
+    )
+    with pytest.raises(UserError) as error:
+        await agent.run("test")
+    for name in ("account", "plugin-one", "plugin-two", "lookup"):
+        assert name in str(error.value)
+
+
+def test_plan_is_immutable_and_rejects_unselected_or_duplicate_sources() -> None:
+    source = Capability()
+    selection = ToolProxySelection("Host tools", capabilities=(source,))
+    groups = {"host": selection}
+    plan = ToolProxyPlan(groups=groups)
+    groups.clear()
+    assert "host" in plan.groups
+    with pytest.raises(TypeError):
+        plan.groups["other"] = selection  # type: ignore[index]
+    with pytest.raises(ValueError, match="not selected"):
+        plan._compose((), {})
+    with pytest.raises(ValueError, match="multiple groups"):
+        ToolProxyPlan(groups={"first": selection, "second": selection})._compose((source,), {})
+    with pytest.raises(ValueError, match="unavailable plugin"):
+        ToolProxyPlan(groups={"host": ToolProxySelection("Host tools", plugins=("plugin-missing",))})._compose((), {})
+
+
+@pytest.mark.parametrize("use_plan", [False, True])
+async def test_grouped_custom_container_retains_native_binding_hooks_and_state(use_plan: bool) -> None:
+    from copy import copy
+
+    from a13n_harness.capabilities import ToolProxyPlan, ToolProxySelection
+    from pydantic_ai.capabilities import CombinedCapability
+
+    events: list[str] = []
+
+    class Source(Capability):
+        async def for_run(self, ctx):
+            events.append("child:run")
+
+            def lookup() -> str:
+                return "result"
+
+            return Capability(id=self.id, toolsets=[FunctionToolset([lookup])])
+
+    class Container(CombinedCapability):
+        bound_run: str | None = None
+
+        def for_agent(self, agent):
+            events.append("container:agent")
+            return super().for_agent(agent)
+
+        async def for_run(self, ctx):
+            events.append("container:run")
+            bound = copy(await super().for_run(ctx))
+            bound.bound_run = ctx.deps.run_id
+            return bound
+
+        async def before_run(self, ctx):
+            assert self.bound_run == ctx.deps.run_id
+            events.append("container:before")
+            await super().before_run(ctx)
+
+        def get_instructions(self):
+            return "Container-owned instructions."
+
+    source = Container([Source(id="source")])
+
+    async def model(messages, info):
+        assert "Container-owned instructions." in info.instructions
+        assert {tool.name for tool in info.function_tools} == {"search_proxy_tools", "call_proxy_tool"}
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(source,)
+        if use_plan
+        else (ToolProxyCapability(groups={"group": ToolProxyGroup(source, "Tools")}),),
+        tool_proxy=ToolProxyPlan(groups={"group": ToolProxySelection("Tools", capabilities=(source,))})
+        if use_plan
+        else None,
+    )
+    for _ in range(2):
+        assert (await executable.run("test", bindings=RunBindings.embedded())).output_or_raise() == "done"
+    assert source.bound_run is None
+    assert events == ["container:agent", *["container:run", "child:run", "container:before"] * 2]
+
+
+async def test_build_plan_survives_model_recovery_without_replaying_completed_target() -> None:
+    from a13n_harness import ModelRecoveryPolicy
+
+    effects: list[str] = []
+    requests = 0
+
+    def write() -> str:
+        effects.append("written")
+        return "saved"
+
+    source = Capability(toolsets=[FunctionToolset([write])])
+
+    async def model(messages, info):
+        nonlocal requests
+        requests += 1
+        assert {tool.name for tool in info.function_tools} == {"search_proxy_tools", "call_proxy_tool"}
+        if requests == 1:
+            yield {
+                0: DeltaToolCall(
+                    name="call_proxy_tool",
+                    json_args='{"group":"storage","tool":"write","arguments":{}}',
+                    tool_call_id="call-write",
+                )
+            }
+        elif requests == 2:
+            yield "partial answer"
+            raise RuntimeError("stream disconnected")
+        else:
+            assert any(part.content == "saved" for part in _returns(messages))
+            yield "recovered"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(source,),
+        tool_proxy=ToolProxyPlan(groups={"storage": ToolProxySelection("Storage tools", capabilities=(source,))}),
+        model_recovery=ModelRecoveryPolicy(
+            enabled=True, max_attempts=2, backoff_initial_seconds=0, backoff_max_seconds=0
+        ),
+    )
+    result = await executable.run("test", bindings=RunBindings.embedded())
+    assert result.output_or_raise() == "recovered"
+    assert effects == ["written"]
+    assert requests == 3

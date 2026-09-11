@@ -54,7 +54,7 @@ The Model authentication feature exports `CodexRequestModel`, `CodexLoginFlow`, 
 
 A value is not private merely because it is absent from the root facade. Its owning module and that module's documented exports are the canonical import route. Removing duplicate root re-exports keeps discovery bounded and prevents unrelated feature families from becoming one coupled compatibility surface. The public Mem0 integration is imported as `from a13n_harness.capabilities import Mem0Capability, Mem0Scope`; its run replacement and Toolset implementation remain package-private. The public async-subagent boundary is imported from `a13n_harness.capabilities`: `SubagentCapability`, `SubagentOperator`, `SubagentOperatorContext`, `SubagentToolCallContext`, `SubagentDelegationPlan`, and the standard request/result/view models. `AsyncSubagentToolset` and the standard Environment Shell Toolset are available from `a13n_harness.toolsets`; the private inline executor and Run process controller are not public operator implementations.
 
-Grouped discovery is imported as `ToolProxyCapability`, `ToolProxyConfig`, and `ToolProxyGroup` from `a13n_harness.capabilities`. `ToolProxyCapability(groups=..., config=...)` is the single installation entry; each group descriptor supplies a native Toolset or Capability source and a description. There is no separately installed public grouping wrapper. These are code-first composition APIs; they do not add a built-in declarative `AgentSpec` registration. Their behavior belongs to [Tool Execution](07-tool-execution.md#grouped-toolproxy-discovery).
+Grouped discovery is imported as `ToolProxyCapability`, `ToolProxyConfig`, `ToolProxyGroup`, `ToolProxyPlan`, and `ToolProxySelection` from `a13n_harness.capabilities`. `ToolProxyCapability(groups=..., config=...)` installs concrete sources; each group descriptor supplies a native Toolset or Capability and a description. Alternatively, `AgentDefinition.tool_proxy` accepts an immutable build plan whose selections reference existing concrete Capabilities and exact Harness plugin instance IDs. Both use the same composition semantics. There is no separately installed public grouping wrapper. These are code-first composition APIs; they do not add a built-in declarative `AgentSpec` registration. Their behavior belongs to [Tool Execution](07-tool-execution.md#grouped-toolproxy-discovery).
 
 ## Build API
 
@@ -67,6 +67,7 @@ class AgentDefinition[OutputT]:
     model: Model | None = None
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
     plugins: tuple[AbstractHarnessPlugin, ...] = ()
+    tool_proxy: ToolProxyPlan | None = None
     subagents: tuple[SubagentDefinition, ...] = ()
     model_recovery: ModelRecoveryPolicy = ModelRecoveryPolicy()
 
@@ -109,6 +110,7 @@ class HarnessBuilder:
         model: Model | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         plugins: Sequence[AbstractHarnessPlugin] = (),
+        tool_proxy: ToolProxyPlan | None = None,
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
         pricing_catalog: PricingCatalog | None = None,
@@ -125,6 +127,7 @@ class HarnessBuilder:
         model: Model | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         plugins: Sequence[AbstractHarnessPlugin] = (),
+        tool_proxy: ToolProxyPlan | None = None,
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
         pricing_catalog: PricingCatalog | None = None,

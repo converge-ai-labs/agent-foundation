@@ -222,7 +222,15 @@ async def _run_management(
             return 0
         if request.action == "show":
             configuration = await _require_configuration(app)
-            _print_projection(configuration.model_dump(mode="json"), request.output_format)
+            from a13n_harness_ui.configuration.views import agent_tool_proxy_view
+
+            payload = configuration.model_dump(mode="json")
+            payload["tool_proxy_previews"] = [
+                agent_tool_proxy_view(configuration, agent).model_dump(mode="json")
+                for agent in configuration.agents.values()
+                if agent.tool_proxy is not None
+            ]
+            _print_projection(payload, request.output_format)
             return 0
     if request.command == "import":
         if request.product is None or request.scope is None:
