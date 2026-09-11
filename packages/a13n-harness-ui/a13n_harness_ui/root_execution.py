@@ -140,6 +140,7 @@ class RootRunExecutor:
         mutation: ThreadConfigurationMutation | None = None,
         model_overrides: RunModelOverrides | None = None,
         on_stream: Callable[[HarnessRunStream[Any], RootInputFiles | None], Awaitable[None]] | None = None,
+        on_composition: Callable[[ObjectRef], Awaitable[None]] | None = None,
     ) -> RootRunOutcome:
         with phase("prepare") as preparation_span:
             record_span_metadata(
@@ -167,6 +168,8 @@ class RootRunExecutor:
             preparation_span.set_attribute("a13n.phase.step", "configuration")
             source = await self._required_configuration()
             published = await self._compositions.publish(source, _selection(thread), model_overrides=model_overrides)
+            if on_composition is not None:
+                await on_composition(published.reference)
             preparation_span.set_attribute("a13n.phase.step", "continuation")
             previous_state, deferred = await self._load_run_state(thread)
             deferred_resume = _deferred_resume(thread=thread, requests=deferred, response=response)

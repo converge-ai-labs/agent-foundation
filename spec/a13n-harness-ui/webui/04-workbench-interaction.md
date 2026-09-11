@@ -36,7 +36,7 @@ On narrow screens, these areas become switchable views rather than compressed si
 
 The transcript foregrounds prompts and Agent responses. Tool activity is grouped with concise status and expandable arguments/results. Child execution appears as inspectable subordinate activity, not an unrelated root conversation. Pending questions and approvals have actionable cards adjacent to the relevant execution.
 
-The composer shows collaborator cursors, selected context, and editing status: local changes, synchronizing, or saved. Participants can change their display name without creating an account. Names/colors provide interaction context, not verified identity or private workspaces.
+The composer shows collaborator cursors, selected context, and editing status: local changes, synchronizing, or synchronized in this server instance. Synchronization is not a durable save. Participants can change their display name without creating an account. Names/colors provide interaction context, not verified identity or private workspaces.
 
 Enter inserts a newline. Ctrl+Enter or Cmd+Enter submits, as does the explicit Send button; IME composition never triggers submission. This avoids sending a jointly edited prompt while someone is adding a line. Submission requires the initiating browser's pending edits to synchronize; offline input remains editable but cannot start a Run.
 

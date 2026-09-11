@@ -29,6 +29,7 @@ from a13n_harness_ui.composition import (
     AgentCompositionResolver,
     AgentReconstructor,
     CompositionAcceptanceService,
+    ResolvedRunComposition,
     RunCompositionService,
 )
 from a13n_harness_ui.configuration import (
@@ -56,11 +57,18 @@ from a13n_harness_ui.configuration.setup import (
     publish_setup,
 )
 from a13n_harness_ui.configuration.views import (
+    AgentToolProxyView,
     ConfigurationSourceCatalog,
     ConfigurationSourceView,
     ConfigurationValidation,
+    agent_tool_proxy_view,
     source_catalog,
     source_view,
+)
+from a13n_harness_ui.configuration_inspection import (
+    CapturedConfiguration,
+    ThreadConfigurationInspection,
+    captured_configuration,
 )
 from a13n_harness_ui.content_plugins import ContentPluginStore
 from a13n_harness_ui.environment_profiles import BUILT_IN_ENVIRONMENT_PROFILES
@@ -92,6 +100,7 @@ from a13n_harness_ui.host_files import (
     HostFiles,
 )
 from a13n_harness_ui.host_git import GitCaptureRequest, GitDiff, GitDiffRequest, GitDiscovery, GitStatus, HostGit
+from a13n_harness_ui.host_terminal import HostTerminal, TerminalCreate, TerminalSession, TerminalView
 from a13n_harness_ui.live import (
     HarnessUiLiveHub,
     HarnessUiSummaryHub,
@@ -125,9 +134,11 @@ from a13n_harness_ui.root_input import detach_input
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.settings import HarnessUiSettings
 from a13n_harness_ui.setup import EnvironmentReadiness, SetupProvider, SetupStatus, preflight_environment
+from a13n_harness_ui.shared_drafts import DraftCommand, SharedDraft
 from a13n_harness_ui.storage import (
     AgentResourceSource,
     LocalStore,
+    StoredContinuation,
     ThreadConfiguration,
     ThreadConfigurationMutation,
     open_local_store,
@@ -141,6 +152,7 @@ from a13n_harness_ui.surfaces import (
     ActiveWorkSummary,
     ChildControlResult,
     ChildExecutionPage,
+    ConfigurationProvenance,
     ContextUsageView,
     DecisionBatchView,
     DecisionResponseBatch,
@@ -164,6 +176,7 @@ from a13n_harness_ui.surfaces import (
     TaskPage,
     ThreadActivityPage,
     ThreadConfigurationMutationInput,
+    ThreadConfigurationResolution,
     ThreadDeferredResponse,
     ThreadDetail,
     ThreadFocusSnapshot,
@@ -283,6 +296,8 @@ class HarnessUiApp:
         self._thread_files = thread_files
         self._host_files = HostFiles(enabled=share_computer)
         self._host_git = HostGit(enabled=share_computer)
+        self._host_terminal = HostTerminal(enabled=share_computer)
+        self._shared_drafts: dict[str, SharedDraft] = {}
         self._root_runs = root_runs
         self._subagent_operator = subagent_operator
         self._live_hub = live_hub
@@ -873,6 +888,92 @@ class HarnessUiApp:
             )
             return await self._threads.preview_creation(selected)
 
+    async def explain_thread_configuration(
+        self, *, defaults: NewThreadDefaults | RootThreadDefaults | None = None
+    ) -> ThreadConfigurationResolution:
+        async with self._operation():
+            selected = (
+                RootThreadDefaults(**defaults.model_dump(exclude_unset=True))
+                if isinstance(defaults, NewThreadDefaults)
+                else defaults
+            )
+            return await self._threads.explain_creation(selected)
+
+    async def inspect_agent_tool_proxy(self, agent_id: str) -> AgentToolProxyView:
+        async with self._operation():
+            source = await self._configurations.current()
+            if source is None or agent_id not in source.agents:
+                raise HarnessUiError("The accepted Agent does not exist.", code="agent_not_found")
+            return agent_tool_proxy_view(source, source.agents[agent_id])
+
+    async def inspect_operation_configuration(self, receipt_id: str) -> CapturedConfiguration | None:
+        async with self._operation():
+            reference = await self._root_runs.composition_reference(receipt_id)
+            if reference is None:
+                return None
+            value = await self._store.objects.read_model(reference, ResolvedRunComposition)
+            return captured_configuration(reference.logical_digest, value)
+
+    async def inspect_thread_configuration(self, thread_id: str) -> ThreadConfigurationInspection:
+        async with self._operation():
+            thread = await self._threads.get(thread_id)
+            source = await self._configurations.current()
+            selected = thread.configuration
+            agent = (
+                source.agents.get(selected.agent_source.id)
+                if source is not None and selected.agent_source.kind == "agent"
+                else None
+            )
+            active = await self._root_runs.active(thread_id)
+            captured = None
+            origin: Literal["active_operation", "selected_continuation", "none"] = "none"
+            continuation_id = None
+            if active is not None:
+                origin = "active_operation"
+                captured = await self.inspect_operation_configuration(active.receipt.receipt_id)
+            elif thread.continuation is not None:
+                origin = "selected_continuation"
+                continuation_id = thread.continuation.logical_digest
+                saved = await self._store.objects.read_model(thread.continuation, StoredContinuation)
+                value = await self._store.objects.read_model(saved.run_composition, ResolvedRunComposition)
+                if saved.harness_state.thread_id != thread_id or value.thread_id != thread_id:
+                    raise AppStateError(
+                        "Captured configuration belongs to another Thread.", code="thread_continuation_incompatible"
+                    )
+                captured = captured_configuration(saved.run_composition.logical_digest, value)
+            return ThreadConfigurationInspection(
+                thread_id=thread_id,
+                next_run=ThreadConfigurationResolution(
+                    configuration=selected,
+                    provenance=ConfigurationProvenance(
+                        project_id="thread",
+                        agent_source="thread",
+                        environment_profile_id="thread",
+                        harness_plugin_ids="thread",
+                        environment_run_extension_ids="thread",
+                        mcp_server_ids="thread",
+                    ),
+                ),
+                next_generation_digest=None if source is None else source.source_digest,
+                next_model_id=None if agent is None else agent.model,
+                next_capability_ids=() if agent is None else tuple(item.capability for item in agent.capabilities),
+                next_tool_proxy=(
+                    None
+                    if agent is None or source is None
+                    else agent_tool_proxy_view(
+                        source,
+                        agent,
+                        mcp_server_ids=selected.mcp_server_ids,
+                        harness_plugin_ids=selected.harness_plugin_ids,
+                    )
+                ),
+                captured=captured,
+                capture_source=origin,
+                receipt_id=None if active is None else active.receipt.receipt_id,
+                run_id=None if active is None else active.run_id,
+                continuation_id=continuation_id,
+            )
+
     async def preview_project_defaults(self, *, thread_id: str) -> ProjectDefaultsPreview:
         async with self._operation():
             return await self._threads.preview_project_defaults(thread_id)
@@ -982,6 +1083,51 @@ class HarnessUiApp:
                 await self._threads.update_metadata(thread_id=thread_id, mutation=mutation)
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
             return await self._projections.get_thread(thread_id)
+
+    async def shared_draft(self, thread_id: str) -> SharedDraft:
+        async with self._operation():
+            thread = await self._threads.get(thread_id)
+            if thread.parent_thread_id is not None:
+                raise AppStateError("Shared drafts require a root Thread.", code="child_thread_scoped")
+            await self._thread_files.touch(thread_id)
+            if thread_id not in self._shared_drafts:
+                self._shared_drafts[thread_id] = SharedDraft()
+            return self._shared_drafts[thread_id]
+
+    async def edit_shared_draft(self, thread_id: str, participant: str, command: DraftCommand) -> None:
+        async with self._operation():
+            draft = await self.shared_draft(thread_id)
+
+            async def validate(attachments: tuple[str, ...]) -> None:
+                selected = [await self._thread_files.read(thread_id, identity) for identity in attachments]
+                if sum(item.size for item, _ in selected) > MAX_INPUT_BYTES:
+                    raise ValueError("An input supports up to 20 MiB of attachments.")
+
+            await draft.command(participant, command, validate)
+
+    @property
+    def host_terminal_available(self) -> bool:
+        return self._host_terminal.available
+
+    async def create_host_terminal(self, request: TerminalCreate) -> TerminalView:
+        async with self._operation():
+            if request.project_id is not None:
+                source = await self._configurations.current()
+                if source is None or request.project_id not in source.projects:
+                    raise HarnessUiError("Project does not exist.", code="project_not_found")
+            return await self._host_terminal.create(request)
+
+    async def list_host_terminals(self) -> tuple[TerminalView, ...]:
+        async with self._operation():
+            return self._host_terminal.list()
+
+    def host_terminal(self, terminal_id: str) -> TerminalSession:
+        self._require_ready()
+        return self._host_terminal.get(terminal_id)
+
+    async def close_host_terminal(self, terminal_id: str) -> TerminalView:
+        async with self._operation():
+            return await self._host_terminal.remove(terminal_id)
 
     @property
     def shares_computer(self) -> bool:
@@ -1283,6 +1429,7 @@ class HarnessUiApp:
         receipt_id: str,
         message: str,
         skill_references: tuple[SkillReference, ...] = (),
+        attachment_ids: tuple[str, ...] = (),
     ) -> RootControlResult:
         async with self._operation():
             operation = await self._root_runs.get(receipt_id)
@@ -1290,7 +1437,22 @@ class HarnessUiApp:
                 skill_references,
                 thread_id=operation.receipt.thread_id,
             )
-            return await self._root_runs.steer(receipt_id=receipt_id, message=message)
+            if len(attachment_ids) > MAX_ATTACHMENTS:
+                raise HarnessUiError("An input supports up to eight attachments.", code="input_invalid")
+            parts = [message]
+            for identity in attachment_ids:
+                try:
+                    item, data = await self._thread_files.read(operation.receipt.thread_id, identity)
+                except ValueError as exc:
+                    raise HarnessUiError(str(exc), code="input_invalid") from exc
+                text = None if item.source is None else context_text(item.source, data)
+                if text is None:
+                    raise HarnessUiError(
+                        "Steering supports only captured UTF-8 text context up to 64 KiB; keep the draft for ordinary submission.",
+                        code="steer_context_unsupported",
+                    )
+                parts.append(text)
+            return await self._root_runs.steer(receipt_id=receipt_id, message="\n\n".join(parts))
 
     async def cancel_root_operation(self, receipt_id: str) -> RootControlResult:
         async with self._operation():
@@ -1708,8 +1870,14 @@ class HarnessUiApp:
             await idle.wait()
 
     async def _close_collaborators(self) -> None:
+        for draft in self._shared_drafts.values():
+            draft.close()
+        self._shared_drafts.clear()
         try:
-            await self._root_runs.close(timeout_seconds=self._settings.shutdown_timeout_seconds)
+            try:
+                await self._host_terminal.close()
+            finally:
+                await self._root_runs.close(timeout_seconds=self._settings.shutdown_timeout_seconds)
         finally:
             try:
                 await self._subagent_operator.close(timeout_seconds=self._settings.shutdown_timeout_seconds)

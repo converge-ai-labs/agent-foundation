@@ -357,6 +357,12 @@ Finite `/api` routes map strict request documents to one `HarnessUiApp` command 
 
 The adapter publishes a versioned OpenAPI document derived from its strict request and projection models. Its authenticated status projection identifies the API schema, App status, listener bind address, and whether listener access uses an API key or the explicit dangerous bypass. Repository generation retains an OpenAPI snapshot for contract drift checks. The browser consumes the public API and treats incompatible or unavailable operations as explicit failures rather than inventing server behavior.
 
+Configuration inspection distinguishes sticky next-Run Thread selections from an exact captured composition. While a root operation is active, its own composition publication supplies the captured reference; before that publication the capture is explicitly unavailable, never substituted with the previous selected continuation. An exact receipt can inspect its capture while retained by this App. Without an active root operation, selected-continuation inspection uses that continuation's stored composition. Neither path reconstructs historical configuration from current desired resources.
+
+These detached projections allowlist identity, model/capability/source selections, Environment identity, tool selections, and captured Tool Proxy grouping. They omit credentials, transport settings, arbitrary configuration payloads, instructions, and internal object access. Immediate child summaries are bounded to 100 with an omitted count; they are not a recursive executable recipe. Static Agent Tool Proxy inspection uses Agent defaults, whereas next-Run Thread inspection uses its exact selected source IDs. Neither static view contacts MCP servers or claims tool readiness.
+
+The implementation catalog is distinct from configured resource selectors. Account inspection exposes only the existing credential-free account projection; logout removes the selected compatible account entry and is not cancellation of a pending login. Thread usage, last reported context footprint, and notes retain their existing owners and explicit omission/continuation semantics.
+
 The adapter exposes two authenticated SSE forms:
 
 1. one App-wide summary stream carries only the summary hub's epoch, sequence, and invalidation hints;

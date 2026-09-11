@@ -23,6 +23,130 @@
         }
       }
     },
+    "/api/host/terminals": {
+      "get": {
+        "summary": "Terminals",
+        "operationId": "terminals_api_host_terminals_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TerminalView"
+                  },
+                  "type": "array",
+                  "title": "Response Terminals Api Host Terminals Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Terminal",
+        "operationId": "create_terminal_api_host_terminals_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TerminalCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TerminalView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/host/terminals/{terminal_id}": {
+      "get": {
+        "summary": "Terminal",
+        "operationId": "terminal_api_host_terminals__terminal_id__get",
+        "parameters": [
+          {
+            "name": "terminal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Terminal Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TerminalView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Close Terminal",
+        "operationId": "close_terminal_api_host_terminals__terminal_id__delete",
+        "parameters": [
+          {
+            "name": "terminal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Terminal Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TerminalView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/host/files/metadata": {
       "get": {
         "summary": "Host File Metadata",
@@ -882,6 +1006,142 @@
         }
       }
     },
+    "/api/auth/accounts/{provider}": {
+      "get": {
+        "summary": "Account",
+        "operationId": "account_api_auth_accounts__provider__get",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Provider"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountProjection"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Logout Account",
+        "operationId": "logout_account_api_auth_accounts__provider__delete",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Provider"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean",
+                  "title": "Response Logout Account Api Auth Accounts  Provider  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/catalog": {
+      "get": {
+        "summary": "Implementation Catalog",
+        "operationId": "implementation_catalog_api_catalog_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CatalogReference"
+                  },
+                  "type": "array",
+                  "title": "Response Implementation Catalog Api Catalog Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{agent_id}/tool-proxy": {
+      "get": {
+        "summary": "Agent Tool Proxy",
+        "operationId": "agent_tool_proxy_api_agents__agent_id__tool_proxy_get",
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentToolProxyView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/keys": {
       "get": {
         "summary": "Api Keys",
@@ -1291,7 +1551,72 @@
         }
       }
     },
+    "/api/threads/configuration-preview": {
+      "post": {
+        "summary": "Explain Creation",
+        "operationId": "explain_creation_api_threads_configuration_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewThreadDefaults"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadConfigurationResolution"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/threads/{thread_id}/configuration": {
+      "get": {
+        "summary": "Inspect Configuration",
+        "operationId": "inspect_configuration_api_threads__thread_id__configuration_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadConfigurationInspection"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "patch": {
         "summary": "Patch Configuration",
         "operationId": "patch_configuration_api_threads__thread_id__configuration_patch",
@@ -1334,6 +1659,186 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ThreadConfigurationMutationInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/operations/{receipt_id}/configuration": {
+      "get": {
+        "summary": "Operation Configuration",
+        "operationId": "operation_configuration_api_operations__receipt_id__configuration_get",
+        "parameters": [
+          {
+            "name": "receipt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Receipt Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/CapturedConfiguration"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Operation Configuration Api Operations  Receipt Id  Configuration Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/context-usage": {
+      "get": {
+        "summary": "Context Usage",
+        "operationId": "context_usage_api_threads__thread_id__context_usage_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContextUsageView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/usage": {
+      "get": {
+        "summary": "Usage",
+        "operationId": "usage_api_threads__thread_id__usage_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadUsageView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/notes": {
+      "get": {
+        "summary": "Notes",
+        "operationId": "notes_api_threads__thread_id__notes_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "expected_continuation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Continuation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotePage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
@@ -2633,7 +3138,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SteerRequest"
+                "$ref": "#/components/schemas/RootSteerRequest"
               }
             }
           }
@@ -2813,6 +3318,52 @@
   },
   "components": {
     "schemas": {
+      "AccountProjection": {
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/Provider"
+          },
+          "availability": {
+            "$ref": "#/components/schemas/Availability"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StoreKind"
+          },
+          "usable": {
+            "type": "boolean",
+            "title": "Usable"
+          },
+          "expiry": {
+            "$ref": "#/components/schemas/ExpiryStatus"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "required_action": {
+            "$ref": "#/components/schemas/RequiredAction",
+            "default": "none"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "availability",
+          "source",
+          "usable",
+          "expiry"
+        ],
+        "title": "AccountProjection",
+        "description": "Bounded diagnostics safe for logs, APIs, and UI projection."
+      },
       "ActivitySummary": {
         "properties": {
           "kind": {
@@ -2954,6 +3505,82 @@
           "source_path"
         ],
         "title": "AgentSummary"
+      },
+      "AgentToolProxy": {
+        "properties": {
+          "groups": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/AgentToolProxyGroup"
+            },
+            "type": "object",
+            "title": "Groups"
+          },
+          "config": {
+            "$ref": "#/components/schemas/ToolProxyConfig"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AgentToolProxy"
+      },
+      "AgentToolProxyGroup": {
+        "properties": {
+          "description": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Description"
+          },
+          "mcp_servers": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceId"
+            },
+            "type": "array",
+            "title": "Mcp Servers",
+            "default": []
+          },
+          "harness_plugins": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceId"
+            },
+            "type": "array",
+            "title": "Harness Plugins",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "description"
+        ],
+        "title": "AgentToolProxyGroup"
+      },
+      "AgentToolProxyView": {
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id"
+          },
+          "tool_proxy": {
+            "$ref": "#/components/schemas/AgentToolProxy"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/ToolProxySourceView"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "agent_id",
+          "tool_proxy",
+          "sources"
+        ],
+        "title": "AgentToolProxyView",
+        "description": "Static source membership; never connects to MCP or discovers tools."
       },
       "ApiKeyStatus": {
         "properties": {
@@ -3116,6 +3743,283 @@
           "tool_name"
         ],
         "title": "ApprovalRequestView"
+      },
+      "Availability": {
+        "type": "string",
+        "enum": [
+          "available",
+          "absent",
+          "incompatible",
+          "unsupported"
+        ],
+        "title": "Availability"
+      },
+      "CapturedAgentSelection": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "source_kind": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "markdown"
+            ],
+            "title": "Source Kind"
+          },
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "source_kind",
+          "source_id",
+          "model_id"
+        ],
+        "title": "CapturedAgentSelection"
+      },
+      "CapturedConfiguration": {
+        "properties": {
+          "composition_id": {
+            "type": "string",
+            "title": "Composition Id"
+          },
+          "generation_digest": {
+            "type": "string",
+            "title": "Generation Digest"
+          },
+          "thread_configuration_version": {
+            "type": "integer",
+            "title": "Thread Configuration Version"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "project_roots": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Project Roots"
+          },
+          "agent": {
+            "$ref": "#/components/schemas/CapturedAgentSelection"
+          },
+          "capability_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Capability Ids"
+          },
+          "harness_plugin_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Harness Plugin Ids"
+          },
+          "mcp_server_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Mcp Server Ids"
+          },
+          "environment_profile_id": {
+            "type": "string",
+            "title": "Environment Profile Id"
+          },
+          "environment_provider": {
+            "type": "string",
+            "title": "Environment Provider"
+          },
+          "environment_adapter": {
+            "type": "string",
+            "title": "Environment Adapter"
+          },
+          "environment_run_extension_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Environment Run Extension Ids"
+          },
+          "tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tools"
+          },
+          "tool_proxy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentToolProxy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/CapturedAgentSelection"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Children"
+          },
+          "omitted_children": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Omitted Children"
+          },
+          "omitted_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Omitted Fields",
+            "default": [
+              "instructions",
+              "system_prompt",
+              "global_guidance",
+              "authentication",
+              "model_settings",
+              "model_configuration",
+              "capability_configuration",
+              "plugin_configuration",
+              "mcp_transport",
+              "environment_configuration",
+              "child_definitions",
+              "dependency_imports"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "composition_id",
+          "generation_digest",
+          "thread_configuration_version",
+          "project_id",
+          "project_roots",
+          "agent",
+          "capability_ids",
+          "harness_plugin_ids",
+          "mcp_server_ids",
+          "environment_profile_id",
+          "environment_provider",
+          "environment_adapter",
+          "environment_run_extension_ids",
+          "tools",
+          "tool_proxy",
+          "children",
+          "omitted_children"
+        ],
+        "title": "CapturedConfiguration"
+      },
+      "CatalogReference": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "capability",
+              "harness_plugin",
+              "environment_provider",
+              "environment_run_extension"
+            ],
+            "title": "Kind"
+          },
+          "key": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Key"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "pydantic",
+              "harness",
+              "harness_ui",
+              "installed",
+              "host"
+            ],
+            "title": "Source"
+          },
+          "distribution_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distribution Name"
+          },
+          "distribution_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distribution Version"
+          },
+          "import_target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Target"
+          },
+          "configurable": {
+            "type": "boolean",
+            "title": "Configurable"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "key",
+          "source",
+          "configurable"
+        ],
+        "title": "CatalogReference"
       },
       "ChildActivityView": {
         "properties": {
@@ -3519,6 +4423,93 @@
         ],
         "title": "ChildToolCallView"
       },
+      "ConfigurationProvenance": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "enum": [
+              "explicit",
+              "project",
+              "agent",
+              "global",
+              "builtin",
+              "thread"
+            ],
+            "title": "Project Id"
+          },
+          "agent_source": {
+            "type": "string",
+            "enum": [
+              "explicit",
+              "project",
+              "agent",
+              "global",
+              "builtin",
+              "thread"
+            ],
+            "title": "Agent Source"
+          },
+          "environment_profile_id": {
+            "type": "string",
+            "enum": [
+              "explicit",
+              "project",
+              "agent",
+              "global",
+              "builtin",
+              "thread"
+            ],
+            "title": "Environment Profile Id"
+          },
+          "harness_plugin_ids": {
+            "type": "string",
+            "enum": [
+              "explicit",
+              "project",
+              "agent",
+              "global",
+              "builtin",
+              "thread"
+            ],
+            "title": "Harness Plugin Ids"
+          },
+          "environment_run_extension_ids": {
+            "type": "string",
+            "enum": [
+              "explicit",
+              "project",
+              "agent",
+              "global",
+              "builtin",
+              "thread"
+            ],
+            "title": "Environment Run Extension Ids"
+          },
+          "mcp_server_ids": {
+            "type": "string",
+            "enum": [
+              "explicit",
+              "project",
+              "agent",
+              "global",
+              "builtin",
+              "thread"
+            ],
+            "title": "Mcp Server Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id",
+          "agent_source",
+          "environment_profile_id",
+          "harness_plugin_ids",
+          "environment_run_extension_ids",
+          "mcp_server_ids"
+        ],
+        "title": "ConfigurationProvenance"
+      },
       "ConfigurationPublication": {
         "properties": {
           "action": {
@@ -3733,6 +4724,67 @@
         "type": "object",
         "title": "ContentMetadata",
         "description": "Client presentation conventions plus opaque caller-owned metadata.\n\nMetadata is not model instruction or authorization. Clients may resolve\nreferences such as image_object_id through their own application services."
+      },
+      "ContextUsageView": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id"
+          },
+          "latest_request_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Request Tokens"
+          },
+          "context_window": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "thinking": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thinking"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "thread_id"
+        ],
+        "title": "ContextUsageView"
       },
       "ContinuationSelectionView": {
         "properties": {
@@ -4100,6 +5152,17 @@
           "message"
         ],
         "title": "EnvironmentReadiness"
+      },
+      "ExpiryStatus": {
+        "type": "string",
+        "enum": [
+          "valid",
+          "expiring",
+          "expired",
+          "unknown",
+          "not_applicable"
+        ],
+        "title": "ExpiryStatus"
       },
       "ExternalRequestView": {
         "properties": {
@@ -4926,9 +5989,9 @@
         "properties": {
           "shared_drafts": {
             "type": "boolean",
-            "const": false,
+            "const": true,
             "title": "Shared Drafts",
-            "default": false
+            "default": true
           },
           "host_files": {
             "type": "boolean",
@@ -4942,7 +6005,6 @@
           },
           "host_terminal": {
             "type": "boolean",
-            "const": false,
             "title": "Host Terminal",
             "default": false
           }
@@ -5226,6 +6288,68 @@
         ],
         "title": "MarkdownSubagentSource"
       },
+      "NotePage": {
+        "properties": {
+          "continuation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?:initial:)?[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Continuation Id"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/NoteView"
+            },
+            "type": "array",
+            "maxItems": 256,
+            "title": "Notes",
+            "default": []
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total",
+            "default": 0
+          },
+          "omitted": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Omitted",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "NotePage"
+      },
+      "NoteView": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Key"
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 65536,
+            "title": "Value"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "title": "NoteView"
+      },
       "PendingDecisionSummary": {
         "properties": {
           "kind": {
@@ -5501,6 +6625,14 @@
         ],
         "title": "ProjectSummary"
       },
+      "Provider": {
+        "type": "string",
+        "enum": [
+          "codex",
+          "grok"
+        ],
+        "title": "Provider"
+      },
       "QuestionOptionView": {
         "properties": {
           "label": {
@@ -5561,6 +6693,17 @@
           "options"
         ],
         "title": "QuestionView"
+      },
+      "RequiredAction": {
+        "type": "string",
+        "enum": [
+          "none",
+          "login",
+          "refresh",
+          "reauthenticate",
+          "switch_to_file"
+        ],
+        "title": "RequiredAction"
       },
       "ResetFrame": {
         "properties": {
@@ -6071,6 +7214,33 @@
         "title": "RootStreamSummary",
         "description": "Finite observer prefix covered by a focused watch's cutover."
       },
+      "RunUsageView": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "agent_instance_id": {
+            "type": "string",
+            "title": "Agent Instance Id"
+          },
+          "descendant": {
+            "type": "boolean",
+            "title": "Descendant"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/UsageTotals"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "agent_instance_id",
+          "descendant",
+          "totals"
+        ],
+        "title": "RunUsageView"
+      },
       "SelectableResourceSummary": {
         "properties": {
           "resource_id": {
@@ -6347,6 +7517,17 @@
           "environment_profile"
         ],
         "title": "SetupStatus"
+      },
+      "StoreKind": {
+        "type": "string",
+        "enum": [
+          "file",
+          "keyring",
+          "auto",
+          "ephemeral",
+          "process"
+        ],
+        "title": "StoreKind"
       },
       "StructuredQuestionRequestView": {
         "properties": {
@@ -6688,6 +7869,113 @@
         ],
         "title": "TaskView"
       },
+      "TerminalView": {
+        "additionalProperties": false,
+        "properties": {
+          "rows": {
+            "default": 24,
+            "maximum": 1000,
+            "minimum": 1,
+            "title": "Rows",
+            "type": "integer"
+          },
+          "columns": {
+            "default": 80,
+            "maximum": 1000,
+            "minimum": 1,
+            "title": "Columns",
+            "type": "integer"
+          },
+          "terminal_id": {
+            "title": "Terminal Id",
+            "type": "string"
+          },
+          "cwd": {
+            "title": "Cwd",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "shell": {
+            "title": "Shell",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "running",
+              "exited",
+              "closed"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "exit_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Code"
+          },
+          "controller": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Controller"
+          },
+          "control_epoch": {
+            "title": "Control Epoch",
+            "type": "integer"
+          },
+          "participants": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Participants",
+            "type": "array"
+          },
+          "output_start": {
+            "title": "Output Start",
+            "type": "integer"
+          },
+          "output_end": {
+            "title": "Output End",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "terminal_id",
+          "cwd",
+          "project_id",
+          "shell",
+          "state",
+          "exit_code",
+          "controller",
+          "control_epoch",
+          "participants",
+          "output_start",
+          "output_end"
+        ],
+        "title": "TerminalView",
+        "type": "object"
+      },
       "ThreadActivityPage": {
         "properties": {
           "project_id": {
@@ -6928,6 +8216,138 @@
           "environment_profile_id"
         ],
         "title": "ThreadConfiguration"
+      },
+      "ThreadConfigurationInspection": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id"
+          },
+          "next_run": {
+            "$ref": "#/components/schemas/ThreadConfigurationResolution"
+          },
+          "next_generation_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Generation Digest"
+          },
+          "next_model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Model Id"
+          },
+          "next_capability_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Next Capability Ids"
+          },
+          "next_tool_proxy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentToolProxyView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "captured": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CapturedConfiguration"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "capture_source": {
+            "type": "string",
+            "enum": [
+              "active_operation",
+              "selected_continuation",
+              "none"
+            ],
+            "title": "Capture Source"
+          },
+          "receipt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receipt Id"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "continuation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Continuation Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "thread_id",
+          "next_run",
+          "next_generation_digest",
+          "next_model_id",
+          "next_capability_ids",
+          "next_tool_proxy",
+          "captured",
+          "capture_source"
+        ],
+        "title": "ThreadConfigurationInspection"
+      },
+      "ThreadConfigurationResolution": {
+        "properties": {
+          "configuration": {
+            "$ref": "#/components/schemas/ThreadConfiguration"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/ConfigurationProvenance"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "configuration",
+          "provenance"
+        ],
+        "title": "ThreadConfigurationResolution"
       },
       "ThreadConfigurationView": {
         "properties": {
@@ -7283,6 +8703,174 @@
         ],
         "title": "ThreadSummary"
       },
+      "ThreadUsageView": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id"
+          },
+          "first_observed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Observed At"
+          },
+          "observed_through": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Through"
+          },
+          "root": {
+            "$ref": "#/components/schemas/UsageTotals"
+          },
+          "descendants": {
+            "$ref": "#/components/schemas/UsageTotals"
+          },
+          "combined": {
+            "$ref": "#/components/schemas/UsageTotals"
+          },
+          "models": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/components/schemas/UsageTotals"
+                }
+              ],
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "type": "array",
+            "title": "Models"
+          },
+          "other_models": {
+            "$ref": "#/components/schemas/UsageTotals"
+          },
+          "recent_runs": {
+            "items": {
+              "$ref": "#/components/schemas/RunUsageView"
+            },
+            "type": "array",
+            "title": "Recent Runs"
+          },
+          "other_runs": {
+            "$ref": "#/components/schemas/UsageTotals"
+          }
+        },
+        "type": "object",
+        "required": [
+          "thread_id",
+          "first_observed_at",
+          "observed_through",
+          "root",
+          "descendants",
+          "combined",
+          "models",
+          "other_models",
+          "recent_runs",
+          "other_runs"
+        ],
+        "title": "ThreadUsageView"
+      },
+      "ToolProxyConfig": {
+        "properties": {
+          "search_name": {
+            "type": "string",
+            "title": "Search Name",
+            "default": "search_proxy_tools"
+          },
+          "call_name": {
+            "type": "string",
+            "title": "Call Name",
+            "default": "call_proxy_tool"
+          },
+          "max_results": {
+            "type": "integer",
+            "title": "Max Results",
+            "default": 10
+          },
+          "max_search_bytes": {
+            "type": "integer",
+            "title": "Max Search Bytes",
+            "default": 32768
+          }
+        },
+        "type": "object",
+        "title": "ToolProxyConfig",
+        "description": "Names and bounded discovery settings for one Agent's proxy surface."
+      },
+      "ToolProxySourceView": {
+        "properties": {
+          "resource_id": {
+            "type": "string",
+            "title": "Resource Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "mcp_server",
+              "harness_plugin"
+            ],
+            "title": "Kind"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "presentation": {
+            "type": "string",
+            "enum": [
+              "active",
+              "dormant",
+              "direct",
+              "disabled"
+            ],
+            "title": "Presentation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "resource_id",
+          "name",
+          "kind",
+          "enabled",
+          "group",
+          "presentation"
+        ],
+        "title": "ToolProxySourceView"
+      },
       "TranscriptEntry": {
         "properties": {
           "position": {
@@ -7454,6 +9042,82 @@
         ],
         "title": "TranscriptPart"
       },
+      "UsageTotals": {
+        "properties": {
+          "model_requests": {
+            "type": "integer",
+            "title": "Model Requests"
+          },
+          "provider_receipts": {
+            "type": "integer",
+            "title": "Provider Receipts"
+          },
+          "tokens": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "type": "array",
+            "title": "Tokens"
+          },
+          "model_cost_usd": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Model Cost Usd"
+          },
+          "unknown_model_costs": {
+            "type": "integer",
+            "title": "Unknown Model Costs"
+          },
+          "provider_costs": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "string",
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+                }
+              ],
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "type": "array",
+            "title": "Provider Costs"
+          },
+          "unknown_provider_costs": {
+            "type": "integer",
+            "title": "Unknown Provider Costs"
+          },
+          "omitted_currency_receipts": {
+            "type": "integer",
+            "title": "Omitted Currency Receipts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_requests",
+          "provider_receipts",
+          "tokens",
+          "model_cost_usd",
+          "unknown_model_costs",
+          "provider_costs",
+          "unknown_provider_costs",
+          "omitted_currency_receipts"
+        ],
+        "title": "UsageTotals"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -7493,6 +9157,323 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "InteractiveAuthentication": {
+        "additionalProperties": false,
+        "properties": {
+          "api_key": {
+            "default": "",
+            "maxLength": 4096,
+            "title": "Api Key",
+            "type": "string"
+          }
+        },
+        "title": "InteractiveAuthentication",
+        "type": "object"
+      },
+      "TerminalCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "rows": {
+            "default": 24,
+            "maximum": 1000,
+            "minimum": 1,
+            "title": "Rows",
+            "type": "integer"
+          },
+          "columns": {
+            "default": 80,
+            "maximum": 1000,
+            "minimum": 1,
+            "title": "Columns",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "control",
+              "input",
+              "resize"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "control_epoch": {
+            "minimum": 0,
+            "title": "Control Epoch",
+            "type": "integer"
+          },
+          "release": {
+            "default": false,
+            "title": "Release",
+            "type": "boolean"
+          },
+          "text": {
+            "default": "",
+            "maxLength": 16384,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "control_epoch"
+        ],
+        "title": "TerminalCommand",
+        "type": "object"
+      },
+      "TerminalFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "terminal",
+            "default": "terminal",
+            "title": "Kind",
+            "type": "string"
+          },
+          "participant_id": {
+            "title": "Participant Id",
+            "type": "string"
+          },
+          "terminal": {
+            "$ref": "#/components/schemas/TerminalView"
+          },
+          "start": {
+            "title": "Start",
+            "type": "integer"
+          },
+          "end": {
+            "title": "End",
+            "type": "integer"
+          },
+          "gap": {
+            "title": "Gap",
+            "type": "boolean"
+          },
+          "data_base64": {
+            "title": "Data Base64",
+            "type": "string"
+          }
+        },
+        "required": [
+          "participant_id",
+          "terminal",
+          "start",
+          "end",
+          "gap",
+          "data_base64"
+        ],
+        "title": "TerminalFrame",
+        "type": "object"
+      },
+      "DraftPresence": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "default": "",
+            "maxLength": 80,
+            "title": "Name",
+            "type": "string"
+          },
+          "color": {
+            "default": "#64748b",
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "title": "Color",
+            "type": "string"
+          },
+          "anchor": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Anchor"
+          },
+          "head": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Head"
+          }
+        },
+        "title": "DraftPresence",
+        "type": "object"
+      },
+      "DraftCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "sync",
+              "presence"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "draft_id": {
+            "maxLength": 100,
+            "title": "Draft Id",
+            "type": "string"
+          },
+          "update_base64": {
+            "anyOf": [
+              {
+                "maxLength": 700000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Update Base64"
+          },
+          "presence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DraftPresence"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "kind",
+          "draft_id"
+        ],
+        "title": "DraftCommand",
+        "type": "object"
+      },
+      "DraftFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "draft",
+            "default": "draft",
+            "title": "Kind",
+            "type": "string"
+          },
+          "draft_id": {
+            "title": "Draft Id",
+            "type": "string"
+          },
+          "participant_id": {
+            "title": "Participant Id",
+            "type": "string"
+          },
+          "update_base64": {
+            "title": "Update Base64",
+            "type": "string"
+          },
+          "participants": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/DraftPresence"
+            },
+            "title": "Participants",
+            "type": "object"
+          },
+          "closed": {
+            "default": false,
+            "title": "Closed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "draft_id",
+          "participant_id",
+          "update_base64",
+          "participants"
+        ],
+        "title": "DraftFrame",
+        "type": "object"
+      },
+      "ErrorBody": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorBody",
+        "type": "object"
+      },
+      "ErrorEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "ErrorEnvelope",
+        "type": "object"
+      },
+      "TerminalCreate": {
+        "properties": {
+          "rows": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Rows",
+            "default": 24
+          },
+          "columns": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Columns",
+            "default": 80
+          },
+          "cwd": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Cwd"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "cwd"
+        ],
+        "title": "TerminalCreate"
       },
       "FileWriteRequest": {
         "additionalProperties": false,
@@ -8723,6 +10704,60 @@
         },
         "title": "PromptRequest",
         "type": "object"
+      },
+      "RootSteerRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "prompt": {
+            "maxLength": 262144,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "attachment_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Attachment Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "prompt"
+        ],
+        "title": "RootSteerRequest",
+        "type": "object"
+      }
+    }
+  },
+  "x-interactive": {
+    "authentication": {
+      "$ref": "#/components/schemas/InteractiveAuthentication"
+    },
+    "draft": {
+      "path": "/api/threads/{thread_id}/draft/connect",
+      "input": {
+        "$ref": "#/components/schemas/DraftCommand"
+      },
+      "output": {
+        "$ref": "#/components/schemas/DraftFrame"
+      },
+      "error": {
+        "$ref": "#/components/schemas/ErrorEnvelope"
+      }
+    },
+    "terminal": {
+      "path": "/api/host/terminals/{terminal_id}/connect",
+      "input": {
+        "$ref": "#/components/schemas/TerminalCommand"
+      },
+      "output": {
+        "$ref": "#/components/schemas/TerminalFrame"
+      },
+      "error": {
+        "$ref": "#/components/schemas/ErrorEnvelope"
       }
     }
   }

@@ -20,6 +20,50 @@ The status contract has `api_version: "1"`, package/build information, App statu
 
 Authentication and Host/Origin validation apply at the listener boundary. Use a header-capable HTTP/fetch client. Do not put access keys in API query strings or logs, or confuse model-provider credentials managed under `/api/auth/*` with the listener key. The deliberate dangerous-bypass mode is not a production authentication mechanism.
 
+## Native terminal
+
+On Linux/macOS, native computer sharing includes a real interactive terminal. Check `features.host_terminal`; Windows returns false and `host_terminal_unavailable`, not a noninteractive substitute. A missing shell is also unavailable. Disabling sharing returns `host_terminal_disabled`. Create with `POST /api/host/terminals` and JSON such as `{"cwd":"/work","rows":24,"columns":80}`. An optional `project_id` must identify an accepted Project. The returned `terminal_id` belongs to this App lifetime; it is not a Thread or Run ID. `cwd` records the initial native directory and never follows later browser navigation.
+
+Connect to `ws(s)://<listener>/api/host/terminals/{terminal_id}/connect?cursor=<last-end>` using the same listener origin. The cursor is optional and contains no credentials. Send `{"api_key":"<instance key>"}` as the first text frame within ten seconds. The Host and exact Origin are checked before acceptance, and authentication precedes resource lookup. Wrong/missing keys close with code 4401; rejected Host/Origin fails the handshake. In dangerous-bypass mode send `{}`. Do not use URL keys, cookies or model-provider credentials.
+
+The generated OpenAPI document's `x-interactive` section references the authentication, command, output and error schemas. After authentication, the server emits `TerminalFrame` objects with a connection-local `participant_id`, current `terminal` view and raw base64 output. Preserve a streaming UTF-8 decoder across adjacent frames; byte positions are not character offsets. Keep `end` as the next reconnect cursor. At most 1 MiB is retained; `gap: true` means bytes are missing or the supplied cursor was ahead, not that a full screen was recovered.
+
+Every connection starts as a viewer. Send a command using the latest observed `control_epoch`:
+
+```json
+{"kind":"control","control_epoch":0}
+```
+
+A successful claim/takeover increments the epoch and broadcasts the new controller. Once you own epoch 1, input and resize look like:
+
+```json
+{"kind":"input","control_epoch":1,"text":"pwd\n"}
+{"kind":"resize","control_epoch":1,"rows":40,"columns":120}
+```
+
+Input supports control characters such as `\u0003` for Ctrl+C. Use `{"kind":"control","control_epoch":1,"release":true}` to release control. Only the current controller may release it; another viewer may explicitly take over using the current epoch. Stale commands return `host_terminal_control_conflict`. Input is bounded to 16,384 characters per frame; rows/columns are 1–1,000. Backpressure may return `host_terminal_input_failed` after partial delivery. Never retry keystrokes automatically, including after losing the connection or an acknowledgement.
+
+Disconnect removes only that participant and releases its control. Rejoin gets a new participant ID and retained output. Process exit stays inspectable as `exited`; explicit HTTP DELETE closes the PTY, terminates its native session jobs and removes the identity. Deliberately daemonized independent OS sessions are outside this lifetime. Up to 32 sessions, including exited sessions, can exist until closed. App shutdown closes them all; restart retains neither PTYs nor their output. This does not change persisted conversation history.
+
+## Shared composer
+
+`features.shared_drafts` advertises the backend protocol, not a finished browser editor. Connect to `/api/threads/{thread_id}/draft/connect` using the same first-frame authentication as the terminal. Only root Threads participate; computer sharing is not required. One App owns one in-memory document per participating Thread. Disconnect removes presence, not the document or an executing Run. App close drops drafts and presence; conversation history keeps its existing storage owner.
+
+`x-interactive.draft` describes the JSON envelopes. The server sends `DraftFrame` with a `draft_id`, connection-local `participant_id`, a base64 **Yjs v1 full-state update**, and current participant presence. The document uses two root types: `text` (`Y.Text`, plain text only) and `attachments` (`Y.Map<string>`). Each map key is a client-generated selection identity; its value is an existing attachment ID from that same Thread. Native file/diff captures use those same IDs, not live paths or duplicated bytes. Sorting selection keys gives deterministic submission order. The server uses pycrdt/Yrs; CRDT item identities and merging are library-owned.
+
+Apply received updates to a local Yjs-compatible replica. Send `{"kind":"sync","draft_id":"...","update_base64":"..."}` with the replica's **complete** update, including dependencies and deletion sets, rather than a state-vector delta. Full updates make offline/rejoin merge and resending editing state independent of a server-side transport log. The server atomically validates the whole merged composer before publishing it. `draft_invalid` leaves server state unchanged; keep rejected local content and surface the error rather than silently dropping selections. Limits are 512 KiB encoded CRDT state, 256 Ki characters plain text, eight selected attachments, and the existing 20 MiB aggregate attachment limit. CRDT history counts toward the state limit; there is no automatic compaction that changes item identities.
+
+Presence uses `{"kind":"presence","draft_id":"...","presence":{"name":"Alice","color":"#112233"}}`. Optional `anchor` and `head` are base64 Y relative positions, not stale character offsets. Names/colors are unverified presentation. On reconnect, merge offline editing state only when the server's `draft_id` matches the previous instance. A different identity means the previous in-memory draft is gone; keep any local recovery as an explicit user choice, not automatic execution or promised restart recovery.
+
+Send is a client action, not a draft endpoint:
+
+1. Synchronize pending edits and observe them in the returned CRDT state.
+2. Clone the exact current replica; read its text and attachment IDs for ordinary `/submit`.
+3. On a positive submission acknowledgement, delete only the text/items visible in that captured clone and merge its full deletion update back into the live replica. This preserves concurrent inserts and replaced/added selections. Do not clear the current editor by offsets or replace it with an empty document.
+4. On rejection or unknown outcome, retain the draft. Never retry submission automatically. Resending a CRDT editing update is not resending an execution request.
+
+Explicit root steering accepts `prompt` and optional `attachment_ids`. Only captured NUL-free UTF-8 file/diff context of at most 64 KiB each can be expanded into text for steering. Ordinary uploads, binary or larger captures return `steer_context_unsupported`; retain the entire draft for ordinary submission. Runtime steering remains text-only. Normal submission retains larger/binary captures using existing Thread attachment behavior. A later Host edit cannot change either path's captured bytes or source attribution.
+
 ## Create a Thread and submit input
 
 First inspect `/api/selectors` and `/api/setup` to confirm usable accepted configuration. Configure an Agent, Model credentials, and Environment profile before running; the following uses their defaults and can invoke model/tool side effects.
@@ -51,6 +95,16 @@ These are all schema-listed operations; the grouped table preserves method disti
 | Method and route                                               | Purpose                                                                |
 | -------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | `GET /api/status`                                              | Listener/API/App status                                                |
+| `GET /api/catalog`                                             | Discovered implementation references, not configured selectors         |
+| `GET /api/agents/{agent_id}/tool-proxy`                        | Static Agent-default source grouping                                   |
+| `GET /api/auth/accounts/{provider}`                            | Credential-free compatible account inspection                          |
+| `DELETE /api/auth/accounts/{provider}`                         | Logout the compatible account, not cancel login                        |
+| `POST /api/threads/configuration-preview`                      | Creation selections with per-axis provenance                           |
+| `GET /api/threads/{thread_id}/configuration`                   | Sticky next choices versus actual captured composition                 |
+| `GET /api/operations/{receipt_id}/configuration`               | Exact receipt's captured selection, or null before capture             |
+| `GET /api/threads/{thread_id}/context-usage`                   | Last reported request footprint, not accumulated usage                 |
+| `GET /api/threads/{thread_id}/usage`                           | Durable observed root/descendant usage                                 |
+| `GET /api/threads/{thread_id}/notes`                           | Bounded notes for the selected continuation                            |
 | `GET /api/host/files`                                          | Bounded native directory page                                          |
 | `GET /api/host/files/metadata`                                 | Native entry metadata, without following the final symlink             |
 | `GET /api/host/files/text`                                     | Complete editable UTF-8 or explicit binary/large presentation          |
@@ -65,6 +119,10 @@ These are all schema-listed operations; the grouped table preserves method disti
 | `GET /api/host/git/status`                                     | Read paged index/worktree status, optionally including ignored entries |
 | `GET /api/host/git/diff`                                       | Read one staged, unstaged, or untracked comparison                     |
 | `POST /api/threads/{thread_id}/host-git-captures`              | Capture reviewed patch bytes or lines as Thread input                  |
+| `GET /api/host/terminals`                                      | List App-owned native terminals                                        |
+| `POST /api/host/terminals`                                     | Create a native interactive PTY                                        |
+| `GET /api/host/terminals/{terminal_id}`                        | Inspect session, output bounds and control                             |
+| `DELETE /api/host/terminals/{terminal_id}`                     | Close shared session and remove its live identity                      |
 | `GET /api/setup`                                               | Current setup view                                                     |
 | `POST /api/setup/preview`                                      | Preview a setup selection                                              |
 | `POST /api/setup/apply`                                        | Apply a setup selection                                                |
@@ -109,7 +167,7 @@ These are all schema-listed operations; the grouped table preserves method disti
 | `GET /api/threads/{thread_id}/events`                          | Focused SSE snapshot/events                                            |
 | `GET /api/events`                                              | Summary SSE invalidations                                              |
 
-`GET /api/openapi.json`, `/healthz`, `/readyz`, and static navigation/assets are additional non-schema-listed boundaries. Serving an application shell at a recognized browser route does not implement that screen. `features.host_files` is true only when the App was opened with native sharing enabled. `features.host_git` is true when sharing is enabled and a Git executable is discoverable. Shared drafts and Host terminal flags remain false; native APIs do not imply browser panels exist.
+`GET /api/openapi.json`, `/healthz`, `/readyz`, and static navigation/assets are additional non-schema-listed boundaries. Serving an application shell at a recognized browser route does not implement that screen. `features.host_files` is true only when the App was opened with native sharing enabled. `features.host_git` is true when sharing is enabled and a Git executable is discoverable. `features.host_terminal` reports native POSIX terminal availability. `features.shared_drafts` reports the in-memory shared composer protocol. These backend features do not imply browser panels exist.
 
 ## Native Git Changes
 
@@ -142,7 +200,17 @@ Native revisions are opaque OS metadata observations, not content hashes or hist
 
 Pass that `attachment.attachment_id` in the ordinary `/submit` body's `attachment_ids`. Small-text captures add their attributed content inline to model input; binary and larger-text captures remain retained attachments rather than pretending to be inline text. Existing attachment count, total-input limits, Thread scope, and scratch/retention rules apply. Normal uploaded text attachments without captured source provenance retain their existing behavior.
 
-Steering endpoints still accept only `prompt`. Deliberately selected `prompt_text` can be composed into a text-only steering message; attachment IDs are rejected. When `prompt_text` is null, retain that selection in the caller's draft for ordinary submission instead of silently dropping it. There is no new multimodal steering or draft-sync protocol in Files.
+Root steering accepts `prompt` plus optional captured `attachment_ids`; the App expands supported captured text using the retained bytes and source. Ordinary upload, binary or larger capture selections are rejected together rather than silently omitted. Child steering remains `prompt` only. Runtime steering stays text-only; shared editing is provided by the separate [composer protocol](#shared-composer).
+
+## Inspect configuration and working state
+
+`POST /api/threads/configuration-preview` accepts the same creation defaults as `/api/threads/preview` and additionally returns per-axis `provenance`. The winning source is `explicit`, `project`, `agent`, `global`, or `builtin`; explicit null Project and empty lists retain their meaning. Existing `/preview` remains compatible. In `GET /api/threads/{thread_id}/configuration`, `next_run` contains sticky selections with `thread` provenance: those IDs do not preserve historical inheritance. Current default equality is not evidence that an existing Thread inherited that source.
+
+The inspection includes current accepted generation, next Agent model/capability IDs, and a static Tool Proxy view based on the Thread's selected MCP/plugin IDs. This is configuration inspection, not an execution-readiness check. `/api/agents/{agent_id}/tool-proxy` separately shows **Agent-default** membership. `/api/catalog` lists discovered implementation keys, while `/api/selectors` lists configured selectable resources. Dormant grouping never activates a source, and neither view connects to MCP.
+
+`captured` is an allowlisted projection of an actual published Run composition. `capture_source: active_operation` identifies its exact receipt/Run; null capture means that operation has not published a composition yet, not that the previous Run's capture applies. Without active work, `selected_continuation` reads the saved continuation's composition and includes that continuation ID. `/api/operations/{receipt_id}/configuration` inspects the exact receipt while this process retains it. Changes to resource content or sticky selections do not alter an earlier capture. Instructions, credentials, model/native configuration payloads, MCP transports and dependency import paths are omitted; `omitted_fields` identifies these categories. At most 100 immediate child selection summaries are returned with `omitted_children`; this is not an executable recipe or recursive child graph.
+
+`/api/threads/{thread_id}/context-usage` reports the last retained root request footprint, not live token counting. `/usage` returns observed root, descendant and combined usage with existing unknown-cost/omission fields; it is not the context size. `/notes` reports bounded selected-continuation notes and accepts `expected_continuation_id` to reject a stale view. `/api/auth/accounts/{provider}` returns credential-free compatible Codex/Grok status. DELETE logs out that account through its existing store and returns whether an entry was removed; it does not cancel a pending `/api/auth/logins/{session_id}` session or cancel running execution.
 
 ## Configure Projects and Threads
 

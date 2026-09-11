@@ -30,6 +30,8 @@ dependencies = [
     "pydantic-ai-slim>=2.41.0,<3",
     "pyyaml>=6.0.2,<7",
     "prompt-toolkit>=3.0.52,<4",
+    "psutil>=7,<8",
+    "pycrdt>=0.14.5,<0.15",
     "rich>=15,<16",
     "pillow>=11,<13",
     "sqlalchemy[asyncio]>=2.0.41,<3",
@@ -42,6 +44,7 @@ dependencies = [
     "fastapi>=0.135,<1",
     "starlette>=0.52,<2",
     "uvicorn>=0.34,<1",
+    "websockets>=15,<16",
 ]
 
 [project.scripts]
@@ -89,7 +92,8 @@ a13n-logging = ">=0.1.0,<0.2.0"
 known_first_party = ["a13n_harness_ui"]
 package_module_name_map = { "a13n-environment" = "a13n_environment", "a13n-harness" = "a13n_harness", "a13n-stream-protocol" = "a13n_stream_protocol", "a13n-logging" = "a13n_logging", "ag-ui-protocol" = "ag_ui", "fastmcp-slim" = "fastmcp", "sqlalchemy" = "sqlalchemy" }
 
-# aiosqlite is loaded by SQLAlchemy through the configured async driver. The
-# runtime packages remain selected for later Harness UI application blocks.
+# aiosqlite is loaded by SQLAlchemy through the configured async driver;
+# websockets is loaded by Uvicorn's selected sans-I/O protocol implementation.
+# Runtime packages remain selected for later Harness UI application blocks.
 [tool.deptry.per_rule_ignores]
-DEP002 = ["aiosqlite", "a13n-environment", "a13n-harness", "a13n-stream-protocol"]
+DEP002 = ["aiosqlite", "a13n-environment", "a13n-harness", "a13n-stream-protocol", "websockets"]

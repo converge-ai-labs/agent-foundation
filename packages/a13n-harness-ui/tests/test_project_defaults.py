@@ -393,3 +393,26 @@ async def test_terminal_readiness_uses_project_defaults_without_a_usable_global_
         assert backend.status.environment == "environment-native"
         explicit = SessionBackend(app, CliRequest(agent_id="agent-assistant"), tmp_path / "workspace", Status())
         assert not await explicit.initialize()
+
+
+@pytest.mark.parametrize("layer", ["global", "agent", "project", "explicit"])
+async def test_creation_provenance_tracks_the_winning_axis_even_for_empty_lists(tmp_path, layer):
+    from a13n_harness_ui.thread_service import resolve_thread_configuration_details
+
+    project = {"agent": "agent-project"}
+    agent = {}
+    explicit = RootThreadDefaults()
+    if layer == "agent":
+        agent = {"mcp_servers": [], "harness_plugins": []}
+    elif layer == "project":
+        project.update(mcp_servers=[], harness_plugins=[])
+    elif layer == "explicit":
+        explicit = RootThreadDefaults(mcp_server_ids=(), harness_plugin_ids=())
+    source = await load_harness_ui_configuration(_source_tree(tmp_path, project, agent))
+    value = resolve_thread_configuration_details(source, explicit)
+    assert value.configuration == resolve_thread_configuration(source, explicit)
+    assert value.provenance.mcp_server_ids == value.provenance.harness_plugin_ids == layer
+    assert value.provenance.agent_source == "project"
+    assert value.provenance.project_id == "global"
+    projectless = resolve_thread_configuration_details(source, RootThreadDefaults(project_id=None))
+    assert projectless.configuration.project_id is None and projectless.provenance.project_id == "explicit"

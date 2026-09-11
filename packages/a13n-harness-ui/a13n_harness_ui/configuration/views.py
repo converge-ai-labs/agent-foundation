@@ -117,14 +117,23 @@ def source_view(
     raise ConfigurationError("The accepted configuration source does not exist.", code="configuration_source_not_found")
 
 
-def agent_tool_proxy_view(source: LoadedHarnessUiConfiguration, agent: AgentResource) -> AgentToolProxyView:
+def agent_tool_proxy_view(
+    source: LoadedHarnessUiConfiguration,
+    agent: AgentResource,
+    *,
+    mcp_server_ids: tuple[str, ...] | None = None,
+    harness_plugin_ids: tuple[str, ...] | None = None,
+) -> AgentToolProxyView:
     proxy = agent.tool_proxy or AgentToolProxy()
     owners = {
         resource_id: name
         for name, group in proxy.groups.items()
         for resource_id in (*group.mcp_servers, *group.harness_plugins)
     }
-    selected = {*source.selected_mcp_servers(agent), *source.selected_plugins(agent)}
+    selected = {
+        *(source.selected_mcp_servers(agent) if mcp_server_ids is None else mcp_server_ids),
+        *(source.selected_plugins(agent) if harness_plugin_ids is None else harness_plugin_ids),
+    }
     sources = []
     for resource in (*source.mcp_servers.values(), *source.harness_plugins.values()):
         group = owners.get(resource.id)

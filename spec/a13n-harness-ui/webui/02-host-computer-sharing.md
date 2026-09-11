@@ -110,6 +110,18 @@ A browser disconnect closes its attachment, not the terminal. Reattachment displ
 
 Finite output retention is inspection evidence, not a complete durable terminal log. If a write or control action has an uncertain outcome, the browser does not retry keystrokes or destructive actions automatically.
 
+### Terminal Protocol and Native Support
+
+The native implementation supports POSIX controlling terminals (Linux and macOS). Windows reports `host_terminal: false` and an explicit unavailable error; Files and Git remain independently usable. The existing computer-sharing gate covers create, inspection, attachments and close. Up to 32 sessions, including exited sessions awaiting explicit close, may exist in one App.
+
+Create captures an existing absolute native working directory, optional accepted Project identity, shell and initial dimensions. The working directory field is the initial native location, not a live shell-directory probe. A Project association does not confine the shell or retarget it after configuration changes. Process exit remains inspectable until explicit close removes the session. Shutdown terminates foreground and background jobs remaining in the owned native session, closes the PTY and reaps its shell. Deliberate daemonization into an independent OS session is outside the PTY resource lifetime.
+
+HTTP owns create/list/detail/close. The interactive connection checks the same Host and exact Origin boundary, then authenticates with a first JSON frame within ten seconds, before any App/resource lookup. Keys are not URL parameters or subprotocol values. Authentication failure closes the connection without disclosing resource existence. Even deliberate authentication bypass uses the initial frame, but does not require its key.
+
+Each attachment receives a server-issued participant ID, which is connection-local, not verified personal identity. Initial attachments are viewers. Claim, explicit takeover and release compare the observed `control_epoch`; a successful change increments it. Input and resize must carry that epoch and come from its current controller. Disconnect releases that controller and increments the epoch. An old connection cannot reclaim control by replaying an input command. Input may be partially delivered when backpressure, exit, disconnect or takeover interrupts it; no automatic retry is safe.
+
+Output uses monotonically increasing byte positions within one terminal identity, with at most 1 MiB retained. Frames contain the current session view, start/end positions, base64 bytes and a gap flag. Reattachment provides the last observed end position; an omitted cursor starts at zero. A cursor outside the retained range discloses a gap and resumes within the available range. This is raw terminal output, not a reconstructed screen snapshot. Viewers keep a streaming decoder across adjacent byte frames and reset it on a disclosed gap. State/control changes also produce frames when no new output exists. Output is not copied into conversation history or the root Run stream.
+
 ## Environment Development Boundary
 
 Native files and terminal can be used to edit Capability, Plugin, Provider, or Host-adapter source, run tests and user-authored scripts, and inspect normal Agent execution. Python code loading follows the existing App lifetime contract, not an assumed live module replacement.

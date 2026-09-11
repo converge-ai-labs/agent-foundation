@@ -4,7 +4,7 @@ Harness UI's HTTP server shares the local `HarnessUiApp` with the terminal produ
 
 ## Start the server
 
-The bundled foundation page accepts the instance API key and displays the installed Python package version returned by the server. It does not yet provide conversation, setup, shared drafts, Host Files, Git, or terminal controls; those browser controls remain unavailable. The HTTP API is independent: native Host Files and read-only Git Changes are enabled by default (Git requires an installed executable), while terminal and shared drafts remain unavailable.
+The bundled foundation page accepts the instance API key and displays the installed Python package version returned by the server. It does not yet provide conversation, setup, shared drafts, Host Files, Git, or terminal controls; those browser controls remain unavailable. The HTTP API is independent: native Host Files and read-only Git Changes are enabled by default (Git requires an installed executable), with real native terminal sessions on POSIX Hosts and process-local shared CRDT drafts through authenticated WebSockets.
 
 ```bash
 a13n-harness-ui webui                       # 127.0.0.1:8765, generated per-process API key
@@ -12,7 +12,7 @@ a13n-harness-ui webui --host 127.0.0.1 --port 9000
 a13n-harness-ui webui --no-share-computer   # Opt out of native computer sharing
 ```
 
-WebUI enables native file browsing, editing, transfer, creation, move, deletion, and captured Thread input through the [Files API](http-api.md#native-host-files) by default; `--share-computer` explicitly selects that default. The [Git Changes API](http-api.md#native-git-changes) adds repository discovery, status, selected diffs and reviewed Thread input under the same sharing gate. PTY, shared drafts and browser workbench panels remain unavailable. Paths refer to the server account or container mounts, regardless of the Agent's Environment. Project roots are navigation starts, not filesystem confinement. Use `--no-share-computer` to keep native operations unavailable even when authentication is bypassed. Embedded Apps and the bare terminal CLI do not enable native sharing implicitly.
+WebUI enables native file browsing, editing, transfer, creation, move, deletion, and captured Thread input through the [Files API](http-api.md#native-host-files) by default; `--share-computer` explicitly selects that default. The [Git Changes API](http-api.md#native-git-changes) adds repository discovery, status, selected diffs and reviewed Thread input under the same sharing gate. The [Terminal API](http-api.md#native-terminal) adds App-owned interactive POSIX PTYs under the same gate. The [shared draft protocol](http-api.md#shared-composer) is independent of computer sharing. Browser workbench panels remain unavailable. Paths refer to the server account or container mounts, regardless of the Agent's Environment. Project roots are navigation starts, not filesystem confinement. Use `--no-share-computer` to keep native operations unavailable even when authentication is bypassed. Embedded Apps and the bare terminal CLI do not enable native sharing implicitly.
 
 ## Authentication and key retention
 

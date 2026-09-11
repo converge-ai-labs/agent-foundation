@@ -69,6 +69,23 @@ class ThreadConfigurationView(SurfaceModel):
     mcp_server_ids: tuple[str, ...] = ()
 
 
+ConfigurationOrigin = Literal["explicit", "project", "agent", "global", "builtin", "thread"]
+
+
+class ConfigurationProvenance(SurfaceModel):
+    project_id: ConfigurationOrigin
+    agent_source: ConfigurationOrigin
+    environment_profile_id: ConfigurationOrigin
+    harness_plugin_ids: ConfigurationOrigin
+    environment_run_extension_ids: ConfigurationOrigin
+    mcp_server_ids: ConfigurationOrigin
+
+
+class ThreadConfigurationResolution(SurfaceModel):
+    configuration: ThreadConfiguration
+    provenance: ConfigurationProvenance
+
+
 class RootActivityState(StrEnum):
     inactive = "inactive"
     preparing = "preparing"

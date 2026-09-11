@@ -21,7 +21,14 @@ from a13n_harness_ui.storage import (
     ThreadConfiguration,
     ThreadConfigurationMutation,
 )
-from a13n_harness_ui.surfaces import ProjectDefaultsPatch, ProjectDefaultsPreview, ThreadMetadataMutation
+from a13n_harness_ui.surfaces import (
+    ConfigurationOrigin,
+    ConfigurationProvenance,
+    ProjectDefaultsPatch,
+    ProjectDefaultsPreview,
+    ThreadConfigurationResolution,
+    ThreadMetadataMutation,
+)
 
 
 class _ProjectDefault(Enum):
@@ -72,6 +79,9 @@ class ThreadService:
 
     async def preview_creation(self, defaults: RootThreadDefaults | None = None) -> ThreadConfiguration:
         return resolve_thread_configuration(await self._required_configuration(), defaults)
+
+    async def explain_creation(self, defaults: RootThreadDefaults | None = None) -> ThreadConfigurationResolution:
+        return resolve_thread_configuration_details(await self._required_configuration(), defaults)
 
     async def preview_project_defaults(self, thread_id: str) -> ProjectDefaultsPreview:
         thread = await self.get(thread_id)
@@ -182,46 +192,76 @@ def resolve_thread_configuration(
     source: LoadedHarnessUiConfiguration, defaults: RootThreadDefaults | None = None
 ) -> ThreadConfiguration:
     """Resolve every creation surface through the same ordered, per-axis defaults."""
+    return resolve_thread_configuration_details(source, defaults).configuration
+
+
+def resolve_thread_configuration_details(
+    source: LoadedHarnessUiConfiguration, defaults: RootThreadDefaults | None = None
+) -> ThreadConfigurationResolution:
     requested = defaults or RootThreadDefaults()
     global_defaults = source.document.defaults
     project_id = global_defaults.project if isinstance(requested.project_id, _ProjectDefault) else requested.project_id
     if project_id is not None and project_id not in source.projects:
         raise ThreadError("The selected Project is unavailable.", code="thread_project_missing")
     project = ProjectDefaults() if project_id is None else source.projects[project_id].defaults
-    agent_id = requested.agent_id or project.agent or global_defaults.agent
+    agent_id, agent_origin = _first_selection(
+        (requested.agent_id, "explicit"), (project.agent, "project"), (global_defaults.agent, "global")
+    )
     if agent_id is None or agent_id not in source.agents:
         raise ThreadError("A root Thread requires an available Agent.", code="thread_agent_missing")
     agent = source.agents[agent_id]
+    environment, environment_origin = _first_selection(
+        (requested.environment_profile_id, "explicit"),
+        (project.environment_profile, "project"),
+        (global_defaults.environment_profile, "global"),
+        (FULL_CONTROL_PROFILE_ID, "builtin"),
+    )
+    plugins, plugins_origin = _first_selection(
+        (requested.harness_plugin_ids, "explicit"),
+        (project.harness_plugins, "project"),
+        (agent.harness_plugins, "agent"),
+        (global_defaults.harness_plugins, "global"),
+    )
+    extensions, extensions_origin = _first_selection(
+        (requested.environment_run_extension_ids, "explicit"),
+        (project.environment_run_extensions, "project"),
+        (global_defaults.environment_run_extensions, "global"),
+    )
+    mcp, mcp_origin = _first_selection(
+        (requested.mcp_server_ids, "explicit"),
+        (project.mcp_servers, "project"),
+        (agent.mcp_servers, "agent"),
+        (global_defaults.mcp_servers, "global"),
+    )
+    assert environment is not None and plugins is not None and extensions is not None and mcp is not None
     configuration = ThreadConfiguration(
         version=1,
         project_id=project_id,
         agent_source=AgentResourceSource(id=agent_id),
-        environment_profile_id=(
-            requested.environment_profile_id
-            or project.environment_profile
-            or global_defaults.environment_profile
-            or FULL_CONTROL_PROFILE_ID
-        ),
-        harness_plugin_ids=_first_collection(
-            requested.harness_plugin_ids, project.harness_plugins, source.selected_plugins(agent)
-        ),
-        environment_run_extension_ids=_first_collection(
-            requested.environment_run_extension_ids,
-            project.environment_run_extensions,
-            global_defaults.environment_run_extensions,
-        ),
-        mcp_server_ids=_first_collection(
-            requested.mcp_server_ids, project.mcp_servers, source.selected_mcp_servers(agent)
-        ),
+        environment_profile_id=environment,
+        harness_plugin_ids=plugins,
+        environment_run_extension_ids=extensions,
+        mcp_server_ids=mcp,
     )
     _validate_configuration(source, configuration, root=True)
-    return configuration
+    return ThreadConfigurationResolution(
+        configuration=configuration,
+        provenance=ConfigurationProvenance(
+            project_id="global" if isinstance(requested.project_id, _ProjectDefault) else "explicit",
+            agent_source=agent_origin,
+            environment_profile_id=environment_origin,
+            harness_plugin_ids=plugins_origin,
+            environment_run_extension_ids=extensions_origin,
+            mcp_server_ids=mcp_origin,
+        ),
+    )
 
 
-def _first_collection(
-    explicit: tuple[str, ...] | None, project: tuple[str, ...] | None, fallback: tuple[str, ...]
-) -> tuple[str, ...]:
-    return explicit if explicit is not None else project if project is not None else fallback
+def _first_selection[T](*candidates: tuple[T | None, ConfigurationOrigin]) -> tuple[T | None, ConfigurationOrigin]:
+    for value, origin in candidates:
+        if value is not None:
+            return value, origin
+    return None, candidates[-1][1]
 
 
 def _validate_configuration(
