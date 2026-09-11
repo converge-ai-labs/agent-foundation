@@ -105,6 +105,51 @@ describe("selection", () => {
       ).value,
     ).toBe("");
   });
+  it("distinguishes same-name options and searches their source badges", async () => {
+    const user = userEvent.setup();
+    const change = vi.fn();
+    render(
+      <SearchPicker
+        label="Service"
+        placeholder="Search services"
+        emptyMessage="No services"
+        onValueChange={change}
+        groups={[
+          {
+            label: "",
+            options: [
+              {
+                value: "remote-github",
+                label: "GitHub",
+                badge: "Remote MCP",
+                description: "Repositories and issues",
+              },
+              {
+                value: "composio-github",
+                label: "GitHub",
+                badge: "Composio · Team",
+                description: "Repositories and issues",
+              },
+            ],
+          },
+        ]}
+      />,
+    );
+    await user.click(screen.getByRole("combobox", { name: "Service" }));
+    const search = within(
+      await screen.findByRole("dialog", { name: "Service" }),
+    ).getByRole("combobox");
+    expect(
+      screen.getByRole("option", { name: /GitHub Remote MCP/ }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("option", { name: /GitHub Composio/ }),
+    ).toBeTruthy();
+    await user.type(search, "Composio");
+    expect(screen.queryByRole("option", { name: /Remote MCP/ })).toBeNull();
+    await user.keyboard("{Enter}");
+    expect(change).toHaveBeenCalledWith("composio-github");
+  });
   it("shows empty results and cannot activate a disabled result", async () => {
     const user = userEvent.setup();
     const change = vi.fn();

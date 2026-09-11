@@ -78,7 +78,8 @@ function ConnectionChoice({
     ...directory.entries.map(({ connector, provider }) => ({
       value: `connector:${provider.id}:${connector.key}`,
       label: connector.name,
-      description: `${provider.name}${connector.description ? ` — ${connector.description}` : ""}`,
+      description: connector.description ?? "",
+      badge: provider.name,
       keywords: [connector.key],
       icon: <BrandIcon alias={connector.key} logo={connector.logo_url} />,
     })),
@@ -86,7 +87,8 @@ function ConnectionChoice({
       ? mcpPresets.map((preset) => ({
           value: `mcp:${preset.id}`,
           label: preset.name,
-          description: `Remote MCP — ${t(preset.description)}`,
+          description: t(preset.description),
+          badge: t("Remote MCP"),
           keywords: [preset.id, preset.endpoint],
           icon: (
             <BrandIcon
@@ -101,13 +103,14 @@ function ConnectionChoice({
     (a, b) =>
       rank(a.label) - rank(b.label) ||
       a.label.localeCompare(b.label) ||
-      a.description.localeCompare(b.description),
+      a.badge.localeCompare(b.badge),
   );
   if (can("mcp_connection.manage"))
     options.push({
       value: "custom",
       label: t("Custom MCP server"),
       description: custom ?? t("Connect your own Streamable HTTP endpoint."),
+      badge: t("Remote MCP"),
       keywords: [search],
       icon: <BrandIcon endpoint={custom} />,
     });

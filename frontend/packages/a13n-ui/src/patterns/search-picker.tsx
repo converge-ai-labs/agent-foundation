@@ -15,11 +15,13 @@ import {
   ComboboxValue,
 } from "../components/combobox";
 import { SelectButton } from "../components/select";
+import { Badge } from "../components/badge";
 
 export interface SearchOption {
   value: string;
   label: string;
   description?: string;
+  badge?: string;
   icon?: ReactNode;
   keywords?: readonly string[];
   disabled?: boolean;
@@ -88,7 +90,13 @@ export function SearchPicker({
       itemToStringValue={(item) => item.value}
       isItemEqualToValue={(item, selected) => item.value === selected.value}
       filter={(item, search) =>
-        [item.label, item.description, item.group, ...(item.keywords ?? [])]
+        [
+          item.label,
+          item.badge,
+          item.description,
+          item.group,
+          ...(item.keywords ?? []),
+        ]
           .filter(Boolean)
           .join(" ")
           .toLocaleLowerCase()
@@ -101,14 +109,17 @@ export function SearchPicker({
         aria-describedby={describedBy}
         render={<SelectButton />}
       >
-        <span className="flex min-w-0 items-center gap-2">
+        <span className="flex w-full min-w-0 items-center gap-2">
           {selected?.icon}
-          <ComboboxValue placeholder={placeholder} />
+          <span className="w-0 flex-1 truncate">
+            <ComboboxValue placeholder={placeholder} />
+          </span>
         </span>
       </ComboboxTrigger>
       <ComboboxPopup aria-label={label} className="w-(--anchor-width)">
         <div className="border-b px-1 py-1 focus-within:border-ring">
           <ComboboxInput
+            className="w-full"
             aria-label={label}
             placeholder={placeholder}
             showTrigger={false}
@@ -129,11 +140,27 @@ export function SearchPicker({
                     key={item.value}
                     value={item}
                     disabled={item.disabled}
+                    aria-label={[item.label, item.badge, item.description]
+                      .filter(Boolean)
+                      .join(" ")}
                   >
-                    <span className="flex min-w-0 items-center gap-2">
+                    <span className="flex w-full min-w-0 items-center gap-3">
                       {item.icon}
-                      <span className="min-w-0">
-                        <span className="block">{item.label}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span className="max-w-full break-words">
+                            {item.label}
+                          </span>
+                          {item.badge && (
+                            <Badge
+                              variant="secondary"
+                              size="sm"
+                              className="max-w-full whitespace-normal break-words"
+                            >
+                              {item.badge}
+                            </Badge>
+                          )}
+                        </span>
                         {item.description && (
                           <span className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                             {item.description}
