@@ -13,12 +13,6 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct McpoAuthClientConfiguration {
-    #[serde(
-        rename = "allow_missing_issuer",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub allow_missing_issuer: Option<bool>,
-
     #[serde(rename = "client_id")]
     pub client_id: String,
 
@@ -36,7 +30,6 @@ impl McpoAuthClientConfiguration {
         token_endpoint_auth_method: TokenEndpointAuthMethod,
     ) -> McpoAuthClientConfiguration {
         McpoAuthClientConfiguration {
-            allow_missing_issuer: None,
             client_id,
             issuer_url,
             token_endpoint_auth_method,

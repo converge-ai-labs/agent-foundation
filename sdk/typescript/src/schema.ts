@@ -5546,11 +5546,6 @@ export interface components {
     };
     /** MCPOAuthClientConfiguration */
     MCPOAuthClientConfiguration: {
-      /**
-       * Allow Missing Issuer
-       * @default false
-       */
-      allow_missing_issuer?: boolean;
       /** Client Id */
       client_id: string;
       /** Issuer Url */
@@ -5564,11 +5559,6 @@ export interface components {
     };
     /** MCPOAuthClientInput */
     MCPOAuthClientInput: {
-      /**
-       * Allow Missing Issuer
-       * @default false
-       */
-      allow_missing_issuer?: boolean;
       /** Client Id */
       client_id: string;
       /** Client Secret */

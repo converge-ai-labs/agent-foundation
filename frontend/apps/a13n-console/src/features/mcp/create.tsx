@@ -38,9 +38,13 @@ export function CreateMCP({
   const [name, setName] = useState(preset?.name ?? ""),
     [endpoint, setEndpoint] = useState(preset?.endpoint ?? initialEndpoint),
     [mode, setMode] = useState<Schema["MCPAuthMode"]>(preset?.auth ?? "oauth"),
-    [headerRows, setHeaderRows] = useState<HeaderDraft[]>([
-      { id: crypto.randomUUID(), name: "", value: "" },
-    ]),
+    [headerRows, setHeaderRows] = useState<HeaderDraft[]>(() =>
+      (preset?.headerNames ?? [""]).map((name) => ({
+        id: crypto.randomUUID(),
+        name,
+        value: "",
+      })),
+    ),
     [bearer, setBearer] = useState(""),
     [started, setStarted] = useState(false),
     [oauthConnection, setOAuthConnection] = useState<Schema["MCPConnection"]>(),

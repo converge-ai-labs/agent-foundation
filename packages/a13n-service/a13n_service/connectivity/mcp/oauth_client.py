@@ -40,7 +40,6 @@ class MCPOAuthError(ValueError):
 @dataclass(frozen=True, slots=True)
 class OAuthPreparation:
     redirect_uri: str
-    requires_issuer: bool
     resource_url: str
     issuer_url: str
     authorization_endpoint: str
@@ -63,6 +62,17 @@ class OAuthDiscovery:
     scope: str | None
     metadata: dict[str, Any]
     token_auth_methods: tuple[OAuthTokenAuthMethod, ...]
+
+
+def _metadata_issuer_matches(expected: str, actual: object) -> bool:
+    if actual == expected:
+        return True
+    parsed = urlsplit(expected)
+    if parsed.path not in {"", "/"}:
+        return False
+    # Root URLs share one metadata location; keep its declared spelling for callbacks.
+    alternate = urlunsplit(parsed._replace(path="/" if not parsed.path else ""))
+    return actual == alternate
 
 
 def issuer_key(issuer: str) -> str:
@@ -118,7 +128,6 @@ class MCPOAuthClient:
         key = issuer_key(discovered.issuer_url)
         identity = oauth_client_metadata(public_origin, key, client_name)
         redirect_uri = identity.redirect_uris[0]
-        requires_issuer = metadata.get("authorization_response_iss_parameter_supported") is True
         if client is not None and client.issuer_url != discovered.issuer_url:
             raise MCPOAuthError("configured_issuer_mismatch")
         registration = await self._client_registration(
@@ -131,7 +140,6 @@ class MCPOAuthClient:
         )
         return OAuthPreparation(
             redirect_uri=redirect_uri,
-            requires_issuer=requires_issuer or client is None or not client.allow_missing_issuer,
             resource_url=discovered.resource_url,
             issuer_url=discovered.issuer_url,
             authorization_endpoint=discovered.authorization_endpoint,
@@ -184,7 +192,7 @@ class MCPOAuthClient:
         scope = _safe_scope(scope)
         return OAuthDiscovery(
             resource_url=resource_metadata["resource"],
-            issuer_url=issuer,
+            issuer_url=metadata["issuer"],
             authorization_endpoint=authorization_endpoint,
             token_endpoint=token_endpoint,
             scope=scope,
@@ -399,7 +407,7 @@ class MCPOAuthClient:
                 if error.code == "metadata_not_found":
                     continue
                 raise
-            if metadata.get("issuer") != issuer:
+            if not _metadata_issuer_matches(issuer, metadata.get("issuer")):
                 raise MCPOAuthError("issuer_mismatch")
             return metadata
         raise MCPOAuthError("authorization_metadata_missing")

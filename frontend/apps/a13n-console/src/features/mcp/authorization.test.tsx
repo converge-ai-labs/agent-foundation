@@ -87,7 +87,6 @@ it("uses the saved app and refreshed version for reconnect after authorization f
     "my-app",
   );
   await user.type(screen.getByLabelText("Client secret"), "private-secret");
-  await user.click(screen.getByRole("checkbox"));
   await user.click(screen.getByRole("button", { name: "Save and authorize" }));
   await screen.findByText("Provider unavailable");
   expect(http.PUT.mock.calls[0][1].body).toMatchObject({
@@ -95,7 +94,6 @@ it("uses the saved app and refreshed version for reconnect after authorization f
     client: {
       client_id: "my-app",
       client_secret: "private-secret",
-      allow_missing_issuer: true,
     },
   });
   expect(

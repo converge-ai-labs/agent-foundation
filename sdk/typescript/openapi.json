@@ -6548,11 +6548,6 @@
       "MCPOAuthClientConfiguration": {
         "additionalProperties": false,
         "properties": {
-          "allow_missing_issuer": {
-            "default": false,
-            "title": "Allow Missing Issuer",
-            "type": "boolean"
-          },
           "client_id": {
             "maxLength": 2048,
             "minLength": 1,
@@ -6578,11 +6573,6 @@
       "MCPOAuthClientInput": {
         "additionalProperties": false,
         "properties": {
-          "allow_missing_issuer": {
-            "default": false,
-            "title": "Allow Missing Issuer",
-            "type": "boolean"
-          },
           "client_id": {
             "maxLength": 2048,
             "minLength": 1,

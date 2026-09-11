@@ -98,7 +98,6 @@ class MCPOAuthClientConfiguration(StrictModel):
     issuer_url: Endpoint
     client_id: str = Field(min_length=1, max_length=2048)
     token_endpoint_auth_method: OAuthTokenAuthMethod
-    allow_missing_issuer: bool = False
 
 
 class MCPOAuthClientInput(MCPOAuthClientConfiguration):
@@ -109,8 +108,6 @@ class MCPOAuthClientInput(MCPOAuthClientConfiguration):
         confidential = self.token_endpoint_auth_method != "none"
         if confidential != (self.client_secret is not None):
             raise ValueError("Confidential clients require a secret; public clients must not supply one")
-        if self.allow_missing_issuer and not confidential:
-            raise ValueError("Missing issuer responses require a trusted confidential client")
         return self
 
 

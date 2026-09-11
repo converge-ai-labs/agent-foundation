@@ -1,13 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Button,
-  Checkbox,
-  ChoiceField,
-  FormField,
-  Input,
-  Label,
-  ReadOnlyField,
-} from "a13n-ui";
+import { Button, ChoiceField, FormField, Input, ReadOnlyField } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -87,12 +79,6 @@ function ClientForm({
   const [method, setMethod] = useState<AuthMethod>(
     configuration?.token_endpoint_auth_method ?? supported[0] ?? "none",
   );
-  const [allowMissingIssuer, setAllowMissingIssuer] = useState(
-    configuration?.allow_missing_issuer ?? false,
-  );
-  const canAllowMissingIssuer =
-    method !== "none" &&
-    !discovery.authorization_response_iss_parameter_supported;
   const save = useMutation({
     gcTime: 0,
     mutationFn: (remove: boolean) =>
@@ -108,8 +94,6 @@ function ClientForm({
                   client_id: clientId,
                   token_endpoint_auth_method: method,
                   client_secret: method === "none" ? null : secret,
-                  allow_missing_issuer:
-                    canAllowMissingIssuer && allowMissingIssuer,
                 },
           },
         })
@@ -175,7 +159,6 @@ function ClientForm({
             value === "client_secret_post"
           ) {
             setMethod(value);
-            setAllowMissingIssuer(false);
             setSecret("");
           }
         }}
@@ -196,19 +179,6 @@ function ClientForm({
             onChange={(event) => setSecret(event.target.value)}
           />
         </FormField>
-      )}
-      {canAllowMissingIssuer && (
-        <Label className="flex items-start gap-2">
-          <Checkbox
-            checked={allowMissingIssuer}
-            onCheckedChange={setAllowMissingIssuer}
-          />
-          <span>
-            {t(
-              "I trust this registered app and allow authorization responses without an issuer parameter.",
-            )}
-          </span>
-        </Label>
       )}
       <p className={styles.muted}>
         {t(

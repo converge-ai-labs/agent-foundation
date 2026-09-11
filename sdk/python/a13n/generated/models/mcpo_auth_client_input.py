@@ -18,14 +18,12 @@ class MCPOAuthClientInput:
         client_id (str):
         issuer_url (str):
         token_endpoint_auth_method (MCPOAuthClientInputTokenEndpointAuthMethod):
-        allow_missing_issuer (bool | Unset):
         client_secret (None | str | Unset):
     """
 
     client_id: str
     issuer_url: str
     token_endpoint_auth_method: MCPOAuthClientInputTokenEndpointAuthMethod
-    allow_missing_issuer: bool | Unset = UNSET
     client_secret: str | Unset | None = UNSET
 
     def to_dict(self) -> dict[str, Any]:
@@ -34,8 +32,6 @@ class MCPOAuthClientInput:
         issuer_url = self.issuer_url
 
         token_endpoint_auth_method = self.token_endpoint_auth_method.value
-
-        allow_missing_issuer = self.allow_missing_issuer
 
         client_secret: str | Unset | None
         if isinstance(self.client_secret, Unset):
@@ -52,8 +48,6 @@ class MCPOAuthClientInput:
                 "token_endpoint_auth_method": token_endpoint_auth_method,
             }
         )
-        if allow_missing_issuer is not UNSET:
-            field_dict["allow_missing_issuer"] = allow_missing_issuer
         if client_secret is not UNSET:
             field_dict["client_secret"] = client_secret
 
@@ -68,8 +62,6 @@ class MCPOAuthClientInput:
 
         token_endpoint_auth_method = MCPOAuthClientInputTokenEndpointAuthMethod(d.pop("token_endpoint_auth_method"))
 
-        allow_missing_issuer = d.pop("allow_missing_issuer", UNSET)
-
         def _parse_client_secret(data: object) -> str | Unset | None:
             if data is None:
                 return data
@@ -83,7 +75,6 @@ class MCPOAuthClientInput:
             client_id=client_id,
             issuer_url=issuer_url,
             token_endpoint_auth_method=token_endpoint_auth_method,
-            allow_missing_issuer=allow_missing_issuer,
             client_secret=client_secret,
         )
 

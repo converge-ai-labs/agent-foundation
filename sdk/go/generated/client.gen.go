@@ -3990,7 +3990,6 @@ type MCPConnectionToolSelection struct {
 
 // MCPOAuthClientConfiguration defines model for MCPOAuthClientConfiguration.
 type MCPOAuthClientConfiguration struct {
-	AllowMissingIssuer      *bool                                              `json:"allow_missing_issuer,omitempty"`
 	ClientId                string                                             `json:"client_id"`
 	IssuerUrl               string                                             `json:"issuer_url"`
 	TokenEndpointAuthMethod MCPOAuthClientConfigurationTokenEndpointAuthMethod `json:"token_endpoint_auth_method"`
@@ -4001,7 +4000,6 @@ type MCPOAuthClientConfigurationTokenEndpointAuthMethod string
 
 // MCPOAuthClientInput defines model for MCPOAuthClientInput.
 type MCPOAuthClientInput struct {
-	AllowMissingIssuer      *bool                                      `json:"allow_missing_issuer,omitempty"`
 	ClientId                string                                     `json:"client_id"`
 	ClientSecret            nullable.Nullable[string]                  `json:"client_secret,omitempty"`
 	IssuerUrl               string                                     `json:"issuer_url"`

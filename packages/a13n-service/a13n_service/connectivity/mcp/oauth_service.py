@@ -233,9 +233,7 @@ class MCPOAuthService:
                     "OAuth callback address is invalid.",
                     category=ErrorCategory.invalid_request,
                 )
-            if (issuer is not None and issuer != preparation.issuer_url) or (
-                issuer is None and preparation.requires_issuer
-            ):
+            if issuer is not None and issuer != preparation.issuer_url:
                 raise MCPConnectionError(
                     "oauth_issuer_mismatch", "OAuth callback issuer is invalid.", category=ErrorCategory.invalid_request
                 )

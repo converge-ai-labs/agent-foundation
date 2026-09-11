@@ -6,7 +6,7 @@ from urllib.parse import parse_qs
 
 import httpx2
 import pytest
-from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient, MCPOAuthError, OAuthPreparation
+from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient, MCPOAuthError, OAuthPreparation, issuer_key
 from a13n_service.endpoint_policy import EndpointPolicy
 
 RESOURCE = "https://8.8.8.8/mcp"
@@ -84,7 +84,6 @@ async def test_token_exchange_never_follows_origin_changing_redirect_with_code_o
 
     preparation = OAuthPreparation(
         redirect_uri="https://1.1.1.1/callback",
-        requires_issuer=True,
         resource_url=RESOURCE,
         issuer_url=ISSUER,
         authorization_endpoint=f"{ISSUER}/authorize",
@@ -140,7 +139,6 @@ async def test_authlib_exchange_and_refresh_share_bounded_cookie_free_pool(auth_
 
     preparation = OAuthPreparation(
         redirect_uri="https://1.1.1.1/callback",
-        requires_issuer=True,
         resource_url=RESOURCE,
         issuer_url=ISSUER,
         authorization_endpoint=f"{ISSUER}/authorize",
@@ -337,3 +335,43 @@ async def test_registration_negotiates_supported_client_authentication(supported
             preparation = await client.prepare(RESOURCE, public_origin="https://1.1.1.1", client_name="Service")
             assert preparation.token_endpoint_auth_method == returned
             assert preparation.client_secret == secret
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("advertised", "declared", "accepted"),
+    [
+        (ISSUER, f"{ISSUER}/", True),
+        (f"{ISSUER}/", ISSUER, True),
+        (f"{ISSUER}/tenant", f"{ISSUER}/tenant/", False),
+        (ISSUER, "https://1.1.1.1", False),
+        (ISSUER, f"{ISSUER}/other", False),
+        (ISSUER, None, False),
+    ],
+)
+async def test_discovery_accepts_only_root_slash_alias_and_pins_declared_issuer(advertised, declared, accepted):
+    def handle(request):
+        if request.method == "POST":
+            return httpx2.Response(401)
+        if request.url.path.startswith("/.well-known/oauth-protected-resource"):
+            return _json({"resource": RESOURCE, "authorization_servers": [advertised]})
+        return _json(
+            {
+                "issuer": declared,
+                "authorization_endpoint": f"{ISSUER}/authorize",
+                "token_endpoint": f"{ISSUER}/token",
+                "client_id_metadata_document_supported": True,
+                "token_endpoint_auth_methods_supported": ["none"],
+                "code_challenge_methods_supported": ["S256"],
+            }
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as http_client:
+        client = MCPOAuthClient(http_client, EndpointPolicy())
+        if not accepted:
+            with pytest.raises(MCPOAuthError, match="issuer_mismatch"):
+                await client.discover(RESOURCE)
+            return
+        preparation = await client.prepare(RESOURCE, public_origin="https://1.1.1.1", client_name="Service")
+        assert preparation.issuer_url == declared
+        assert preparation.redirect_uri.endswith(issuer_key(declared))

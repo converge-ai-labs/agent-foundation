@@ -34,13 +34,12 @@ async def create_connection(connections):
     )
 
 
-def app_client(*, allow_missing_issuer=False):
+def app_client():
     return MCPOAuthClientInput(
         issuer_url=ISSUER,
         client_id="user-owned-client",
         client_secret=SecretStr("user-owned-secret"),
         token_endpoint_auth_method="client_secret_post",
-        allow_missing_issuer=allow_missing_issuer,
     )
 
 
@@ -122,11 +121,12 @@ async def test_reconfiguration_invalidates_existing_authorization_and_clears_tok
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("issuer_advertised", [False, True])
-@pytest.mark.parametrize("configured", [False, True])
-async def test_missing_issuer_is_allowed_only_for_explicit_trusted_app_when_not_advertised(
-    mcp_services, monkeypatch, issuer_advertised, configured
+@pytest.mark.parametrize("registration", ["cimd", "dcr", "public", "confidential"])
+async def test_missing_issuer_is_accepted_with_issuer_specific_callback(
+    mcp_services, monkeypatch, issuer_advertised, registration
 ):
-    connections, oauth, _ = mcp_services
+    connections, oauth, remote = mcp_services
+    remote.use_dcr = registration == "dcr"
     original = RemoteServer.__call__
 
     def metadata(self, request):
@@ -139,37 +139,38 @@ async def test_missing_issuer_is_allowed_only_for_explicit_trusted_app_when_not_
 
     monkeypatch.setattr(RemoteServer, "__call__", metadata)
     connection = await create_connection(connections)
-    if configured:
+    if registration in {"public", "confidential"}:
         connection = await oauth.configuration.configure(
             actor=actor(),
             connection_id=connection.id,
             request=ConfigureMCPOAuthClientRequest(
-                expected_version=connection.version, client=app_client(allow_missing_issuer=True)
+                expected_version=connection.version,
+                client=app_client()
+                if registration == "confidential"
+                else MCPOAuthClientInput(
+                    issuer_url=ISSUER, client_id="public-client", token_endpoint_auth_method="none"
+                ),
             ),
         )
     _, state = await launch_for(oauth, connection)
-    if configured and not issuer_advertised:
-        receipt = await capture_receipt(oauth, state, issuer=None)
-        ready = await oauth.callback(actor=actor(), state=state, receipt=receipt)
-        assert ready.status == "ready"
-    else:
-        with pytest.raises(MCPConnectionError) as failure:
-            await capture_receipt(oauth, state, issuer=None)
-        assert failure.value.code == "oauth_issuer_mismatch"
+    receipt = await capture_receipt(oauth, state, issuer=None)
+    ready = await oauth.callback(actor=actor(), state=state, receipt=receipt)
+    assert ready.status == "ready"
 
 
 @pytest.mark.anyio
-async def test_callback_path_issuer_and_receipt_are_all_checked_before_token_exchange(mcp_services):
+@pytest.mark.parametrize("wrong_issuer_value", [f"{ISSUER}/", "https://other.example", ""])
+async def test_callback_path_issuer_and_receipt_are_all_checked_before_token_exchange(mcp_services, wrong_issuer_value):
     connections, oauth, remote = mcp_services
     connection = await create_connection(connections)
     _, state = await launch_for(oauth, connection)
     with pytest.raises(MCPConnectionError) as wrong_path:
         await oauth.receive_callback(
-            callback_key=issuer_key(f"{ISSUER}/different"), state=state, code="code", issuer=ISSUER
+            callback_key=issuer_key(f"{ISSUER}/different"), state=state, code="code", issuer=None
         )
     assert wrong_path.value.code == "oauth_callback_mismatch"
     with pytest.raises(MCPConnectionError) as wrong_issuer:
-        await capture_receipt(oauth, state, issuer=f"{ISSUER}/")
+        await capture_receipt(oauth, state, issuer=wrong_issuer_value)
     assert wrong_issuer.value.code == "oauth_issuer_mismatch"
     receipt = await capture_receipt(oauth, state)
     with pytest.raises(MCPConnectionError) as repeated:
@@ -198,13 +199,11 @@ async def test_received_response_keeps_original_expiry(mcp_services, connectivit
     assert not any(request.url.path == "/token" for request in remote.requests)
 
 
-def test_public_client_cannot_enable_missing_issuer_or_hold_a_secret():
-    for secret, allow in [(None, True), ("secret", False)]:
-        with pytest.raises(ValidationError):
-            MCPOAuthClientInput(
-                issuer_url=ISSUER,
-                client_id="client",
-                token_endpoint_auth_method="none",
-                client_secret=secret,
-                allow_missing_issuer=allow,
-            )
+def test_public_client_cannot_hold_a_secret():
+    with pytest.raises(ValidationError):
+        MCPOAuthClientInput(
+            issuer_url=ISSUER,
+            client_id="client",
+            token_endpoint_auth_method="none",
+            client_secret="secret",
+        )
