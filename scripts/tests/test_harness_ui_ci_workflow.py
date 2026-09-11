@@ -81,12 +81,14 @@ def test_source_ui_consumers_prepare_skills(target: str, consumer: str) -> None:
 
 
 def test_linux_keeps_full_tests_and_distribution_checks() -> None:
-    steps = yaml.safe_load(WORKFLOW.read_text())["jobs"]["tests"]["steps"]
+    jobs = yaml.safe_load(WORKFLOW.read_text())["jobs"]
+    steps = jobs["tests"]["steps"]
     by_name = {step["name"]: step for step in steps}
     tests = by_name["Test UI"]
     arguments = shlex.split(tests["run"])
     assert "scripts.run_python_tests" in arguments
-    assert arguments[arguments.index("--workers") + 1] == "2"
+    assert arguments[arguments.index("--workers") + 1] == "7"
+    assert jobs["tests"]["runs-on"] == "ubuntu-24.04-8core"
     assert "packages/a13n-harness-ui/tests" in arguments
     assert not any(arg.startswith("scripts/tests/") for arg in arguments)
     assert "--durations=20" in tests["env"]["PYTEST_ADDOPTS"]
@@ -94,7 +96,6 @@ def test_linux_keeps_full_tests_and_distribution_checks() -> None:
         assert f"--ignore=packages/a13n-harness-ui/tests/{test}" in tests["env"]["PYTEST_ADDOPTS"]
     assert "Test native command lifecycle" in by_name
     assert not any("pnpm" in step.get("run", "") for step in steps)
-    jobs = yaml.safe_load(WORKFLOW.read_text())["jobs"]
     for name in ("tests", "frontend", "distribution"):
         assert "needs" not in jobs[name]
         assert jobs[name]["if"] == jobs["tests"]["if"]
