@@ -62,7 +62,7 @@ Read `05`. A surface calls `HarnessUiApp` commands and queries and consumes deta
 11. The full-terminal CLI is an adapter over one reusable `HarnessUiApp`. Desired configuration remains editable; setup publication is explicit. Project and Thread management are not terminal workflows, but their durable identities and existing history remain intact.
 12. Focused live delivery follows complete root lineage and uses an epoch/sequence snapshot cutover. App-wide summary invalidations are best-effort refetch hints, not durable truth.
 13. Multiple local processes can open one data root through ordinary SQLite and immutable-file behavior. Mutable SQLite heads use expected-version or expected-reference compare-and-select without process lock files, PID inspection, heartbeats, leases, fencing, or distributed scheduling. Independent Apps do not thereby share live collaboration or execution receipts.
-14. Shared browser drafts are saved editing state, not selected continuation or durable root-work acceptance. Reconnect never authorizes automatic submission.
+14. Shared browser drafts are in-memory editing state, not selected continuation or durable root-work acceptance. Reconnect never authorizes automatic submission.
 15. Native Host files, Git views, and PTY are explicitly enabled human operations on the server OS, independent of Agent Environment policy and Run lifetime.
 
 ## Conventions

@@ -432,7 +432,14 @@ class EmbeddedTaskStateCell:
             )
             _require_references(tasks, dependency_refs)
             if task_id in dependency_refs:
-                raise TaskStateError("A task cannot depend on itself.", code="task_dependency_invalid")
+                raise TaskStateError(
+                    "A task cannot depend on itself.",
+                    code="task_dependency_invalid",
+                    details={
+                        "reason": "self_dependency",
+                        "hint": "Remove the task's own ID from its dependency lists.",
+                    },
+                )
 
             metadata = staged.metadata
             if mutation.metadata is not None:

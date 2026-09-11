@@ -78,7 +78,7 @@ struct PageCollector<T> {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ResourceError {
     Invalid,
-    InvalidPattern {
+    InvalidInput {
         field: &'static str,
         reason: &'static str,
     },
@@ -275,6 +275,25 @@ impl ResourceRegistry {
         let content = ContentMatcher::new(params.mode, &params.query, params.case_sensitive)?;
         let include = PathMatcher::new(&params.include_pattern, "include_pattern")?;
         let mount = read_mount(mounts, &params.root, "search")?;
+        // Inspect shape without opening the final component. Canonicalizing a FIFO
+        // can open/block on some platforms; special files are never search input.
+        let relative = mount
+            .resolve_nofollow_relative(&params.root)
+            .map_err(map_mount_error)?;
+        let shape = mount
+            .root
+            .metadata(&relative)
+            .map_err(|error| map_mount_error(MountPathError::from_io(error)))?;
+        if !shape.is_file() && !shape.is_dir() {
+            return Err(ResourceError::InvalidInput {
+                field: "root",
+                reason: "not_searchable",
+            });
+        }
+        let metadata = mount
+            .metadata(&params.root, true)
+            .map_err(map_mount_error)?;
+        let single_file = metadata.is_file();
         let mut page = PageCollector::new(
             params.offset,
             params.max_results,
@@ -283,60 +302,69 @@ impl ResourceRegistry {
         let mut scanned_bytes = 0_u64;
         let mut scanned_files = 0_u32;
         let max_file_bytes = params.max_file_bytes.min(MAX_SEARCH_BYTES_PER_FILE);
-        let omitted = walk_entries(
-            &mount,
-            &params.root,
-            WalkOptions {
-                max_depth: MAX_TRAVERSAL_DEPTH,
-                include_hidden: params.include_hidden,
-                respect_git_ignore: params.respect_git_ignore,
-            },
-            &self.inner.operations,
-            &params.context.operation_id,
-            |entry| {
-                if entry.info.kind != FileKind::File
-                    || (!params.include_hidden && is_hidden_path(&entry.relative_path))
-                    || !include.matches(&entry.relative_path)
-                    || entry
-                        .info
-                        .size_bytes
-                        .is_some_and(|size| size > max_file_bytes)
-                {
-                    return Ok(true);
-                }
-                if params
-                    .max_files
-                    .is_some_and(|max_files| scanned_files >= max_files)
-                {
-                    return Err(ResourceError::Limit);
-                }
-                scanned_files = scanned_files.checked_add(1).ok_or(ResourceError::Limit)?;
-                self.check_cancelled(&params.context.operation_id)?;
-                let file_matches = match search_file(
-                    &mount,
-                    &entry.info.path,
-                    &content,
-                    params.max_line_length,
-                    params.context_lines,
-                    params.max_matches_per_file,
-                    max_file_bytes,
-                    &mut scanned_bytes,
-                    &self.inner.operations,
-                    &params.context.operation_id,
-                ) {
-                    Ok(matches) => matches,
-                    Err(ResourceError::Unsupported) => return Ok(true),
-                    Err(error) => return Err(error),
-                };
-                for matched in file_matches {
-                    let mut key = entry.relative_path.as_bytes().to_vec();
-                    key.push(0);
-                    key.extend_from_slice(&matched.line_number.to_be_bytes());
-                    page.push(key, matched)?;
-                }
-                Ok(true)
-            },
-        )?;
+        let mut search_entry = |entry: FileListEntry| {
+            if entry.info.kind != FileKind::File
+                || (!single_file && !params.include_hidden && is_hidden_path(&entry.relative_path))
+                || !include.matches(&entry.relative_path)
+                || entry
+                    .info
+                    .size_bytes
+                    .is_some_and(|size| size > max_file_bytes)
+            {
+                return Ok(true);
+            }
+            if params
+                .max_files
+                .is_some_and(|max_files| scanned_files >= max_files)
+            {
+                return Err(ResourceError::Limit);
+            }
+            scanned_files = scanned_files.checked_add(1).ok_or(ResourceError::Limit)?;
+            self.check_cancelled(&params.context.operation_id)?;
+            let file_matches = match search_file(
+                &mount,
+                &entry.info.path,
+                &content,
+                params.max_line_length,
+                params.context_lines,
+                params.max_matches_per_file,
+                max_file_bytes,
+                &mut scanned_bytes,
+                &self.inner.operations,
+                &params.context.operation_id,
+            ) {
+                Ok(matches) => matches,
+                Err(ResourceError::Unsupported) => return Ok(true),
+                Err(error) => return Err(error),
+            };
+            for matched in file_matches {
+                let mut key = entry.relative_path.as_bytes().to_vec();
+                key.push(0);
+                key.extend_from_slice(&matched.line_number.to_be_bytes());
+                page.push(key, matched)?;
+            }
+            Ok(true)
+        };
+        let omitted = if single_file {
+            search_entry(FileListEntry {
+                relative_path: params.root.path.rsplit('/').next().unwrap_or("").to_owned(),
+                info: cap_file_info(&params.root, &metadata),
+            })?;
+            0
+        } else {
+            walk_entries(
+                &mount,
+                &params.root,
+                WalkOptions {
+                    max_depth: MAX_TRAVERSAL_DEPTH,
+                    include_hidden: params.include_hidden,
+                    respect_git_ignore: params.respect_git_ignore,
+                },
+                &self.inner.operations,
+                &params.context.operation_id,
+                search_entry,
+            )?
+        };
         let (matches, has_more) = page.finish()?;
         Ok(FileSearchResult {
             matches,
@@ -1370,7 +1398,7 @@ impl PathMatcher {
                 GlobBuilder::new(normalized)
                     .literal_separator(true)
                     .build()
-                    .map_err(|_| ResourceError::InvalidPattern {
+                    .map_err(|_| ResourceError::InvalidInput {
                         field,
                         reason: "invalid_glob",
                     })
@@ -1401,7 +1429,7 @@ fn is_hidden_path(path: &str) -> bool {
 }
 
 fn expand_glob(pattern: &str, field: &'static str) -> Result<Vec<String>, ResourceError> {
-    let invalid = || ResourceError::InvalidPattern {
+    let invalid = || ResourceError::InvalidInput {
         field,
         reason: "invalid_glob",
     };
@@ -1482,13 +1510,13 @@ enum ContentMatcher {
 impl ContentMatcher {
     fn new(mode: SearchMode, query: &str, case_sensitive: bool) -> Result<Self, ResourceError> {
         if query.is_empty() {
-            return Err(ResourceError::InvalidPattern {
+            return Err(ResourceError::InvalidInput {
                 field: "query",
                 reason: "empty_pattern",
             });
         }
         if query.len() > MAX_PATTERN_BYTES {
-            return Err(ResourceError::InvalidPattern {
+            return Err(ResourceError::InvalidInput {
                 field: "query",
                 reason: "pattern_too_large",
             });
@@ -1497,7 +1525,7 @@ impl ContentMatcher {
             SearchMode::Literal if case_sensitive => Ok(Self::Literal(query.to_owned())),
             SearchMode::Literal => Regex::new(&format!("(?i:{})", regex::escape(query)))
                 .map(Self::Regex)
-                .map_err(|_| ResourceError::InvalidPattern {
+                .map_err(|_| ResourceError::InvalidInput {
                     field: "query",
                     reason: "invalid_regex",
                 }),
@@ -1509,7 +1537,7 @@ impl ContentMatcher {
                 };
                 Regex::new(&pattern)
                     .map(Self::Regex)
-                    .map_err(|_| ResourceError::InvalidPattern {
+                    .map_err(|_| ResourceError::InvalidInput {
                         field: "query",
                         reason: "invalid_regex",
                     })
@@ -1995,7 +2023,7 @@ mod tests {
             assert!(
                 matches!(
                     PathMatcher::new(pattern.as_str().unwrap(), "include_pattern"),
-                    Err(ResourceError::InvalidPattern {
+                    Err(ResourceError::InvalidInput {
                         field: "include_pattern",
                         reason: "invalid_glob"
                     })
@@ -2023,7 +2051,7 @@ mod tests {
         for pattern in ["(", "(?=a)", r"(a)\1"] {
             assert!(matches!(
                 ContentMatcher::new(SearchMode::Regex, pattern, true),
-                Err(ResourceError::InvalidPattern {
+                Err(ResourceError::InvalidInput {
                     field: "query",
                     reason: "invalid_regex"
                 })
@@ -2097,6 +2125,130 @@ mod tests {
         EIPPath {
             mount_id: "workspace".to_owned(),
             path: value.to_owned(),
+        }
+    }
+
+    #[test]
+    fn single_file_search_preserves_filters_paging_and_explicit_selection() {
+        let fixture = Fixture::read_only();
+        fs::create_dir(fixture.native.join("ignored")).unwrap();
+        fs::write(fixture.native.join(".gitignore"), "ignored/\n").unwrap();
+        fs::write(
+            fixture.native.join("ignored/.Makefile"),
+            "before\nharness-ui\nafter\ntest:\n",
+        )
+        .unwrap();
+        fs::write(fixture.native.join("other"), "harness-ui\n").unwrap();
+        let mut params = FileSearchParams {
+            context: context("single-file"),
+            root: path("/ignored/.Makefile"),
+            query: "harness-ui|^test".to_owned(),
+            mode: SearchMode::Regex,
+            case_sensitive: true,
+            offset: 0,
+            max_results: 1,
+            include_hidden: false,
+            max_line_length: 2_000,
+            include_pattern: "/.Makefile".to_owned(),
+            respect_git_ignore: true,
+            context_lines: 1,
+            max_matches_per_file: None,
+            max_files: Some(1),
+            max_file_bytes: super::MAX_SEARCH_BYTES_PER_FILE,
+        };
+        let first = fixture.resources.search(&fixture.mounts, &params).unwrap();
+        assert_eq!(first.matches.len(), 1);
+        assert_eq!(first.matches[0].path, params.root);
+        assert_eq!(first.matches[0].line_number, 2);
+        assert_eq!(first.matches[0].context, "before\nharness-ui\nafter\n");
+        assert!(first.has_more);
+        params.offset = 1;
+        let second = fixture.resources.search(&fixture.mounts, &params).unwrap();
+        assert_eq!(second.matches[0].line_number, 4);
+        assert!(!second.has_more);
+        params.offset = 2;
+        assert!(
+            fixture
+                .resources
+                .search(&fixture.mounts, &params)
+                .unwrap()
+                .matches
+                .is_empty()
+        );
+        params.offset = 0;
+        params.include_pattern = "*.py".to_owned();
+        assert!(
+            fixture
+                .resources
+                .search(&fixture.mounts, &params)
+                .unwrap()
+                .matches
+                .is_empty()
+        );
+        params.include_pattern = "**/*".to_owned();
+        params.max_file_bytes = 1;
+        assert!(
+            fixture
+                .resources
+                .search(&fixture.mounts, &params)
+                .unwrap()
+                .matches
+                .is_empty()
+        );
+        params.max_file_bytes = super::MAX_SEARCH_BYTES_PER_FILE;
+        for (name, bytes) in [
+            ("binary", b"\0harness-ui".as_slice()),
+            ("invalid", b"\xffharness-ui".as_slice()),
+        ] {
+            fs::write(fixture.native.join(name), bytes).unwrap();
+            params.root = path(&format!("/{name}"));
+            assert!(
+                fixture
+                    .resources
+                    .search(&fixture.mounts, &params)
+                    .unwrap()
+                    .matches
+                    .is_empty()
+            );
+        }
+        params.root = path("/missing");
+        assert_eq!(
+            fixture.resources.search(&fixture.mounts, &params),
+            Err(ResourceError::NotFound)
+        );
+
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink("ignored/.Makefile", fixture.native.join("alias")).unwrap();
+            params.root = path("/alias");
+            let linked = fixture.resources.search(&fixture.mounts, &params).unwrap();
+            assert_eq!(linked.matches[0].path, path("/alias"));
+            std::os::unix::fs::symlink(
+                fixture.native.parent().unwrap(),
+                fixture.native.join("outside"),
+            )
+            .unwrap();
+            params.root = path("/outside");
+            assert_eq!(
+                fixture.resources.search(&fixture.mounts, &params),
+                Err(ResourceError::Denied)
+            );
+            let pipe =
+                std::ffi::CString::new(fixture.native.join("pipe").as_os_str().as_encoded_bytes())
+                    .unwrap();
+            // SAFETY: pipe is a live NUL-terminated path owned by this test fixture.
+            assert_eq!(unsafe { libc::mkfifo(pipe.as_ptr(), 0o600) }, 0);
+            std::os::unix::fs::symlink("pipe", fixture.native.join("pipe-alias")).unwrap();
+            for root in ["/pipe", "/pipe-alias"] {
+                params.root = path(root);
+                assert_eq!(
+                    fixture.resources.search(&fixture.mounts, &params),
+                    Err(ResourceError::InvalidInput {
+                        field: "root",
+                        reason: "not_searchable"
+                    })
+                );
+            }
         }
     }
 

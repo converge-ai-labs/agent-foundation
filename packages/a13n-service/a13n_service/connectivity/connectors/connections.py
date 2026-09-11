@@ -248,6 +248,18 @@ class ConnectorConnectionService:
                         "Reauthorizing this account is unsupported. Create a new Connection.",
                         category=ErrorCategory.conflict,
                     )
+                existing_attempt = await session.scalar(
+                    select(ConnectorSetupAttemptRecord.id).where(
+                        ConnectorSetupAttemptRecord.connector_connection_id == connection.id,
+                        ConnectorSetupAttemptRecord.generation == connection.setup_generation,
+                    )
+                )
+                if existing_attempt is not None:
+                    raise ConnectorError(
+                        "setup_already_started",
+                        "Authorization has already started. Replay the original request or explicitly restart authorization.",
+                        category=ErrorCategory.conflict,
+                    )
                 adapter = require_implementation(self._adapters, connector.type)
                 try:
                     validated_setup = adapter.validate_setup(

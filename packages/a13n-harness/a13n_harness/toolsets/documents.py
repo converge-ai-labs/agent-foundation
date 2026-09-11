@@ -22,7 +22,7 @@ from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOu
 from a13n_harness.usage import ProviderUsage
 
 from ._instructions import InstructionFunctionToolset, tool_instruction
-from ._results import ToolError, ToolFailure
+from ._results import ToolFailure, environment_failure, tool_failure
 from ._scoped_files import ScopedFileAccess
 
 _DOCUMENT_INSTRUCTIONS = (
@@ -296,7 +296,7 @@ class DocumentsToolset:
         except DocumentConversionError as exc:
             return _document_error(exc.code)
         except EnvironmentError as exc:
-            return _document_error(exc.code)
+            return environment_failure(exc)
         except (TypeError, ValueError):
             return _document_error("document_response_invalid")
         except Exception:
@@ -435,10 +435,25 @@ def _document_error(
     max_bytes: int | None = None,
     retry_hint: str = "dependency_change",
 ) -> ToolFailure:
-    error: ToolError = {"code": code, "retry_hint": retry_hint}
+    message = {
+        "document_source_invalid": "Document source is invalid; select a supported regular document file.",
+        "document_source_too_large": "Document source exceeds the configured byte limit.",
+        "document_format_invalid": "The document format is invalid.",
+        "document_format_unsupported": "The converter does not support this document format.",
+        "document_asset_too_large": "A converted document asset exceeds the byte limit.",
+        "document_assets_too_large": "Converted document assets exceed the total byte limit.",
+        "document_assets_too_many": "The converter returned too many document assets.",
+        "document_markdown_too_large": "Converted Markdown exceeds the output limit; select fewer pages.",
+        "document_page_metadata_missing": "The converter omitted required page metadata.",
+        "document_page_metadata_invalid": "The converter returned invalid page metadata.",
+        "document_page_metadata_unexpected": "The converter returned page metadata for a non-paged format.",
+        "document_response_invalid": "The document converter returned an invalid result.",
+        "document_timeout": "Document conversion timed out; check the converter and requested page range.",
+    }.get(code, "Document conversion failed; check the source format and configured converter.")
+    result = tool_failure(code, message, retry_hint=retry_hint)
     if max_bytes is not None:
-        error["max_bytes"] = max_bytes
-    return {"ok": False, "error": error}
+        result["error"]["max_bytes"] = max_bytes
+    return result
 
 
 __all__ = [

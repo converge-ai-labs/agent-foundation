@@ -67,7 +67,17 @@ async def fixture(
     return run, attempt, account, selection, runtime, binding, environment
 
 
-async def run_search(selection, binding, environment, *, requests=1, after_first=None, operations=None, access="full"):
+async def run_search(
+    selection,
+    binding,
+    environment,
+    *,
+    requests=1,
+    after_first=None,
+    operations=None,
+    access="full",
+    instrumentation=None,
+):
     calls = 0
     if operations is not None:
         requests = len(operations)
@@ -93,7 +103,7 @@ async def run_search(selection, binding, environment, *, requests=1, after_first
         else:
             yield "done"
 
-    executable = HarnessBuilder().build(
+    executable = HarnessBuilder(instrumentation=instrumentation).build(
         AgentDefinition(
             agent=AgentSpec(name="Search"),
             output_type=str,
@@ -285,3 +295,58 @@ async def test_web_tools_fetch_and_download_through_environment(
         assert len(files) == 1 and files[0].read_bytes() == b"page evidence"
     else:
         assert len(outgoing) == 1 and files == []
+
+
+@pytest.mark.parametrize("mode", ["enabled", "disabled", "broken_attributes"])
+async def test_search_trace_enrichment_is_scoped_and_failsoft(
+    interaction_sessions, interaction_object_store, tmp_path, monkeypatch, mode
+):
+    from a13n_harness import HarnessInstrumentation, HarnessTraceContent
+    from opentelemetry.sdk.trace import Span, TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx2.Response(200, json={"results": [{"title": "Source", "url": "https://example.com"}]})
+
+    _, _, account, selection, _, binding, environment = await fixture(
+        interaction_sessions, interaction_object_store, handler, tmp_path
+    )
+    provider = TracerProvider()
+    exporter = InMemorySpanExporter()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    instrumentation = (
+        None
+        if mode == "disabled"
+        else HarnessInstrumentation(tracer_provider=provider, trace_content=HarnessTraceContent.NONE)
+    )
+    original = Span.set_attributes
+    attempts = []
+
+    def set_attributes(span, attributes):
+        if "a13n.search.provider.id" in attributes:
+            attempts.append(True)
+            if mode == "broken_attributes":
+                raise RuntimeError("telemetry unavailable")
+        original(span, attributes)
+
+    monkeypatch.setattr(Span, "set_attributes", set_attributes)
+    with provider.get_tracer("host").start_as_current_span("host"):
+        result = await run_search(selection, binding, environment, instrumentation=instrumentation)
+    assert result.output_or_raise() == "done" and len(calls) == 1
+    spans = exporter.get_finished_spans()
+    enriched = [span for span in spans if "a13n.search.provider.id" in span.attributes]
+    assert bool(attempts) == (mode != "disabled")
+    if mode == "enabled":
+        assert len(enriched) == 1
+        assert enriched[0].attributes["gen_ai.tool.name"] == "search"
+        assert enriched[0].attributes["a13n.search.provider.id"] == account.id
+        assert enriched[0].attributes["a13n.search.provider.type"] == "exa"
+    else:
+        assert not enriched
+    if mode == "disabled":
+        assert len(spans) == 1 and spans[0].name == "host"
+    assert "first-key" not in repr([dict(span.attributes) for span in spans])

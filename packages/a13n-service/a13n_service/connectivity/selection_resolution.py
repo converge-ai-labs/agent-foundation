@@ -152,7 +152,8 @@ class ConnectivitySelectionResolver:
                 )
                 .order_by(ConnectorConnectionRecord.id)
             )
-            rows = (await session.execute(query.with_for_update() if lock else query)).all()
+            # Freeze selected configuration against edits, not other admissions.
+            rows = (await session.execute(query.with_for_update(read=True) if lock else query)).all()
             by_id = {connection.id: (connection, provider) for connection, provider in rows}
             for index, selection in enumerate(connector_tools):
                 path = f"connector_tools.{index}"

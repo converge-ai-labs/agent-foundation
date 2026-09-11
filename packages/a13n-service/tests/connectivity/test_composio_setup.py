@@ -57,7 +57,7 @@ async def composio_setup(composio_sessions, credential_protector):
             state["user_id"] = json.loads(request.content)["user_id"]
             async with short_session(sessions) as session:
                 attempt = await session.scalar(
-                    select(ConnectorSetupAttemptRecord).order_by(ConnectorSetupAttemptRecord.created_at.desc())
+                    select(ConnectorSetupAttemptRecord).order_by(ConnectorSetupAttemptRecord.generation.desc())
                 )
                 assert attempt.status == "starting" and attempt.claim_owner and attempt.claim_generation == 1
                 assert attempt.browser_binding_digest and NONCE not in attempt.browser_binding_digest
@@ -337,3 +337,38 @@ async def test_late_redemption_owner_cannot_publish_after_lease_expires(composio
     assert await reconciler.reconcile_once()
     assert (await service.get(actor=actor(), connection_id=connection.id)).status == "ready"
     assert state["redeem_calls"] == 1
+
+
+@pytest.mark.parametrize(
+    "composio_sessions", ["connectivity_sessions", "postgres_connectivity_sessions"], indirect=True
+)
+async def test_new_idempotency_key_cannot_start_same_setup_generation(composio_setup):
+    service, connection, _, sessions, _, state, _ = composio_setup
+    first = await launch(service, connection)
+    for nonce in (NONCE, "c" * 64):
+        with pytest.raises(ConnectorError) as raised:
+            await service.start_setup(
+                actor=actor(),
+                connection_id=connection.id,
+                expected_version=connection.version,
+                idempotency_key=f"different-{nonce[0]}",
+                setup={"auth_config_id": "ac_test", "toolkit_version": "20260903_01"},
+                return_path="/connections",
+                browser_nonce=nonce,
+            )
+        assert raised.value.code == "setup_already_started"
+    assert state["link_calls"] == 1
+    assert (await launch(service, connection)).attempt_id == first.attempt_id
+    async with short_session(sessions) as session:
+        attempts = list(await session.scalars(select(ConnectorSetupAttemptRecord)))
+        assert len(attempts) == 1
+    restarted = await service.reconnect(
+        actor=actor(),
+        connection_id=connection.id,
+        expected_version=connection.version,
+        idempotency_key="explicit-restart",
+        setup={"auth_config_id": "ac_test", "toolkit_version": "20260903_01"},
+        return_path="/connections",
+        browser_nonce=NONCE,
+    )
+    assert restarted.attempt_id != first.attempt_id and state["link_calls"] == 2

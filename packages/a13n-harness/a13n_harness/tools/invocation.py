@@ -32,6 +32,7 @@ from a13n_harness._json import (
     redact_json,
     require_finite_json,
 )
+from a13n_harness._tool_observation import record_tool_operation_failure
 from a13n_harness.capabilities.shell_review import (
     SHELL_EXEC_TOOL_ID,
     SHELL_REVIEW_CAPABILITY_ID,
@@ -319,17 +320,11 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         try:
             prepared = await _prepare_invocation(ctx, tool_def.name, tool_def.toolset_id, tool_args, managed)
         except EnvironmentError as exc:
+            record_tool_operation_failure(exc.code, reason=exc.details.get("reason"), stage="preparation")
             await _emit(ctx, managed, "preparation_failed")
             # Known Environment failures are actionable even before dispatch.
             # Project only public details, never raw provider exception text.
-            error: dict[str, JsonValue] = {
-                "code": exc.code,
-                "details": {
-                    key: value for key in ("field", "reason", "hint") if isinstance(value := exc.details.get(key), str)
-                },
-            }
-            if exc.retry_hint is not None:
-                error["retry_hint"] = exc.retry_hint
+            error = exc.safe_projection()
             return await _apply_result_policy(
                 {"ok": False, "error": error},
                 managed.output_policy,

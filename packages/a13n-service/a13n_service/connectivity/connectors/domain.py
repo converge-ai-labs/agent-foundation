@@ -156,7 +156,7 @@ class ConnectorConnectionCommandRequest(StrictModel):
 class StartConnectorConnectionSetupRequest(ConnectorConnectionCommandRequest):
     browser_nonce: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$", repr=False)
     setup: JsonObject
-    return_path: str = Field(pattern=r"^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,2047}$")
+    return_path: str = Field(pattern=r"^/([A-Za-z0-9._~!$&'()*+,;=:@%-][A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,2046})?$")
 
 
 class ReconnectConnectorConnectionRequest(StartConnectorConnectionSetupRequest):

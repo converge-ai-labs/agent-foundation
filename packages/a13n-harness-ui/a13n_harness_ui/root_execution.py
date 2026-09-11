@@ -265,6 +265,10 @@ class RootRunExecutor:
                                 thread_id=thread.thread_id,
                                 run_id=stream.run_id,
                                 events=observer.observe(item),
+                                observer=observer,
+                                base_continuation_id=(
+                                    thread.continuation.logical_digest if thread.continuation is not None else None
+                                ),
                             )
                         except Exception:
                             pass
@@ -363,6 +367,17 @@ class RootRunExecutor:
             ):
                 finalization_span.set_attribute("a13n.phase.status", "failed")
                 finalization_span.set_status(StatusCode.ERROR)
+        if stream is not None and self._live_hub is not None:
+            with CancelScope(shield=True):
+                await self._live_hub.finish_root(
+                    thread_id=thread.thread_id,
+                    run_id=stream.run_id,
+                    saved_continuation_id=(
+                        continuation.reference.logical_digest
+                        if continuation.status == "selected" and continuation.reference is not None
+                        else None
+                    ),
+                )
         if run_error is not None:
             if finalization_error is not None:
                 run_error.add_note(f"Environment finalization also failed: {finalization_error!r}")
@@ -472,6 +487,8 @@ class RootRunExecutor:
         thread_id: str,
         run_id: str,
         events: tuple[Any, ...],
+        observer: HarnessAguiObserver,
+        base_continuation_id: str | None,
     ) -> None:
         if self._live_hub is None:
             return
@@ -482,6 +499,8 @@ class RootRunExecutor:
             thread_id=thread_id,
             run_id=run_id,
             events=events,
+            observer=observer,
+            base_continuation_id=base_continuation_id,
         )
 
 

@@ -1,4 +1,5 @@
 import { Button } from "a13n-ui";
+import { ApiError } from "@converge.ai/a13n";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -8,7 +9,7 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { AuthorizationLink } from "../../shared/authorization-link";
-import { ErrorNotice, StateBadge } from "../../shared/feedback";
+import { ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
 import { FormActions } from "../../shared/form";
 import { SchemaFields, withSchemaConstants } from "../../shared/schema-fields";
 import { useIdempotency } from "../../shared/idempotency";
@@ -31,6 +32,18 @@ export function ConnectionSetup({
     [basis] = useState(connection),
     [nonce] = useState(createBrowserNonce),
     [setup, setSetup] = useState<Record<string, unknown>>({});
+  const provider = useQuery({
+    queryKey: ["connector-provider", connection.connector_provider_id],
+    enabled: basis.status === "ready",
+    queryFn: () =>
+      client.http
+        .GET("/api/v1/connector-providers/{connector_provider_id}", {
+          params: {
+            path: { connector_provider_id: connection.connector_provider_id },
+          },
+        })
+        .then(data),
+  });
   const catalog = useQuery({
     queryKey: ["connector-setup-catalog", connection.connector_provider_id],
     enabled: !connector,
@@ -132,6 +145,13 @@ export function ConnectionSetup({
         ? 3000
         : false,
   });
+  const replacementRequired =
+    (basis.status === "ready" && provider.data?.type === "composio") ||
+    (launch.error instanceof ApiError &&
+      launch.error.code === "reconnect_unsupported");
+  const setupAlreadyStarted =
+    launch.error instanceof ApiError &&
+    launch.error.code === "setup_already_started";
   return (
     <div className={styles.stack}>
       <h3>{connection.name}</h3>
@@ -140,8 +160,40 @@ export function ConnectionSetup({
           "Authorize the external account in the provider-hosted flow. Credentials stay with the provider.",
         )}
       </p>
-      <ErrorNotice error={catalog.error ?? launch.error ?? status.error} />
-      {launch.data ? (
+      <ErrorNotice
+        error={
+          provider.error ??
+          catalog.error ??
+          (replacementRequired || setupAlreadyStarted ? null : launch.error) ??
+          status.error
+        }
+      />
+      {replacementRequired ? (
+        <p role="status">
+          {t(
+            "This provider cannot reauthorize an existing account. Create a new connection, authorize it, then select it in your agent settings.",
+          )}{" "}
+          <a href={`${basePath}/connectors`}>{t("Back to connections")}</a>
+        </p>
+      ) : setupAlreadyStarted ? (
+        <>
+          <p role="status">
+            {t(
+              "Authorization has already started. Restarting invalidates the previous authorization link.",
+            )}
+          </p>
+          <Button
+            loading={launch.isPending}
+            onClick={() =>
+              launch.mutate({ restart: basis, nonce: createBrowserNonce() })
+            }
+          >
+            {t("Restart authorization")}
+          </Button>
+        </>
+      ) : basis.status === "ready" && provider.isPending ? (
+        <Loading />
+      ) : provider.error ? null : launch.data ? (
         <>
           <StateBadge
             state={status.data?.status ?? launch.data.connection.status}

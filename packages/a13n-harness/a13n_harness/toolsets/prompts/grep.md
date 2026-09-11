@@ -1,6 +1,7 @@
 <best-practices>
 - `pattern` is a regular expression by default. For exact code fragments, punctuation, or uncertain escaping, set `regex=false`; set `case_sensitive=false` to ignore case.
 - Examples: `pattern="class Choice|class .*Picker|choices\\(|resume"` searches alternatives; `pattern="choices(", regex=false` searches literal code.
+- `root` accepts a file or directory. An explicit file searches only itself, including hidden or Git-ignored files; `include` matches its basename. A directory is searched recursively with the selected hidden/ignore filters.
 - Narrow `root` and `include` before raising limits. `include` uses the same glob syntax as `glob`: `*.py` at all depths, `/*.py` only at the root, or `{src,tests}/**/*.{py,rs}` for alternatives. Do not use regex alternation in `include`.
 - Matching is line-based. Portable regex uses literals, classes, grouping, alternation, anchors and quantifiers. Direct Local and E2B use Python `re`; envd uses Rust `regex` and rejects lookaround and backreferences. Engine-specific syntax and Unicode edge cases are not portable.
 - Zero matches are success. Invalid patterns return `error.details.field`, `reason`, and a correction `hint`; fix that field rather than retrying unchanged. Prefer literal mode when regex syntax is unnecessary.

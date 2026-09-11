@@ -126,7 +126,7 @@ These tests inject the selected executable through App settings rather than down
 
 ## Dependencies
 
-The source manifest keeps project version `0.0.0` and unversioned workspace dependencies. `[tool.a13n.release-dependencies]` owns the bounded requirements injected into publishable artifacts: `>=0.0.5,<0.1.0` for each of Environment, Harness, and Stream Protocol, and `>=0.1.0,<0.2.0` for Logging. Keep all three Harness-group bounds identical; their own published dependencies retain exact group-version equality. Raise a lower bound only when consuming newer APIs or behavior, and explicitly review a move across a breaking compatibility line. See the [repository release policy](../../spec/repository-model.md#dependency-compatibility-lines).
+The source manifest keeps project version `0.0.0` and unversioned workspace dependencies. `[tool.a13n.release-dependencies]` owns the bounded requirements injected into publishable artifacts: `>=0.0.11,<0.1.0` for each of Environment, Harness, and Stream Protocol, and `>=0.1.0,<0.2.0` for Logging. Keep all three Harness-group bounds identical; their own published dependencies retain exact group-version equality. Raise a lower bound only when consuming newer APIs or behavior, and explicitly review a move across a breaking compatibility line. See the [repository release policy](../../spec/repository-model.md#dependency-compatibility-lines).
 
 ## Packaging
 

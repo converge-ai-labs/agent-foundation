@@ -264,26 +264,38 @@ class LocalFileOperator:
 
     async def resolve_native_directory(self, path: str) -> Path:
         """Resolve a provider-local cwd without exposing native-path fallback publicly."""
-        return await asyncio.to_thread(self._resolve_directory, path, "Command cwd")
+        return await asyncio.to_thread(self._resolve_directory, path, "Command cwd", field="cwd")
 
-    def _resolve_directory(self, path: str, subject: str) -> Path:
+    def _resolve_directory(self, path: str, subject: str, *, field: str = "path") -> Path:
         native = self._resolve(path)
         try:
-            is_directory = native.is_dir()
+            is_directory = stat_module.S_ISDIR(native.stat().st_mode)
         except OSError as exc:
             raise _environment_error_from_os(exc, action="inspect a directory") from exc
         if not is_directory:
-            raise EnvironmentError(f"{subject} is not a directory.", code="environment_request_invalid")
+            raise EnvironmentError(
+                f"{subject} is not a directory.",
+                code="environment_request_invalid",
+                details={"field": field, "reason": "not_directory", "hint": "Select a directory for this operation."},
+            )
         return native
 
     def _resolve_file(self, path: str, subject: str) -> Path:
         native = self._resolve(path)
         try:
-            is_file = native.is_file()
+            is_file = stat_module.S_ISREG(native.stat().st_mode)
         except OSError as exc:
             raise _environment_error_from_os(exc, action="inspect a file") from exc
         if not is_file:
-            raise EnvironmentError(f"{subject} is not a regular file.", code="environment_request_invalid")
+            raise EnvironmentError(
+                f"{subject} is not a regular file.",
+                code="environment_request_invalid",
+                details={
+                    "field": "path",
+                    "reason": "not_file",
+                    "hint": "Select a regular file, not a directory or special file.",
+                },
+            )
         return native
 
     def _require_writable(self, path: Path) -> None:
@@ -593,7 +605,7 @@ class LocalFileOperator:
         return await asyncio.to_thread(self._query_page, request)
 
     def _query_page(self, request: FileQueryRequest) -> FileEntriesResult:
-        root = self._resolve_directory(request.root, "Query root")
+        root = self._resolve_directory(request.root, "Query root", field="root")
         selected, has_more = _collect_query_slice(
             root,
             self._root,
@@ -612,7 +624,22 @@ class LocalFileOperator:
         return await asyncio.to_thread(self._search_page, request)
 
     def _search_page(self, request: FileTextSearchRequest) -> FileTextSearchResult:
-        root = self._resolve_directory(request.root, "Search root")
+        root = self._resolve(request.root)
+        try:
+            mode = root.stat().st_mode
+        except OSError as exc:
+            raise _environment_error_from_os(exc, action="inspect the search root") from exc
+        single_file = stat_module.S_ISREG(mode)
+        if not single_file and not stat_module.S_ISDIR(mode):
+            raise EnvironmentError(
+                "Search root is not a regular file or directory.",
+                code="environment_request_invalid",
+                details={
+                    "field": "root",
+                    "reason": "not_searchable",
+                    "hint": "Select a regular file or directory; special files cannot be searched.",
+                },
+            )
         try:
             include = PathPattern(request.include, "include")
             regex = content_pattern(request.pattern, request.regex, request.case_sensitive)
@@ -623,15 +650,19 @@ class LocalFileOperator:
         matches: list[FileTextMatch] = []
         seen = 0
         files_scanned = 0
-        paths = _iter_native_paths(
-            root,
-            recursive=True,
-            include_hidden=request.include_hidden,
-            ignore_mode=request.ignore_mode,
-            ignore_root=self._root,
+        paths = (
+            iter((root,))
+            if single_file
+            else _iter_native_paths(
+                root,
+                recursive=True,
+                include_hidden=request.include_hidden,
+                ignore_mode=request.ignore_mode,
+                ignore_root=self._root,
+            )
         )
         for native in paths:
-            relative = native.relative_to(root).as_posix()
+            relative = PurePosixPath(request.root).name if single_file else native.relative_to(root).as_posix()
             if not include.matches(relative):
                 continue
             metadata = _regular_search_file_metadata(native)
@@ -660,7 +691,9 @@ class LocalFileOperator:
                 )
             except OverflowError as exc:
                 raise EnvironmentError(str(exc), code="environment_too_large") from exc
-            except OSError:
+            except OSError as exc:
+                if single_file:
+                    raise _environment_error_from_os(exc, action="search a file") from exc
                 continue
             if scanned is None:
                 continue
@@ -668,7 +701,7 @@ class LocalFileOperator:
             seen += file_match_count
             matches.extend(
                 FileTextMatch(
-                    path=self._logical(native),
+                    path=request.root if single_file else self._logical(native),
                     line=line_number,
                     text=text,
                     text_truncated=truncated,

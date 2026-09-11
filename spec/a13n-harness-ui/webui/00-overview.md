@@ -64,5 +64,5 @@ There is no Environment-specific file browser, debug terminal, or command consol
 3. The configuration center and direct file editing converge on the same desired-resource authority.
 4. Changing views has no execution or shared-navigation side effect.
 5. Effective configuration and location are visible without assuming local/remote filesystem equivalence.
-6. Key validation, draft persistence, operation admission, and Run completion are distinct facts.
+6. Key validation, draft synchronization, operation admission, and Run completion are distinct facts.
 7. Neither native computer sharing nor trusted collaboration introduces multi-tenancy or distributed recovery.

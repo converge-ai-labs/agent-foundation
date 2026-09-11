@@ -114,11 +114,23 @@ class _Mem0Binding:
     def scope_binding(self, scope: Mem0Scope | None = None) -> _ScopeBinding:
         selected = self.fixed_scope if self.fixed_scope is not None else scope
         if selected is None:
-            raise RunError("A memory scope is required.", code="mem0_scope_unavailable")
+            raise RunError(
+                "A memory scope is required.",
+                code="mem0_scope_unavailable",
+                details={"field": "scope", "reason": "scope_required", "hint": "Select an available memory scope."},
+            )
         for binding in self.scopes:
             if binding.scope is selected:
                 return binding
-        raise RunError("The selected memory scope is unavailable.", code="mem0_scope_unavailable")
+        raise RunError(
+            "The selected memory scope is unavailable.",
+            code="mem0_scope_unavailable",
+            details={
+                "field": "scope",
+                "reason": "scope_unavailable",
+                "hint": "Select a scope configured for this Run.",
+            },
+        )
 
     def recall_filter(self) -> dict[str, JsonValue]:
         if self.fixed_scope is not None:

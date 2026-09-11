@@ -1,0 +1,43 @@
+name: PR Labels
+
+on:
+  pull_request_target:
+    types: [opened, ready_for_review]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  pull-requests: write
+
+jobs:
+  labels:
+    name: Label PR
+    runs-on: ubuntu-latest
+    steps:
+      # Metadata only: never check out or execute pull-request code here.
+      - name: Add changelog labels
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const existing = new Set(pr.labels.map(label => label.name));
+            const types = {
+              feat: 'enhancement', perf: 'enhancement', fix: 'bug', revert: 'bug',
+              docs: 'documentation', chore: 'chore', refactor: 'chore',
+              test: 'chore', ci: 'chore', build: 'chore', style: 'chore',
+            };
+            const match = /^([a-z]+)(?:\([^\r\n)]+\))?(!)?:\s+\S/.exec(pr.title);
+            const labels = [];
+            if (!['enhancement', 'bug', 'documentation', 'chore'].some(label => existing.has(label))) {
+              const type = match && Object.hasOwn(types, match[1]) ? types[match[1]] : null;
+              if (type) labels.push(type);
+              else core.notice('No type inferred; optionally add enhancement, bug, documentation, or chore.');
+            }
+            const breaking = match?.[2] || /(?:^|\n)BREAKING[ -]CHANGE:/.test(pr.body || '');
+            if (breaking && !existing.has('breaking-change')) labels.push('breaking-change');
+            if (labels.length) {
+              await github.rest.issues.addLabels({
+                ...context.repo, issue_number: pr.number, labels,
+              });
+            }

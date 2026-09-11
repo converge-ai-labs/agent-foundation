@@ -401,9 +401,18 @@ class ComposioConnection:
             if error.outcome_unknown:
                 return ConnectorToolOutcome(kind="outcome_unknown", request_id=request_id)
             raise
-        response = required_object(value)
-        if response.get("successful") is not True:
-            raise ConnectorProviderError("tool_rejected")
+        if not isinstance(value, dict) or type(value.get("successful")) is not bool:
+            return ConnectorToolOutcome(kind="outcome_unknown", request_id=request_id)
+        response = value
+        if response["successful"] is False:
+            data = response.get("data")
+            status = data.get("status_code") if isinstance(data, dict) else None
+            # Execution can return HTTP 200 with an authoritative upstream refusal.
+            # Never expose the accompanying free-form error or request details.
+            http_status = status if type(status) is int and status in {401, 403, 404, 429} else None
+            raise ConnectorProviderError(
+                "rate_limited" if http_status == 429 else "tool_rejected", http_status=http_status
+            )
         # Upstream emits null for no error, but declares error as an optional string.
         if response.get("error") is None:
             response.pop("error", None)

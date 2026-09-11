@@ -291,11 +291,11 @@ class TerminalProjectionService:
         thread = await self._store.threads.get(thread_id)
         if thread is None:
             raise ThreadError("Thread does not exist.", code="thread_missing")
-        if thread.continuation is None:
-            return TaskPage(continuation_id=None)
-        continuation_id = thread.continuation.logical_digest
+        continuation_id = thread.continuation.logical_digest if thread.continuation is not None else None
         if expected_continuation_id is not None and continuation_id != expected_continuation_id:
             raise ThreadError("The selected continuation changed.", code="thread_continuation_conflict")
+        if thread.continuation is None:
+            return TaskPage(continuation_id=None)
         continuation = await self._store.objects.read_model(thread.continuation, StoredContinuation)
         entry = continuation.harness_state.agent_context_state.entries.get(WORKING_STATE_CAPABILITY_ID)
         if entry is None:
@@ -337,11 +337,11 @@ class TerminalProjectionService:
         thread = await self._store.threads.get(thread_id)
         if thread is None:
             raise ThreadError("Thread does not exist.", code="thread_missing")
-        if thread.continuation is None:
-            return None
-        continuation_id = thread.continuation.logical_digest
+        continuation_id = thread.continuation.logical_digest if thread.continuation is not None else None
         if expected_continuation_id is not None and continuation_id != expected_continuation_id:
             raise ThreadError("The selected continuation changed.", code="thread_continuation_conflict")
+        if thread.continuation is None or continuation_id is None:
+            return None
         continuation = await self._store.objects.read_model(thread.continuation, StoredContinuation)
         requests = continuation.deferred_requests
         if requests is None or (not requests.calls and not requests.approvals):
@@ -547,15 +547,18 @@ class TerminalProjectionService:
     ) -> tuple[str, ...]:
         if not references:
             return ()
-        if any(item.catalog_id != catalog.catalog_id for item in references):
-            raise ThreadError("A selected Skill catalog is stale.", code="skill_reference_stale")
-        available = {(item.item_id, item.name) for item in catalog.items}
-        selected = tuple((item.item_id, item.name) for item in references)
-        if len(selected) != len(set(selected)):
+        names = tuple(item.name for item in references)
+        if len(names) != len(set(names)):
             raise ThreadError("Skill references must be unique.", code="skill_reference_invalid")
-        if any(item not in available for item in selected):
-            raise ThreadError("A selected Skill is unavailable.", code="skill_reference_unavailable")
-        return tuple(item.name for item in references)
+        for reference in references:
+            matches = tuple(item for item in catalog.items if item.name == reference.name)
+            if len(matches) != 1:
+                raise ThreadError("A selected Skill is unavailable.", code="skill_reference_unavailable")
+            # Completion references are previews, not version locks. Resolve an old
+            # catalog's name against the fresh (or active Run's pinned) catalog.
+            if reference.catalog_id == catalog.catalog_id and reference.item_id != matches[0].item_id:
+                raise ThreadError("A selected Skill is unavailable.", code="skill_reference_unavailable")
+        return names
 
     def pin_active_skill_catalog(
         self,

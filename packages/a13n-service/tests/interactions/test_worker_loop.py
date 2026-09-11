@@ -187,7 +187,8 @@ async def test_restarted_worker_gets_new_identity_and_cannot_inherit_authority(
 
 
 @pytest.mark.parametrize("boundary", ["organizations", "scan", "claim"])
-async def test_database_disconnect_retries_admission_without_losing_capacity(monkeypatch, caplog, boundary):
+@pytest.mark.parametrize("sqlstate", [None, "40001", "40P01", "55P03", "57014"])
+async def test_database_disconnect_retries_admission_without_losing_capacity(monkeypatch, caplog, boundary, sqlstate):
     import psycopg
     from anyio import current_time
     from sqlalchemy.exc import OperationalError
@@ -213,7 +214,12 @@ async def test_database_disconnect_retries_admission_without_losing_capacity(mon
     async def disconnected_then_recovered(*args, **kwargs):
         calls.append(current_time())
         if len(calls) == 1:
-            raise OperationalError(None, None, psycopg.OperationalError("connection refused"))
+            cause = (
+                psycopg.errors.lookup(sqlstate)("test contention")
+                if sqlstate
+                else psycopg.OperationalError("connection refused")
+            )
+            raise OperationalError(None, None, cause)
         loop.begin_drain()
         return None if boundary == "claim" else ()
 
@@ -223,7 +229,7 @@ async def test_database_disconnect_retries_admission_without_losing_capacity(mon
     assert len(calls) == 2 and calls[1] - calls[0] >= 0.02
     assert loop._capacity.value == 1
     assert loop._admission_scope is None
-    assert "worker_database_unavailable" in caplog.text
+    assert ("worker_database_contention" if sqlstate else "worker_database_unavailable") in caplog.text
 
 
 async def test_worker_does_not_retry_programming_failure(monkeypatch):

@@ -19,4 +19,4 @@ Closes #
 - [ ] Shared rules have clear owners, and added complexity serves a concrete current need under the [code quality principles](https://github.com/converge-ai-labs/agent-foundation/blob/main/DEVELOPMENT.md#code-quality-and-design).
 - [ ] Breaking or compatibility-impacting changes are identified and documented.
 - [ ] AI-generated changes were reviewed and understood by the human author.
-- [ ] The PR title is suitable for generated release notes.
+- [ ] The PR title and labels describe the change accurately for generated release notes.

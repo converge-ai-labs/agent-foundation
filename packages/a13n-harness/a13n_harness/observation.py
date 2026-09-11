@@ -23,6 +23,17 @@ from opentelemetry.trace import INVALID_SPAN, NoOpTracerProvider, Span, Status, 
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, Instrumentation
 from pydantic_ai.models.instrumented import InstrumentationSettings
 
+from a13n_harness._tool_observation import (
+    _current_tool,
+    _ToolObservation,
+    _ToolObservationCapability,
+)
+from a13n_harness._tool_observation import (
+    record_tool_outcome_unknown as record_tool_outcome_unknown,
+)
+from a13n_harness._tool_observation import (
+    set_tool_span_attributes as set_tool_span_attributes,
+)
 from a13n_harness._trace import _EnrichedTracer
 from a13n_harness._trace_details import SkillObservation, record_content, record_span_metadata
 from a13n_harness.errors import DefinitionError
@@ -473,6 +484,7 @@ def _set_current_model_span_attributes(attributes: Mapping[str, str | float]) ->
 class _ObservationActivation:
     otel_token: Token[Context] | None
     run_token: Token[_LogicalRunObservation | None]
+    tool_token: Token[_ToolObservation | None]
 
 
 class _ObservationRuntime:
@@ -538,6 +550,7 @@ class _ObservationRuntime:
                 self.pydantic_instrumentation,
                 _ModelRequestObservationCapability(),
                 _ModelAttemptObservationCapability(),
+                _ToolObservationCapability(),
             )
 
     def start_run(
@@ -623,15 +636,21 @@ class _LogicalRunObservation:
         return _ObservationActivation(
             otel_token=(otel_context.attach(self._span_context) if self._span_context is not None else None),
             run_token=_current_run_observation.set(self),
+            tool_token=_current_tool.set(None),
         )
 
     @staticmethod
     def suppress() -> _ObservationActivation:
         """Mask an enclosing Run without changing independent Host OTel context."""
-        return _ObservationActivation(otel_token=None, run_token=_current_run_observation.set(None))
+        return _ObservationActivation(
+            otel_token=None,
+            run_token=_current_run_observation.set(None),
+            tool_token=_current_tool.set(None),
+        )
 
     @staticmethod
     def deactivate(activation: _ObservationActivation) -> None:
+        _current_tool.reset(activation.tool_token)
         _current_run_observation.reset(activation.run_token)
         if activation.otel_token is not None:
             otel_context.detach(activation.otel_token)
@@ -754,6 +773,20 @@ class _LogicalRunObservation:
                     )
                 except Exception:
                     pass
+
+
+def _auxiliary_agent_capabilities() -> tuple[AbstractCapability[Any], ...]:
+    """Inherit active Run telemetry without creating another logical Run or attempt.
+
+    Attach at invocation time: auxiliary Agents can be reused across Runs with
+    different providers and content policies. Native instrumentation owns their
+    Agent/model spans under the current tool or operation span.
+    """
+    observation = _current_run_observation.get()
+    instrumentation = observation._runtime.pydantic_instrumentation if observation is not None else None
+    if instrumentation is None:
+        return ()
+    return (instrumentation, _ModelRequestObservationCapability())
 
 
 @contextmanager

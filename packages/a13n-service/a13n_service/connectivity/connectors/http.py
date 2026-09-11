@@ -118,6 +118,15 @@ async def _read_response(response: httpx2.Response, *, max_bytes: int) -> JsonVa
     if response.status_code >= 500:
         raise ConnectorProviderError("provider_unavailable", retryable=True, http_status=response.status_code)
     if response.status_code < 200 or response.status_code >= 300:
+        # Only the documented OOMOL code is retained; messages, execution IDs,
+        # missing-scope strings and other upstream data never cross this boundary.
+        if response.status_code == 403 and response.url.host == "connector.oomol.com":
+            try:
+                rejection = json.loads(body)
+            except (UnicodeDecodeError, json.JSONDecodeError, RecursionError):
+                rejection = None
+            if isinstance(rejection, dict) and rejection.get("errorCode") == "scope_missing":
+                raise ConnectorProviderError("scope_missing", http_status=403)
         raise ConnectorProviderError("provider_rejected", http_status=response.status_code)
     if not body:
         return None

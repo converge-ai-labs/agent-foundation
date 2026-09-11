@@ -8,40 +8,37 @@ Harness UI keeps persistence continuation-oriented:
 2. data-root Content Plugin ID directories contain editable local files with optional Git provenance;
 3. SQLite owns accepted-generation indexes, Project/resource lookup projections, sticky Thread configurations, execution heads, and selected references;
 4. immutable content-addressed files own normalized configuration generations, resolved Run compositions, and complete continuation checkpoints;
-5. saved shared browser drafts retain editable input separately from continuation;
-6. live runtime objects, presence, and native terminal sessions remain in process memory.
+5. shared browser drafts, live runtime objects, presence, and native terminal sessions remain in process memory.
 
 The store supports local restart and inspection, not durable work scheduling. Harness UI does not persist a root input queue, Run-attempt ledger, renewable execution claim, worker assignment, effect journal, shell-process record, or delivery ledger.
 
 ## Persisted Values
 
-| Value                                                                                             | Storage                       | Authority                                                         |
-| ------------------------------------------------------------------------------------------------- | ----------------------------- | ----------------------------------------------------------------- |
-| Desired resource definitions and global defaults                                                  | YAML and local Markdown files | Human-editable desired behavior                                   |
-| Installed Content Plugin directories                                                              | Data-root files               | Current optional plugin availability and editable files           |
-| Thread scratch and submitted attachments                                                          | Data-root Thread directories  | Disposable working files and retained input files                 |
-| Accepted configuration generation and resource indexes                                            | SQLite plus immutable object  | Current complete validated file and plugin generation             |
-| Thread metadata head, sticky configuration head, and initial-state reference                      | SQLite                        | Identity, mutable presentation, defaults, and first-Run bootstrap |
-| Empty initial `HarnessState`                                                                      | Immutable object              | Harness-generated Thread identity before any selected Run         |
-| Resolved Run composition                                                                          | Immutable object              | Exact behavior and dependency provenance captured for one Run     |
-| Root or child continuation bundle                                                                 | Immutable object              | Exact selected `HarnessState` resume authority                    |
-| Child execution heads                                                                             | SQLite                        | Segment correlation, saved status, and selected checkpoint        |
-| Compact child display                                                                             | Immutable child checkpoint    | Inspection history only                                           |
-| Environment-state references                                                                      | SQLite plus immutable files   | Current Host-authoritative state                                  |
-| Shared browser drafts and referenced input content                                                | App data-root storage         | Saved editing state only; not execution or continuation authority |
-| Participant presence and native Host terminal sessions                                            | Process memory                | Current shared instance only                                      |
-| Root receipts, active tasks, Models, credentials, clients, adapters, streams, and shell processes | Process memory                | Current App only                                                  |
-| Logs and OpenTelemetry                                                                            | Configured process outputs    | Diagnostics only                                                  |
+| Value                                                                                             | Storage                       | Authority                                                                |
+| ------------------------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------ |
+| Desired resource definitions and global defaults                                                  | YAML and local Markdown files | Human-editable desired behavior                                          |
+| Installed Content Plugin directories                                                              | Data-root files               | Current optional plugin availability and editable files                  |
+| Thread scratch and submitted attachments                                                          | Data-root Thread directories  | Disposable working files and retained input files                        |
+| Accepted configuration generation and resource indexes                                            | SQLite plus immutable object  | Current complete validated file and plugin generation                    |
+| Thread metadata head, sticky configuration head, and initial-state reference                      | SQLite                        | Identity, mutable presentation, defaults, and first-Run bootstrap        |
+| Empty initial `HarnessState`                                                                      | Immutable object              | Harness-generated Thread identity before any selected Run                |
+| Resolved Run composition                                                                          | Immutable object              | Exact behavior and dependency provenance captured for one Run            |
+| Root or child continuation bundle                                                                 | Immutable object              | Exact selected `HarnessState` resume authority                           |
+| Child execution heads                                                                             | SQLite                        | Segment correlation, saved status, and selected checkpoint               |
+| Compact child display                                                                             | Immutable child checkpoint    | Inspection history only                                                  |
+| Environment-state references                                                                      | SQLite plus immutable files   | Current Host-authoritative state                                         |
+| Shared browser drafts                                                                             | Process memory                | Synchronized editing state only; not execution or continuation authority |
+| Participant presence and native Host terminal sessions                                            | Process memory                | Current shared instance only                                             |
+| Root receipts, active tasks, Models, credentials, clients, adapters, streams, and shell processes | Process memory                | Current App only                                                         |
+| Logs and OpenTelemetry                                                                            | Configured process outputs    | Diagnostics only                                                         |
 
 ## Shared Browser Drafts
 
-The App persists the shared editing content of each participating root Thread under the selected data root. This is a separate value from Thread sticky configuration, `HarnessState`, and root-operation receipts. Saving a draft does not admit a Run, advance a continuation, or create an input queue. [Collaborative conversations](webui/01-collaborative-conversations.md) owns editing and submission behavior.
+Shared editing uses an in-memory CRDT document per participating root Thread, separate from sticky configuration, `HarnessState`, and root-operation receipts. Synchronization does not admit a Run, advance a continuation, or create an input queue. [Collaborative conversations](webui/01-collaborative-conversations.md) owns frontend editing and Send behavior.
 
-A server save acknowledgment follows successful persistence. Process restart can restore saved editing content but not transient presence, unsynchronized browser edits, old control authority, or a live Run. Persistence failure is visible and is not reported as a successful save. A saved draft must not be submitted automatically on startup or reconnect; selected continuation and current-process receipt evidence remain the authorities for execution history and control.
+A browser can reconnect to the document during the same App lifetime. Server restart restores selected conversation history, not shared drafts or presence. There is no durable draft store, save acknowledgment, CRDT update log, or draft-based submission registry. Editing state must not be submitted automatically on startup or reconnect.
 
-Draft content and content references needed to restore a saved draft are not disposable scratch. Cleanup must retain referenced input content while the saved draft uses it, without treating it as evidence of a submitted or completed Run. Unreferenced scratch retains the ordinary cleanup policy. Browser draft persistence does not store terminal output, native process handles, or reusable credentials.
-
-One WebUI instance coordinates its participants. Sharing the data root between independent App processes does not provide cross-process live document synchronization or distributed same-submission coordination.
+Attachments reuse the existing Thread-scoped staging and retained-input lifecycle. The App protects a participating Thread's file area during its lifetime; submitting input retains referenced files independently of the document. Sharing a data root between independent App processes does not synchronize their live documents.
 
 ## SQLite Contract
 
@@ -72,7 +69,7 @@ Automatically converted [long-text inputs](05-runtime-subagents-and-surfaces.md#
 
 The startup janitor and an hourly App task remove only expired `tmp/` trees. The default inactivity threshold is three days, configurable through `StorageSettings.scratch_retention_seconds`. Age is measured from the App's last recorded use or release, not from archive status, PID inspection, or a Run-status guess. Each App conservatively protects every Thread file area it touches until App shutdown. Independent Apps hold independent hard OS file-use locks, allowing concurrent use without serializing their Runs. Cleanup tests those locks under a short registration gate and skips a Thread if any holder remains. Process death releases OS locks, making an old scratch tree eligible without a heartbeat timeout. Cleanup errors are diagnostic and do not prevent normal startup; there is no manual confirmation requirement.
 
-Pruning never deletes retained attachments, saved shared drafts or their referenced input content, SQLite rows, immutable objects, Project files, or external symlink targets. File-use lock bookkeeping is outside the deletable scratch tree. A discarded staged upload can expire; reading its old handle then fails explicitly. Surfaces do not treat a host path as a portable upload identifier or implement their own deletion policy. Important generated results belong in an explicitly chosen durable destination, not scratch storage.
+Pruning never deletes retained attachments, SQLite rows, immutable objects, Project files, or external symlink targets. File-use lock bookkeeping is outside the deletable scratch tree. A discarded staged upload can expire; reading its old handle then fails explicitly. Surfaces do not treat a host path as a portable upload identifier or implement their own deletion policy. Important generated results belong in an explicitly chosen durable destination, not scratch storage.
 
 ## Observed Thread Usage
 

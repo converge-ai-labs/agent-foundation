@@ -466,9 +466,7 @@ def test_checker_validates_nested_npm_lock_version(tmp_path: Path) -> None:
 def test_mismatched_ui_ranges_are_blocked_without_writes(tmp_path: Path) -> None:
     copy_release_files(tmp_path)
     manifest = tmp_path / "packages/a13n-harness-ui/pyproject.toml"
-    manifest.write_text(
-        manifest.read_text().replace('a13n-harness = ">=0.0.5,<0.1.0"', 'a13n-harness = ">=0.0.6,<0.1.0"')
-    )
+    manifest.write_text(re.sub(r'a13n-harness = "[^"]+"', 'a13n-harness = ">=9.0.0,<10.0.0"', manifest.read_text()))
     before = snapshot(tmp_path)
     result = run_script(PREPARER, tmp_path, "a13n-harness-ui", "9.8.7")
     assert result.returncode != 0

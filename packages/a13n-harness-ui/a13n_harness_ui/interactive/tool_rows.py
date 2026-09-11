@@ -110,11 +110,16 @@ def failure_reason(text: str, state: str) -> str:
     error = value.get("error")
     if isinstance(error, dict):
         details = error.get("details")
-        if isinstance(details, dict):
-            reason = details.get("hint") or details.get("reason")
-            if isinstance(reason, str):
-                field_name = details.get("field")
-                return (f"{field_name}: " if isinstance(field_name, str) else "") + " ".join(reason.split())[:240]
+        field_name = details.get("field") if isinstance(details, dict) else None
+        prefix = _excerpt(field_name) + ": " if isinstance(field_name, str) and field_name.strip() else ""
+        candidates = (
+            details.get("hint") if isinstance(details, dict) else None,
+            error.get("message"),
+            details.get("reason") if isinstance(details, dict) else None,
+        )
+        for candidate in candidates:
+            if isinstance(candidate, str) and candidate.strip():
+                return (prefix + _excerpt(candidate))[:240]
         code = error.get("code")
         if isinstance(code, str):
             return code

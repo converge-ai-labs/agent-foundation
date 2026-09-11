@@ -75,10 +75,24 @@ class ConnectorToolPage(StrictModel):
     provider_version: str = Field(min_length=1, max_length=128)
 
 
+class ConnectorToolFailure(StrictModel):
+    code: Literal[
+        "scope_missing", "permission_denied", "authentication_required", "not_found", "rate_limited", "tool_rejected"
+    ]
+    message: str = Field(max_length=256)
+
+
 class ConnectorToolOutcome(StrictModel):
-    kind: Literal["succeeded", "outcome_unknown"]
+    kind: Literal["succeeded", "failed", "outcome_unknown"]
     result: JsonValue | None = None
     request_id: str | None = Field(default=None, max_length=128)
+    error: ConnectorToolFailure | None = None
+
+    @model_validator(mode="after")
+    def validate_failure(self) -> ConnectorToolOutcome:
+        if (self.kind == "failed") != (self.error is not None):
+            raise ValueError("error is required exactly for failed tool outcomes")
+        return self
 
 
 class ConnectorProviderError(Exception):

@@ -577,3 +577,294 @@ def test_configuration_command_and_preview_schemas_are_distinct() -> None:
     assert preview_patch != command_patch
     assert "agent_source" in schemas[preview_patch]["properties"]
     assert "agent_id" in schemas[command_patch]["properties"]
+
+
+@pytest.mark.anyio
+async def test_observer_sse_bootstrap_then_saved_history_and_restart(tmp_path: Path, account_home: None) -> None:
+    del account_home
+    from .test_app import _reconstructed
+
+    progressed, release = Event(), Event()
+    opened: list[HarnessUiApp] = []
+    configuration = _write_configuration(tmp_path)
+    settings = _settings(tmp_path / "state")
+
+    class Reconstructor:
+        def reconstruct(self, composition, *, subagent_operator, root_capabilities=(), **kwargs):
+            async def model(messages, info):
+                for index in range(300):
+                    yield f"chunk-{index};"
+                progressed.set()
+                await release.wait()
+                yield "finished"
+
+            return _reconstructed(model, root_capabilities)
+
+    @asynccontextmanager
+    async def factory():
+        async with open_harness_ui_app(settings, configuration_path=configuration, host_mode="webui") as app:
+            app._root_runs._executor._agents = Reconstructor()
+            opened.append(app)
+            yield app
+
+    server = create_webui(factory, api_key=None)
+    async with _network_server(server) as url, httpx.AsyncClient(trust_env=False, base_url=url) as client:
+        thread = (await client.post("/api/threads", json={"title": "Reconnect"})).json()
+        thread_id = thread["thread_id"]
+        submitted = await client.post(f"/api/threads/{thread_id}/submit", json={"prompt": "long reply"})
+        assert submitted.status_code == 200, submitted.text
+        receipt = submitted.json()
+        with fail_after(5):
+            await progressed.wait()
+        app = opened[0]
+        with fail_after(5):
+            while not any(
+                event.payload and "chunk-299" in str(event.payload.get("delta", ""))
+                for event in await app._live_hub.snapshot(root_thread_id=thread_id)
+            ):
+                await sleep(0.01)
+        replayed: list[dict] = []
+        async with client.stream("GET", f"/api/threads/{thread_id}/events") as response:
+            with fail_after(5):
+                async for line in response.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    frame = json.loads(line[6:])
+                    if frame["kind"] == "snapshot":
+                        assert frame["resume_cursor"] is None
+                        total = frame["snapshot"]["root_stream"]["event_count"]
+                        assert total > len(await app._live_hub.snapshot(root_thread_id=thread_id))
+                    elif frame["kind"] == "root_stream":
+                        assert len(frame["events"]) <= 16
+                        replayed.extend(frame["events"])
+                    elif frame["kind"] == "ready":
+                        cursor = frame["resume_cursor"]
+                        break
+        assert [item["index"] for item in replayed] == list(range(total))
+        assistant_ids = {
+            item["payload"]["message_id"]
+            for item in replayed
+            if item["event_type"] == "TEXT_MESSAGE_START"
+            and item["payload"]
+            and item["payload"].get("role") == "assistant"
+        }
+        text = "".join(
+            item["payload"].get("delta", "")
+            for item in replayed
+            if item["event_type"] == "TEXT_MESSAGE_CONTENT"
+            and item["payload"]
+            and item["payload"].get("message_id") in assistant_ids
+        )
+        assert text == "".join(f"chunk-{index};" for index in range(300))
+        assert (await app.active_root_operation(thread_id)).receipt.receipt_id == receipt["receipt_id"]
+        release.set()
+        await app.wait_root_operation(receipt["receipt_id"])
+        assert thread_id not in app._live_hub._root_streams
+        history = (await client.get(f"/api/threads/{thread_id}/transcript")).json()
+        assert "chunk-0;" in json.dumps(history) and "finished" in json.dumps(history)
+        async with client.stream("GET", f"/api/threads/{thread_id}/events") as response:
+            frame = await _first_frame(response)
+            assert frame["snapshot"]["root_stream"] is None
+            assert frame["resume_cursor"]
+    # A new App restores saved history, not old connections, observers, or receipts.
+    async with _network_server(server) as url, httpx.AsyncClient(trust_env=False, base_url=url) as client:
+        assert "finished" in (await client.get(f"/api/threads/{thread_id}/transcript")).text
+        async with client.stream("GET", f"/api/threads/{thread_id}/events", params={"after": cursor}) as response:
+            assert (await _first_frame(response))["kind"] == "reset"
+        assert (await client.get(f"/api/operations/{receipt['receipt_id']}")).status_code != 200
+
+
+@pytest.mark.anyio
+async def test_conversation_query_adapters_and_strict_steering(tmp_path: Path, account_home: None) -> None:
+    del account_home
+    server = create_webui(
+        lambda: open_harness_ui_app(
+            _settings(tmp_path / "state"), configuration_path=_write_configuration(tmp_path), host_mode="webui"
+        ),
+        api_key=None,
+    )
+    async with (
+        server.router.lifespan_context(server),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=server), base_url="http://127.0.0.1") as client,
+    ):
+        created = (await client.post("/api/threads", json={"title": "Activity"})).json()
+        thread_id = created["thread_id"]
+        activity = await client.get("/api/threads/activity")
+        assert activity.status_code == 200, activity.text
+        assert thread_id in activity.text
+        assert (await client.get(f"/api/threads/{thread_id}/tasks")).status_code == 200
+        assert (
+            await client.get(f"/api/threads/{thread_id}/tasks", params={"expected_continuation_id": "stale"})
+        ).status_code == 409
+        assert (await client.get(f"/api/threads/{thread_id}/children")).json()["total"] == 0
+        wait = await client.get(f"/api/threads/{thread_id}/children/wait", params={"timeout_seconds": 0})
+        assert wait.status_code == 200, wait.text
+        decisions = await client.get(
+            f"/api/threads/{thread_id}/decisions", params={"expected_continuation_id": "stale"}
+        )
+        assert decisions.status_code == 409, decisions.text
+        for endpoint in (
+            "/api/operations/receipt-missing/steer",
+            f"/api/threads/{thread_id}/children/execution-missing/steer",
+        ):
+            response = await client.post(endpoint, json={"prompt": "hello", "attachment_ids": ["attachment-1"]})
+            assert response.status_code == 400, response.text
+        schema = (await client.get("/api/openapi.json")).json()
+        assert "FocusReplayFrame" in schema["components"]["schemas"]
+        assert "SteerRequest" in schema["components"]["schemas"]
+
+
+@pytest.mark.anyio
+async def test_http_decision_query_response_and_saved_history(tmp_path: Path, account_home: None) -> None:
+    del account_home
+    from .test_app import _DeferredReconstructor
+
+    opened: list[HarnessUiApp] = []
+
+    @asynccontextmanager
+    async def factory():
+        async with open_harness_ui_app(
+            _settings(tmp_path / "state"), configuration_path=_write_configuration(tmp_path), host_mode="webui"
+        ) as app:
+            app._root_runs._executor._agents = _DeferredReconstructor()
+            opened.append(app)
+            yield app
+
+    server = create_webui(factory, api_key=None)
+    async with (
+        server.router.lifespan_context(server),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=server), base_url="http://127.0.0.1") as client,
+    ):
+        thread_id = (await client.post("/api/threads", json={})).json()["thread_id"]
+        path = f"/api/threads/{thread_id}"
+        receipt = (await client.post(f"{path}/submit", json={"prompt": "defer"})).json()
+        app = opened[0]
+        assert (await app.wait_root_operation(receipt["receipt_id"])).status.value == "suspended"
+        detail = (await client.get(path)).json()
+        expected = detail["continuation_id"]
+        decisions = await client.get(f"{path}/decisions", params={"expected_continuation_id": expected})
+        assert decisions.status_code == 200, decisions.text
+        request = decisions.json()["requests"][0]
+        assert request["kind"] == "external"
+        assert "dynamic_action" in decisions.text
+        response = await client.post(
+            f"{path}/decisions",
+            json={
+                "expected_continuation_id": expected,
+                "responses": [{"kind": "external", "request_id": request["request_id"], "result": "external result"}],
+            },
+        )
+        assert response.status_code == 200, response.text
+        completed = await app.wait_root_operation(response.json()["receipt_id"])
+        assert completed.status.value == "completed"
+        assert (await client.get(f"{path}/decisions")).json() is None
+        stale = await client.get(f"{path}/decisions", params={"expected_continuation_id": expected})
+        assert stale.status_code == 409, stale.text
+        history = await client.get(f"{path}/transcript")
+        assert "external result" in history.text
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_http_child_scope_inspection_and_controls(
+    tmp_path: Path, account_home: None, monkeypatch, cancel
+) -> None:
+    del account_home
+    from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+    from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
+    configuration = _write_configuration(tmp_path)
+    configuration.write_text(configuration.read_text() + "subagents:\n  include: [explorer]\n")
+    started, release = Event(), Event()
+    calls = 0
+    opened: list[HarnessUiApp] = []
+
+    async def build(self, recipe, authentication):
+        async def stream(messages, info):
+            nonlocal calls
+            if "delegate" not in {tool.name for tool in info.function_tools}:
+                yield "Child work in progress."
+                started.set()
+                await release.wait()
+                yield "Child completed."
+                return
+            calls += 1
+            if calls == 1:
+                yield {
+                    0: DeltaToolCall(
+                        name="delegate",
+                        json_args=json.dumps({"subagent_name": "explorer", "prompt": "Bounded task"}),
+                        tool_call_id="delegate-1",
+                    )
+                }
+            else:
+                yield "Parent completed."
+
+        return FunctionModel(stream_function=stream)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "_api_key_model", build)
+
+    @asynccontextmanager
+    async def factory():
+        async with open_harness_ui_app(
+            _settings(tmp_path / "state"), configuration_path=configuration, host_mode="webui"
+        ) as app:
+            opened.append(app)
+            yield app
+
+    server = create_webui(factory, api_key=None)
+    async with (
+        server.router.lifespan_context(server),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=server), base_url="http://127.0.0.1") as client,
+    ):
+        thread_id = (await client.post("/api/threads", json={})).json()["thread_id"]
+        other_id = (await client.post("/api/threads", json={})).json()["thread_id"]
+        receipt = (await client.post(f"/api/threads/{thread_id}/submit", json={"prompt": "Delegate"})).json()
+        with fail_after(5):
+            await started.wait()
+        path = f"/api/threads/{thread_id}/children"
+        listed = await client.get(path)
+        assert listed.status_code == 200, listed.text
+        execution = listed.json()["executions"][0]
+        execution_id = execution["execution_id"]
+        assert execution["persisted_status"] == "running"
+        assert execution["parent_thread_id"] == thread_id
+        poll = await client.get(f"{path}/wait", params={"execution_id": execution_id, "timeout_seconds": 0})
+        assert poll.status_code == 200, poll.text
+        assert poll.json()["executions"][0]["execution_id"] == execution_id
+        # Child presentation only publishes closed activities, not partial text.
+        assert "Child work in progress." not in listed.text
+        for endpoint in ("", "/wait"):
+            wrong = await client.get(
+                f"/api/threads/{other_id}/children{endpoint}", params={"execution_id": execution_id}
+            )
+            assert wrong.status_code == 400, wrong.text
+            assert wrong.json()["error"]["code"] == "subagent_execution_unavailable"
+        wrong_review = await client.get(f"/api/threads/{other_id}/children/{execution_id}/review")
+        assert wrong_review.status_code == 400, wrong_review.text
+        assert wrong_review.json()["error"]["code"] == "subagent_execution_unavailable"
+        for action in ("steer", "cancel"):
+            wrong = await client.post(
+                f"/api/threads/{other_id}/children/{execution_id}/{action}",
+                json={"prompt": "Wrong parent"} if action == "steer" else None,
+            )
+            assert wrong.status_code == 400, wrong.text
+            assert wrong.json()["error"]["code"] == "subagent_execution_unavailable"
+        if cancel:
+            steering = await client.post(f"{path}/{execution_id}/steer", json={"prompt": "Keep it brief"})
+            assert steering.status_code == 200, steering.text
+            assert steering.json()["accepted"] is True
+            cancellation = await client.post(f"{path}/{execution_id}/cancel")
+            assert cancellation.status_code == 200, cancellation.text
+            assert cancellation.json()["accepted"] is True
+        else:
+            release.set()
+        terminal = await client.get(f"{path}/wait", params={"execution_id": execution_id, "timeout_seconds": 5})
+        assert terminal.status_code == 200, terminal.text
+        assert terminal.json()["executions"][0]["persisted_status"] == ("cancelled" if cancel else "succeeded")
+        review = await client.get(f"{path}/{execution_id}/review")
+        assert review.status_code == 200, review.text
+        if not cancel:
+            assert "Child completed." in review.text
+        root = await opened[0].wait_root_operation(receipt["receipt_id"])
+        assert root.status.value == "completed"

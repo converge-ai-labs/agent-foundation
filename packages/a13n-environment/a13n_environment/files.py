@@ -93,7 +93,7 @@ class FileTextMatch(BaseModel):
 class FileTextSearchRequest(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    root: str
+    root: str = Field(description="Provider-local regular file or directory; explicit files bypass discovery filters")
     pattern: str
     regex: bool = False
     case_sensitive: bool = True

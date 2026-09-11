@@ -90,11 +90,11 @@ Terminal focus receives its native key bindings; browser-wide command shortcuts 
 | Missing/invalid model or extension | Link the blocked conversation to its configuration diagnostic; preserve its prompt                                                                        |
 | API key rejected                   | Request a valid key while distinguishing access failure from lost project data; do not repeat mutations after login                                       |
 | Browser offline                    | Mark presence/output as disconnected, preserve recoverable local work, disable execution submissions                                                      |
-| Draft save failed                  | Show unsaved state and retain the recoverable text; do not claim cloud/server persistence                                                                 |
+| Draft synchronization failed       | Show unsynchronized state and retain recoverable text; do not claim server persistence                                                                    |
 | File changed externally            | Preserve the local buffer and offer comparison/reload rather than silent overwrite                                                                        |
 | Repository inspection failed       | Explain unavailable Git state, not a clean checkout                                                                                                       |
 | Run failed                         | Show the owning operation error and retained evidence; keep deliberate recovery separate from retrying unknown effects                                    |
-| Server restarted                   | Restore saved draft and continuation, show lost live authority, and never automatically resubmit input or recreate a terminal                             |
+| Server restarted                   | Restore continuation, disclose lost shared drafts and live authority, and never automatically resubmit input or recreate a terminal                       |
 
 ## Verifiable Flows
 

@@ -120,3 +120,72 @@ def test_application_error_mapping_is_independent_of_code_and_wording(category, 
         ("misleading_not_found", "idempotency_conflict"),
     ]:
         assert application_error_status(ApplicationError(code, message, category=category)) == status
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "status,code",
+    [
+        (400, "invalid_request"),
+        (403, "permission_denied"),
+        (404, "resource_not_found"),
+        (405, "method_not_allowed"),
+        (429, "rate_limited"),
+        (503, "service_unavailable"),
+    ],
+)
+async def test_framework_http_errors_use_safe_envelope_and_preserve_headers(status, code):
+    from fastapi import HTTPException
+
+    app = _application()
+
+    @app.get("/framework-error")
+    async def framework_error():
+        raise HTTPException(status, detail={"secret": "private-provider-error"}, headers={"Retry-After": "12"})
+
+    async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url="http://testserver") as client:
+        response = await client.get("/framework-error", headers={"X-Request-ID": "req-framework"})
+    assert response.status_code == status
+    error = response.json()["error"]
+    assert error["code"] == code
+    assert error["message"] and error["details"] == {}
+    assert error["request_id"] == response.headers["X-Request-ID"] == "req-framework"
+    assert response.headers["Retry-After"] == "12"
+    assert "private-provider-error" not in response.text
+
+
+@pytest.mark.anyio
+async def test_router_404_and_405_share_public_error_envelope():
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=_application()), base_url="http://testserver"
+    ) as client:
+        missing = await client.get("/missing")
+        wrong_method = await client.get("/validated")
+    for response, code in [(missing, "resource_not_found"), (wrong_method, "method_not_allowed")]:
+        assert response.json()["error"]["code"] == code
+        assert response.json()["error"]["request_id"] == response.headers["X-Request-ID"]
+        assert response.headers["X-Request-ID"].startswith("req-")
+    assert wrong_method.headers["Allow"] == "POST"
+
+
+@pytest.mark.anyio
+async def test_unexpected_500_is_json_and_keeps_request_identity_without_exception_text():
+    app = _application()
+
+    @app.get("/broken")
+    async def broken():
+        raise RuntimeError("private-password SQL /private/host/path")
+
+    transport = httpx2.ASGITransport(app=app, raise_app_exceptions=False)
+    async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.get("/broken", headers={"X-Request-ID": "req-unexpected"})
+    assert response.status_code == 500
+    assert response.headers["X-Request-ID"] == "req-unexpected"
+    assert response.json() == {
+        "error": {
+            "code": "internal_error",
+            "message": "An unexpected service error occurred.",
+            "details": {},
+            "request_id": "req-unexpected",
+        }
+    }

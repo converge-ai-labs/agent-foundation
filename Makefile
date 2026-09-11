@@ -80,7 +80,7 @@ examples-smoke: examples-sync ## Run every offline example path
 	@workspace_dir=$$(mktemp -d); trap 'rm -rf "$$workspace_dir"' EXIT; \
 		(cd examples/environment-provider && uv run --locked environment-provider-example direct-local --workspace "$$workspace_dir")
 	@state_dir=$$(mktemp -d); trap 'rm -rf "$$state_dir"' EXIT; \
-		(cd examples/agent-app && uv run --locked agent-app-example --state "$$state_dir/state.json" "first turn" "second turn"); \
+		(cd examples/agent-app && uv run --locked agent-app-example --state "$$state_dir/state.json" "first turn" "second turn") && \
 		(cd examples/agent-app && uv run --locked agent-app-example --state "$$state_dir/state.json" "turn after restart")
 
 .PHONY: examples-build
@@ -101,14 +101,37 @@ setup: sync ## Prepare local PostgreSQL, Redis, Langfuse and the Service schema
 dev: setup frontend-sync sdk-typescript-build ## Upgrade the schema and run a13n Service and Console
 	@bash scripts/dev.sh "$(SERVICE_CONFIG)"
 
-.PHONY: cli harness-dev harness-ui-smoke
-cli: ## Run Harness UI with dev/harness-ui/.env (CLI_ARGS forwards CLI options)
-	@uv run --locked --env-file "$(HARNESS_UI_ENV)" a13n-harness-ui --no-update-check $(CLI_ARGS)
+# Initialize only missing files; templates changing must never replace private settings.
+# Resolve the template beside the selected file, including explicit path overrides.
+define ensure-env
+	@env_file="$(1)"; template="$(1).example"; \
+	if [ -f "$$env_file" ]; then exit 0; fi; \
+	if [ ! -f "$$template" ]; then \
+		printf 'Missing environment file: %s\nCreate it or provide a sibling template: %s\n' "$$env_file" "$$template" >&2; \
+		exit 2; \
+	fi; \
+	cp -n "$$template" "$$env_file" || exit $$?; \
+	printf 'Initialized %s from %s (existing files are never overwritten).\n' "$$env_file" "$$template"; \
+	printf 'Local tracing uses make langfuse-up; review this file before using a remote backend.\n'
+endef
 
-harness-dev: ## Run SDK observation scenarios with dev/harness/.env (HARNESS_ARGS selects a scenario)
+.PHONY: env-init harness-env harness-ui-env
+env-init: harness-env harness-ui-env ## Initialize missing Harness and Harness UI .env files without overwriting settings
+
+harness-env:
+	$(call ensure-env,$(HARNESS_ENV))
+
+harness-ui-env:
+	$(call ensure-env,$(HARNESS_UI_ENV))
+
+.PHONY: cli harness-dev harness-ui-smoke
+cli: harness-ui-env ## Run Harness UI with workspace-local config/data (CLI_ARGS forwards options)
+	@uv run --locked --env-file "$(HARNESS_UI_ENV)" python -m dev.harness-ui.cli $(CLI_ARGS)
+
+harness-dev: harness-env ## Run SDK observation scenarios; initialize .env if missing (HARNESS_ARGS selects a scenario)
 	@uv run --locked --env-file "$(HARNESS_ENV)" opentelemetry-instrument python dev/observation-demo/agent.py $(HARNESS_ARGS)
 
-harness-ui-smoke: ## Exercise HarnessUiApp with a local scripted model and dev/harness-ui/.env
+harness-ui-smoke: harness-ui-env ## Exercise HarnessUiApp with a scripted model; initialize .env if missing
 	@uv run --locked --env-file "$(HARNESS_UI_ENV)" python -m dev.harness-ui.smoke
 
 .PHONY: dev-down
@@ -146,6 +169,10 @@ live-test-performance: sync ## Measure long-session latency with disposable PG, 
 live-test-management: sync ## Run isolated Service/Harness management journeys with Docker dependencies
 	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests --live-management -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)
 
+.PHONY: live-test-plugin-image
+live-test-plugin-image: sync ## Build a custom plugin wheel/image and exercise the production Worker through HTTP
+	@uv run --locked python -m pytest dev/live_tests/harness_integration/test_19_plugin_image.py --live-plugin-image -v --tb=short -o log_cli=true -o log_cli_level=INFO --log-disable=httpx2 $(LIVE_TEST_ARGS)
+
 .PHONY: live-test-providers
 live-test-providers: sync ## Run optional configured real Providers in disposable local labs
 	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests/providers/test_31_real_providers.py --live-providers -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)
@@ -177,8 +204,8 @@ a13n-harness-ui-skills: sync ## Generate the bundled configuration Skill and doc
 	@uv run --locked python packages/a13n-harness-ui/build_skills.py
 
 .PHONY: a13n-harness-ui
-a13n-harness-ui: a13n-harness-ui-skills ## Run the interactive Harness UI without release update checks
-	@uv run --locked a13n-harness-ui --no-update-check
+a13n-harness-ui: a13n-harness-ui-skills ## Run Harness UI without dev .env or update checks (CLI_ARGS forwards options)
+	@uv run --locked a13n-harness-ui --no-update-check $(CLI_ARGS)
 
 .PHONY: a13n-harness-ui-db-migrate
 a13n-harness-ui-db-migrate: sync ## Generate a Harness UI SQLite migration against a disposable database
@@ -636,9 +663,19 @@ clean: ## Remove generated local artifacts
 
 .PHONY: help
 help: ## Show available commands
-	@echo "Usage: make [target]"
-	@echo "Targets:"
-	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  %-26s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@printf 'Usage: make <target> [VARIABLE=value]\n\n'
+	@printf 'Common workflows:\n'
+	@printf '  make cli                           Start Harness UI; create its .env if missing\n'
+	@printf '  make cli CLI_ARGS="--help"         Forward options or subcommands to Harness UI\n'
+	@printf '  make env-init                      Prepare both development .env files only\n'
+	@printf '  make dev                           Start local Service, Console, and infrastructure\n'
+	@printf '  make dev-down                      Stop infrastructure, preserving data\n'
+	@printf '  make test PYTHON_TEST_DIRS=scripts/tests PYTHON_TEST_WORKERS=0\n'
+	@printf '  make check CHECK_JOBS=4             Format, then run fast checks\n\n'
+	@printf 'Environment overrides: HARNESS_UI_ENV=path, HARNESS_ENV=path, SERVICE_CONFIG=path\n'
+	@printf 'Existing .env files are preserved; missing files need a sibling .env.example.\n\n'
+	@printf 'All targets:\n'
+	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  %-38s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 .PHONY: service-dev dev-reset dev-state-check
 service-dev: setup ## Run only local Service and its scripted model, preserving data

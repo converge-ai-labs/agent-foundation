@@ -55,9 +55,11 @@ Check for an existing open PR for the confirmed head/base so updates do not crea
 gh pr view --json number,url,state,isDraft,title
 ```
 
-If no open PR exists, create one with the intended head/base. Preserve an existing PR's draft state; create a ready PR unless the user requests a draft.
+If no open PR exists, create one with the intended head/base. Preserve an existing PR's draft state; create a ready PR unless the user requests a draft. Drafts skip code CI; marking a draft ready starts the applicable checks. Do not toggle readiness just to refresh automatic labels.
 
-Use the scoped Conventional Commit format for the PR title, summarizing the complete final diff. Read the repository PR template, preferring the base-branch version. Preserve required headings and checklist items, remove placeholders such as `Closes #`, link a relevant Issue when one exists, and mark only verified conditions. Human-review items require evidence from the human author.
+Use the scoped Conventional Commit format for the PR title, describing the resulting change rather than editing or review activity. The [PR Labels workflow](../../../CONTRIBUTING.md#pr-labels) automatically classifies PRs on opening and readiness; ordinary PRs need no manual labels or notes file. Mark incompatible changes with `!` and explain impact and migration in the body. Existing type labels are preserved, so when an update changes the PR's classification, inspect its labels and adjust only the relevant ones with `gh pr edit`; preserve unrelated labels. Do not classify user-visible changes as `chore`. Label corrections are part of the authorized PR handoff, not permission to change repository settings or publish a release.
+
+Read the repository PR template, preferring the base-branch version. Preserve required headings and checklist items, remove placeholders such as `Closes #`, link a relevant Issue when one exists, and mark only verified conditions. Human-review items require evidence from the human author.
 
 Follow [Writing Issues and Pull Requests](../../../CONTRIBUTING.md#writing-issues-and-pull-requests) for the opening explanation and choice of visuals. Keep the body and diagrams aligned with the final diff when the PR scope changes. Explain material compatibility implications and exact validation outcomes. If no template exists, a short summary and validation section suffice. Pass multiline content with `--body-file` using a temporary file outside the repository. Do not claim a missing check passed or omit a known blocker.
 

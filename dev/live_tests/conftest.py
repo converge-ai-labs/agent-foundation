@@ -12,6 +12,7 @@ def pytest_addoption(parser):
     parser.addoption("--live", action="store_true", help="Run real local Foundation HTTP journeys")
     parser.addoption("--live-round-two", action="store_true", help="Run isolated process and dependency fault journeys")
     parser.addoption("--live-management", action="store_true", help="Run isolated Service/Harness management journeys")
+    parser.addoption("--live-plugin-image", action="store_true", help="Build and run a custom plugin Worker image")
     parser.addoption("--live-providers", action="store_true", help="Run configured real-provider integration journeys")
     parser.addoption("--live-slack", action="store_true", help="Authorize OpenConnector Slack and run a read-only tool")
     parser.addoption("--live-environments", action="store_true", help="Run the five-backend Environment matrix")

@@ -292,6 +292,7 @@ dependencies = [
     { name = "referencing" },
     { name = "rfc8785" },
     { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "starlette" },
     { name = "uvicorn" },
 ]
 
@@ -337,6 +338,7 @@ requires-dist = [
     { name = "referencing", specifier = ">=0.37,<1" },
     { name = "rfc8785", specifier = ">=0.1.4,<0.2" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.41,<3" },
+    { name = "starlette", specifier = ">=0.52,<2" },
     { name = "uvicorn", specifier = ">=0.35,<1" },
 ]
 

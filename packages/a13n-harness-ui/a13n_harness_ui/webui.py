@@ -34,22 +34,27 @@ from a13n_harness_ui.configuration.views import (
     ConfigurationValidation,
 )
 from a13n_harness_ui.errors import HarnessUiError
-from a13n_harness_ui.live import LiveCursor, LiveEvent, SummaryCursor, SummaryInvalidation
+from a13n_harness_ui.live import LiveCursor, LiveEvent, RootStreamEvent, SummaryCursor, SummaryInvalidation
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginStatus
 from a13n_harness_ui.setup import EnvironmentReadiness, SetupStatus
 from a13n_harness_ui.storage import ThreadConfiguration
 from a13n_harness_ui.surfaces import (
+    ChildControlResult,
+    ChildExecutionPage,
     DecisionBatchView,
     DecisionResponseBatch,
     NewThreadDefaults,
     ProjectDefaultsApply,
     ProjectDefaultsPreview,
     ProjectSummary,
+    ReviewView,
     RootControlResult,
     RootOperationView,
     RootRunReceipt,
     SurfaceModel,
+    TaskPage,
+    ThreadActivityPage,
     ThreadConfigurationMutationInput,
     ThreadDetail,
     ThreadFocusSnapshot,
@@ -96,6 +101,10 @@ class PromptRequest(SurfaceModel):
     attachment_ids: tuple[str, ...] = Field(default=(), max_length=8)
 
 
+class SteerRequest(SurfaceModel):
+    prompt: str = Field(min_length=1, max_length=256 * 1024)
+
+
 class SetupApplyRequest(SurfaceModel):
     selection: SetupSelection
 
@@ -108,6 +117,17 @@ class PreflightRequest(SurfaceModel):
 class FocusSnapshotFrame(SurfaceModel):
     kind: Literal["snapshot"] = "snapshot"
     snapshot: ThreadFocusSnapshot
+    resume_cursor: str | None
+
+
+class FocusReplayFrame(SurfaceModel):
+    kind: Literal["root_stream"] = "root_stream"
+    run_id: str
+    events: tuple[RootStreamEvent, ...] = Field(min_length=1, max_length=16)
+
+
+class FocusReadyFrame(SurfaceModel):
+    kind: Literal["ready"] = "ready"
     resume_cursor: str
 
 
@@ -465,12 +485,82 @@ def create_webui(
         return await app().projects()
 
     @server.get("/api/threads/{thread_id}/decisions", response_model=DecisionBatchView | None)
-    async def decision_batch(thread_id: str) -> DecisionBatchView | None:
-        return await app().thread_decisions(thread_id=thread_id)
+    async def decision_batch(
+        thread_id: str, expected_continuation_id: Annotated[str | None, Query(max_length=80)] = None
+    ) -> DecisionBatchView | None:
+        return await app().thread_decisions(thread_id=thread_id, expected_continuation_id=expected_continuation_id)
 
     @server.get("/api/selectors", response_model=ThreadSelectorCatalog)
     async def selectors() -> ThreadSelectorCatalog:
         return await app().thread_selectors()
+
+    @server.get("/api/threads/activity", response_model=ThreadActivityPage)
+    async def thread_activity(
+        project_id: Annotated[str | None, Query(max_length=128)] = None,
+        query: Annotated[str | None, Query(max_length=512)] = None,
+        include_archived: bool = False,
+        cursor: Annotated[str | None, Query(max_length=2048)] = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    ) -> ThreadActivityPage:
+        return await app().thread_activity(
+            project_id=project_id, query=query, include_archived=include_archived, cursor=cursor, limit=limit
+        )
+
+    @server.get("/api/threads/{thread_id}/tasks", response_model=TaskPage)
+    async def tasks(
+        thread_id: str,
+        expected_continuation_id: Annotated[str | None, Query(max_length=80)] = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 100,
+    ) -> TaskPage:
+        return await app().thread_tasks(
+            thread_id=thread_id, expected_continuation_id=expected_continuation_id, limit=limit
+        )
+
+    @server.get("/api/threads/{thread_id}/children", response_model=ChildExecutionPage)
+    async def children(
+        thread_id: str,
+        execution_id: Annotated[str | None, Query(max_length=80)] = None,
+        cursor: Annotated[str | None, Query(max_length=2048)] = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    ) -> ChildExecutionPage:
+        return await app().query_child_executions(
+            parent_thread_id=thread_id, execution_id=execution_id, cursor=cursor, limit=limit
+        )
+
+    @server.get("/api/threads/{thread_id}/children/wait", response_model=ChildExecutionPage)
+    async def wait_children(
+        thread_id: str,
+        execution_id: Annotated[str | None, Query(max_length=80)] = None,
+        cursor: Annotated[str | None, Query(max_length=2048)] = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 20,
+        timeout_seconds: Annotated[float, Query(ge=0, le=60)] = 10,
+    ) -> ChildExecutionPage:
+        return await app().wait_child_executions(
+            parent_thread_id=thread_id,
+            execution_id=execution_id,
+            cursor=cursor,
+            limit=limit,
+            timeout_seconds=timeout_seconds,
+        )
+
+    @server.get("/api/threads/{thread_id}/children/{execution_id}/review", response_model=ReviewView)
+    async def child_review(thread_id: str, execution_id: str) -> ReviewView:
+        return await app().child_review(parent_thread_id=thread_id, execution_id=execution_id)
+
+    @server.post(
+        "/api/threads/{thread_id}/children/{execution_id}/steer",
+        response_model=ChildControlResult,
+        openapi_extra=_body(SteerRequest),
+    )
+    async def steer_child(thread_id: str, execution_id: str, request: Request) -> ChildControlResult:
+        body = await _document(request, SteerRequest)
+        return await app().steer_child_execution(
+            parent_thread_id=thread_id, execution_id=execution_id, message=body.prompt
+        )
+
+    @server.post("/api/threads/{thread_id}/children/{execution_id}/cancel", response_model=ChildControlResult)
+    async def cancel_child(thread_id: str, execution_id: str) -> ChildControlResult:
+        return await app().cancel_child_execution(parent_thread_id=thread_id, execution_id=execution_id)
 
     @server.get("/api/threads", response_model=ThreadPage)
     async def threads(
@@ -581,17 +671,20 @@ def create_webui(
         return await app().get_root_operation(receipt_id)
 
     @server.post(
-        "/api/operations/{receipt_id}/steer", response_model=RootControlResult, openapi_extra=_body(PromptRequest)
+        "/api/operations/{receipt_id}/steer", response_model=RootControlResult, openapi_extra=_body(SteerRequest)
     )
     async def steer(receipt_id: str, request: Request) -> RootControlResult:
-        document = await _document(request, PromptRequest)
+        document = await _document(request, SteerRequest)
         return await app().steer_root_operation(receipt_id=receipt_id, message=document.prompt)
 
     @server.post("/api/operations/{receipt_id}/cancel", response_model=RootControlResult)
     async def cancel(receipt_id: str) -> RootControlResult:
         return await app().cancel_root_operation(receipt_id)
 
-    @server.get("/api/threads/{thread_id}/events", response_model=FocusSnapshotFrame | FocusEventFrame | ResetFrame)
+    @server.get(
+        "/api/threads/{thread_id}/events",
+        response_model=FocusSnapshotFrame | FocusReplayFrame | FocusReadyFrame | FocusEventFrame | ResetFrame,
+    )
     async def focused(thread_id: str, after: Annotated[str | None, Query(max_length=1024)] = None) -> StreamingResponse:
         # Validate before response headers; the watch remains owned by the
         # generator task so cancellation closes delivery, never the root Run.
@@ -615,11 +708,23 @@ def create_webui(
                         yield _frame(
                             FocusSnapshotFrame(
                                 snapshot=watch.snapshot,
-                                resume_cursor=_cursor(
-                                    "focus", thread_id, watch.snapshot.epoch, watch.snapshot.cutover_sequence
+                                resume_cursor=(
+                                    _cursor("focus", thread_id, watch.snapshot.epoch, watch.snapshot.cutover_sequence)
+                                    if watch.root_stream is None
+                                    else None
                                 ),
                             )
                         )
+                        if watch.root_stream is not None:
+                            for batch in watch.root_stream.batches():
+                                yield _frame(FocusReplayFrame(run_id=watch.root_stream.summary.run_id, events=batch))
+                            yield _frame(
+                                FocusReadyFrame(
+                                    resume_cursor=_cursor(
+                                        "focus", thread_id, watch.snapshot.epoch, watch.snapshot.cutover_sequence
+                                    )
+                                )
+                            )
                         async for event in watch.events:
                             yield _frame(
                                 FocusEventFrame(
