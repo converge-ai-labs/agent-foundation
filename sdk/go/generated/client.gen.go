@@ -3165,6 +3165,7 @@ type CreateModelProviderRequest struct {
 	Configuration *map[string]interface{}   `json:"configuration,omitempty"`
 	Credential    nullable.Nullable[string] `json:"credential,omitempty"`
 	Enabled       *bool                     `json:"enabled,omitempty"`
+	ExtraHeaders  *map[string]interface{}   `json:"extra_headers,omitempty"`
 	Name          string                    `json:"name"`
 	Type          string                    `json:"type"`
 }
@@ -4019,6 +4020,7 @@ type ModelProvider struct {
 	CreatedBy            PrincipalRef              `json:"created_by"`
 	CredentialConfigured bool                      `json:"credential_configured"`
 	Enabled              bool                      `json:"enabled"`
+	HeaderNames          *[]string                 `json:"header_names,omitempty"`
 	Id                   string                    `json:"id"`
 	Name                 string                    `json:"name"`
 	OrganizationId       string                    `json:"organization_id"`
@@ -5346,6 +5348,7 @@ type UpdateModelProviderRequest struct {
 	Configuration nullable.Nullable[map[string]interface{}] `json:"configuration,omitempty"`
 	Credential    nullable.Nullable[string]                 `json:"credential,omitempty"`
 	Enabled       nullable.Nullable[bool]                   `json:"enabled,omitempty"`
+	ExtraHeaders  *map[string]interface{}                   `json:"extra_headers,omitempty"`
 	Name          nullable.Nullable[string]                 `json:"name,omitempty"`
 }
 

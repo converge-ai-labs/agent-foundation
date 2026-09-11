@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from types import MappingProxyType
 
 from pydantic import BaseModel, ConfigDict
@@ -69,10 +69,15 @@ class ProviderRegistry:
         return self._require(provider_type)
 
     def validate_provider(
-        self, provider_type: str, configuration: Mapping[str, object], *, credential_configured: bool
+        self,
+        provider_type: str,
+        configuration: Mapping[str, object],
+        *,
+        credential_configured: bool,
+        header_names: Sequence[str] = (),
     ) -> ValidatedProviderConfiguration:
         return self._require(provider_type).validate_configuration(
-            configuration, credential_configured=credential_configured
+            configuration, credential_configured=credential_configured, header_names=header_names
         )
 
     def validate_model_api(self, provider_type: str, model_api: str) -> None:

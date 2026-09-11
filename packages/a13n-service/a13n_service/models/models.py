@@ -21,8 +21,10 @@ from a13n_service.credentials import ResourceCredential
 from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.names import CASEFOLDED_NAME_MAX_LENGTH
+from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.temporal import assume_utc
 
+from .credentials import ProviderSecrets
 from .domain import Model, ModelProvider
 
 
@@ -65,6 +67,8 @@ class ModelProviderRecord(ResourceCredential[str | None], Base):
     name: Mapped[str] = mapped_column(String(128))
     normalized_name: Mapped[str] = mapped_column(String(CASEFOLDED_NAME_MAX_LENGTH))
     configuration: Mapped[dict[str, object]] = mapped_column(JSON)
+    credential_configured: Mapped[bool] = mapped_column(Boolean, default=False)
+    header_names: Mapped[list[str]] = mapped_column(JSON, default=list)
     enabled: Mapped[bool] = mapped_column(Boolean)
     created_by_type: Mapped[str] = mapped_column(String(32))
     created_by_id: Mapped[str] = mapped_column(String(72))
@@ -72,6 +76,11 @@ class ModelProviderRecord(ResourceCredential[str | None], Base):
     updated_by_id: Mapped[str] = mapped_column(String(72))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    def replace_secrets(self, value: ProviderSecrets, protector: SecretProtector) -> None:
+        self.replace_credential(value.encrypted_value(), protector)
+        self.credential_configured = value.credential is not None
+        self.header_names = sorted(value.extra_headers)
 
     def to_resource(self) -> ModelProvider:
         return ModelProvider(
@@ -81,7 +90,8 @@ class ModelProviderRecord(ResourceCredential[str | None], Base):
             type=self.type,
             name=self.name,
             configuration=self.configuration,
-            credential_configured=self.ciphertext is not None,
+            credential_configured=self.credential_configured,
+            header_names=tuple(self.header_names),
             enabled=self.enabled,
             created_by=_principal(self.created_by_type, self.created_by_id),
             updated_by=_principal(self.updated_by_type, self.updated_by_id),

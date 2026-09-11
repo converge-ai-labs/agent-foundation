@@ -1273,5 +1273,15 @@
   "End time": "结束时间",
   "24 hours": "24 小时",
   "Project API Key": "项目 API Key",
-  "Catalog API Key": "目录 API Key"
+  "Catalog API Key": "目录 API Key",
+  "Advanced settings": "高级设置",
+  "Leave empty to use the provider's default endpoint.": "留空使用服务商默认地址。",
+  "Header value": "请求头值",
+  "Remove header": "删除请求头",
+  "Add header": "添加请求头",
+  "Header names must be nonempty and unique.": "请求头名称不能为空或重复。",
+  "Header values are stored securely and never shown. Leave a saved value empty to keep it.": "请求头值会安全保存且不再显示。已保存的值留空即可保留。",
+  "Enter a value for each new header.": "请为每个新增的请求头填写值。",
+  "Saved value": "已保存的值",
+  "Converse base URL": "Converse 基础 URL"
 }

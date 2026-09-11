@@ -3,12 +3,13 @@
 from typing import Annotated
 
 import httpx2
-from google.genai.types import HttpRetryOptions
+from google.genai import Client
 from pydantic import StringConstraints
 from pydantic_ai.providers.google_cloud import GoogleCloudProvider
 
 from ..credentials import parse_google_service_account
 from .base import ProviderIntegration, require_credential
+from .google_provider import http_options
 from .types import CredentialFormat, ProviderConfiguration, RuntimeProvider
 
 
@@ -23,11 +24,13 @@ def _build_provider(
     _model_api: str,
 ) -> GoogleCloudProvider:
     return GoogleCloudProvider(
-        credentials=parse_google_service_account(require_credential(provider)),
-        project=str(provider.configuration["project_id"]),
-        location=str(provider.configuration["location"]),
-        http_client=http_client,
-        retry_options=HttpRetryOptions(attempts=1),
+        client=Client(
+            vertexai=True,
+            credentials=parse_google_service_account(require_credential(provider)),
+            project=str(provider.configuration["project_id"]),
+            location=str(provider.configuration["location"]),
+            http_options=http_options(provider, http_client),
+        )
     )
 
 
@@ -38,4 +41,5 @@ INTEGRATION = ProviderIntegration(
     supported_model_apis=("google.generate_content",),
     build_provider=_build_provider,
     credential_format=CredentialFormat.google_service_account_json,
+    reserved_headers=("authorization", "x-goog-api-key", "x-goog-user-project"),
 )

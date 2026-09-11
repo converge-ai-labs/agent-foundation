@@ -4332,6 +4332,10 @@ export interface components {
        * @default true
        */
       enabled?: boolean;
+      /** Extra Headers */
+      extra_headers?: {
+        [key: string]: string | null;
+      };
       /** Name */
       name: string;
       /** Type */
@@ -5675,6 +5679,11 @@ export interface components {
       credential_configured: boolean;
       /** Enabled */
       enabled: boolean;
+      /**
+       * Header Names
+       * @default []
+       */
+      header_names?: string[];
       /** Id */
       id: string;
       /** Name */
@@ -7724,6 +7733,10 @@ export interface components {
       credential?: string | null;
       /** Enabled */
       enabled?: boolean | null;
+      /** Extra Headers */
+      extra_headers?: {
+        [key: string]: string | null;
+      };
       /** Name */
       name?: string | null;
     };

@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from typing import Any
 
 import httpx2
-from google.genai.types import HttpRetryOptions
+from google.genai import Client
 from pydantic_ai.providers.google import GoogleProvider
 
 from ..descriptions import positive_token_limit
@@ -20,7 +20,8 @@ from .base import (
     require_credential,
     require_endpoint,
 )
-from .types import EmptyProviderConfiguration, RuntimeProvider
+from .google_provider import http_options
+from .types import ProviderConfiguration, RuntimeProvider
 
 
 def _build_provider(
@@ -29,10 +30,9 @@ def _build_provider(
     _model_api: str,
 ) -> GoogleProvider:
     return GoogleProvider(
-        api_key=require_credential(provider),
-        base_url=provider.endpoint,
-        http_client=http_client,
-        retry_options=HttpRetryOptions(attempts=1),
+        client=Client(
+            vertexai=False, api_key=require_credential(provider), http_options=http_options(provider, http_client)
+        )
     )
 
 
@@ -74,10 +74,11 @@ class GeminiDiscovery(JsonModelDiscoveryAdapter):
 INTEGRATION = ProviderIntegration(
     type="google_gemini",
     display_name="Google Gemini",
-    configuration_model=EmptyProviderConfiguration,
+    configuration_model=ProviderConfiguration,
     supported_model_apis=("google.generate_content",),
     build_provider=_build_provider,
     endpoint="https://generativelanguage.googleapis.com",
+    reserved_headers=("x-goog-api-key",),
     model_discovery=GeminiDiscovery(
         request_builder=_request,
         schema=ModelListSchema(

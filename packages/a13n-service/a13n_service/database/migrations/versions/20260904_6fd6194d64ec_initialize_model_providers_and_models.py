@@ -27,6 +27,8 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=128), nullable=False),
         sa.Column("normalized_name", sa.String(length=384), nullable=False),
         sa.Column("configuration", sa.JSON(), nullable=False),
+        sa.Column("credential_configured", sa.Boolean(), nullable=False),
+        sa.Column("header_names", sa.JSON(), nullable=False),
         sa.Column("credential_generation", sa.BigInteger(), nullable=False),
         sa.Column("ciphertext", sa.LargeBinary(), nullable=True),
         sa.Column("nonce", sa.LargeBinary(length=12), nullable=True),

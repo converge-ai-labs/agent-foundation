@@ -9,6 +9,7 @@ from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.update_model_provider_request_configuration_type_0 import UpdateModelProviderRequestConfigurationType0
+    from ..models.update_model_provider_request_extra_headers import UpdateModelProviderRequestExtraHeaders
 
 
 T = TypeVar("T", bound="UpdateModelProviderRequest")
@@ -21,12 +22,14 @@ class UpdateModelProviderRequest:
         configuration (None | Unset | UpdateModelProviderRequestConfigurationType0):
         credential (None | str | Unset):
         enabled (bool | None | Unset):
+        extra_headers (UpdateModelProviderRequestExtraHeaders | Unset):
         name (None | str | Unset):
     """
 
     configuration: Unset | UpdateModelProviderRequestConfigurationType0 | None = UNSET
     credential: str | Unset | None = UNSET
     enabled: bool | Unset | None = UNSET
+    extra_headers: UpdateModelProviderRequestExtraHeaders | Unset = UNSET
     name: str | Unset | None = UNSET
 
     def to_dict(self) -> dict[str, Any]:
@@ -54,6 +57,10 @@ class UpdateModelProviderRequest:
         else:
             enabled = self.enabled
 
+        extra_headers: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.extra_headers, Unset):
+            extra_headers = self.extra_headers.to_dict()
+
         name: str | Unset | None
         if isinstance(self.name, Unset):
             name = UNSET
@@ -69,6 +76,8 @@ class UpdateModelProviderRequest:
             field_dict["credential"] = credential
         if enabled is not UNSET:
             field_dict["enabled"] = enabled
+        if extra_headers is not UNSET:
+            field_dict["extra_headers"] = extra_headers
         if name is not UNSET:
             field_dict["name"] = name
 
@@ -78,6 +87,9 @@ class UpdateModelProviderRequest:
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         from ..models.update_model_provider_request_configuration_type_0 import (
             UpdateModelProviderRequestConfigurationType0,
+        )
+        from ..models.update_model_provider_request_extra_headers import (
+            UpdateModelProviderRequestExtraHeaders,
         )
 
         d = dict(src_dict)
@@ -117,6 +129,13 @@ class UpdateModelProviderRequest:
 
         enabled = _parse_enabled(d.pop("enabled", UNSET))
 
+        _extra_headers = d.pop("extra_headers", UNSET)
+        extra_headers: UpdateModelProviderRequestExtraHeaders | Unset
+        if isinstance(_extra_headers, Unset):
+            extra_headers = UNSET
+        else:
+            extra_headers = UpdateModelProviderRequestExtraHeaders.from_dict(_extra_headers)
+
         def _parse_name(data: object) -> str | Unset | None:
             if data is None:
                 return data
@@ -130,6 +149,7 @@ class UpdateModelProviderRequest:
             configuration=configuration,
             credential=credential,
             enabled=enabled,
+            extra_headers=extra_headers,
             name=name,
         )
 

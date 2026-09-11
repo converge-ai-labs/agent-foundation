@@ -9,6 +9,7 @@ from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.create_model_provider_request_configuration import CreateModelProviderRequestConfiguration
+    from ..models.create_model_provider_request_extra_headers import CreateModelProviderRequestExtraHeaders
 
 
 T = TypeVar("T", bound="CreateModelProviderRequest")
@@ -23,6 +24,7 @@ class CreateModelProviderRequest:
         configuration (CreateModelProviderRequestConfiguration | Unset):
         credential (None | str | Unset):
         enabled (bool | Unset):
+        extra_headers (CreateModelProviderRequestExtraHeaders | Unset):
     """
 
     name: str
@@ -30,6 +32,7 @@ class CreateModelProviderRequest:
     configuration: CreateModelProviderRequestConfiguration | Unset = UNSET
     credential: str | Unset | None = UNSET
     enabled: bool | Unset = UNSET
+    extra_headers: CreateModelProviderRequestExtraHeaders | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         name = self.name
@@ -48,6 +51,10 @@ class CreateModelProviderRequest:
 
         enabled = self.enabled
 
+        extra_headers: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.extra_headers, Unset):
+            extra_headers = self.extra_headers.to_dict()
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -62,6 +69,8 @@ class CreateModelProviderRequest:
             field_dict["credential"] = credential
         if enabled is not UNSET:
             field_dict["enabled"] = enabled
+        if extra_headers is not UNSET:
+            field_dict["extra_headers"] = extra_headers
 
         return field_dict
 
@@ -69,6 +78,9 @@ class CreateModelProviderRequest:
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         from ..models.create_model_provider_request_configuration import (
             CreateModelProviderRequestConfiguration,
+        )
+        from ..models.create_model_provider_request_extra_headers import (
+            CreateModelProviderRequestExtraHeaders,
         )
 
         d = dict(src_dict)
@@ -94,12 +106,20 @@ class CreateModelProviderRequest:
 
         enabled = d.pop("enabled", UNSET)
 
+        _extra_headers = d.pop("extra_headers", UNSET)
+        extra_headers: CreateModelProviderRequestExtraHeaders | Unset
+        if isinstance(_extra_headers, Unset):
+            extra_headers = UNSET
+        else:
+            extra_headers = CreateModelProviderRequestExtraHeaders.from_dict(_extra_headers)
+
         create_model_provider_request = cls(
             name=name,
             type_=type_,
             configuration=configuration,
             credential=credential,
             enabled=enabled,
+            extra_headers=extra_headers,
         )
 
         return create_model_provider_request

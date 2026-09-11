@@ -54,8 +54,7 @@ def test_override_and_independent_sections_keep_secrets_private(tmp_path, monkey
         '[brave_search]\napi_key="sample-secret"',
         '[brave_search]\nprovider="exa"\napi_key="sample-secret"',
         '[brave_search]\nprovider="brave"\napi_key="sample-secret"\nbase_url="https://example.com"',
-        '[model]\nprovider="openai_compatible"\napi_key="sample-secret"\nmodel="model"',
-        '[model]\nprovider="openai_compatible"\napi_key="sample-secret"\nmodel="model"\nbase_url="https://sample-secret@example.com"',
+        '[model]\nprovider="openai"\napi_key="sample-secret"\nmodel="model"\nbase_url="https://sample-secret@example.com"',
         '[environment]\napi_key="sample-secret',
         'unknown="sample-secret"',
     ],
@@ -75,10 +74,10 @@ def test_explicit_missing_file_is_an_error(tmp_path, monkeypatch):
         load_provider_settings()
 
 
-@pytest.mark.parametrize("provider", ["openrouter", "openai_compatible"])
+@pytest.mark.parametrize("provider", ["openrouter", "openai"])
 def test_enabled_model_and_connector_sections(tmp_path, provider):
     path = tmp_path / "settings.toml"
-    endpoint = 'base_url="https://models.example/v1"' if provider == "openai_compatible" else ""
+    endpoint = 'base_url="https://models.example/v1"' if provider == "openai" else ""
     path.write_text(
         '[connector]\nprovider="composio"\napi_key="connector-key"\n'
         f'[model]\nprovider="{provider}"\napi_key="model-key"\nmodel="upstream/model"\n{endpoint}\n'
@@ -217,7 +216,7 @@ async def test_provider_opt_in_does_not_start_interactive_slack(monkeypatch):
         ("openrouter", 'model=""'),
         ("openrouter", 'model="configured/model"'),
         ("openrouter", "model=123"),
-        ("openai_compatible", 'model="configured/model"'),
+        ("openai", 'model="configured/model"'),
     ],
 )
 async def test_model_matrix_uses_openrouter_credentials_without_changing_config(
@@ -227,7 +226,7 @@ async def test_model_matrix_uses_openrouter_credentials_without_changing_config(
     from ..providers import real_providers
 
     path = tmp_path / "settings.toml"
-    endpoint = 'base_url="https://models.example/v1"' if provider == "openai_compatible" else ""
+    endpoint = 'base_url="https://models.example/v1"' if provider == "openai" else ""
     source = f'[model]\nprovider="{provider}"\napi_key="model-secret"\n{model_setting}\n{endpoint}\n'
     path.write_text(source)
     monkeypatch.setenv("LIVE_TEST_PROVIDERS_CONFIG", str(path))
@@ -245,7 +244,7 @@ async def test_model_matrix_uses_openrouter_credentials_without_changing_config(
     )
     fixture = configured_provider.__wrapped__(request)
     try:
-        if provider == "openai_compatible":
+        if provider == "openai":
             with pytest.raises(pytest.skip.Exception, match=r"requires model\.provider=openrouter"):
                 await anext(fixture)
             assert provisioned == []
@@ -265,7 +264,7 @@ async def test_model_matrix_uses_openrouter_credentials_without_changing_config(
     [
         'provider="openrouter"',
         'provider="openrouter"\napi_key=""',
-        'provider="openrouter"\napi_key="sample-secret"\nbase_url="https://models.example/v1"',
+        'provider="openrouter"\napi_key="sample-secret"\nbase_url="https://sample-secret@models.example/v1"',
         'provider="unknown"\napi_key="sample-secret"',
     ],
 )

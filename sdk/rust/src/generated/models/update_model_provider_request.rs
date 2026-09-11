@@ -37,6 +37,9 @@ pub struct UpdateModelProviderRequest {
     )]
     pub enabled: Option<Option<bool>>,
 
+    #[serde(rename = "extra_headers", skip_serializing_if = "Option::is_none")]
+    pub extra_headers: Option<serde_json::Value>,
+
     #[serde(
         rename = "name",
         default,
@@ -52,6 +55,7 @@ impl UpdateModelProviderRequest {
             configuration: None,
             credential: None,
             enabled: None,
+            extra_headers: None,
             name: None,
         }
     }

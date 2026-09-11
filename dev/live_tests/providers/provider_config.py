@@ -35,16 +35,14 @@ class OpenConnectorSettings(Settings):
 
 
 class ModelSettings(Settings):
-    provider: Literal["openrouter", "openai_compatible"]
+    provider: Literal["openrouter", "openai"]
     api_key: SecretStr = Field(min_length=1)
     model: str = Field(min_length=1)
     base_url: str = ""
 
     @model_validator(mode="after")
     def endpoint(self):
-        if self.provider == "openrouter":
-            if self.base_url:
-                raise ValueError("OpenRouter uses its built-in endpoint; leave base_url empty")
+        if not self.base_url:
             return self
         parts = urlsplit(self.base_url)
         if (

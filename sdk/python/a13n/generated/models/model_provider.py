@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 
+from ..types import UNSET, Unset
+
 if TYPE_CHECKING:
     from ..models.model_provider_configuration import ModelProviderConfiguration
     from ..models.principal_ref import PrincipalRef
@@ -30,6 +32,7 @@ class ModelProvider:
         updated_at (datetime.datetime):
         updated_by (PrincipalRef):
         workspace_id (None | str):
+        header_names (list[str] | Unset):
     """
 
     configuration: ModelProviderConfiguration
@@ -44,6 +47,7 @@ class ModelProvider:
     updated_at: datetime.datetime
     updated_by: PrincipalRef
     workspace_id: str | None
+    header_names: list[str] | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         configuration = self.configuration.to_dict()
@@ -71,6 +75,10 @@ class ModelProvider:
         workspace_id: str | None
         workspace_id = self.workspace_id
 
+        header_names: list[str] | Unset = UNSET
+        if not isinstance(self.header_names, Unset):
+            header_names = self.header_names
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -89,6 +97,8 @@ class ModelProvider:
                 "workspace_id": workspace_id,
             }
         )
+        if header_names is not UNSET:
+            field_dict["header_names"] = header_names
 
         return field_dict
 
@@ -127,6 +137,8 @@ class ModelProvider:
 
         workspace_id = _parse_workspace_id(d.pop("workspace_id"))
 
+        header_names = cast(list[str], d.pop("header_names", UNSET))
+
         model_provider = cls(
             configuration=configuration,
             created_at=created_at,
@@ -140,6 +152,7 @@ class ModelProvider:
             updated_at=updated_at,
             updated_by=updated_by,
             workspace_id=workspace_id,
+            header_names=header_names,
         )
 
         return model_provider

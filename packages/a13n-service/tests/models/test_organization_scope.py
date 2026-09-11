@@ -1,7 +1,9 @@
 from dataclasses import replace
+from unittest.mock import patch
 
 import pytest
 from a13n_service.etags import resource_etag
+from a13n_service.models.credentials import ProviderSecrets
 from a13n_service.models.domain import (
     CreateModelProviderRequest,
     CreateModelRequest,
@@ -57,7 +59,7 @@ async def test_shared_models_resolve_by_bare_key_and_use_owned_credentials(
         record = await session.get(ModelProviderRecord, org_provider.id)
         assert record is not None
         snapshot = record.credential_snapshot()
-        assert snapshot.decrypt(protector()) == "sk-shared"
+        assert ProviderSecrets.model_validate_json(snapshot.decrypt(protector())).credential == "sk-shared"
         with pytest.raises(SecretProtectionError):
             replace(snapshot, workspace_id=WORKSPACE_ID).decrypt(protector())
         with pytest.raises(SecretProtectionError):
@@ -70,13 +72,19 @@ async def test_shared_models_resolve_by_bare_key_and_use_owned_credentials(
             if_match=resource_etag(model.id, model.updated_at),
             request=UpdateModelRequest(enabled=False),
         )
-    with pytest.raises(ModelError):
+    with (
+        pytest.raises(ModelError),
+        patch(
+            "a13n_service.models.provider_service.CredentialSnapshot.decrypt",
+            side_effect=AssertionError("must authorize first"),
+        ),
+    ):
         await provider_service.update(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
             provider_id=org_provider.id,
             if_match=resource_etag(org_provider.id, org_provider.updated_at),
-            request=UpdateModelProviderRequest(enabled=False),
+            request=UpdateModelProviderRequest(credential="replacement"),
         )
 
 

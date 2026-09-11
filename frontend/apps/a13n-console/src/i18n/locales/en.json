@@ -1273,5 +1273,15 @@
   "End time": "End time",
   "24 hours": "24 hours",
   "Project API Key": "Project API Key",
-  "Catalog API Key": "Catalog API Key"
+  "Catalog API Key": "Catalog API Key",
+  "Advanced settings": "Advanced settings",
+  "Leave empty to use the provider's default endpoint.": "Leave empty to use the provider's default endpoint.",
+  "Header value": "Header value",
+  "Remove header": "Remove header",
+  "Add header": "Add header",
+  "Header names must be nonempty and unique.": "Header names must be nonempty and unique.",
+  "Header values are stored securely and never shown. Leave a saved value empty to keep it.": "Header values are stored securely and never shown. Leave a saved value empty to keep it.",
+  "Enter a value for each new header.": "Enter a value for each new header.",
+  "Saved value": "Saved value",
+  "Converse base URL": "Converse base URL"
 }
