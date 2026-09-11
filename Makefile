@@ -146,6 +146,10 @@ live-test-performance: sync ## Measure long-session latency with disposable PG, 
 live-test-management: sync ## Run isolated Service/Harness management journeys with Docker dependencies
 	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests --live-management -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)
 
+.PHONY: live-test-plugin-image
+live-test-plugin-image: sync ## Build a custom plugin wheel/image and exercise the production Worker through HTTP
+	@uv run --locked python -m pytest dev/live_tests/harness_integration/test_19_plugin_image.py --live-plugin-image -v --tb=short -o log_cli=true -o log_cli_level=INFO --log-disable=httpx2 $(LIVE_TEST_ARGS)
+
 .PHONY: live-test-providers
 live-test-providers: sync ## Run optional configured real Providers in disposable local labs
 	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests/providers/test_31_real_providers.py --live-providers -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)

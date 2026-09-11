@@ -24,16 +24,16 @@ Tests are grouped by their primary feature, independently of their execution opt
 | `environment/`          | Environment selection, access, files, providers, lifecycle and shared Worker use |      22 |             366 |
 | `control/`              | Run commands, waiting, inbox, queue, branches and acceptance races               |      21 |             193 |
 | `run_recovery/`         | Worker ownership, persistence, budgets, dependency failures and drain            |       8 |             653 |
-| `harness_integration/`  | Service configuration and resources reaching real Harness execution              |      10 |              28 |
+| `harness_integration/`  | Service configuration and resources reaching real Harness execution              |      11 |              29 |
 | `model/`                | Frozen Model settings and current Provider settings between requests             |       1 |               3 |
 | `protocol/`             | Native and Hosted streams, reconnect and recovery projection                     |       3 |              13 |
 | `iam/`                  | Workspace isolation, current authority and revocation                            |       3 |              10 |
 | `providers/`            | Optional real search, model, environment and Connector accounts                  |       1 |              15 |
 | `observability/`        | Cross-layer evidence and telemetry failure isolation                             |       1 |               2 |
 | `performance/`          | Long-session operation latency and retained-history correctness                  |       1 |               1 |
-| `infrastructure_tests/` | Offline tests of fixtures, configuration, parsers and cleanup                    |      11 |             213 |
+| `infrastructure_tests/` | Offline tests of fixtures, configuration, parsers and cleanup                    |      12 |             220 |
 
-Counts are a collection snapshot: 82 modules and 1,497 parameterized cases, including inherited lifecycle cases and cases skipped unless explicitly enabled. A category does not enable infrastructure: the existing `--live*` fixture gates still apply. Mixed modules remain intact: `test_26_output_and_client_tools.py` and `test_32_multiworker_resources.py` live under `harness_integration/`, while `providers/test_31_real_providers.py` retains its real-account matrix.
+Counts are a collection snapshot: 84 modules and 1,505 parameterized cases, including inherited lifecycle cases and cases skipped unless explicitly enabled. A category does not enable infrastructure: the existing `--live*` fixture gates still apply. Mixed modules remain intact: `test_26_output_and_client_tools.py` and `test_32_multiworker_resources.py` live under `harness_integration/`, while `providers/test_31_real_providers.py` retains its real-account matrix.
 
 Subpackages inherit the root `conftest.py`. Feature-owned helpers live beside their tests; shared lab infrastructure lives in `infrastructure/`. The isolated launcher recursively selects the same first-round filenames and keeps their filename order.
 
@@ -59,7 +59,7 @@ Use the primary responsibility of a helper to choose its location:
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `control/`             | `approval_plugin.py`, `async_children_model.py`, `control_children.py`, `control_fault_host.py`, `control_support.py`, `fixture_inbox.py`, `fork_fault_host.py`, `fork_support.py`, `queue_fault_host.py`                                                                                                                       |
 | `environment/`         | `docker_lifecycle_host.py`, `e2b_host.py`, `e2b_support.py`, `environment_backends.py`, `environment_host.py`, `environment_worker_host.py`, `environment_workers.py`, `file_backends.py`, `file_contract.py`, `file_resource_worker.py`, `lifecycle_cases.py`, `lifecycle_host.py`, `lifecycle_support.py`, `service_cases.py` |
-| `harness_integration/` | `fixture_connectivity.py`, `management_model.py`                                                                                                                                                                                                                                                                                |
+| `harness_integration/` | `fixture_connectivity.py`, `management_model.py`, `plugin_image.py`, `plugin_package/`, `plugin_worker.Dockerfile`                                                                                                                                                                                                              |
 | `iam/`                 | `native_iam.py`, `run_fault_identity.py`                                                                                                                                                                                                                                                                                        |
 | `infrastructure/`      | `client.py`, `config.py`, `fixture_model.py`, `fixture_peer.py`, `host.py`, `local_storage.py`, `management_packages.py`, `management_support.py`, `round_two_lab.py`, `round_two_model.py`, `round_two_resources.py`, `run_faults.py`, `tcp_proxy.py`                                                                          |
 | `observability/`       | `fixture_telemetry.py`                                                                                                                                                                                                                                                                                                          |
@@ -81,6 +81,24 @@ Before submitting changes, `git ls-files -- dev/live_tests/.state dev/live_tests
 The explicit live-test Worker host builds one immutable factory catalog from `control/approval_plugin.py` and `run_recovery/resilience_plugin.py` before serving. It supplies this catalog through the Service's trusted `Components.plugin_factory_catalog` composition boundary. Control does not import these factories. This uses plugin code already present in the checkout; setup never builds, uploads, or installs code through HTTP. Restart the Worker after changing a fixture plugin.
 
 Agent configuration selects `live.approval` or `live.resilience` using `instance_name`, `plugin_key`, and `config`. Control stores the authored selection; the Worker validates and normalizes it before execution. A missing factory or invalid configuration fails the Run before model or tool effects. See the [installed plugin contract](../../spec/a13n-service/36-installed-harness-plugins.md).
+
+### Packaged plugin image journey
+
+Case 19, [`harness_integration/test_19_plugin_image.py`](harness_integration/test_19_plugin_image.py), covers the build-to-execution path separately from the explicit factory fixtures:
+
+1. Build the current checkout with the production Service Dockerfile, then build the standalone `harness_integration/plugin_package` into a wheel.
+2. Install that wheel into a derived Worker image at build time. The package declares its `live.packaged` factory through `a13n_harness.plugins`; it imports no live-test helpers and is never installed in the host/Control environment.
+3. Start the image with its inherited production entrypoint and command, selecting the factory through `A13N_SERVICE_PLUGIN_KEYS`. No explicit catalog, source mount, or Worker monkeypatch is supplied.
+4. Create an Agent through Control HTTP and execute the plugin's capability tool and Harness result middleware. Independently read the file effects, the model's actual tool result, and the persisted Attempt. Check the configured label's hash, wheel metadata, installed module path, non-root UID, Harness Run ID, and Worker build identity.
+5. Change the plugin configuration through an Agent Revision and verify the changed effect; remove the binding and verify both the tool and middleware disappear. Invalid configuration and an installed-but-unselected factory must fail before any model call or effect.
+
+```sh
+make live-test-plugin-image
+```
+
+This explicit `--live-plugin-image` opt-in builds images and owns disposable PostgreSQL, Redis, object storage, Control, and Worker resources. It requires a local Docker daemon and build access to the base images and Python build dependencies. Linux uses host networking; Docker Desktop uses `host.docker.internal` and a loopback-published Worker probe port. It does not require Docker Desktop host networking to be enabled. On Docker Desktop, Control disables save-time DNS resolution for the container-only hostname; the Worker retains normal request-time DNS and endpoint allowlist checks. Only a fixture-owned effects directory is mounted into the Worker. Containers and uniquely tagged images are removed on exit; build logs and wheels remain under `.state/plugin-images/`, while private service logs and execution evidence remain under `.state/management/`.
+
+The model is the deterministic HTTP fixture and returns observed tool results. This case covers installation, startup discovery, Agent binding, configuration, capability execution, and result middleware; it does not cover registry publication, rolling upgrades, cross-version state migration, dependency conflicts, or concurrent plugin instance isolation. Existing case 18 and recovery tests retain their narrower, faster coverage. Without this opt-in, the image journey skips before building or contacting services.
 
 ## Optional real Provider configuration
 
@@ -410,7 +428,7 @@ The new admission barriers run after input preparation but before the final tran
 
 ## Management integration: Service configuration to Harness execution
 
-This round adds 45 live variants in 13 independently selectable files. Cases 19, 28, 29 and 30 are intentionally excluded. All management resources are created through public HTTP APIs, and each enabled test uses its own isolated lab with the same automatic RustFS setup and optional loopback S3 override as round two.
+This round adds 45 live variants in 13 independently selectable files. Cases 28, 29 and 30 are intentionally excluded. Case 19 has its own [packaged plugin image opt-in](#packaged-plugin-image-journey). All management resources are created through public HTTP APIs, and each enabled test uses its own isolated lab with the same automatic RustFS setup and optional loopback S3 override as round two.
 
 | File                                                     | Acceptance evidence                                                                                                                                                                                                                                          |
 | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
