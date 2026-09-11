@@ -88,7 +88,13 @@ function ConnectionChoice({
           label: preset.name,
           description: `Remote MCP — ${t(preset.description)}`,
           keywords: [preset.id, preset.endpoint],
-          icon: <BrandIcon identity={preset.id} endpoint={preset.endpoint} />,
+          icon: (
+            <BrandIcon
+              identity={preset.id}
+              endpoint={preset.endpoint}
+              logo={preset.logo}
+            />
+          ),
         }))
       : []),
   ].sort(
@@ -127,6 +133,7 @@ function ConnectionChoice({
           ) : (
             <BrandIcon
               identity={selected.preset?.id}
+              logo={selected.preset?.logo}
               endpoint={selected.preset?.endpoint ?? selected.endpoint}
             />
           )}

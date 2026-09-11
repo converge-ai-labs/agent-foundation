@@ -155,6 +155,11 @@ export function CreateMCP({
         connect.mutate();
       }}
     >
+      {preset?.notice && (
+        <p role="status" className="text-sm text-muted-foreground">
+          {t(preset.notice)}
+        </p>
+      )}
       <FormField label={t("Connection name")}>
         <Input
           required

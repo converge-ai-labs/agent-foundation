@@ -1389,5 +1389,6 @@
   "Load tools on demand": "按需加载工具",
   "Select no tools": "不选择任何工具",
   "No tools": "无工具",
-  "Authorization has already started. Restarting invalidates the previous authorization link.": "授权已经开始。重新开始会使之前的授权链接失效。"
+  "Authorization has already started. Restarting invalidates the previous authorization link.": "授权已经开始。重新开始会使之前的授权链接失效。",
+  "Authentication is not documented in the directory. Check the setup guide and choose the mode required by the server.": "目录未说明认证方式。请查看接入指南，选择服务器要求的认证方式。"
 }
