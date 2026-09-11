@@ -62,7 +62,11 @@ export function Invitations({ scope }: { scope: MembershipScope }) {
           <ResourceTable
             items={query.data.items}
             columns={[
-              { label: t("Email"), render: (item) => item.email },
+              {
+                label: t("Email"),
+                tone: "primary",
+                render: (item) => item.email,
+              },
               {
                 label: t("Role"),
                 render: (item) =>
@@ -76,6 +80,7 @@ export function Invitations({ scope }: { scope: MembershipScope }) {
               },
               {
                 label: t("Expires"),
+                tone: "muted",
                 render: (item) => <Timestamp value={item.expires_at} />,
               },
               {
@@ -103,6 +108,7 @@ export function Invitations({ scope }: { scope: MembershipScope }) {
                     <div className={styles.actions}>
                       <InvitationEditor scope={scope} invitation={item} />
                       <Confirm
+                        triggerVariant="ghost"
                         title={t("Revoke invitation")}
                         description={t(
                           "The invitation link will stop working.",

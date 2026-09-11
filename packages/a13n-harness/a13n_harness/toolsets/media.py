@@ -14,7 +14,7 @@ from a13n_harness.errors import RunError
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
 
 from ._instructions import InstructionFunctionToolset, tool_instruction
-from ._results import ToolError, ToolFailure
+from ._results import ToolFailure, tool_failure
 
 _MEDIA_INSTRUCTION = tool_instruction("read_media")
 
@@ -138,10 +138,16 @@ def _media_error(
     limit: int | None = None,
     retry_hint: str = "dependency_change",
 ) -> ToolFailure:
-    error: ToolError = {"code": code, "retry_hint": retry_hint}
+    message = {
+        "media_binding_missing": "No media reader is configured for this Run.",
+        "media_response_invalid": "The media reader returned an invalid result.",
+        "media_timeout": "Reading the media timed out.",
+        "media_too_large": "The media exceeds the configured inline byte limit.",
+    }.get(code, "The media could not be read; check the resource and configured reader.")
+    result = tool_failure(code, message, retry_hint=retry_hint)
     if limit is not None:
-        error["max_bytes"] = limit
-    return {"ok": False, "error": error}
+        result["error"]["max_bytes"] = limit
+    return result
 
 
 __all__ = ["MediaToolResult", "MediaToolset"]

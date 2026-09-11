@@ -123,6 +123,7 @@ from .create_key_request import CreateKeyRequest
 from .create_mcp_connection_request import CreateMCPConnectionRequest
 from .create_model_provider_request import CreateModelProviderRequest
 from .create_model_provider_request_configuration import CreateModelProviderRequestConfiguration
+from .create_model_provider_request_extra_headers import CreateModelProviderRequestExtraHeaders
 from .create_model_request import CreateModelRequest
 from .create_model_request_settings import CreateModelRequestSettings
 from .create_provider_request import CreateProviderRequest
@@ -453,6 +454,7 @@ from .update_hook_subscription_state_request import UpdateHookSubscriptionStateR
 from .update_mcp_connection_request import UpdateMCPConnectionRequest
 from .update_model_provider_request import UpdateModelProviderRequest
 from .update_model_provider_request_configuration_type_0 import UpdateModelProviderRequestConfigurationType0
+from .update_model_provider_request_extra_headers import UpdateModelProviderRequestExtraHeaders
 from .update_model_request import UpdateModelRequest
 from .update_model_request_settings_type_0 import UpdateModelRequestSettingsType0
 from .update_profile_request import UpdateProfileRequest
@@ -608,6 +610,7 @@ __all__ = (
     "CreateMCPConnectionRequest",
     "CreateModelProviderRequest",
     "CreateModelProviderRequestConfiguration",
+    "CreateModelProviderRequestExtraHeaders",
     "CreateModelRequest",
     "CreateModelRequestSettings",
     "CreateProviderRequest",
@@ -934,6 +937,7 @@ __all__ = (
     "UpdateMCPConnectionRequest",
     "UpdateModelProviderRequest",
     "UpdateModelProviderRequestConfigurationType0",
+    "UpdateModelProviderRequestExtraHeaders",
     "UpdateModelRequest",
     "UpdateModelRequestSettingsType0",
     "UpdateProfileRequest",

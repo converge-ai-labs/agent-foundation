@@ -5,10 +5,11 @@ This directory owns the development environment for `HarnessUiApp`, shared by th
 From the repository root:
 
 ```bash
-cp dev/harness-ui/.env.example dev/harness-ui/.env # do not overwrite a private file
 make langfuse-up
 make cli
 ```
+
+`make cli` and `make harness-ui-smoke` create `dev/harness-ui/.env` from its sibling `.env.example` when missing. Existing private files are never overwritten, including when the template changes. `make env-init` prepares both Harness development profiles without starting an application or infrastructure.
 
 `make cli` runs `uv run --locked --env-file dev/harness-ui/.env a13n-harness-ui --no-update-check`. Startup update detection is disabled for this local development command. It retains the CLI's normal configuration selection; the environment file does not replace Agent/Model YAML or write to `~/.a13n-harness-ui/`. Forward normal options or select another environment file:
 
@@ -17,6 +18,8 @@ make cli CLI_ARGS='--help'
 make cli CLI_ARGS='--config /path/to/a13n-harness-ui.yaml webui'
 make cli HARNESS_UI_ENV=/absolute/path/to/.env
 ```
+
+An alternate environment file is used unchanged. If it does not exist, the launcher copies `<path>.example`; if neither exists, it stops with a setup hint. Use `make a13n-harness-ui` to run without loading the development `.env`; it also accepts `CLI_ARGS`.
 
 Unlike the SDK development launcher, this command needs no `opentelemetry-instrument` wrapper. `open_harness_ui_app()` initializes an App-owned OTLP/HTTP tracing provider when tracing is enabled and no global Host provider exists. It passes that same provider to root and child Harness builds and drains it after App tasks finish. Explicitly supplied or preconfigured Host providers remain externally owned.
 

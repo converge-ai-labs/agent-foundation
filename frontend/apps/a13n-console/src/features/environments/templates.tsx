@@ -42,6 +42,7 @@ export function EnvironmentTemplates({ scope }: { scope: EnvironmentScope }) {
             columns={[
               {
                 label: t("Name"),
+                tone: "primary",
                 render: (item) => (
                   <ResourceIdentity
                     name={item.name}
@@ -51,6 +52,7 @@ export function EnvironmentTemplates({ scope }: { scope: EnvironmentScope }) {
               },
               {
                 label: t("Scope"),
+                tone: "muted",
                 render: (item) => (
                   <ScopeBadge workspaceId={item.workspace_id} />
                 ),

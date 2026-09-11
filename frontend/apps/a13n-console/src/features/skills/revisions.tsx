@@ -45,6 +45,7 @@ export function Revisions({ skill }: { skill: Schema["Skill"] }) {
               columns={[
                 {
                   label: t("Version"),
+                  tone: "primary",
                   render: (item) => (
                     <Link to={`?revision=${item.id}`}>
                       v{item.version}
@@ -56,6 +57,7 @@ export function Revisions({ skill }: { skill: Schema["Skill"] }) {
                 },
                 {
                   label: t("Source"),
+                  tone: "muted",
                   render: (item) =>
                     item.imported_from.kind === "github"
                       ? "GitHub"
@@ -63,10 +65,12 @@ export function Revisions({ skill }: { skill: Schema["Skill"] }) {
                 },
                 {
                   label: t("Files"),
+                  align: "right",
                   render: (item) => item.manifest.files.length,
                 },
                 {
                   label: t("Created"),
+                  tone: "muted",
                   render: (item) => <Timestamp value={item.created_at} />,
                 },
                 {

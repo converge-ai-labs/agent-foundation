@@ -173,7 +173,7 @@ export function StateBadge({ state }: { state: string }) {
         ? "warning"
         : "secondary";
   return (
-    <Badge variant={tone}>
+    <Badge variant={tone} data-state={state}>
       {t(`state.${state}`, { defaultValue: state.replaceAll("_", " ") })}
     </Badge>
   );

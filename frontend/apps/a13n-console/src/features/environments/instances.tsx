@@ -1,3 +1,4 @@
+import { CopyableId } from "../../shared/copy";
 import {
   Button,
   ChoiceField,
@@ -69,9 +70,10 @@ export function EnvironmentInstances() {
             columns={[
               {
                 label: t("Environment"),
+                tone: "primary",
                 render: (item) => (
                   <>
-                    <code>{item.id}</code>
+                    <CopyableId value={item.id} primary />
                     <small>
                       {t(item.ownership === "managed" ? "Managed" : "External")}
                     </small>
@@ -82,7 +84,11 @@ export function EnvironmentInstances() {
                 label: t("Status"),
                 render: (item) => <StateBadge state={item.status} />,
               },
-              { label: t("Generation"), render: (item) => item.generation },
+              {
+                label: t("Generation"),
+                align: "right",
+                render: (item) => item.generation,
+              },
               {
                 label: t("Activity"),
                 render: (item) => (
@@ -91,6 +97,7 @@ export function EnvironmentInstances() {
               },
               {
                 label: t("Updated"),
+                tone: "muted",
                 render: (item) => <Timestamp value={item.updated_at} />,
               },
               {

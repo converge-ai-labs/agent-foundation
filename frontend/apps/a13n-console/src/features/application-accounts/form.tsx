@@ -139,7 +139,7 @@ export function AccountForm({
         placeholder={t("Select account provider")}
         value={provider}
         className="min-w-0"
-        disabled={!!basis}
+        readOnly={!!basis}
         required
         onValueChange={(value) => {
           setProvider(value);

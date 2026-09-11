@@ -1,3 +1,4 @@
+import { Identifier } from "../../shared/copy";
 import { ProviderTypeField } from "../../shared/provider-type-field";
 import {
   useResourceEditorState,
@@ -68,7 +69,7 @@ export function SearchProviderEditor({
         readOnly ? "Provider" : providerId ? "Edit provider" : "Add provider",
       )}
       description={t(
-        "Credentials are stored securely and never returned by the service.",
+        "Configure a search service for your agents\u2019 web tools. Credentials are never returned by the service.",
       )}
       closeLabel={t("Close")}
       trigger={
@@ -230,7 +231,7 @@ export function SearchProviderForm({
       <ProviderTypeField
         definitions={definitions}
         value={type}
-        disabled={!!original}
+        readOnly={!!original}
         onValueChange={(value) => {
           setType(value);
           setCredential("");
@@ -308,7 +309,7 @@ export function SearchProviderForm({
           {existing.map((item) => (
             <div key={item.id}>
               <strong>{item.name}</strong> · {item.type} ·{" "}
-              <code>{item.id}</code>
+              <Identifier value={item.id} />
               <Button
                 type="button"
                 variant="outline"

@@ -45,12 +45,16 @@ class Config(ProviderConfiguration):
         return self
 
 
+class _AlibabaProvider(openai_provider.ClientEndpointProvider, AlibabaProvider):
+    pass
+
+
 def _build_provider(
     provider: RuntimeProvider,
     http_client: httpx2.AsyncClient,
     model_api: str,
 ) -> AlibabaProvider:
-    return openai_provider.build(provider, http_client, model_api, AlibabaProvider)
+    return openai_provider.build(provider, http_client, model_api, _AlibabaProvider)
 
 
 def _endpoint(configuration: Mapping[str, object]) -> str:

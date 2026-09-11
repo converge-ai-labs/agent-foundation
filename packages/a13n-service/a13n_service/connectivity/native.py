@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import httpx2
 from a13n_harness import AgentContext
+from a13n_harness.observation import record_tool_outcome_unknown
 from pydantic import JsonValue
 from pydantic_ai.capabilities import MCP
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -76,7 +77,11 @@ async def native_capability(
         if selected is None:
             raise ValueError("native_action_unavailable")
         await guard()
-        return await selected.call(arguments)
+        result = await selected.call(arguments)
+        # Native providers own this outcome envelope; arbitrary MCP results do not.
+        if isinstance(result, dict) and result.get("kind") == "outcome_unknown":
+            record_tool_outcome_unknown()
+        return result
 
     identifier = context.binding_id if isinstance(context, InboundRunContext) else context.account_id
     return await local_capability(

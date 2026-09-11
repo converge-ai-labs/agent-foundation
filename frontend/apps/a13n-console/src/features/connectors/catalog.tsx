@@ -66,7 +66,10 @@ export function ConnectorCatalog({
       }
       size={"md"}
       title={t("Discover connectors")}
-      description={provider.name}
+      description={t(
+        "Browse connectors available through {{provider}} and choose an external account to connect.",
+        { provider: provider.name },
+      )}
       closeLabel={t("Close")}
       open={open}
     >
@@ -114,7 +117,9 @@ export function ConnectorCatalog({
               <article key={item.key} className={styles.card}>
                 <h3>{item.name}</h3>
                 <p className={styles.muted}>{item.description}</p>
-                <small>{item.authentication_methods.join(", ")}</small>
+                <small className={styles.muted}>
+                  {item.authentication_methods.join(", ")}
+                </small>
                 <div className={styles.actions}>
                   <ToolPreview connector={item} />
                   {can("connector_connection.manage") && (

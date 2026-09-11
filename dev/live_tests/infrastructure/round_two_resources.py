@@ -21,7 +21,7 @@ async def provision(client):
         base + "/model-providers",
         expected=201,
         json={
-            "type": "openai_compatible",
+            "type": "openai",
             "name": "Round-two HTTP fixture",
             "credential": config["token"],
             "configuration": {"base_url": config["control_url"] + "/__live__/model/v1", "auth_mode": "bearer"},

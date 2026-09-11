@@ -10,6 +10,7 @@ from typing import Protocol
 
 import httpx2
 from a13n_harness import AgentContext
+from a13n_harness.observation import record_tool_outcome_unknown
 from anyio import to_thread
 from jsonschema import Draft202012Validator, ValidationError
 from pydantic import JsonValue, TypeAdapter
@@ -315,11 +316,15 @@ class ExternalToolRuntime:
                     )
             except ConnectorProviderError as error:
                 if error.outcome_unknown:
+                    record_tool_outcome_unknown()
                     return ConnectorToolOutcome(kind="outcome_unknown", request_id=request_id).model_dump(mode="json")
                 rejected = rejected_tool_outcome(error, request_id=request_id)
                 if rejected is not None:
                     return rejected.model_dump(mode="json")
                 raise ValueError("connector_tool_failed") from error
+
+            if outcome.kind == "outcome_unknown":
+                record_tool_outcome_unknown()
 
             def validated_result() -> JsonObject:
                 result = outcome.model_dump(mode="json")
@@ -332,6 +337,7 @@ class ExternalToolRuntime:
             try:
                 return await to_thread.run_sync(validated_result)
             except (ValueError, ValidationError):
+                record_tool_outcome_unknown()
                 # Dispatch has finished; invalid evidence cannot establish rollback
                 # or justify repeating an effect. Never expose the rejected payload.
                 return ConnectorToolOutcome(kind="outcome_unknown", request_id=request_id).model_dump(mode="json")

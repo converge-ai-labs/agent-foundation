@@ -25,6 +25,7 @@ export function Workspaces() {
         columns={[
           {
             label: t("Name"),
+            tone: "primary",
             render: (item) => (
               <>
                 <Link to={`${workspacePath(item)}/settings`}>{item.name}</Link>
@@ -36,6 +37,7 @@ export function Workspaces() {
           },
           {
             label: t("Created"),
+            tone: "muted",
             render: (item) => <Timestamp value={item.created_at} />,
           },
           {
@@ -43,6 +45,7 @@ export function Workspaces() {
             align: "right",
             render: (item) => (
               <Confirm
+                triggerVariant="ghost"
                 title={t("Delete workspace")}
                 description={t(
                   "This removes the workspace and revokes its access. This cannot be undone.",

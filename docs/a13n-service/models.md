@@ -6,7 +6,7 @@ Models and Model Providers can belong to an Organization or a Workspace. Organiz
 
 Continue selecting models with a bare `model_key`. A key cannot be duplicated between an Organization and any of its Workspaces, or within one scope. Separate Workspaces may reuse a key. Conflicting creates return `409 model_key_conflict`, including concurrent creates.
 
-Use the public HTTP API on a control-plane or all-in-one a13n Service. The examples below use placeholders for Workspace and resource IDs. Authenticate each request with a Service credential authorized for that Workspace; Provider credentials belong only in the Provider's write-only `credential` field. Workspace Viewer can read configuration and request model descriptions. Workspace Builder or Admin can create, edit, discover, and test Models.
+Use the public HTTP API on a control-plane or all-in-one a13n Service. The examples below use placeholders for Workspace and resource IDs. Authenticate each request with a Service credential authorized for that Workspace; Provider credentials belong in the write-only `credential` and `extra_headers` fields. Workspace Viewer can read configuration and request model descriptions. Workspace Builder or Admin can create, edit, discover, and test Models.
 
 ## Create a Provider
 
@@ -34,27 +34,31 @@ Content-Type: application/json
 
 Keep the returned Provider `id`. Reads expose `credential_configured`, never the credential itself. A successful save validates configuration; use the Provider's `/test` endpoint to check its current connection and authentication. A list-based test reads only the first page. If the integration has no safe Provider-level probe, the result is `connection_test_unsupported`; test a saved Model to check inference instead.
 
-### Custom Responses endpoints
+### Custom endpoints and headers
 
-Choose **OpenAI Responses-Compatible** (`openai_responses_compatible`) for a custom endpoint that implements the OpenAI Responses API:
+Choose the native Provider type, such as DeepSeek or Anthropic, and expand **Advanced settings** in Console to override its base URL or add headers. Leaving the URL empty uses the Provider's default endpoint. Native authentication and model behavior are preserved.
+
+For example, route DeepSeek through a gateway with a team header and a gateway key:
 
 ```json
 {
-  "type": "openai_responses_compatible",
-  "name": "My Responses Endpoint",
+  "type": "deepseek",
+  "name": "DeepSeek Gateway",
   "configuration": {
-    "base_url": "https://models.example.com/v1",
-    "auth_mode": "bearer"
+    "base_url": "https://gateway.example.com/deepseek/v1"
   },
-  "credential": "<provider-api-key>"
+  "credential": "<deepseek-api-key>",
+  "extra_headers": {"x-team": "research", "x-gateway-key": "<gateway-key>"}
 }
 ```
 
-Supply the base URL without `/responses`; the client appends the API path. Models under this Provider use `model_api: "openai.responses"`. Console selects it automatically without an API picker.
+All header values are encrypted with the Provider credential; reads return only their names in `header_names`. On PATCH, omitted names retain their values, strings replace them, and null deletes them. For example, `{"extra_headers": {"x-gateway-key": "<replacement>"}}` rotates only the gateway key. In Console, leave a saved value empty to keep it. Removing a row deletes that header when saved.
 
-Authentication also supports `auth_mode: "none"` with no credential, or `auth_mode: "api_key_header"` with `api_key_header_name` and a separate credential. Discovery and Provider connection tests use the endpoint's OpenAI-style `/models` route. If that route is unavailable, enter the model ID manually and test the saved Model instead.
+Headers apply to inference, discovery, and supported connection tests. Names are case-insensitive and must be unique. Each Provider accepts up to 32 extra headers with names up to 128 characters and printable ASCII values up to 2048 characters. Transport-managed and native authentication headers are reserved. Use the primary credential and authentication controls for native authentication.
 
-The existing **OpenAI-Compatible** (`openai_compatible`) type continues to support both Chat Completions and Responses, with Chat Completions as its default. Availability of optional Responses features depends on the custom endpoint.
+Choose **OpenAI** (`openai`) for either official OpenAI or a custom OpenAI-compatible endpoint. It supports `openai.responses` (the default) and `openai.chat_completions`. Set `base_url` without `/responses` or `/chat/completions`; Console offers an explicit correction when a full API URL is pasted. Authentication defaults to bearer and also supports `auth_mode: "none"` with no credential, or `auth_mode: "api_key_header"` with `api_key_header_name` and a separate credential. The endpoint must implement the API selected on each Model. If it does not expose `/models`, enter the model ID manually and test the saved Model.
+
+Ollama requires its server URL. Azure accepts a resource endpoint or a custom base URL and retains its API-version rules. Vertex requires project and location even with a custom URL. Bedrock has separate Converse and Mantle URL overrides; the Mantle SDK chooses `/v1` or `/openai/v1` according to the model, preserving a gateway path prefix. All overrides remain subject to the Service's endpoint policy.
 
 ## Discover candidates or enter an ID
 

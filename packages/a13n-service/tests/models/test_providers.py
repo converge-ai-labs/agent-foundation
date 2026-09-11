@@ -31,12 +31,11 @@ def test_provider_config_does_not_select_a_calling_api() -> None:
     assert "api_protocol" not in schema["properties"]
 
 
-@pytest.mark.parametrize("provider_type", ["openai_compatible", "openai_responses_compatible"])
-def test_openai_compatible_auth_mode_controls_credential_requirement(provider_type: str) -> None:
+def test_openai_auth_mode_controls_credential_requirement() -> None:
     registry = built_in_provider_registry()
 
     validated = registry.validate_provider(
-        provider_type,
+        "openai",
         {"base_url": "https://models.example/v1", "auth_mode": "none"},
         credential_configured=False,
     )
@@ -44,14 +43,13 @@ def test_openai_compatible_auth_mode_controls_credential_requirement(provider_ty
 
     with pytest.raises(ValueError, match="requires a credential"):
         registry.validate_provider(
-            provider_type,
+            "openai",
             {"base_url": "https://models.example/v1", "auth_mode": "bearer"},
             credential_configured=False,
         )
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("provider_type", ["openai_compatible", "openai_responses_compatible"])
 @pytest.mark.parametrize(
     ("mode", "credential", "expected_headers"),
     [
@@ -60,8 +58,7 @@ def test_openai_compatible_auth_mode_controls_credential_requirement(provider_ty
         ("api_key_header", "secret", {"x-api-key": "secret"}),
     ],
 )
-async def test_openai_compatible_runtime_sends_only_selected_auth(
-    provider_type: str,
+async def test_openai_runtime_sends_only_selected_auth(
     mode: str,
     credential: str | None,
     expected_headers: dict[str, str],
@@ -76,9 +73,9 @@ async def test_openai_compatible_runtime_sends_only_selected_auth(
     if mode == "api_key_header":
         configuration["api_key_header_name"] = "x-api-key"
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
-        integration = built_in_provider_registry().integration(provider_type)
+        integration = built_in_provider_registry().integration("openai")
         provider = integration.build_provider(
-            RuntimeProvider(provider_type, configuration, "https://models.example/v1", credential),
+            RuntimeProvider("openai", configuration, "https://models.example/v1", credential),
             http,
             integration.supported_model_apis[0],
         )
@@ -89,11 +86,8 @@ async def test_openai_compatible_runtime_sends_only_selected_auth(
     } == expected_headers
 
 
-def test_responses_compatible_only_allows_responses() -> None:
+def test_registry_has_one_openai_provider_for_both_apis() -> None:
     registry = built_in_provider_registry()
-    definition = registry.definition("openai_responses_compatible")
-    assert definition.display_name == "OpenAI Responses-Compatible"
-    assert definition.default_model_api == "openai.responses"
-    assert definition.supported_model_apis == ("openai.responses",)
-    with pytest.raises(ModelError, match="not supported"):
-        registry.validate_model_api(definition.type, "openai.chat_completions")
+    assert [item.type for item in registry.definitions()].count("openai") == 1
+    assert registry.definition("openai").default_model_api == "openai.responses"
+    assert registry.definition("openai").supported_model_apis == ("openai.responses", "openai.chat_completions")

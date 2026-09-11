@@ -1,3 +1,4 @@
+import { ReadOnlyField } from "./read-only-field";
 import {
   cloneElement,
   useId,
@@ -13,6 +14,8 @@ import {
 } from "../components/field";
 
 type ControlProps = {
+  readOnly?: boolean;
+  value?: string | number | readonly string[];
   id?: string;
   disabled?: boolean;
   "aria-describedby"?: string;
@@ -27,6 +30,7 @@ export function FormField({
   error,
   hideLabel,
   disabled,
+  readOnly,
   children,
   className,
   ...props
@@ -37,6 +41,7 @@ export function FormField({
   error?: ReactNode;
   hideLabel?: boolean;
   disabled?: boolean;
+  readOnly?: boolean;
   children: ReactElement<ControlProps>;
 }) {
   const generatedId = useId();
@@ -49,6 +54,18 @@ export function FormField({
     ]
       .filter(Boolean)
       .join(" ") || undefined;
+  if (readOnly || children.props.readOnly) {
+    return (
+      <ReadOnlyField
+        label={label}
+        hideLabel={hideLabel}
+        description={description}
+        className={typeof className === "string" ? className : undefined}
+      >
+        {children.props.value === "" ? "—" : (children.props.value ?? "—")}
+      </ReadOnlyField>
+    );
+  }
   return (
     <Field
       {...props}

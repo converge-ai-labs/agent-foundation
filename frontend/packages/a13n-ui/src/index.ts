@@ -36,3 +36,5 @@ export { Wordmark } from "./brand/wordmark";
 export { cn } from "./lib/utils";
 export * from "./components/toggle-group";
 export * from "./components/fieldset";
+
+export { ReadOnlyField } from "./patterns/read-only-field";

@@ -55,30 +55,30 @@ Each trusted Provider implementation owns one strongly typed configuration model
 
 The initial registry follows the native Model implementations supported and tested against the locked Pydantic AI release:
 
-| Provider type                 | Allowed calling API keys                                                          | Native Pydantic AI Model binding                                   |
-| ----------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `openai`                      | `openai.responses`, `openai.chat_completions`                                     | `OpenAIResponsesModel`, `OpenAIChatModel`                          |
-| `anthropic`                   | `anthropic.messages`                                                              | `AnthropicModel`                                                   |
-| `google_gemini`               | `google.generate_content`                                                         | `GoogleModel` with `GoogleProvider`                                |
-| `google_vertex`               | `google.generate_content`                                                         | `GoogleModel` with `GoogleCloudProvider`                           |
-| `azure_openai`                | `openai.responses`, `openai.chat_completions`                                     | OpenAI Models with `AzureProvider`                                 |
-| `aws_bedrock`                 | `bedrock.converse`, `bedrock_mantle.responses`, `bedrock_mantle.chat_completions` | Bedrock Converse and Mantle Models                                 |
-| `openrouter`                  | `openrouter.chat_completions`                                                     | `OpenRouterModel`                                                  |
-| `ollama`                      | `ollama.chat_completions`                                                         | `OllamaModel`                                                      |
-| `alibaba_model_studio`        | `openai.chat_completions`                                                         | `OpenAIChatModel` with `AlibabaProvider`                           |
-| `deepseek`                    | `openai.chat_completions`                                                         | `OpenAIChatModel` with `DeepSeekProvider`                          |
-| `moonshot`                    | `openai.chat_completions`                                                         | `OpenAIChatModel` with `MoonshotAIProvider`                        |
-| `zhipu`                       | `openai.chat_completions`                                                         | `OpenAIChatModel` with `ZaiProvider`                               |
-| `openai_compatible`           | `openai.responses`, `openai.chat_completions`                                     | OpenAI Models with a bounded generic OpenAI-compatible provider    |
-| `openai_responses_compatible` | `openai.responses`                                                                | `OpenAIResponsesModel` with the generic OpenAI-compatible provider |
+| Provider type          | Allowed calling API keys                                                          | Native Pydantic AI Model binding            |
+| ---------------------- | --------------------------------------------------------------------------------- | ------------------------------------------- |
+| `openai`               | `openai.responses`, `openai.chat_completions`                                     | `OpenAIResponsesModel`, `OpenAIChatModel`   |
+| `anthropic`            | `anthropic.messages`                                                              | `AnthropicModel`                            |
+| `google_gemini`        | `google.generate_content`                                                         | `GoogleModel` with `GoogleProvider`         |
+| `google_vertex`        | `google.generate_content`                                                         | `GoogleModel` with `GoogleCloudProvider`    |
+| `azure_openai`         | `openai.responses`, `openai.chat_completions`                                     | OpenAI Models with `AzureProvider`          |
+| `aws_bedrock`          | `bedrock.converse`, `bedrock_mantle.responses`, `bedrock_mantle.chat_completions` | Bedrock Converse and Mantle Models          |
+| `openrouter`           | `openrouter.chat_completions`                                                     | `OpenRouterModel`                           |
+| `ollama`               | `ollama.chat_completions`                                                         | `OllamaModel`                               |
+| `alibaba_model_studio` | `openai.chat_completions`                                                         | `OpenAIChatModel` with `AlibabaProvider`    |
+| `deepseek`             | `openai.chat_completions`                                                         | `OpenAIChatModel` with `DeepSeekProvider`   |
+| `moonshot`             | `openai.chat_completions`                                                         | `OpenAIChatModel` with `MoonshotAIProvider` |
+| `zhipu`                | `openai.chat_completions`                                                         | `OpenAIChatModel` with `ZaiProvider`        |
 
 The table is an executable compatibility registry, not a claim about everything an upstream service documents. For example, this version does not advertise OpenRouter Responses or Anthropic Messages through OpenRouter because the locked Pydantic AI integration does not expose those combinations as supported Model bindings. A new combination requires a trusted registry addition and execution tests.
 
-Provider configuration contains endpoint and authentication mechanics but never an instance-level calling-API choice. The Provider definition's `default_model_api` is one member of `supported_model_apis`. The registry defaults are `openai.responses` for OpenAI and Azure OpenAI, `bedrock.converse` for Bedrock, `openai.chat_completions` for the generic OpenAI-compatible type, and the sole allowed API for each other type above. Trusted model-specific information can suggest another allowed API, for example a Mantle binding for an applicable Bedrock model. Defaults are authoring suggestions: every saved Model contains one explicit `model_api`, which runtime never silently changes or replaces with another API.
+Provider configuration contains endpoint and authentication mechanics but never an instance-level calling-API choice. The Provider definition's `default_model_api` is one member of `supported_model_apis`. The registry defaults are `openai.responses` for OpenAI and Azure OpenAI, `bedrock.converse` for Bedrock, and the sole allowed API for each other type above. Trusted model-specific information can suggest another allowed API, for example a Mantle binding for an applicable Bedrock model. Defaults are authoring suggestions: every saved Model contains one explicit `model_api`, which runtime never silently changes or replaces with another API.
 
-Official direct Provider types use fixed or typed derived endpoints. The generic `openai_compatible` and Responses-only `openai_responses_compatible` types accept a bounded `base_url` and an explicit `none`, `bearer`, or named API-key-header authentication mode. `openai_responses_compatible` is displayed as OpenAI Responses-Compatible and defaults to its sole allowed API, `openai.responses`. Both compatible types use OpenAI-style model discovery when the endpoint exposes `/models`; manual model creation remains available when it does not. Existing `openai_compatible` Providers retain both APIs and their Chat Completions default.
+Every Provider supports a bounded optional `configuration.base_url` and a write-only `extra_headers` map through its native SDK. An override changes connection routing while retaining the Provider's native model profiles, authentication, and calling APIs. Without an override, the adapter uses its official fixed or derived endpoint. Ollama requires a base URL. Azure accepts its typed `resource_endpoint` or a `base_url` override; an explicit legacy `api_version` cannot accompany a v1 endpoint. Vertex retains its project and location. Bedrock uses `base_url` for Converse and a separate optional `mantle_base_url` for Mantle. The Mantle SDK preserves arbitrary gateway path prefixes while selecting its model-specific `/v1` or `/openai/v1` suffix.
 
-Provider-specific values such as Azure resource endpoint/API version, Vertex project and location, Bedrock region, or Ollama base URL remain Provider configuration.
+The single `openai` type supports official OpenAI and custom OpenAI-compatible endpoints, both Responses and Chat Completions, and `none`, `bearer`, or named API-key-header authentication. Responses is its default. Discovery uses the configured endpoint's OpenAI-style `/models` route; manual creation remains available without that route. There are no separate compatible Provider types.
+
+Extra headers apply to inference and supported Provider operations. Header names are case-insensitive HTTP tokens, normalized to lowercase, and unique. There are at most 32 extra headers; names are limited to 128 characters and values to 2048 printable ASCII characters. Transport-managed headers, Service Thread correlation, and each adapter's authentication or protocol headers cannot be overridden. All header values are encrypted and belong in the separate write-only `extra_headers` map. Provider headers never become Model settings or accepted Run snapshots.
 
 ## Model Provider
 
@@ -93,6 +93,7 @@ class ModelProvider:
     name: str
     configuration: JsonObject
     credential_configured: bool
+    header_names: tuple[str, ...]
     enabled: bool
     created_by: PrincipalRef
     updated_by: PrincipalRef
@@ -102,11 +103,13 @@ class ModelProvider:
 
 `name` is a human-readable, case-insensitively unique name within the owning scope. Provider type is not unique: `OpenAI Production` and `OpenAI Personal` can both have `type="openai"`.
 
-Provider create and update accept a provider-schema-specific write-only `credential` field. Reads return only `credential_configured`; they never return plaintext, ciphertext, credential shape, masked suffixes, or a reusable Secret identifier. Omitting `credential` on update retains the current value. Supplying null removes it only when the Provider type permits an unauthenticated connection. Supplying another value atomically replaces it.
+Provider create and update accept a provider-schema-specific write-only `credential` field. Reads return `credential_configured` for the primary credential and `header_names` for saved headers; they never return plaintext, ciphertext, credential shape, masked suffixes, or a reusable Secret identifier. Omitting `credential` on update retains the current value. Supplying null removes it only when the Provider type permits an unauthenticated connection. Supplying another value atomically replaces it.
 
-Model Providers use the same [resource-owned credential protection contract](27-secret-management.md#protection-boundary) as Connectivity resources. Each Provider stores its own ciphertext, nonce, encryption-key identifier, and credential generation. Every accepted credential replacement or explicit removal advances that generation exactly once; omitting the credential on update leaves it unchanged. Runtime captures the shared encrypted snapshot and decrypts it after closing the database session. Provider-specific credential parsing and optional-authentication rules remain in Model Management. The credential has no independent Secret identity or generic Secret selector.
+Model Providers use the same [resource-owned credential protection contract](27-secret-management.md#protection-boundary) as Connectivity resources. Each Provider stores its own ciphertext, nonce, encryption-key identifier, and credential generation. The encrypted value is one bundle containing the primary credential and extra headers. Each accepted update to either secret surface advances that generation exactly once; omitting both leaves it unchanged. Runtime captures the shared encrypted snapshot and decrypts it after closing the database session. Provider-specific credential parsing and optional-authentication rules remain in Model Management. The credential has no independent Secret identity or generic Secret selector.
 
-Provider `configuration`, credential, name, and enabled state are mutable. Provider `type` is immutable. Every update is atomic, audited, and requires the current strong ETag. Provider configuration has no revision number, compatibility snapshot, or historical read API.
+Provider create and update also accept `extra_headers`: omitted names retain their values, a string sets or replaces one value, and null removes that name. An empty map changes nothing. The whole request, including configuration and header changes, is atomic. A supplied `configuration` replaces ordinary configuration. Only saved header names and the primary-credential presence flag are retained outside the encrypted bundle.
+
+Provider `configuration`, credentials, name, and enabled state are mutable. Provider `type` is immutable. Every update is atomic, audited, and requires the current strong ETag. Provider configuration has no revision number, compatibility snapshot, or historical read API.
 
 Management surfaces select a Provider type, read its safe definition, render ordinary configuration fields, and submit `configuration` plus the separate credential input. The server validates with the implementation-owned model even when a client rendered the schema correctly. Unknown types, unknown configuration fields, and invalid values fail before persistence. A successful save proves configuration validity, not credential or endpoint availability; the explicit test operation performs that external check. Adding a registered type does not require another general-purpose form implementation, although interactive authentication keeps its own domain-specific flow.
 
@@ -291,7 +294,7 @@ Every configurable or derived endpoint is validated immediately before dispatch:
 - loopback, link-local, cloud-metadata, and non-allowlisted private destinations are denied by default;
 - only deployment operators can allow private domains or CIDR ranges;
 - DNS answers and redirects are revalidated; and
-- official Provider endpoints remain adapter-owned.
+- official endpoint defaults remain adapter-owned; custom overrides receive the same policy checks.
 
 Provider credentials and configuration are copied under authorization and database consistency, but no transaction or session remains open across decryption, DNS, provider discovery, remote metadata lookup, testing, or model I/O.
 

@@ -2,16 +2,16 @@ import { ProviderTypeField } from "../../shared/provider-type-field";
 import { ProviderEnabled } from "../../shared/provider-enabled";
 import { ProviderKeyLink } from "../../shared/provider-key-link";
 import { providerKeyUrls } from "./provider-key-urls";
+import { requiresProviderCredential } from "./provider-credentials";
 import {
-  isOpenAICompatibleProvider,
-  requiresProviderCredential,
-} from "./provider-credentials";
+  ProviderConnection,
+  ordinaryConfigurationSchema,
+} from "./provider-connection";
+import { initialHeaders, serializeHeaders } from "./provider-headers";
 import { ConnectionTest } from "./connection-test";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
-  ChoiceField,
-  DisclosureSection,
   FormField,
   Input,
   SettingsRow,
@@ -68,8 +68,8 @@ export function ProviderForm({
     api = modelApi(client, scope);
   const [type, setType] = useState(
       original?.value.type ??
-        (definitions.some((item) => item.type === "openai_compatible")
-          ? "openai_compatible"
+        (definitions.some((item) => item.type === "openai")
+          ? "openai"
           : definitions[0]?.type) ??
         "",
     ),
@@ -79,6 +79,8 @@ export function ProviderForm({
     [configuration, setConfiguration] = useState<Record<string, unknown>>(
       original?.value.configuration ?? {},
     ),
+    [headers, setHeaders] = useState(() => initialHeaders(original?.value)),
+    [advancedOpen, setAdvancedOpen] = useState(false),
     [credential, setCredential] = useState(""),
     [removeCredential, setRemoveCredential] = useState(false),
     [enabled, setEnabled] = useState(original?.value.enabled ?? true);
@@ -93,10 +95,15 @@ export function ProviderForm({
     gcTime: 0,
     mutationFn: async () => {
       if (!definition) throw new Error(t("Choose a provider type."));
+      const extraHeaders = serializeHeaders(
+        headers,
+        original?.value.header_names ?? [],
+      );
       validateSettings(definition.configuration_schema, configuration);
       const body = {
         name,
         configuration,
+        extra_headers: extraHeaders,
         enabled,
         ...(removeCredential
           ? { credential: null }
@@ -111,7 +118,9 @@ export function ProviderForm({
         );
       return api.updateProvider(original.value.id, original.etag, body);
     },
+    onError: () => setAdvancedOpen(true),
     onSuccess: (provider) => {
+      setHeaders([]);
       setCredential("");
       void cache.invalidateQueries();
       if (onCreated) onCreated(provider, suggestedApi);
@@ -140,10 +149,12 @@ export function ProviderForm({
       <ProviderTypeField
         definitions={definitions}
         value={type}
-        disabled={!!original}
+        readOnly={!!original}
         onValueChange={(value) => {
           setType(value);
           setConfiguration({});
+          setHeaders([]);
+          setAdvancedOpen(false);
           setCredential("");
           setRemoveCredential(false);
           setSuggestedApi(undefined);
@@ -154,72 +165,17 @@ export function ProviderForm({
           )
         }
       />
-      {isOpenAICompatibleProvider(type) ? (
+      {definition && (
         <>
-          <FormField label={t("Base URL")}>
-            <Input
-              required
-              type="url"
-              name="provider-base-url"
-              autoComplete="off"
-              placeholder="https://api.example.com/v1"
-              value={String(configuration.base_url ?? "")}
-              onChange={(event) => {
-                setSuggestedApi(undefined);
-                if (!nameEdited) {
-                  try {
-                    setName(new URL(event.target.value).hostname.slice(0, 128));
-                  } catch {
-                    /* Keep the suggestion while a URL is incomplete. */
-                  }
-                }
-                setConfiguration({
-                  ...configuration,
-                  base_url: event.target.value,
-                });
-              }}
-            />
-          </FormField>
-          {/\/(chat\/completions|responses)\/?$/.test(
-            String(configuration.base_url ?? ""),
-          ) && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const api = /\/responses\/?$/.test(
-                  String(configuration.base_url),
-                )
-                  ? "openai.responses"
-                  : "openai.chat_completions";
-                setSuggestedApi(
-                  definition?.supported_model_apis.includes(api)
-                    ? api
-                    : definition?.default_model_api,
-                );
-                setConfiguration({
-                  ...configuration,
-                  base_url: String(configuration.base_url).replace(
-                    /\/(chat\/completions|responses)\/?$/,
-                    "",
-                  ),
-                });
-              }}
-            >
-              {t("Use base URL without the API path")}
-            </Button>
-          )}
-        </>
-      ) : (
-        definition && (
           <SchemaFields
             key={type}
-            schema={definition.configuration_schema}
+            schema={ordinaryConfigurationSchema(
+              definition.configuration_schema,
+            )}
             value={configuration}
             onChange={setConfiguration}
           />
-        )
+        </>
       )}
       {requiresProviderCredential(type, configuration, definition) && (
         <FormField
@@ -248,41 +204,32 @@ export function ProviderForm({
           />
         </FormField>
       )}
-      {isOpenAICompatibleProvider(type) && (
-        <DisclosureSection title={t("Authentication")}>
-          <ChoiceField
-            label={t("Authentication")}
-            value={String(configuration.auth_mode ?? "bearer")}
-            onValueChange={(value) => {
-              const { api_key_header_name: _header, ...rest } = configuration;
-              setConfiguration({ ...rest, auth_mode: value });
-              if (value === "none") {
-                setCredential("");
-                setRemoveCredential(true);
-              } else setRemoveCredential(false);
-            }}
-            options={[
-              { value: "bearer", label: "Bearer token" },
-              { value: "none", label: t("None") },
-              { value: "api_key_header", label: t("Custom header") },
-            ]}
-          />
-          {configuration.auth_mode === "api_key_header" && (
-            <FormField label={t("Header name")}>
-              <Input
-                required
-                placeholder="api-key"
-                value={String(configuration.api_key_header_name ?? "")}
-                onChange={(event) =>
-                  setConfiguration({
-                    ...configuration,
-                    api_key_header_name: event.target.value,
-                  })
-                }
-              />
-            </FormField>
-          )}
-        </DisclosureSection>
+      {definition && (
+        <ProviderConnection
+          type={type}
+          schema={definition.configuration_schema}
+          configuration={configuration}
+          onChange={setConfiguration}
+          headers={headers}
+          onHeadersChange={setHeaders}
+          open={advancedOpen}
+          onOpenChange={setAdvancedOpen}
+          onBaseUrlChange={(url) => {
+            setSuggestedApi(undefined);
+            if (!nameEdited) {
+              try {
+                setName(new URL(url).hostname.slice(0, 128));
+              } catch {
+                /* URL may be incomplete. */
+              }
+            }
+          }}
+          onSuggestedApi={setSuggestedApi}
+          onAuthChange={(mode) => {
+            if (mode === "none") setCredential("");
+            setRemoveCredential(mode === "none");
+          }}
+        />
       )}
       {original && (
         <SettingsSection>
@@ -315,6 +262,8 @@ export function ProviderForm({
               name !== original.value.name ||
               enabled !== original.value.enabled ||
               !!credential ||
+              JSON.stringify(headers) !==
+                JSON.stringify(initialHeaders(original.value)) ||
               removeCredential ||
               JSON.stringify(configuration) !==
                 JSON.stringify(original.value.configuration)

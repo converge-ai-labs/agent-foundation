@@ -139,7 +139,7 @@ export function AssetsPage() {
             page.reset();
           }}
           label={t("Source")}
-          hideLabel
+          variant="filter"
           options={[
             { value: "all", label: t("All sources") },
             { value: "upload", label: t("Uploaded") },
@@ -157,6 +157,7 @@ export function AssetsPage() {
             columns={[
               {
                 label: t("File"),
+                tone: "primary",
                 render: (item) => (
                   <>
                     <strong>{item.filename}</strong>
@@ -166,16 +167,19 @@ export function AssetsPage() {
               },
               {
                 label: t("Size"),
+                align: "right",
                 render: (item) =>
                   `${new Intl.NumberFormat().format(item.size_bytes)} B`,
               },
               {
                 label: t("Source"),
+                tone: "muted",
                 render: (item) =>
                   t(item.source.kind === "upload" ? "Uploaded" : "Run output"),
               },
               {
                 label: t("Created"),
+                tone: "muted",
                 render: (item) => <Timestamp value={item.created_at} />,
               },
               {
@@ -185,7 +189,7 @@ export function AssetsPage() {
                   <div className={styles.actions}>
                     <Button
                       size="sm"
-                      variant="outline"
+                      variant="ghost"
                       loading={
                         download.isPending && download.variables?.id === item.id
                       }
@@ -202,19 +206,22 @@ export function AssetsPage() {
                     </Button>
                     <ModalFrame
                       trigger={
-                        <Button size="sm" variant="outline" type="button">
+                        <Button size="sm" variant="ghost" type="button">
                           {t("Details")}
                         </Button>
                       }
                       size={"md"}
                       title={item.filename}
-                      description={t("Immutable file metadata and provenance.")}
+                      description={t(
+                        "View this file\u2019s type, size, and source. Uploaded content cannot be edited.",
+                      )}
                       closeLabel={t("Close")}
                     >
                       <JsonView value={item} />
                     </ModalFrame>
                     {can("asset.delete") && (
                       <Confirm
+                        triggerVariant="ghost"
                         title={t("Delete asset")}
                         description={t(
                           "Future reads and new runs cannot use this file. This cannot be undone.",

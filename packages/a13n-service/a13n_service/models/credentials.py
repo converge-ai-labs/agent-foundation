@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
+from .headers import ExtraHeaders
 from .provider_adapters.types import CredentialFormat
 
 _GOOGLE_OAUTH_TOKEN_URI = "https://oauth2.googleapis.com/token"
@@ -58,3 +59,15 @@ def parse_google_service_account(value: str) -> ServiceAccountCredentials:
         return ServiceAccountCredentials.from_service_account_info(trusted_info)
     except (TypeError, ValueError) as error:
         raise ValueError("Google Vertex credential must be a service-account JSON object") from error
+
+
+class ProviderSecrets(BaseModel):
+    """One encrypted bundle; public presence metadata never contains its values."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    credential: str | None = Field(default=None, repr=False)
+    extra_headers: ExtraHeaders = Field(default_factory=dict, repr=False)
+
+    def encrypted_value(self) -> str | None:
+        return self.model_dump_json() if self.credential is not None or self.extra_headers else None

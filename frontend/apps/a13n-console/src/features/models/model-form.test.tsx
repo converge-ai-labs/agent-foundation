@@ -18,7 +18,7 @@ vi.mock("react-i18next", () => ({
 const provider = {
   id: "mp_test",
   name: "My endpoint",
-  type: "openai_compatible",
+  type: "openai",
   enabled: true,
   configuration: { base_url: "https://example.com/v1" },
 };
@@ -35,8 +35,8 @@ const settingsSchema = {
   },
 };
 const definition = {
-  type: "openai_compatible",
-  display_name: "OpenAI-Compatible",
+  type: "openai",
+  display_name: "OpenAI",
   default_model_api: "openai.chat_completions",
   supported_model_apis: ["openai.chat_completions", "openai.responses"],
   supports_model_discovery: true,
@@ -47,7 +47,6 @@ const definition = {
   configuration_schema: {
     type: "object",
     properties: { base_url: { type: "string" }, auth_mode: { type: "string" } },
-    required: ["base_url"],
   },
 };
 function mount(providerId?: string) {
@@ -122,31 +121,21 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 it.each([
-  { type: "openai_compatible", path: "responses", mode: "bearer" },
-  { type: "openai_responses_compatible", path: "responses", mode: "bearer" },
+  { type: "openai", path: "responses", mode: "bearer" },
   {
-    type: "openai_responses_compatible",
+    type: "openai",
     path: "chat/completions",
     mode: "none",
   },
   {
-    type: "openai_responses_compatible",
+    type: "openai",
     path: "responses",
     mode: "api_key_header",
   },
 ])(
   "connects $type with $mode using /$path and saves a Responses model",
   async ({ type, path, mode }) => {
-    const responsesOnly = type === "openai_responses_compatible";
-    const selectedDefinition = responsesOnly
-      ? {
-          ...definition,
-          type,
-          display_name: "OpenAI Responses-Compatible",
-          default_model_api: "openai.responses",
-          supported_model_apis: ["openai.responses"],
-        }
-      : definition;
+    const selectedDefinition = definition;
     state.GET.mockImplementation(async (path: string) => ({
       data: {
         items: path.endsWith("model-provider-types")
@@ -170,6 +159,7 @@ it.each([
       await screen.findByRole("textbox", { name: "Name" }),
       "My endpoint",
     );
+    await user.click(screen.getByRole("button", { name: /Advanced settings/ }));
     await user.type(
       screen.getByRole("textbox", { name: "Base URL" }),
       `https://example.com/v1/${path}`,
@@ -179,7 +169,6 @@ it.each([
     );
     await user.type(screen.getByLabelText("API key"), "test-key");
     if (mode !== "bearer") {
-      await user.click(screen.getByRole("button", { name: "Authentication" }));
       await user.click(
         screen.getByRole("combobox", { name: "Authentication" }),
       );
@@ -227,8 +216,6 @@ it.each([
       (screen.getByRole("textbox", { name: "Model key" }) as HTMLInputElement)
         .value,
     ).toBe("custom-model");
-    if (responsesOnly)
-      expect(screen.queryByRole("combobox", { name: "API" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Add model" }));
     await waitFor(() => expect(state.close).toHaveBeenCalled());
     expect(state.POST).toHaveBeenCalledWith(
@@ -237,7 +224,10 @@ it.each([
         body: expect.objectContaining({
           provider_id: "mp_test",
           upstream_model: "custom-model",
-          model_api: "openai.responses",
+          model_api:
+            path === "responses"
+              ? "openai.responses"
+              : "openai.chat_completions",
           settings: {},
         }),
       }),
@@ -339,6 +329,9 @@ it("opens endpoint setup directly when there are no providers and allows cancell
   }));
   const user = userEvent.setup();
   mount();
+  await user.click(
+    await screen.findByRole("button", { name: /Advanced settings/ }),
+  );
   await user.type(
     await screen.findByRole("textbox", { name: "Base URL" }),
     "https://models.example.com/v1",

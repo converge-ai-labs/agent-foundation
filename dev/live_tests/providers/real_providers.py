@@ -74,9 +74,7 @@ async def provision_provider(journey, section, settings):
             "name": "Configured live Model",
             "type": settings.provider,
             "credential": settings.api_key.get_secret_value(),
-            "configuration": {"base_url": settings.base_url, "auth_mode": "bearer"}
-            if settings.provider == "openai_compatible"
-            else {},
+            "configuration": {"base_url": settings.base_url, "auth_mode": "bearer"} if settings.base_url else {},
         },
     )
     return await journey.post(

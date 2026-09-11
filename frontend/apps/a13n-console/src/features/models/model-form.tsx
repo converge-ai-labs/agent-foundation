@@ -333,7 +333,10 @@ export function ModelForm({
           )}
         </div>
       ) : (
-        <FormField label={t("Upstream model")}>
+        <FormField
+          label={t("Upstream model")}
+          description={t("Use the exact model ID expected by the provider.")}
+        >
           <Input
             required
             value={upstream}
@@ -373,7 +376,12 @@ export function ModelForm({
                 }}
               />
             </FormField>
-            <FormField label={t("Model key")}>
+            <FormField
+              label={t("Model key")}
+              description={t(
+                "Agents use this key to reference the model. It cannot be changed after creation.",
+              )}
+            >
               <Input
                 required
                 maxLength={128}

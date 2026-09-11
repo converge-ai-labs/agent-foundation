@@ -96,14 +96,13 @@ async def test_custom_responses_endpoint_inference(mode: str, stream: bool) -> N
     configuration: dict[str, object] = {"base_url": "https://custom.example/v1", "auth_mode": mode}
     if mode == "api_key_header":
         configuration["api_key_header_name"] = "x-model-key"
-    validated = registry.validate_provider(
-        "openai_responses_compatible", configuration, credential_configured=mode != "none"
-    )
+    validated = registry.validate_provider("openai", configuration, credential_configured=mode != "none")
     provider = RuntimeProvider(
-        "openai_responses_compatible",
+        "openai",
         validated.configuration,
         validated.endpoint,
         None if mode == "none" else "test-secret",
+        extra_headers={"x-gateway-key": "private-routing-value"},
     )
     snapshot = ModelExecutionSnapshot(
         model_id="mdl_1234567890abcdef", model_key="custom", upstream_model="custom-model", model_api="openai.responses"
@@ -127,6 +126,8 @@ async def test_custom_responses_endpoint_inference(mode: str, stream: bool) -> N
     for request in requests:
         assert str(request.url) == "https://custom.example/v1/responses"
         assert request.method == "POST"
+        assert request.headers["x-gateway-key"] == "private-routing-value"
+        assert b"private-routing-value" not in request.content
         body = json.loads(request.content)
         assert body["model"] == "custom-model"
         assert body["stream"] is stream

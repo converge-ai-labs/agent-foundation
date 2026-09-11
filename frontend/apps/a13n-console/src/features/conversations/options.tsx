@@ -226,16 +226,13 @@ export function RunOptions({
       }
       size={"md"}
       title={t("Run options")}
-      description={t("Customize the next run.")}
+      description={t(
+        "Leave options inherited to keep the source configuration. Changes apply to the next run only.",
+      )}
       closeLabel={t("Close")}
       open={open}
     >
       <div className={styles.composerOptions}>
-        <p className={styles.notice}>
-          {t(
-            "Leave options inherited to keep the source configuration. Changes apply to the next run only.",
-          )}
-        </p>
         <ErrorNotice error={choices.error} />
         {showAgent && (
           <ChoiceField

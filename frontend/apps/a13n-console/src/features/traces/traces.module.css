@@ -95,6 +95,9 @@
   border-radius: 3px;
 }
 .duration {
+  color: var(--a13n-text-supporting);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
   z-index: 1;
   margin-inline-start: auto;
   font-size: 11px;

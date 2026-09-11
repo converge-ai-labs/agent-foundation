@@ -240,6 +240,7 @@ export function TraceList({
         columns={[
           {
             label: t("Trace"),
+            tone: "primary",
             render: (item) => (
               <Link to={`${basePath}/traces/${encodeURIComponent(item.id)}`}>
                 <strong>{item.name}</strong>
@@ -249,6 +250,7 @@ export function TraceList({
           },
           {
             label: t("Started"),
+            tone: "muted",
             render: (item) => <Timestamp value={item.started_at} />,
           },
           {
@@ -263,6 +265,7 @@ export function TraceList({
           },
           {
             label: t("Duration"),
+            align: "right",
             render: (item) =>
               item.duration_ms === null
                 ? t("Unavailable")
@@ -270,6 +273,7 @@ export function TraceList({
           },
           {
             label: t("Cost (USD)"),
+            align: "right",
             render: (item) => item.total_cost_usd ?? t("Unavailable"),
           },
         ]}

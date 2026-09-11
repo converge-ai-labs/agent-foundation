@@ -190,6 +190,7 @@ async def test_resource_resolution_failures_are_safe_and_never_dispatch(known: b
             "ok": False,
             "error": {
                 "code": "environment_request_invalid",
+                "message": "Environment operation input is invalid.",
                 "retry_hint": "request_change",
                 "details": {"field": "path", "reason": "invalid_path", "hint": "Use an absolute mounted path."},
             },

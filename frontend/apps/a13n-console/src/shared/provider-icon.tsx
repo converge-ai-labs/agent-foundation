@@ -22,8 +22,6 @@ const icons: Record<string, string> = {
   deepseek: "deepseek-color",
   moonshot: "kimi-color",
   zhipu: "zhipu-color",
-  openai_compatible: "openai",
-  openai_responses_compatible: "openai",
 };
 
 export function ProviderIcon({ type }: { type: string }) {

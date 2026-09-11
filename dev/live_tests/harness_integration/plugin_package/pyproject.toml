@@ -1,0 +1,19 @@
+[project]
+name = "a13n-live-plugin"
+version = "0.0.0"
+description = "Installed-wheel fixture for the Service plugin live journey"
+requires-python = ">=3.13"
+dependencies = ["a13n-harness", "anyio", "pydantic", "pydantic-ai-slim"]
+
+[project.entry-points."a13n_harness.plugins"]
+"live.packaged" = "a13n_live_plugin:Factory"
+
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/a13n_live_plugin"]
+
+[tool.uv.workspace]
+members = []

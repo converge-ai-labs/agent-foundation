@@ -41,7 +41,7 @@ from a13n_harness.tools.metadata import (
 from a13n_harness.usage import ProviderUsage
 
 from ._instructions import InstructionFunctionToolset, tool_instruction
-from ._results import ToolError, ToolFailure
+from ._results import ToolError, ToolFailure, environment_failure, tool_failure
 from ._scoped_files import ScopedFileAccess
 from .events import FileEditAppliedEvent
 from .file_media import (
@@ -436,14 +436,12 @@ class FileToolset:
         """Read bounded text or attach a common media file natively."""
         extension = posixpath.splitext(file_path)[1].casefold()
         if extension == ".pdf":
-            return {
-                "ok": False,
-                "error": {
-                    "code": "document_conversion_required",
-                    "retry_hint": "request_change",
-                    "details": {"tool": "pdf_convert"},
-                },
-            }
+            return tool_failure(
+                "document_conversion_required",
+                "Convert the PDF before reading its text or page layout.",
+                retry_hint="request_change",
+                details={"tool": "pdf_convert"},
+            )
         media_type = _MEDIA_TYPES.get(extension)
         if media_type is not None:
             try:
@@ -942,8 +940,13 @@ class FileToolset:
         self,
         ctx: RunContext[AgentContext],
         pattern: Annotated[str, Field(description="Text to search for; regex by default, literal when regex=false")],
-        root: Annotated[str, Field(default=".", description="Logical root to search from")] = ".",
-        include: Annotated[str, Field(default="**/*", description="Glob selecting files to include")] = "**/*",
+        root: Annotated[
+            str,
+            Field(default=".", description="Logical file or directory to search; directories are searched recursively"),
+        ] = ".",
+        include: Annotated[
+            str, Field(default="**/*", description="Glob selecting relative paths, or the basename of an explicit file")
+        ] = "**/*",
         include_ignored: Annotated[
             bool,
             Field(default=False, description="If true, do not interpret repository ignore files"),
@@ -1233,7 +1236,11 @@ async def _emit_filesystem_changed(
 
 
 def _media_understanding_error(code: str) -> ToolFailure:
-    return {"ok": False, "error": {"code": code, "retry_hint": "dependency_change"}}
+    return tool_failure(
+        code,
+        "Media understanding could not complete. Check the configured media model and provider.",
+        retry_hint="dependency_change",
+    )
 
 
 def _restart_unspilled_page(
@@ -1472,33 +1479,14 @@ def _environment_tool_error(exc: EnvironmentError) -> ToolError:
 
 
 def _environment_error_result(exc: EnvironmentError) -> ToolFailure:
-    safe_details: dict[str, JsonValue] = {}
-    timeout = exc.details.get("timeout_seconds")
-    if isinstance(timeout, int | float) and not isinstance(timeout, bool):
-        safe_details["timeout_seconds"] = timeout
-    missing = exc.details.get("missing")
-    if isinstance(missing, list) and all(isinstance(item, str) for item in missing):
-        safe_details["missing"] = cast(JsonValue, list(missing))
-    for key in ("edit_index", "occurrences"):
-        value = exc.details.get(key)
-        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
-            safe_details[key] = value
-    for key in ("field", "reason", "hint"):
-        value = exc.details.get(key)
-        if isinstance(value, str):
-            safe_details[key] = value
     if exc.code == "environment_not_found":
-        safe_details.setdefault("reason", "path_not_found")
-        safe_details.setdefault(
-            "hint",
-            "File or directory was not found in the selected mount. Verify the path and use ls or glob on an "
-            "existing parent to locate it; do not assume a guessed repository path is correct. "
-            "This is not an outside-mount routing error.",
+        exc = EnvironmentError(
+            str(exc),
+            code=exc.code,
+            retry_hint=exc.retry_hint,
+            details={"reason": "path_not_found", **exc.details},
         )
-    error = ToolError(code=exc.code, details=safe_details)
-    if exc.retry_hint is not None:
-        error["retry_hint"] = exc.retry_hint
-    return {"ok": False, "error": error}
+    return environment_failure(exc)
 
 
 def _apply_text_edits(

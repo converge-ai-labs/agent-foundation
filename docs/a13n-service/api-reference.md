@@ -1147,7 +1147,7 @@ Provider Types.
 
 Responses:
 
-- **200** — Successful Response (`application/json: Collection_dict_`).
+- **200** — Successful Response (`application/json: Collection_EnvironmentProviderDefinition_`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/environment-provider-types/{provider_type}`
@@ -1160,7 +1160,7 @@ Get Provider Type.
 
 Responses:
 
-- **200** — Successful Response (`application/json: object`).
+- **200** — Successful Response (`application/json: EnvironmentProviderDefinition`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -3558,11 +3558,17 @@ Responses:
 
 List Sessions.
 
-| Parameter   | Location | Required | Type / schema  | Constraints and default            |
-| ----------- | -------- | -------- | -------------- | ---------------------------------- |
-| `workspace` | path     | true     | string         | —                                  |
-| `limit`     | query    | false    | integer        | minimum=1; maximum=200; default=50 |
-| `cursor`    | query    | false    | string or null | —                                  |
+| Parameter        | Location | Required | Type / schema      | Constraints and default            |
+| ---------------- | -------- | -------- | ------------------ | ---------------------------------- |
+| `workspace`      | path     | true     | string             | —                                  |
+| `q`              | query    | false    | string or null     | —                                  |
+| `agent_id`       | query    | false    | string or null     | —                                  |
+| `status`         | query    | false    | array of RunStatus | maxItems=7; default=[]             |
+| `trigger_type`   | query    | false    | array of string    | maxItems=16; default=[]            |
+| `updated_after`  | query    | false    | string or null     | —                                  |
+| `updated_before` | query    | false    | string or null     | —                                  |
+| `limit`          | query    | false    | integer            | minimum=1; maximum=200; default=50 |
+| `cursor`         | query    | false    | string or null     | —                                  |
 
 Responses:
 
@@ -3989,11 +3995,13 @@ Responses:
 
 List Skills.
 
-| Parameter   | Location | Required | Type / schema  | Constraints and default            |
-| ----------- | -------- | -------- | -------------- | ---------------------------------- |
-| `workspace` | path     | true     | string         | —                                  |
-| `limit`     | query    | false    | integer        | minimum=1; maximum=100; default=50 |
-| `cursor`    | query    | false    | string or null | —                                  |
+| Parameter     | Location | Required | Type / schema           | Constraints and default            |
+| ------------- | -------- | -------- | ----------------------- | ---------------------------------- |
+| `workspace`   | path     | true     | string                  | —                                  |
+| `limit`       | query    | false    | integer                 | minimum=1; maximum=100; default=50 |
+| `cursor`      | query    | false    | string or null          | —                                  |
+| `q`           | query    | false    | string or null          | —                                  |
+| `source_kind` | query    | false    | "zip", "github" or null | —                                  |
 
 Responses:
 
@@ -4017,6 +4025,21 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: SkillPublicationReceipt`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/skills/{skill_key}`
+
+Get Skill By Key.
+
+| Parameter   | Location | Required | Type / schema | Constraints and default |
+| ----------- | -------- | -------- | ------------- | ----------------------- |
+| `skill_key` | path     | true     | string        | —                       |
+| `workspace` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: Skill`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 

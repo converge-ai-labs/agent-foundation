@@ -28,6 +28,9 @@ pub struct ModelProvider {
     #[serde(rename = "enabled")]
     pub enabled: bool,
 
+    #[serde(rename = "header_names", skip_serializing_if = "Option::is_none")]
+    pub header_names: Option<Vec<String>>,
+
     #[serde(rename = "id")]
     pub id: String,
 
@@ -71,6 +74,7 @@ impl ModelProvider {
             created_by: Box::new(created_by),
             credential_configured,
             enabled,
+            header_names: None,
             id,
             name,
             organization_id,

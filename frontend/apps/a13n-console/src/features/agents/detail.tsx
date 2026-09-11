@@ -137,6 +137,7 @@ export function AgentDetail() {
               </Button>
             }
             title={t("Edit agent details")}
+            description={t("Update how this agent appears in your workspace.")}
             closeLabel={t("Close")}
           >
             <AgentDetails

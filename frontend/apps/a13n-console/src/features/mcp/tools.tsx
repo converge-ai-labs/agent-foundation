@@ -68,7 +68,7 @@ export function MCPTools({
           </FormField>
           {tools.slice(0, limit).map((tool) => (
             <DisclosureSection key={tool.name} title={<>{tool.name}</>}>
-              <p>{tool.description}</p>
+              <p className="text-muted-foreground">{tool.description}</p>
               <h4>{t("Input schema")}</h4>
               <JsonView value={tool.input_schema} />
               {tool.output_schema && (

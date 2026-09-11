@@ -3564,6 +3564,26 @@
             "title": "Enabled",
             "type": "boolean"
           },
+          "extra_headers": {
+            "maxProperties": 64,
+            "patternProperties": {
+              "^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$": {
+                "anyOf": [
+                  {
+                    "format": "password",
+                    "type": "string",
+                    "writeOnly": true
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "title": "Extra Headers",
+            "type": "object",
+            "writeOnly": true
+          },
           "name": {
             "maxLength": 128,
             "minLength": 1,
@@ -7008,6 +7028,14 @@
           "enabled": {
             "title": "Enabled",
             "type": "boolean"
+          },
+          "header_names": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Header Names",
+            "type": "array"
           },
           "id": {
             "maxLength": 72,
@@ -13250,6 +13278,26 @@
               }
             ],
             "title": "Enabled"
+          },
+          "extra_headers": {
+            "maxProperties": 64,
+            "patternProperties": {
+              "^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$": {
+                "anyOf": [
+                  {
+                    "format": "password",
+                    "type": "string",
+                    "writeOnly": true
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "title": "Extra Headers",
+            "type": "object",
+            "writeOnly": true
           },
           "name": {
             "anyOf": [

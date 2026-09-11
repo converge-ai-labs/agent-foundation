@@ -164,13 +164,22 @@ async def test_drain_fails_readiness_before_rejecting_new_connectivity_work(loca
         transport = httpx2.ASGITransport(app=app)
         async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
             readiness = await client.get("/readyz")
-            delivery = await client.post("/connectivity/v1/accounts/acct_test/events")
+            delivery = await client.post(
+                "/connectivity/v1/accounts/acct_test/events", headers={"X-Request-ID": "req-draining"}
+            )
             health = await client.get("/healthz")
 
-        assert readiness.status_code == 503
-        assert readiness.json() == {"detail": "service not ready"}
-        assert delivery.status_code == 503
-        assert delivery.json() == {"detail": "service draining"}
+        for response in [readiness, delivery]:
+            assert response.status_code == 503
+            assert response.json() == {
+                "error": {
+                    "code": "service_unavailable",
+                    "message": "The service is temporarily unavailable.",
+                    "details": {},
+                    "request_id": response.headers["X-Request-ID"],
+                }
+            }
+        assert delivery.headers["X-Request-ID"] == "req-draining"
         assert health.status_code == 200
 
     assert app.state.runtime.status.startup_complete is False

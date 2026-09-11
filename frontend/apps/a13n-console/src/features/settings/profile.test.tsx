@@ -79,14 +79,12 @@ it("opens image selection from the avatar and preserves the upload version and m
 });
 it("keeps the image static when profile editing is unavailable", async () => {
   const { container } = setup(false);
-  await waitFor(() =>
-    expect(
-      (
-        screen.getByRole("textbox", {
-          name: "Workspace name",
-        }) as HTMLInputElement
-      ).value,
-    ).toBe("Product workspace"),
+  await screen.findByRole("group", { name: "URL key" });
+  expect(screen.queryByRole("textbox", { name: "Workspace name" })).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "URL key" })).toBeNull();
+  expect(screen.getAllByText("Product workspace").length).toBeGreaterThan(0);
+  expect(screen.getByRole("group", { name: "URL key" }).textContent).toContain(
+    "design",
   );
   expect(screen.queryByRole("button", { name: "Upload image" })).toBeNull();
   expect(container.querySelector('input[type="file"]')).toBeNull();

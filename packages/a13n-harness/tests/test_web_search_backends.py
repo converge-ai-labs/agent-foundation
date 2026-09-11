@@ -584,7 +584,12 @@ async def test_search_timeout_does_not_fall_back() -> None:
 
     assert result == {
         "ok": False,
-        "error": {"code": "web_timeout", "retry_hint": "retry"},
+        "error": {
+            "code": "web_timeout",
+            "message": "The web operation timed out.",
+            "details": {},
+            "retry_hint": "retry",
+        },
     }
     assert calls == ["timeout"]
 

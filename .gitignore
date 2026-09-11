@@ -6,6 +6,9 @@ tmp/
 # Local runtime storage and caches
 /var/
 
+# Machine-specific Service configuration, selected with SERVICE_CONFIG
+/dev/service/local.private.toml
+
 # Live-test credentials and generated artifacts stay local, outside Git merges
 /dev/live_tests/.state/
 /dev/live_tests/providers.local.toml

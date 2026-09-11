@@ -103,7 +103,8 @@ export function AgentEnvironment({
       <ChoiceField
         label={t("Default environment")}
         hideLabel
-        disabled={disabled || save.isPending || !can("agent.update")}
+        disabled={disabled || save.isPending}
+        readOnly={!can("agent.update")}
         value={save.isPending ? save.variables : (selected ?? "none")}
         onValueChange={(value) => save.mutate(value)}
         options={[

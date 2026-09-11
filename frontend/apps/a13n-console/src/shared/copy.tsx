@@ -54,10 +54,34 @@ export function CopyButton({
   );
 }
 
-export function CopyableId({ value }: { value: string }) {
+export function Identifier({
+  value,
+  primary = false,
+}: {
+  value: string;
+  primary?: boolean;
+}) {
+  return (
+    <span
+      className={styles.identifierText}
+      data-primary={primary || undefined}
+      title={value}
+    >
+      {value}
+    </span>
+  );
+}
+
+export function CopyableId({
+  value,
+  primary = false,
+}: {
+  value: string;
+  primary?: boolean;
+}) {
   return (
     <span className={styles.identifier}>
-      <code>{value}</code>
+      <Identifier value={value} primary={primary} />
       <CopyButton key={value} value={value} iconOnly />
     </span>
   );

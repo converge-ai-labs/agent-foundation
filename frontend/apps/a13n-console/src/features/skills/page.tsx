@@ -1,3 +1,4 @@
+import { Identifier } from "../../shared/copy";
 import {
   Badge,
   FormField,
@@ -75,11 +76,11 @@ export function SkillsPage() {
         )
       }
     >
-      <div className="mb-6 flex flex-wrap items-center gap-3">
+      <div className={styles.filters}>
         <FormField
           label={t("Search skills")}
           hideLabel
-          className="min-w-48 flex-1"
+          className="min-w-0 w-full"
         >
           <Input
             type="search"
@@ -121,7 +122,7 @@ export function SkillsPage() {
                   <h2>{item.name}</h2>
                   <Badge variant="secondary">v{item.version}</Badge>
                 </header>
-                <code>{item.key}</code>
+                <Identifier value={item.key} />
                 <footer>
                   <span>
                     {item.source_kind === "github" ? "GitHub" : t("ZIP upload")}
@@ -267,6 +268,7 @@ function References({ skill }: { skill: Schema["Skill"] }) {
             columns={[
               {
                 label: t("Agent"),
+                tone: "primary",
                 render: (item) => (
                   <Link to={`${basePath}/agents/${item.agent_key}`}>
                     {item.agent_name}
@@ -275,7 +277,8 @@ function References({ skill }: { skill: Schema["Skill"] }) {
               },
               {
                 label: t("Revision"),
-                render: (item) => <code>{item.agent_revision_id}</code>,
+                tone: "muted",
+                render: (item) => <Identifier value={item.agent_revision_id} />,
               },
             ]}
           />
