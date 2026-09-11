@@ -91,9 +91,11 @@ async def test_symlinks_are_visible_read_targets_explicit_and_delete_does_not_fo
     link.symlink_to(target)
     entry = await files.metadata(str(link))
     assert entry.kind == "symlink" and entry.link_target is not None
-    assert Path(entry.link_target).resolve() == target.resolve()
+    # Windows readlink can return the extended-length spelling of the same path.
+    assert Path(entry.link_target).samefile(target)
     text = await files.read_text(FileReadRequest(path=str(link)))
-    assert text.resolved_path == str(target) and text.text == "target"
+    assert Path(text.resolved_path).samefile(target) and text.text == "target"
+    assert not Path(text.resolved_path).is_symlink()
     with pytest.raises(HarnessUiError):
         await files.write_text(FileWriteRequest(path=str(link), expected_revision=entry.revision, text="no"))
     await files.delete(FileDeleteRequest(path=str(link), expected_revision=entry.revision, recursive=True))
