@@ -69,7 +69,7 @@ from a13n_harness_ui.environment_runtime import (
     EnvironmentSnapshotReconstructor,
     ProviderRuntimeFactory,
 )
-from a13n_harness_ui.errors import AppStateError, ConfigurationError, HarnessUiError
+from a13n_harness_ui.errors import AppStateError, ConfigurationError, HarnessUiError, LivePresentationError
 from a13n_harness_ui.extensions import (
     CatalogReference,
     EnvironmentProjectAdapter,
@@ -81,6 +81,7 @@ from a13n_harness_ui.live import (
     LiveCursor,
     LiveEvent,
     LiveSubscription,
+    RootStreamReplay,
     SummaryCursor,
     SummarySubscription,
 )
@@ -208,6 +209,7 @@ class AppStatus(BaseModel):
 class ThreadWatch:
     snapshot: ThreadFocusSnapshot
     events: LiveSubscription
+    root_stream: RootStreamReplay | None = None
 
 
 def _cwd_project_ids(source: LoadedHarnessUiConfiguration, directory: str) -> tuple[str, ...]:
@@ -1356,9 +1358,16 @@ class HarnessUiApp:
         child_limit: int = 20,
     ) -> AsyncGenerator[ThreadWatch]:
         self._require_ready()
+        async with self._operation():
+            selected = await self._threads.get(root_thread_id)
+            base_continuation_id = selected.continuation.logical_digest if selected.continuation is not None else None
         async with self._live_hub.subscribe(root_thread_id=root_thread_id) as subscription:
             async with self._operation():
                 thread = await self._projections.detail(root_thread_id)
+                if thread.continuation_id != base_continuation_id:
+                    raise LivePresentationError(
+                        "The selected history changed during focused bootstrap.", code="live_snapshot_changed"
+                    )
                 if thread.thread.parent_thread_id is not None:
                     raise AppStateError("A focused watch requires a root Thread.", code="child_thread_scoped")
                 children = await self._subagent_operator.query_child_executions(
@@ -1371,6 +1380,13 @@ class HarnessUiApp:
                     expected_continuation_id=thread.continuation_id,
                 )
             cursor = subscription.cursor
+            root_stream = subscription.root_stream
+            if tasks.continuation_id != thread.continuation_id or (
+                root_stream is not None and root_stream.summary.base_continuation_id != thread.continuation_id
+            ):
+                raise LivePresentationError(
+                    "The selected history changed during focused bootstrap.", code="live_snapshot_changed"
+                )
             recent = await self._live_hub.snapshot(root_thread_id=root_thread_id)
             retained_events: list[LiveEvent] = []
             remaining_bytes = 128 * 1024
@@ -1391,8 +1407,10 @@ class HarnessUiApp:
                     children=children,
                     tasks=tasks,
                     recent_events=tuple(reversed(retained_events)),
+                    root_stream=root_stream.summary if root_stream is not None else None,
                 ),
                 events=subscription,
+                root_stream=root_stream,
             )
 
     @asynccontextmanager

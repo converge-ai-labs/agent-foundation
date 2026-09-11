@@ -50,7 +50,7 @@ The App owns:
 - Thread creation, metadata and configuration mutation, Project-filtered keyset queries, and transcript projection;
 - process-local root admission, receipt correlation, execution, deferred response, waiting, cancellation, and steering;
 - immutable Run composition and continuation publication;
-- shared browser drafts, participant presence, and same-submission coordination through existing root admission;
+- in-memory shared browser drafts and participant presence, with frontend Send using existing root admission;
 - explicitly enabled native Host files, Git projections, and human PTY lifetimes;
 - Project-root Environment binding and state lifecycle;
 - async child admission, execution, checkpointing, query, wait, steering, cancellation, and linked resume;
@@ -245,20 +245,9 @@ class EnvironmentProfileSummary:
 
 The release-owned descriptions state their material authority difference: Full Control commands have ambient Host-user filesystem and network access, while Sandbox commands require Local Envd filesystem/process containment and denied networking. `canonical_host_paths` describes aggregate path presentation only and never implies Full Control. Surfaces select and persist `profile_id`; display names and mode labels do not become Thread identity.
 
-Configuration-source queries expose one bounded detached view for the root YAML or an approved immediate resource source:
+Configuration-source queries expose an accepted-generation view for the root YAML or an approved immediate resource source. The conceptual projection includes `relative_path`, `resource_kind`, `resource_ids`, `source_digest`, `generation_digest`, `writable`, `content_available`, and nullable `content`. It does not expose the current invalid on-disk candidate or promise candidate diagnostics; MCP bodies are unavailable (`content_available: false`, `content: null`). A repair caller supplies complete replacement content through the validated mutation operation.
 
-```python
-class ConfigurationSourceView:
-    relative_path: str
-    resource_kind: str | None
-    resource_id: str | None
-    content: str
-    source_digest: str
-    accepted_generation_digest: str | None
-    diagnostics: tuple[FailureView, ...]
-```
-
-This conceptual App projection can expose an invalid candidate's exact text and safe diagnostics so a surface can repair it. `relative_path` is an App-approved configuration-tree identity, not a caller-selected filesystem path. The view grants no directory traversal, arbitrary file read, immutable-object access, or write authority. Create, update, and delete use the validated last-write-wins contract owned by [Configuration and Resource Catalog](01-configuration-and-resource-catalog.md#file-mutation-and-last-write-wins).
+`relative_path` is an App-approved configuration-tree identity, not a caller-selected filesystem path. The view grants no directory traversal, arbitrary file read, immutable-object access, or write authority. Create, update, and delete use the validated last-write-wins contract owned by [Configuration and Resource Catalog](01-configuration-and-resource-catalog.md#file-mutation-and-last-write-wins).
 
 Thread and transcript pages use opaque keyset cursors bound to the query shape and deterministic sort key. Root-Thread summary pages additionally bind the Project, archived, and search selectors. Thread ordering is descending `(updated_at, thread_id)`. Transcript entries always appear in ascending immutable message position within a page; a focused initial query returns the latest bounded page and a backward cursor pages older entries for prepend. A transcript cursor binds the Thread, selected continuation, direction, and boundary, so a changed continuation fails or resets rather than combining histories. A newer insertion does not shift unaffected entries across an existing page boundary. Updating a Thread can move it across that boundary, so summary invalidation prompts a fresh first-page query. Invalid, mismatched, or expired cursors fail explicitly. Project recency is aggregated over all associated non-archived Threads in storage rather than a bounded Thread page.
 
@@ -314,12 +303,17 @@ The detailed live hub performs bounded best-effort fan-out and retains only a sm
 
 A focused watch establishes a subscribe-before-query boundary:
 
-1. install the exact root-lineage subscriber and record its epoch and `cutover_sequence`;
-2. query detached Thread, child, task, and root-operation projections, with retained queries bound to the selected continuation;
-3. attach `recent_events`, the newest available root-lineage ring tail at or below cutover, bounded to 128 KiB of encoded events; and
-4. return the snapshot and subscription, whose subsequent delivery contains only matching events strictly after cutover.
+1. read the selected history identity, then install the exact root-lineage subscriber and atomically capture its epoch, `cutover_sequence`, and the root observer's published prefix;
+2. query detached Thread, child, task, and root-operation projections, with retained queries bound to that continuation; require a fresh watch if the history identity changed across cutover, including when no observer existed at subscription;
+3. when present, describe `root_stream` by its exact Run, base continuation, and finite observer event count; if its base no longer matches the selected history, require a fresh watch rather than mixing histories;
+4. attach `recent_events`, the newest available root-lineage ring tail at or below cutover, bounded to 128 KiB of encoded events and intended only as incomplete diagnostic context; and
+5. return the snapshot, bounded root observer replay batches, and subscription, whose subsequent delivery contains only matching events strictly after cutover.
 
-The snapshot is not a transaction across execution, SQLite, and the live hub. Its detached activity projections can be newer than cutover; they are separate facts, not a complete materialized event fold. `recent_events` is explicitly provisional and incomplete when the ring or byte budget evicts earlier events. It cannot reconstruct all active output or serve as durable history. Consumers render retained history independently, deduplicate event identity, and refetch authoritative Thread/receipt projections for controls rather than deriving acceptance from a replayed lifecycle event. A concurrent continuation change fails or resets a retained query instead of combining histories from unrelated continuations.
+The snapshot is not a transaction across execution, SQLite, and the live hub. Its detached activity projections can be newer than cutover; they are separate facts, not a complete materialized event fold. Root replay uses the existing Stream Protocol observer, not another event accumulator or database. Observer indexes are Run-local positions, distinct from the hub's global sequence. Only events already published at cutover belong to the replay; observation that precedes publication is delivered later through the subscription. Replay uses the same bounded payload projection and explicit omission markers as live delivery.
+
+`recent_events` is not an alternative source to append beside root replay and saved history. Child inspection remains a bounded compact projection of closed activities through parent-scoped queries; reconnect does not expose unfinished child activities or bypass child publication boundaries. Consumers render retained history independently, apply the root replay once, and refetch authoritative Thread/receipt projections for controls rather than deriving acceptance from a replayed lifecycle event. When the selected continuation advances, replace the provisional root display with saved history instead of appending both. A concurrent continuation change fails or resets a retained query instead of combining histories from unrelated continuations.
+
+The hub references only the existing observer for the latest root Run per Thread. Successful continuation selection releases that reference; an already-open replay may retain its finite prefix until delivery closes. Unsaved terminal output has bounded process-local inspection retention. App restart restores selected history, not observers, subscriptions, or old root control. There is no new durable replay storage.
 
 Subscription installation and retained replay are atomic within the owning hub, so events after cutover remain buffered even while snapshot queries run. Ring loss or a subscriber gap requests reset; it never invents historical output. Closing or cancelling delivery releases the registered subscriber even under task cancellation, without cancelling the producing Run.
 
@@ -366,7 +360,7 @@ The adapter publishes a versioned OpenAPI document derived from its strict reque
 The adapter exposes two authenticated SSE forms:
 
 1. one App-wide summary stream carries only the summary hub's epoch, sequence, and invalidation hints;
-2. one focused root-Thread stream either opens a fresh App focused watch or resumes retained delivery for an existing watch cursor. A fresh watch emits its detached snapshot as the first frame and then only later detailed events from that subscription. A valid resumable cursor emits only events after that cursor; an unavailable cursor emits an explicit reset.
+2. one focused root-Thread stream either opens a fresh App focused watch or resumes retained delivery for an existing watch cursor. A fresh watch emits its detached snapshot, any finite root-stream replay batches and ready boundary, then only later detailed events from that subscription. A valid resumable cursor emits only events after that cursor; an unavailable cursor emits an explicit reset.
 
 Focused frames use the following conceptual JSON union; the adapter's OpenAPI document owns the serialized schema:
 
@@ -374,6 +368,17 @@ Focused frames use the following conceptual JSON union; the adapter's OpenAPI do
 class FocusSnapshotFrame:
     kind: Literal["snapshot"]
     snapshot: ThreadFocusSnapshot
+    resume_cursor: str | None
+
+
+class FocusReplayFrame:
+    kind: Literal["root_stream"]
+    run_id: str
+    events: tuple[RootStreamEvent, ...]  # At most 16 bounded events, with observer indexes.
+
+
+class FocusReadyFrame:
+    kind: Literal["ready"]
     resume_cursor: str
 
 
@@ -388,7 +393,7 @@ class FocusResetFrame:
     reason: str
 ```
 
-A fresh focused stream never reads a snapshot before installing its subscription. Every normal frame carries an opaque `resume_cursor`, encoding stream kind, exact root lineage when applicable, epoch, and sequence. A client reconnect passes it in the bounded `after` query parameter without decoding the cursor. Summary `open` and `invalidation` frames carry the same cursor concept; reset frames carry a reason and no reusable cursor. An invalid encoding, wrong kind, wrong lineage, future sequence, or expired epoch receives explicit reset semantics. That cursor is bound to the focused stream kind and exact root lineage and cannot be reused for another root. A valid resume does not emit a replacement snapshot; the hub establishes retained replay and following live delivery as one cursor continuation, so no matching event can fall between them. It replays retained matching events after the cursor and then follows the same lineage. An epoch change, expired cursor, or subscriber gap returns reset semantics rather than invented replay. Because the global sequence is sparse after root-lineage filtering, a numerical jump alone is valid and never causes reset. HTTP disconnect closes only that subscription and never cancels the producing root or child execution. A browser API client must use a transport that can supply the required Authorization header, such as authenticated `fetch` streaming rather than native `EventSource`. The browser consumes these streams for conversation and summary presentation; draft synchronization does not replace their execution-observation semantics.
+A fresh focused stream captures only the history identity before subscribing; it queries the snapshot after installing its subscription. When the snapshot includes `root_stream`, its resume cursor is null: apply the indexed replay batches to that Run's provisional display, and retain a cursor only after the `ready` frame. If bootstrap is interrupted before ready, discard the incomplete bootstrap and open a fresh watch. Without root replay the initial snapshot already carries the cutover cursor. Normal live event frames carry an opaque `resume_cursor`, encoding stream kind, exact root lineage when applicable, epoch, and sequence. A client reconnect passes it in the bounded `after` query parameter without decoding the cursor. Summary `open` and `invalidation` frames carry the same cursor concept; reset frames carry a reason and no reusable cursor. An invalid encoding, wrong kind, wrong lineage, future sequence, or expired epoch receives explicit reset semantics. That cursor is bound to the focused stream kind and exact root lineage and cannot be reused for another root. A valid resume does not emit a replacement snapshot; the hub establishes retained replay and following live delivery as one cursor continuation, so no matching event can fall between them. It replays retained matching events after the cursor and then follows the same lineage. An epoch change, expired cursor, or subscriber gap returns reset semantics rather than invented replay. Because the global sequence is sparse after root-lineage filtering, a numerical jump alone is valid and never causes reset. HTTP disconnect closes only that subscription and never cancels the producing root or child execution. A browser API client must use a transport that can supply the required Authorization header, such as authenticated `fetch` streaming rather than native `EventSource`. The browser consumes these streams for conversation and summary presentation; draft synchronization does not replace their execution-observation semantics.
 
 Every authenticated JSON, OpenAPI, and SSE response uses `Cache-Control: no-store`; stream responses also disable intermediary buffering where the deployment path supports it. Recognized browser navigation paths continue to serve `index.html` with mandatory revalidation on direct load, refresh, and package replacement; the browser resolves the corresponding workbench view without starting an Agent operation merely because a route was loaded. Content-hashed JavaScript, CSS, font, icon, editor, and worker assets use long-lived immutable caching. Asset misses, unknown `/api` routes, and unknown health routes remain explicit HTTP failures and never fall back to browser HTML.
 

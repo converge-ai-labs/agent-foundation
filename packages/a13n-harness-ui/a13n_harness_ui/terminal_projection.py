@@ -291,11 +291,11 @@ class TerminalProjectionService:
         thread = await self._store.threads.get(thread_id)
         if thread is None:
             raise ThreadError("Thread does not exist.", code="thread_missing")
-        if thread.continuation is None:
-            return TaskPage(continuation_id=None)
-        continuation_id = thread.continuation.logical_digest
+        continuation_id = thread.continuation.logical_digest if thread.continuation is not None else None
         if expected_continuation_id is not None and continuation_id != expected_continuation_id:
             raise ThreadError("The selected continuation changed.", code="thread_continuation_conflict")
+        if thread.continuation is None:
+            return TaskPage(continuation_id=None)
         continuation = await self._store.objects.read_model(thread.continuation, StoredContinuation)
         entry = continuation.harness_state.agent_context_state.entries.get(WORKING_STATE_CAPABILITY_ID)
         if entry is None:
@@ -337,11 +337,11 @@ class TerminalProjectionService:
         thread = await self._store.threads.get(thread_id)
         if thread is None:
             raise ThreadError("Thread does not exist.", code="thread_missing")
-        if thread.continuation is None:
-            return None
-        continuation_id = thread.continuation.logical_digest
+        continuation_id = thread.continuation.logical_digest if thread.continuation is not None else None
         if expected_continuation_id is not None and continuation_id != expected_continuation_id:
             raise ThreadError("The selected continuation changed.", code="thread_continuation_conflict")
+        if thread.continuation is None or continuation_id is None:
+            return None
         continuation = await self._store.objects.read_model(thread.continuation, StoredContinuation)
         requests = continuation.deferred_requests
         if requests is None or (not requests.calls and not requests.approvals):

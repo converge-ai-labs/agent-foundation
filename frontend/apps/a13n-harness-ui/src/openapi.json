@@ -726,6 +726,23 @@
               "type": "string",
               "title": "Thread Id"
             }
+          },
+          {
+            "name": "expected_continuation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Continuation Id"
+            }
           }
         ],
         "responses": {
@@ -818,6 +835,513 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ThreadSelectorCatalog"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/activity": {
+      "get": {
+        "summary": "Thread Activity",
+        "operationId": "thread_activity_api_threads_activity_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 512
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          },
+          {
+            "name": "include_archived",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Archived"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadActivityPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/tasks": {
+      "get": {
+        "summary": "Tasks",
+        "operationId": "tasks_api_threads__thread_id__tasks_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "expected_continuation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Continuation Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/children": {
+      "get": {
+        "summary": "Children",
+        "operationId": "children_api_threads__thread_id__children_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "execution_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Execution Id"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChildExecutionPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/children/wait": {
+      "get": {
+        "summary": "Wait Children",
+        "operationId": "wait_children_api_threads__thread_id__children_wait_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "execution_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Execution Id"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "timeout_seconds",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "maximum": 60,
+              "minimum": 0,
+              "default": 10,
+              "title": "Timeout Seconds"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChildExecutionPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/children/{execution_id}/review": {
+      "get": {
+        "summary": "Child Review",
+        "operationId": "child_review_api_threads__thread_id__children__execution_id__review_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "execution_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Execution Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/children/{execution_id}/steer": {
+      "post": {
+        "summary": "Steer Child",
+        "operationId": "steer_child_api_threads__thread_id__children__execution_id__steer_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "execution_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Execution Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChildControlResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SteerRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/children/{execution_id}/cancel": {
+      "post": {
+        "summary": "Cancel Child",
+        "operationId": "cancel_child_api_threads__thread_id__children__execution_id__cancel_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "execution_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Execution Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChildControlResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -1374,7 +1898,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PromptRequest"
+                "$ref": "#/components/schemas/SteerRequest"
               }
             }
           }
@@ -1463,6 +1987,12 @@
                       "$ref": "#/components/schemas/FocusSnapshotFrame"
                     },
                     {
+                      "$ref": "#/components/schemas/FocusReplayFrame"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FocusReadyFrame"
+                    },
+                    {
                       "$ref": "#/components/schemas/FocusEventFrame"
                     },
                     {
@@ -1548,6 +2078,48 @@
   },
   "components": {
     "schemas": {
+      "ActivitySummary": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "assistant",
+              "reasoning",
+              "tool",
+              "child",
+              "decision",
+              "failure",
+              "notice"
+            ],
+            "title": "Kind"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Text"
+          },
+          "occurred_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Occurred At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "text"
+        ],
+        "title": "ActivitySummary"
+      },
       "AgentResourceSource": {
         "properties": {
           "kind": {
@@ -1860,6 +2432,58 @@
         ],
         "title": "ChildActivityView"
       },
+      "ChildControlResult": {
+        "properties": {
+          "execution_id": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Execution Id"
+          },
+          "accepted": {
+            "type": "boolean",
+            "title": "Accepted"
+          },
+          "enqueue_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enqueue Id"
+          },
+          "persisted_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "running",
+                  "succeeded",
+                  "failed",
+                  "cancelled",
+                  "lost"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Persisted Status"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "execution_id",
+          "accepted"
+        ],
+        "title": "ChildControlResult"
+      },
       "ChildExecutionPage": {
         "properties": {
           "executions": {
@@ -2055,6 +2679,55 @@
           "updated_at"
         ],
         "title": "ChildExecutionView"
+      },
+      "ChildStatusCounts": {
+        "properties": {
+          "running": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Running",
+            "default": 0
+          },
+          "succeeded": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Succeeded",
+            "default": 0
+          },
+          "failed": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Failed",
+            "default": 0
+          },
+          "cancelled": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Cancelled",
+            "default": 0
+          },
+          "lost": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Lost",
+            "default": 0
+          },
+          "active": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Active",
+            "default": 0
+          },
+          "unavailable": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unavailable",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ChildStatusCounts"
       },
       "ChildToolCallView": {
         "properties": {
@@ -2789,6 +3462,56 @@
         ],
         "title": "FocusEventFrame"
       },
+      "FocusReadyFrame": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "ready",
+            "title": "Kind",
+            "default": "ready"
+          },
+          "resume_cursor": {
+            "type": "string",
+            "title": "Resume Cursor"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "resume_cursor"
+        ],
+        "title": "FocusReadyFrame"
+      },
+      "FocusReplayFrame": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "root_stream",
+            "title": "Kind",
+            "default": "root_stream"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/RootStreamEvent"
+            },
+            "type": "array",
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Events"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id",
+          "events"
+        ],
+        "title": "FocusReplayFrame"
+      },
       "FocusSnapshotFrame": {
         "properties": {
           "kind": {
@@ -2801,7 +3524,14 @@
             "$ref": "#/components/schemas/ThreadFocusSnapshot"
           },
           "resume_cursor": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Resume Cursor"
           }
         },
@@ -3132,6 +3862,33 @@
           "id"
         ],
         "title": "MarkdownSubagentSource"
+      },
+      "PendingDecisionSummary": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "question",
+              "approval",
+              "external",
+              "mixed"
+            ],
+            "title": "Kind"
+          },
+          "count": {
+            "type": "integer",
+            "maximum": 256.0,
+            "minimum": 1.0,
+            "title": "Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "count"
+        ],
+        "title": "PendingDecisionSummary"
       },
       "ProjectDefaults": {
         "properties": {
@@ -3468,6 +4225,102 @@
         "minLength": 3,
         "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$"
       },
+      "ReviewView": {
+        "properties": {
+          "lifecycle": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "closed",
+              "unavailable"
+            ],
+            "title": "Lifecycle"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "json",
+              "shell",
+              "task",
+              "child",
+              "diff",
+              "generic"
+            ],
+            "title": "Kind"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 262144
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "default": false
+          },
+          "omitted": {
+            "type": "boolean",
+            "title": "Omitted",
+            "default": false
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailable Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "lifecycle",
+          "kind",
+          "title"
+        ],
+        "title": "ReviewView"
+      },
       "RootActivityState": {
         "type": "string",
         "enum": [
@@ -3776,6 +4629,84 @@
           "submitted_at"
         ],
         "title": "RootRunReceipt"
+      },
+      "RootStreamEvent": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Index"
+          },
+          "event_type": {
+            "type": "string",
+            "title": "Event Type"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          },
+          "payload_omitted": {
+            "type": "boolean",
+            "title": "Payload Omitted"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "index",
+          "event_type",
+          "payload",
+          "payload_omitted"
+        ],
+        "title": "RootStreamEvent"
+      },
+      "RootStreamSummary": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "base_continuation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Continuation Id"
+          },
+          "event_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Event Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "thread_id",
+          "run_id",
+          "base_continuation_id",
+          "event_count"
+        ],
+        "title": "RootStreamSummary",
+        "description": "Finite observer prefix covered by a focused watch's cutover."
       },
       "SelectableResourceSummary": {
         "properties": {
@@ -4394,6 +5325,140 @@
         ],
         "title": "TaskView"
       },
+      "ThreadActivityPage": {
+        "properties": {
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ThreadActivityView"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rows",
+          "total"
+        ],
+        "title": "ThreadActivityPage"
+      },
+      "ThreadActivityView": {
+        "properties": {
+          "thread": {
+            "$ref": "#/components/schemas/ThreadSummary"
+          },
+          "project_name": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Project Name"
+          },
+          "agent_name": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Agent Name"
+          },
+          "environment_name": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Environment Name"
+          },
+          "pending_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingDecisionSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latest_operation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RootOperationView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "children": {
+            "$ref": "#/components/schemas/ChildStatusCounts"
+          },
+          "latest_activity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActivitySummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "available_actions": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "open",
+                "archive",
+                "respond",
+                "wait",
+                "steer",
+                "cancel"
+              ]
+            },
+            "type": "array",
+            "title": "Available Actions",
+            "default": [
+              "open"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "thread",
+          "project_name",
+          "agent_name",
+          "environment_name"
+        ],
+        "title": "ThreadActivityView"
+      },
       "ThreadAttachment": {
         "properties": {
           "attachment_id": {
@@ -4638,6 +5703,16 @@
             "type": "array",
             "title": "Recent Events",
             "default": []
+          },
+          "root_stream": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RootStreamSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -5932,6 +7007,22 @@
           "responses"
         ],
         "title": "DecisionResponseBatch",
+        "type": "object"
+      },
+      "SteerRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "prompt": {
+            "maxLength": 262144,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          }
+        },
+        "required": [
+          "prompt"
+        ],
+        "title": "SteerRequest",
         "type": "object"
       },
       "CreateThreadRequest": {

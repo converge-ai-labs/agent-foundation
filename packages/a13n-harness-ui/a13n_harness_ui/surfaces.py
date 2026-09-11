@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, m
 
 from a13n_harness_ui.configuration.models import ProjectDefaults
 from a13n_harness_ui.conversation import ConversationExcerpt
-from a13n_harness_ui.live import LiveEvent
+from a13n_harness_ui.live import LiveEvent, RootStreamSummary
 from a13n_harness_ui.storage import AgentResourceSource, MarkdownSubagentSource, ThreadConfiguration
 from a13n_harness_ui.storage import ThreadConfigurationPatch as StoredThreadConfigurationPatch
 
@@ -465,6 +465,7 @@ class ThreadFocusSnapshot(SurfaceModel):
     children: ChildExecutionPage
     tasks: TaskPage = Field(default_factory=TaskPage)
     recent_events: tuple[LiveEvent, ...] = ()
+    root_stream: RootStreamSummary | None = None
 
 
 class LaunchProjectSelected(SurfaceModel):
