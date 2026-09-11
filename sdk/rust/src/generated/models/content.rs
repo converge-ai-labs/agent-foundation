@@ -11,14 +11,17 @@
 use crate::generated::models;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Content {
-    AnyOf0(String),
-    AnyOf1(Vec<models::ContentAnyOfInner>),
+#[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Content {
+    #[serde(rename = "media_type", deserialize_with = "Option::deserialize")]
+    pub media_type: Option<String>,
+
+    #[serde(rename = "value", deserialize_with = "Option::deserialize")]
+    pub value: Option<serde_json::Value>,
 }
-impl Default for Content {
-    fn default() -> Self {
-        Self::AnyOf0(Default::default())
+
+impl Content {
+    pub fn new(media_type: Option<String>, value: Option<serde_json::Value>) -> Content {
+        Content { media_type, value }
     }
 }

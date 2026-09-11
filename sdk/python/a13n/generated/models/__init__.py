@@ -70,8 +70,10 @@ from .collection_environment_template import CollectionEnvironmentTemplate
 from .collection_environment_template_revision import CollectionEnvironmentTemplateRevision
 from .complete_connector_setup_request import CompleteConnectorSetupRequest
 from .complete_email_change_request import CompleteEmailChangeRequest
+from .complete_mcpo_auth_request import CompleteMCPOAuthRequest
 from .complete_password_reset_request import CompletePasswordResetRequest
 from .complete_pending_resolution import CompletePendingResolution
+from .configure_mcpo_auth_client_request import ConfigureMCPOAuthClientRequest
 from .connection_cleanup_receipt import ConnectionCleanupReceipt
 from .connection_cleanup_receipt_local_status import ConnectionCleanupReceiptLocalStatus
 from .connection_cleanup_receipt_remote_status import ConnectionCleanupReceiptRemoteStatus
@@ -105,6 +107,7 @@ from .connector_tool_input_schema import ConnectorToolInputSchema
 from .connector_tool_output_schema_type_0 import ConnectorToolOutputSchemaType0
 from .connector_tool_page import ConnectorToolPage
 from .consume_queued_submission_request import ConsumeQueuedSubmissionRequest
+from .content import Content
 from .context import Context
 from .continue_run_request import ContinueRunRequest
 from .create_account_request import CreateAccountRequest
@@ -123,6 +126,7 @@ from .create_key_request import CreateKeyRequest
 from .create_mcp_connection_request import CreateMCPConnectionRequest
 from .create_model_provider_request import CreateModelProviderRequest
 from .create_model_provider_request_configuration import CreateModelProviderRequestConfiguration
+from .create_model_provider_request_extra_headers import CreateModelProviderRequestExtraHeaders
 from .create_model_request import CreateModelRequest
 from .create_model_request_settings import CreateModelRequestSettings
 from .create_provider_request import CreateProviderRequest
@@ -180,6 +184,7 @@ from .extended_agent_card_policy import ExtendedAgentCardPolicy
 from .fork_run_request import ForkRunRequest
 from .function_call import FunctionCall
 from .get_auth_csrf_response_browser_proof_api_v1_auth_csrf_get import GetAuthCsrfResponseBrowserProofApiV1AuthCsrfGet
+from .get_workspaces_workspace_models_scope_type_0 import GetWorkspacesWorkspaceModelsScopeType0
 from .get_workspaces_workspace_skills_source_kind_type_0 import GetWorkspacesWorkspaceSkillsSourceKindType0
 from .git_hub_revision_source import GitHubRevisionSource
 from .git_hub_skill_import_provenance import GitHubSkillImportProvenance
@@ -201,6 +206,8 @@ from .input_batching_policy import InputBatchingPolicy
 from .input_content_data_source import InputContentDataSource
 from .input_content_url_source import InputContentUrlSource
 from .input_override import InputOverride
+from .instrumentation_scope import InstrumentationScope
+from .instrumentation_scope_attributes_type_0 import InstrumentationScopeAttributesType0
 from .interrupt_receipt import InterruptReceipt
 from .interrupt_request import InterruptRequest
 from .invitation import Invitation
@@ -231,6 +238,16 @@ from .mcp_tool_annotations import MCPToolAnnotations
 from .mcp_tool_collection import MCPToolCollection
 from .mcp_tool_input_schema import MCPToolInputSchema
 from .mcp_tool_output_schema_type_0 import MCPToolOutputSchemaType0
+from .mcpo_auth_client_configuration import MCPOAuthClientConfiguration
+from .mcpo_auth_client_configuration_token_endpoint_auth_method import (
+    MCPOAuthClientConfigurationTokenEndpointAuthMethod,
+)
+from .mcpo_auth_client_input import MCPOAuthClientInput
+from .mcpo_auth_client_input_token_endpoint_auth_method import MCPOAuthClientInputTokenEndpointAuthMethod
+from .mcpo_auth_discovery import MCPOAuthDiscovery
+from .mcpo_auth_discovery_token_endpoint_auth_methods_supported_item import (
+    MCPOAuthDiscoveryTokenEndpointAuthMethodsSupportedItem,
+)
 from .model import Model
 from .model_candidate import ModelCandidate
 from .model_candidate_parameter_support import ModelCandidateParameterSupport
@@ -247,6 +264,7 @@ from .model_description_suggested_settings import ModelDescriptionSuggestedSetti
 from .model_discovery import ModelDiscovery
 from .model_discovery_settings_schemas import ModelDiscoverySettingsSchemas
 from .model_discovery_settings_schemas_additional_property import ModelDiscoverySettingsSchemasAdditionalProperty
+from .model_identity import ModelIdentity
 from .model_limits import ModelLimits
 from .model_override import ModelOverride
 from .model_override_settings_type_0 import ModelOverrideSettingsType0
@@ -266,9 +284,14 @@ from .notification_subscription import NotificationSubscription
 from .notification_subscription_scope import NotificationSubscriptionScope
 from .notification_subscription_topics_item import NotificationSubscriptionTopicsItem
 from .observation import Observation
-from .observation_metadata import ObservationMetadata
-from .observation_status import ObservationStatus
-from .observation_type import ObservationType
+from .observation_attributes_type_0 import ObservationAttributesType0
+from .observation_collection import ObservationCollection
+from .observation_event import ObservationEvent
+from .observation_event_attributes import ObservationEventAttributes
+from .observation_link import ObservationLink
+from .observation_link_attributes_type_0 import ObservationLinkAttributesType0
+from .observation_resource_attributes_type_0 import ObservationResourceAttributesType0
+from .observation_status_type_0 import ObservationStatusType0
 from .observation_usage_type_0 import ObservationUsageType0
 from .organization import Organization
 from .organization_permissions import OrganizationPermissions
@@ -434,12 +457,10 @@ from .thread_run_submission_request import ThreadRunSubmissionRequest
 from .tool import Tool
 from .tool_call import ToolCall
 from .tool_message import ToolMessage
+from .trace import Trace
 from .trace_collection import TraceCollection
-from .trace_detail import TraceDetail
-from .trace_summary import TraceSummary
-from .trace_summary_run_attempt_outcome_type_0 import TraceSummaryRunAttemptOutcomeType0
-from .trace_summary_trace_status import TraceSummaryTraceStatus
-from .trace_summary_usage_type_0 import TraceSummaryUsageType0
+from .trace_correlation import TraceCorrelation
+from .trace_query_descriptor import TraceQueryDescriptor
 from .trace_view import TraceView
 from .update_account_request import UpdateAccountRequest
 from .update_account_request_provider_config_type_0 import UpdateAccountRequestProviderConfigType0
@@ -453,6 +474,7 @@ from .update_hook_subscription_state_request import UpdateHookSubscriptionStateR
 from .update_mcp_connection_request import UpdateMCPConnectionRequest
 from .update_model_provider_request import UpdateModelProviderRequest
 from .update_model_provider_request_configuration_type_0 import UpdateModelProviderRequestConfigurationType0
+from .update_model_provider_request_extra_headers import UpdateModelProviderRequestExtraHeaders
 from .update_model_request import UpdateModelRequest
 from .update_model_request_settings_type_0 import UpdateModelRequestSettingsType0
 from .update_profile_request import UpdateProfileRequest
@@ -555,8 +577,10 @@ __all__ = (
     "CollectionEnvironmentTemplateRevision",
     "CompleteConnectorSetupRequest",
     "CompleteEmailChangeRequest",
+    "CompleteMCPOAuthRequest",
     "CompletePasswordResetRequest",
     "CompletePendingResolution",
+    "ConfigureMCPOAuthClientRequest",
     "ConnectionCleanupReceipt",
     "ConnectionCleanupReceiptLocalStatus",
     "ConnectionCleanupReceiptRemoteStatus",
@@ -590,6 +614,7 @@ __all__ = (
     "ConnectorToolOutputSchemaType0",
     "ConnectorToolPage",
     "ConsumeQueuedSubmissionRequest",
+    "Content",
     "Context",
     "ContinueRunRequest",
     "CreateAccountRequest",
@@ -608,6 +633,7 @@ __all__ = (
     "CreateMCPConnectionRequest",
     "CreateModelProviderRequest",
     "CreateModelProviderRequestConfiguration",
+    "CreateModelProviderRequestExtraHeaders",
     "CreateModelRequest",
     "CreateModelRequestSettings",
     "CreateProviderRequest",
@@ -665,6 +691,7 @@ __all__ = (
     "ForkRunRequest",
     "FunctionCall",
     "GetAuthCsrfResponseBrowserProofApiV1AuthCsrfGet",
+    "GetWorkspacesWorkspaceModelsScopeType0",
     "GetWorkspacesWorkspaceSkillsSourceKindType0",
     "GitHubRevisionSource",
     "GitHubSkillImportProvenance",
@@ -686,6 +713,8 @@ __all__ = (
     "InputContentDataSource",
     "InputContentUrlSource",
     "InputOverride",
+    "InstrumentationScope",
+    "InstrumentationScopeAttributesType0",
     "InterruptReceipt",
     "InterruptRequest",
     "Invitation",
@@ -711,6 +740,12 @@ __all__ = (
     "MCPConnectionStatus",
     "MCPConnectionStatusReason",
     "MCPConnectionToolSelection",
+    "MCPOAuthClientConfiguration",
+    "MCPOAuthClientConfigurationTokenEndpointAuthMethod",
+    "MCPOAuthClientInput",
+    "MCPOAuthClientInputTokenEndpointAuthMethod",
+    "MCPOAuthDiscovery",
+    "MCPOAuthDiscoveryTokenEndpointAuthMethodsSupportedItem",
     "MCPTool",
     "MCPToolAnnotations",
     "MCPToolCollection",
@@ -732,6 +767,7 @@ __all__ = (
     "ModelDiscovery",
     "ModelDiscoverySettingsSchemas",
     "ModelDiscoverySettingsSchemasAdditionalProperty",
+    "ModelIdentity",
     "ModelLimits",
     "ModelOverride",
     "ModelOverrideSettingsType0",
@@ -751,9 +787,14 @@ __all__ = (
     "NotificationSubscriptionScope",
     "NotificationSubscriptionTopicsItem",
     "Observation",
-    "ObservationMetadata",
-    "ObservationStatus",
-    "ObservationType",
+    "ObservationAttributesType0",
+    "ObservationCollection",
+    "ObservationEvent",
+    "ObservationEventAttributes",
+    "ObservationLink",
+    "ObservationLinkAttributesType0",
+    "ObservationResourceAttributesType0",
+    "ObservationStatusType0",
     "ObservationUsageType0",
     "Organization",
     "OrganizationPermissions",
@@ -915,12 +956,10 @@ __all__ = (
     "Tool",
     "ToolCall",
     "ToolMessage",
+    "Trace",
     "TraceCollection",
-    "TraceDetail",
-    "TraceSummary",
-    "TraceSummaryRunAttemptOutcomeType0",
-    "TraceSummaryTraceStatus",
-    "TraceSummaryUsageType0",
+    "TraceCorrelation",
+    "TraceQueryDescriptor",
     "TraceView",
     "UpdateAccountRequest",
     "UpdateAccountRequestProviderConfigType0",
@@ -934,6 +973,7 @@ __all__ = (
     "UpdateMCPConnectionRequest",
     "UpdateModelProviderRequest",
     "UpdateModelProviderRequestConfigurationType0",
+    "UpdateModelProviderRequestExtraHeaders",
     "UpdateModelRequest",
     "UpdateModelRequestSettingsType0",
     "UpdateProfileRequest",

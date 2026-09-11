@@ -80,7 +80,7 @@ jobs:
   tests:
     name: UI Python tests
     if: github.event_name != 'schedule' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-24.04-8core
     timeout-minutes: 12
     steps:
       - name: Checkout
@@ -119,13 +119,9 @@ jobs:
 
       - name: Test UI
         env:
-          # The independent WebUI job owns these platform-neutral HTTP tests.
-          PYTEST_ADDOPTS: >-
-            --durations=20
-            --ignore=packages/a13n-harness-ui/tests/test_webui.py
-            --ignore=packages/a13n-harness-ui/tests/test_webui_startup.py
+          PYTEST_ADDOPTS: --durations=20
         run: >-
-          uv run --locked --no-sync python -m scripts.run_python_tests --workers 2
+          /usr/bin/time -p uv run --locked --no-sync python -m scripts.run_python_tests --workers 7
           packages/a13n-harness-ui/tests
 
       - name: Test native command lifecycle
@@ -285,6 +281,8 @@ jobs:
           uv run --locked --no-sync python -m pytest --durations=20
           packages/a13n-harness-ui/tests/test_entrypoint.py
           packages/a13n-harness-ui/tests/test_thread_files.py
+          packages/a13n-harness-ui/tests/test_host_files.py
+          packages/a13n-harness-ui/tests/test_host_git.py
           packages/a13n-harness-ui/tests/test_configuration_mutation.py
           packages/a13n-harness-ui/tests/test_composition.py::test_full_control_shell_inherits_host_path_and_custom_variables
           packages/a13n-harness-ui/tests/test_projectless_threads.py::test_scratch_cwd_and_selected_configuration_file_mount

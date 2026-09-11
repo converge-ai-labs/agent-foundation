@@ -1,0 +1,73 @@
+.marker {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--a13n-secondary);
+  opacity: 0.42;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background 120ms ease,
+    opacity 120ms ease;
+}
+
+.marker svg {
+  width: 13px;
+  height: 13px;
+}
+
+.marker:hover,
+.marker:focus-visible,
+.marker[data-popup-open] {
+  color: var(--a13n-accent);
+  background: var(--a13n-accent-soft);
+  opacity: 1;
+  outline: none;
+}
+
+.marker:focus-visible {
+  box-shadow: 0 0 0 2px var(--a13n-focus);
+}
+
+.popup {
+  display: grid;
+  width: min(264px, calc(100vw - 24px));
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 2px 0 2px 6px;
+}
+
+.row + .row {
+  border-top: 1px solid var(--a13n-border-soft);
+}
+
+.label {
+  color: var(--a13n-secondary);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.row code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--a13n-text);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -16,7 +16,8 @@ vi.mock("./authorization-context", () => ({
     attempt_id: "csa_test",
     browser_nonce: "b".repeat(64),
     workspace_id: "ws_test",
-    return_path: "/workspace/design/connectors",
+    return_path: "/workspace/design/connections",
+    connection_id: "cconn_test",
   }),
   clearAuthorization: mocks.clear,
 }));
@@ -46,5 +47,5 @@ it("redeems once under StrictMode and never retries an uncertain response", asyn
   expect(mocks.clear).toHaveBeenCalledTimes(1);
   expect(
     screen.getByRole("link", { name: "Continue" }).getAttribute("href"),
-  ).toBe("/workspace/design/connectors");
+  ).toBe("/workspace/design/connections?connection=cconn_test");
 });

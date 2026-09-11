@@ -9,7 +9,7 @@ import { formatLocalDateTime } from "../../shared/local-date-time";
 
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 import { DateTimeField } from "../../shared/date-time-field";
 
 import { ApiError } from "@converge.ai/a13n";
@@ -17,32 +17,88 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
-import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
+import { Pagination, useCursor } from "../../shared/collection";
 import {
   Empty,
   ErrorNotice,
   Loading,
   Page,
-  StateBadge,
   Timestamp,
 } from "../../shared/feedback";
+import { TraceTable } from "./list-table";
+import type { ObservationSort } from "./sorting";
+import { useListCosts } from "./list-cost";
 import traceStyles from "./traces.module.css";
 function localTime(date: Date) {
   if (!Number.isFinite(date.getTime())) date = new Date();
   return formatLocalDateTime(date);
 }
 export function TracesPage() {
+  const client = useClient(),
+    { workspace } = useWorkspace(),
+    { t } = useTranslation();
+  const descriptor = useQuery({
+    queryKey: ["trace-query", workspace.id],
+    queryFn: ({ signal }) =>
+      client.http
+        .GET("/api/v1/workspaces/{workspace}/trace-query", {
+          params: { path: { workspace: workspace.id } },
+          signal,
+        })
+        .then(data),
+  });
+  if (descriptor.isPending) return <Loading />;
+  if (descriptor.error)
+    return (
+      <ErrorNotice
+        error={descriptor.error}
+        retry={() => void descriptor.refetch()}
+      />
+    );
+  if (!descriptor.data?.enabled)
+    return (
+      <Page title={t("Traces")}>
+        <Empty
+          title={t("Trace query disabled")}
+          description={t(
+            "Configure a trace query provider to inspect telemetry. Run execution is independent of trace query.",
+          )}
+        />
+      </Page>
+    );
+  return (
+    <TraceBrowser
+      key={workspace.id + descriptor.data.provider}
+      descriptor={descriptor.data}
+    />
+  );
+}
+function TraceBrowser({
+  descriptor,
+}: {
+  descriptor: Schema["TraceQueryDescriptor"];
+}) {
   const { t } = useTranslation(),
     [searchParams] = useSearchParams(),
     page = useCursor();
   const [from, setFrom] = useState(
-      localTime(new Date(searchParams.get("from") ?? Date.now() - 86_400_000)),
+      localTime(
+        new Date(
+          searchParams.get("from") ??
+            Math.max(
+              Date.now() - 86_400_000,
+              Date.parse(descriptor.history_from ?? "") || 0,
+            ),
+        ),
+      ),
     ),
     [to, setTo] = useState(
       localTime(new Date(searchParams.get("to") ?? Date.now())),
     ),
     [query, setQuery] = useState(""),
-    [searchIn, setSearchIn] = useState<Schema["SearchIn"]>("input_output"),
+    [searchIn, setSearchIn] = useState<Schema["SearchIn"] | undefined>(
+      descriptor.search_in[0],
+    ),
     [thread, setThread] = useState(searchParams.get("thread_id") ?? ""),
     [run, setRun] = useState(searchParams.get("run_id") ?? ""),
     [attempt, setAttempt] = useState(searchParams.get("run_attempt_id") ?? "");
@@ -63,6 +119,16 @@ export function TracesPage() {
         "Inspect attempt telemetry, model calls, and tool execution.",
       )}
     >
+      <p className={traceStyles.providerNote}>
+        {descriptor.provider}
+        {descriptor.history_from && (
+          <>
+            {" "}
+            · {t("Queryable since")}{" "}
+            <Timestamp value={descriptor.history_from} />
+          </>
+        )}
+      </p>
       <form
         className={traceStyles.filterForm}
         onSubmit={(event) => {
@@ -73,6 +139,8 @@ export function TracesPage() {
             !Number.isFinite(start.getTime()) ||
             !Number.isFinite(end.getTime()) ||
             end <= start ||
+            (descriptor.history_from !== null &&
+              start < new Date(descriptor.history_from)) ||
             end.getTime() - start.getTime() > 31 * 86_400_000
           ) {
             setError(
@@ -85,7 +153,7 @@ export function TracesPage() {
           setFilters({
             from: start.toISOString(),
             to: end.toISOString(),
-            query,
+            query: descriptor.search_in.length ? query : "",
             search_in: searchIn,
             thread_id: thread,
             run_id: run,
@@ -108,6 +176,7 @@ export function TracesPage() {
           />
           <FormField className="min-w-0 w-full" label={t("Search content")}>
             <Input
+              disabled={!descriptor.search_in.length}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               maxLength={512}
@@ -128,7 +197,8 @@ export function TracesPage() {
           <div className={traceStyles.advancedFilters}>
             <ChoiceField
               placeholder={t("Select content")}
-              value={searchIn}
+              value={searchIn ?? ""}
+              disabled={!descriptor.search_in.length}
               className="min-w-0"
               onValueChange={(value) => {
                 if (
@@ -139,11 +209,15 @@ export function TracesPage() {
                   setSearchIn(value);
               }}
               label={t("Search in")}
-              options={[
-                { value: "input_output", label: t("Input and output") },
-                { value: "input", label: t("Input") },
-                { value: "output", label: t("Output") },
-              ]}
+              options={descriptor.search_in.map((value) => ({
+                value,
+                label:
+                  value === "input_output"
+                    ? t("Input and output")
+                    : value === "input"
+                      ? t("Input")
+                      : t("Output"),
+              }))}
             />
             <FormField className="min-w-0 w-full" label={t("Thread ID")}>
               <Input
@@ -171,10 +245,7 @@ export function TracesPage() {
     </Page>
   );
 }
-export function TraceList({
-  filters,
-  page,
-}: {
+interface TraceListProps {
   filters: {
     from?: string;
     to?: string;
@@ -185,12 +256,47 @@ export function TraceList({
     run_attempt_id?: string;
   };
   page: ReturnType<typeof useCursor>;
-}) {
+}
+export function TraceList({ filters, page }: TraceListProps) {
+  const { t } = useTranslation();
+  const [view, setView] = useState<Schema["TraceView"]>("full");
+  return (
+    <>
+      <div className={traceStyles.listToolbar}>
+        <h2>{t("Trace activity")}</h2>
+        <ChoiceField
+          label={t("Content")}
+          value={view}
+          onValueChange={(value) => {
+            if (value === "full" || value === "compact") {
+              page.reset();
+              setView(value);
+            }
+          }}
+          options={[
+            { value: "full", label: t("With previews") },
+            { value: "compact", label: t("Compact") },
+          ]}
+        />
+      </div>
+      <TraceResults filters={filters} page={page} view={view} />
+    </>
+  );
+}
+function TraceResults({
+  filters,
+  page,
+  view,
+}: TraceListProps & { view: Schema["TraceView"] }) {
+  const [sort, setSort] = useState<ObservationSort>({
+    field: "started",
+    direction: "desc",
+  });
   const client = useClient(),
     { workspace, basePath } = useWorkspace(),
     { t } = useTranslation();
   const query = useQuery({
-    queryKey: ["trace-list", workspace.id, filters, page.cursor],
+    queryKey: ["trace-list", workspace.id, filters, page.cursor, view],
     queryFn: ({ signal }) =>
       client.http
         .GET("/api/v1/workspaces/{workspace}/traces", {
@@ -204,12 +310,18 @@ export function TraceList({
               run_id: filters.run_id || undefined,
               run_attempt_id: filters.run_attempt_id || undefined,
               cursor: page.cursor,
+              view,
+              limit: 25,
             },
           },
           signal,
         })
         .then(data),
   });
+  const costs = useListCosts(
+    workspace.id,
+    query.isSuccess ? query.data.items : [],
+  );
   if (query.isPending) return <Loading />;
   if (query.error instanceof ApiError && query.error.status === 503)
     return (
@@ -229,59 +341,36 @@ export function TraceList({
         }
       />
     );
-  if (query.error)
+  if (query.error || costs.error)
     return (
-      <ErrorNotice error={query.error} retry={() => void query.refetch()} />
-    );
-  return query.data?.items.length ? (
-    <>
-      <ResourceTable
-        items={query.data.items}
-        columns={[
-          {
-            label: t("Trace"),
-            render: (item) => (
-              <Link to={`${basePath}/traces/${encodeURIComponent(item.id)}`}>
-                <strong>{item.name}</strong>
-                <small>{item.id}</small>
-              </Link>
-            ),
-          },
-          {
-            label: t("Started"),
-            render: (item) => <Timestamp value={item.started_at} />,
-          },
-          {
-            label: t("Telemetry"),
-            render: (item) => <StateBadge state={item.trace_status} />,
-          },
-          {
-            label: t("Attempt outcome"),
-            render: (item) => (
-              <StateBadge state={item.run_attempt_outcome ?? "unavailable"} />
-            ),
-          },
-          {
-            label: t("Duration"),
-            render: (item) =>
-              item.duration_ms === null
-                ? t("Unavailable")
-                : `${item.duration_ms} ms`,
-          },
-          {
-            label: t("Cost (USD)"),
-            render: (item) => item.total_cost_usd ?? t("Unavailable"),
-          },
-        ]}
+      <ErrorNotice
+        error={query.error ?? costs.error}
+        retry={() => {
+          void query.refetch();
+          void costs.refetch();
+        }}
       />
-      <Pagination page={page} next={query.data.next_cursor} />
-    </>
-  ) : (
-    <Empty
-      title={t("No traces in this range")}
-      description={t(
-        "Try a different range or fewer filters. Traces may be absent due to sampling, export, or retention.",
+    );
+  return (
+    <>
+      {query.data?.items.length ? (
+        <TraceTable
+          items={query.data.items}
+          basePath={basePath}
+          view={view}
+          costs={costs.isSuccess ? costs.data : {}}
+          sort={sort}
+          onSortChange={setSort}
+        />
+      ) : (
+        <Empty
+          title={t("No traces in this range")}
+          description={t(
+            "Try a different range or fewer filters. Traces may be absent due to sampling, export, or retention.",
+          )}
+        />
       )}
-    />
+      <Pagination page={page} next={query.data?.next_cursor} />
+    </>
   );
 }

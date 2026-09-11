@@ -13,6 +13,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_serializer, field_validator, model_validator
 
 from ._json import JsonBoundaryError, detach_json
+from .errors import operation_error_projection
 
 type EnvironmentOperationFamily = Literal["files", "shell", "processes", "ports", "outputs", "state"]
 ENVIRONMENT_OPERATION_FAMILIES = frozenset({"files", "shell", "processes", "ports", "outputs", "state"})
@@ -39,6 +40,10 @@ class EnvironmentError(Exception):
         self.retry_hint = retry_hint
         self.details = dict(details or {})
         super().__init__(message)
+
+    def safe_projection(self) -> dict[str, JsonValue]:
+        """Return the common public failure value without local exception text."""
+        return operation_error_projection(self.code, details=self.details, retry_hint=self.retry_hint)
 
 
 class EnvironmentAction(StrEnum):

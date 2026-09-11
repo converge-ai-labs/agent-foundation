@@ -2362,6 +2362,26 @@
         "title": "CompleteEmailChangeRequest",
         "type": "object"
       },
+      "CompleteMCPOAuthRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "receipt": {
+            "maxLength": 512,
+            "minLength": 32,
+            "title": "Receipt",
+            "type": "string"
+          },
+          "state": {
+            "maxLength": 512,
+            "minLength": 32,
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": ["state", "receipt"],
+        "title": "CompleteMCPOAuthRequest",
+        "type": "object"
+      },
       "CompletePasswordResetRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2407,6 +2427,29 @@
         },
         "required": ["call_id", "result"],
         "title": "CompletePendingResolution",
+        "type": "object"
+      },
+      "ConfigureMCPOAuthClientRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MCPOAuthClientInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          }
+        },
+        "required": ["expected_version", "client"],
+        "title": "ConfigureMCPOAuthClientRequest",
         "type": "object"
       },
       "ConnectionCleanupReceipt": {
@@ -2459,9 +2502,21 @@
             "title": "Description"
           },
           "key": {
-            "pattern": "^[a-z][a-z0-9._-]{0,127}$",
+            "pattern": "^[a-z0-9_][a-z0-9._-]{0,127}$",
             "title": "Key",
             "type": "string"
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
           },
           "name": {
             "maxLength": 128,
@@ -2475,6 +2530,18 @@
             },
             "title": "Setup Schema",
             "type": "object"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailable Reason"
           }
         },
         "required": [
@@ -2499,8 +2566,27 @@
             "type": "array"
           },
           "next_cursor": {
-            "title": "Next Cursor",
-            "type": "null"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "refreshed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refreshed At"
           }
         },
         "required": ["items"],
@@ -2511,7 +2597,7 @@
         "additionalProperties": false,
         "properties": {
           "connector_key": {
-            "pattern": "^[a-z][a-z0-9._-]{0,127}$",
+            "pattern": "^[a-z0-9_][a-z0-9._-]{0,127}$",
             "title": "Connector Key",
             "type": "string"
           },
@@ -3065,6 +3151,28 @@
         "title": "ConsumeQueuedSubmissionRequest",
         "type": "object"
       },
+      "Content": {
+        "additionalProperties": false,
+        "properties": {
+          "media_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Media Type"
+          },
+          "value": {
+            "$ref": "#/components/schemas/JsonValue"
+          }
+        },
+        "required": ["media_type", "value"],
+        "title": "Content",
+        "type": "object"
+      },
       "Context": {
         "additionalProperties": true,
         "description": "Additional context for the agent.",
@@ -3335,7 +3443,7 @@
         "additionalProperties": false,
         "properties": {
           "connector_key": {
-            "pattern": "^[a-z][a-z0-9._-]{0,127}$",
+            "pattern": "^[a-z0-9_][a-z0-9._-]{0,127}$",
             "title": "Connector Key",
             "type": "string"
           },
@@ -3563,6 +3671,26 @@
             "default": true,
             "title": "Enabled",
             "type": "boolean"
+          },
+          "extra_headers": {
+            "maxProperties": 64,
+            "patternProperties": {
+              "^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$": {
+                "anyOf": [
+                  {
+                    "format": "password",
+                    "type": "string",
+                    "writeOnly": true
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "title": "Extra Headers",
+            "type": "object",
+            "writeOnly": true
           },
           "name": {
             "maxLength": 128,
@@ -5613,6 +5741,50 @@
         "title": "InputOverride",
         "type": "object"
       },
+      "InstrumentationScope": {
+        "additionalProperties": false,
+        "properties": {
+          "attributes": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attributes"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": ["name", "version", "attributes"],
+        "title": "InstrumentationScope",
+        "type": "object"
+      },
       "InterruptReceipt": {
         "additionalProperties": false,
         "properties": {
@@ -6439,6 +6611,108 @@
         "title": "MCPConnectionToolSelection",
         "type": "object"
       },
+      "MCPOAuthClientConfiguration": {
+        "additionalProperties": false,
+        "properties": {
+          "client_id": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Client Id",
+            "type": "string"
+          },
+          "issuer_url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Issuer Url",
+            "type": "string"
+          },
+          "token_endpoint_auth_method": {
+            "enum": ["none", "client_secret_basic", "client_secret_post"],
+            "title": "Token Endpoint Auth Method",
+            "type": "string"
+          }
+        },
+        "required": ["issuer_url", "client_id", "token_endpoint_auth_method"],
+        "title": "MCPOAuthClientConfiguration",
+        "type": "object"
+      },
+      "MCPOAuthClientInput": {
+        "additionalProperties": false,
+        "properties": {
+          "client_id": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_secret": {
+            "anyOf": [
+              {
+                "format": "password",
+                "maxLength": 16384,
+                "minLength": 1,
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Secret"
+          },
+          "issuer_url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Issuer Url",
+            "type": "string"
+          },
+          "token_endpoint_auth_method": {
+            "enum": ["none", "client_secret_basic", "client_secret_post"],
+            "title": "Token Endpoint Auth Method",
+            "type": "string"
+          }
+        },
+        "required": ["issuer_url", "client_id", "token_endpoint_auth_method"],
+        "title": "MCPOAuthClientInput",
+        "type": "object"
+      },
+      "MCPOAuthDiscovery": {
+        "additionalProperties": false,
+        "properties": {
+          "authorization_response_iss_parameter_supported": {
+            "title": "Authorization Response Iss Parameter Supported",
+            "type": "boolean"
+          },
+          "issuer_url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Issuer Url",
+            "type": "string"
+          },
+          "redirect_uri": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Redirect Uri",
+            "type": "string"
+          },
+          "token_endpoint_auth_methods_supported": {
+            "items": {
+              "enum": ["none", "client_secret_basic", "client_secret_post"],
+              "type": "string"
+            },
+            "title": "Token Endpoint Auth Methods Supported",
+            "type": "array"
+          }
+        },
+        "required": [
+          "issuer_url",
+          "redirect_uri",
+          "token_endpoint_auth_methods_supported",
+          "authorization_response_iss_parameter_supported"
+        ],
+        "title": "MCPOAuthDiscovery",
+        "type": "object"
+      },
       "MCPTool": {
         "additionalProperties": false,
         "properties": {
@@ -6812,6 +7086,36 @@
         "title": "ModelDiscovery",
         "type": "object"
       },
+      "ModelIdentity": {
+        "additionalProperties": false,
+        "properties": {
+          "requested": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested"
+          },
+          "response": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response"
+          }
+        },
+        "required": ["requested", "response"],
+        "title": "ModelIdentity",
+        "type": "object"
+      },
       "ModelLimits": {
         "additionalProperties": false,
         "properties": {
@@ -7008,6 +7312,14 @@
           "enabled": {
             "title": "Enabled",
             "type": "boolean"
+          },
+          "header_names": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Header Names",
+            "type": "array"
           },
           "id": {
             "maxLength": 72,
@@ -7237,6 +7549,20 @@
       "Observation": {
         "additionalProperties": false,
         "properties": {
+          "attributes": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attributes"
+          },
           "cost_usd": {
             "anyOf": [
               {
@@ -7248,17 +7574,6 @@
               }
             ],
             "title": "Cost Usd"
-          },
-          "duration_ms": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Duration Ms"
           },
           "ended_at": {
             "anyOf": [
@@ -7272,6 +7587,20 @@
             ],
             "title": "Ended At"
           },
+          "events": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ObservationEvent"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Events"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -7279,21 +7608,14 @@
           "input": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JsonValue"
+                "$ref": "#/components/schemas/Content"
               },
               {
                 "type": "null"
               }
             ]
           },
-          "metadata": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
-            "title": "Metadata",
-            "type": "object"
-          },
-          "model": {
+          "level": {
             "anyOf": [
               {
                 "type": "string"
@@ -7302,7 +7624,31 @@
                 "type": "null"
               }
             ],
-            "title": "Model"
+            "title": "Level"
+          },
+          "links": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ObservationLink"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Links"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelIdentity"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "name": {
             "title": "Name",
@@ -7311,7 +7657,7 @@
           "output": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/JsonValue"
+                "$ref": "#/components/schemas/Content"
               },
               {
                 "type": "null"
@@ -7329,18 +7675,59 @@
             ],
             "title": "Parent Id"
           },
+          "resource_attributes": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Attributes"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InstrumentationScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "started_at": {
             "format": "date-time",
             "title": "Started At",
             "type": "string"
           },
           "status": {
-            "enum": ["unset", "ok", "error"],
-            "title": "Status",
-            "type": "string"
+            "anyOf": [
+              {
+                "enum": ["unset", "ok", "error"],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "status_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Message"
           },
           "type": {
-            "enum": ["span", "generation", "event", "unknown"],
             "title": "Type",
             "type": "string"
           },
@@ -7366,16 +7753,101 @@
           "name",
           "started_at",
           "ended_at",
-          "duration_ms",
           "status",
+          "level",
+          "status_message",
           "model",
           "usage",
           "cost_usd",
           "input",
           "output",
-          "metadata"
+          "attributes",
+          "resource_attributes",
+          "scope",
+          "events",
+          "links"
         ],
         "title": "Observation",
+        "type": "object"
+      },
+      "ObservationCollection": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Observation"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": ["items", "next_cursor"],
+        "title": "ObservationCollection",
+        "type": "object"
+      },
+      "ObservationEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "attributes": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Attributes",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          }
+        },
+        "required": ["name", "occurred_at", "attributes"],
+        "title": "ObservationEvent",
+        "type": "object"
+      },
+      "ObservationLink": {
+        "additionalProperties": false,
+        "properties": {
+          "attributes": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attributes"
+          },
+          "observation_id": {
+            "title": "Observation Id",
+            "type": "string"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": ["trace_id", "observation_id", "attributes"],
+        "title": "ObservationLink",
         "type": "object"
       },
       "Organization": {
@@ -8367,7 +8839,7 @@
             "type": "integer"
           },
           "return_path": {
-            "pattern": "^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,2047}$",
+            "pattern": "^/([A-Za-z0-9._~!$&'()*+,;=:@%-][A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,2046})?$",
             "title": "Return Path",
             "type": "string"
           },
@@ -11219,7 +11691,7 @@
             "type": "integer"
           },
           "return_path": {
-            "pattern": "^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,2047}$",
+            "pattern": "^/([A-Za-z0-9._~!$&'()*+,;=:@%-][A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,2046})?$",
             "title": "Return Path",
             "type": "string"
           },
@@ -12659,12 +13131,45 @@
         "title": "ToolMessage",
         "type": "object"
       },
+      "Trace": {
+        "additionalProperties": false,
+        "properties": {
+          "correlation": {
+            "$ref": "#/components/schemas/TraceCorrelation"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "root": {
+            "$ref": "#/components/schemas/Observation"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url"
+          }
+        },
+        "required": ["id", "provider", "correlation", "root", "source_url"],
+        "title": "Trace",
+        "type": "object"
+      },
       "TraceCollection": {
         "additionalProperties": false,
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/TraceSummary"
+              "$ref": "#/components/schemas/Trace"
             },
             "title": "Items",
             "type": "array"
@@ -12685,115 +13190,20 @@
         "title": "TraceCollection",
         "type": "object"
       },
-      "TraceDetail": {
+      "TraceCorrelation": {
         "additionalProperties": false,
         "properties": {
-          "observations": {
-            "items": {
-              "$ref": "#/components/schemas/Observation"
-            },
-            "title": "Observations",
-            "type": "array"
-          },
-          "trace": {
-            "$ref": "#/components/schemas/TraceSummary"
-          }
-        },
-        "required": ["trace", "observations"],
-        "title": "TraceDetail",
-        "type": "object"
-      },
-      "TraceSummary": {
-        "additionalProperties": false,
-        "properties": {
-          "duration_ms": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Duration Ms"
-          },
-          "ended_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ended At"
-          },
-          "id": {
-            "title": "Id",
+          "agent_id": {
+            "title": "Agent Id",
             "type": "string"
           },
-          "input": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/JsonValue"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "models": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Models",
-            "type": "array"
-          },
-          "name": {
-            "title": "Name",
+          "organization_id": {
+            "title": "Organization Id",
             "type": "string"
-          },
-          "observation_count": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Observation Count"
-          },
-          "output": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/JsonValue"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "run_attempt_id": {
             "title": "Run Attempt Id",
             "type": "string"
-          },
-          "run_attempt_number": {
-            "title": "Run Attempt Number",
-            "type": "integer"
-          },
-          "run_attempt_outcome": {
-            "anyOf": [
-              {
-                "enum": ["succeeded", "yielded", "failed", "cancelled"],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Run Attempt Outcome"
           },
           "run_id": {
             "title": "Run Id",
@@ -12803,80 +13213,60 @@
             "title": "Session Id",
             "type": "string"
           },
-          "source_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source Url"
-          },
-          "started_at": {
-            "format": "date-time",
-            "title": "Started At",
-            "type": "string"
-          },
           "thread_id": {
             "title": "Thread Id",
             "type": "string"
           },
-          "total_cost_usd": {
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organization_id",
+          "workspace_id",
+          "session_id",
+          "thread_id",
+          "run_id",
+          "run_attempt_id",
+          "agent_id"
+        ],
+        "title": "TraceCorrelation",
+        "type": "object"
+      },
+      "TraceQueryDescriptor": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "history_from": {
             "anyOf": [
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "format": "date-time",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Total Cost Usd"
+            "title": "History From"
           },
-          "trace_status": {
-            "enum": ["unset", "ok", "error"],
-            "title": "Trace Status",
+          "provider": {
+            "title": "Provider",
             "type": "string"
           },
-          "usage": {
-            "anyOf": [
-              {
-                "additionalProperties": {
-                  "type": "integer"
-                },
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Usage"
+          "search_in": {
+            "items": {
+              "$ref": "#/components/schemas/SearchIn"
+            },
+            "title": "Search In",
+            "type": "array"
           }
         },
-        "required": [
-          "id",
-          "name",
-          "started_at",
-          "ended_at",
-          "duration_ms",
-          "trace_status",
-          "session_id",
-          "thread_id",
-          "run_id",
-          "run_attempt_id",
-          "run_attempt_number",
-          "run_attempt_outcome",
-          "input",
-          "output",
-          "observation_count",
-          "models",
-          "usage",
-          "total_cost_usd",
-          "source_url"
-        ],
-        "title": "TraceSummary",
+        "required": ["provider", "enabled", "search_in", "history_from"],
+        "title": "TraceQueryDescriptor",
         "type": "object"
       },
       "TraceView": {
@@ -13250,6 +13640,26 @@
               }
             ],
             "title": "Enabled"
+          },
+          "extra_headers": {
+            "maxProperties": 64,
+            "patternProperties": {
+              "^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$": {
+                "anyOf": [
+                  {
+                    "format": "password",
+                    "type": "string",
+                    "writeOnly": true
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "title": "Extra Headers",
+            "type": "object",
+            "writeOnly": true
           },
           "name": {
             "anyOf": [
@@ -17194,6 +17604,99 @@
         "tags": ["connectivity-management"]
       }
     },
+    "/api/v1/connector-providers/{connector_provider_id}/connectors/{connector_key}": {
+      "get": {
+        "operationId": "get_connector_providers_connector_provider_id_connectors_connector_key",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connector_provider_id",
+            "required": true,
+            "schema": {
+              "title": "Connector Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "connector_key",
+            "required": true,
+            "schema": {
+              "title": "Connector Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Connector"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Connector",
+        "tags": ["connectivity-management"]
+      }
+    },
     "/api/v1/connector-providers/{connector_provider_id}/connectors/{connector_key}/tools": {
       "get": {
         "operationId": "get_connector_providers_connector_provider_id_connectors_connector_key_tools",
@@ -17403,6 +17906,56 @@
             "schema": {
               "title": "Connector Provider Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 256,
+              "title": "Query",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "refresh",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Refresh",
+              "type": "boolean"
             }
           }
         ],
@@ -20361,6 +20914,274 @@
         "tags": ["connectivity-management"]
       }
     },
+    "/api/v1/mcp-connections/{connection_id}/oauth-client": {
+      "get": {
+        "operationId": "get_mcp_connections_connection_id_oauth_client",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/MCPOAuthClientConfiguration"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Mcp Oauth Client Api V1 Mcp Connections  Connection Id  Oauth Client Get"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Mcp Oauth Client",
+        "tags": ["connectivity-management"]
+      },
+      "put": {
+        "operationId": "put_mcp_connections_connection_id_oauth_client",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigureMCPOAuthClientRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPConnection"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Configure Mcp Oauth Client",
+        "tags": ["connectivity-management"]
+      }
+    },
+    "/api/v1/mcp-connections/{connection_id}/oauth-discovery": {
+      "post": {
+        "operationId": "post_mcp_connections_connection_id_oauth_discovery",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPOAuthDiscovery"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Discover Mcp Oauth",
+        "tags": ["connectivity-management"]
+      }
+    },
     "/api/v1/mcp-connections/{connection_id}/reconnect": {
       "post": {
         "operationId": "post_mcp_connections_connection_id_reconnect",
@@ -20637,44 +21458,96 @@
         "tags": ["model-management"]
       }
     },
-    "/api/v1/oauth/mcp/callback": {
+    "/api/v1/oauth/mcp/client-metadata/{issuer_key}.json": {
       "get": {
-        "operationId": "get_oauth_mcp_callback",
+        "operationId": "get_oauth_mcp_client_metadata_issuer_key_json",
         "parameters": [
           {
-            "in": "query",
-            "name": "code",
+            "in": "path",
+            "name": "issuer_key",
             "required": true,
             "schema": {
-              "maxLength": 8192,
-              "minLength": 1,
-              "title": "Code",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "state",
-            "required": true,
-            "schema": {
-              "maxLength": 512,
-              "minLength": 32,
-              "title": "State",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "iss",
-            "required": true,
-            "schema": {
-              "maxLength": 2048,
-              "minLength": 1,
-              "title": "Iss",
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Issuer Key",
               "type": "string"
             }
           }
         ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPClientMetadata"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Mcp Client Metadata",
+        "tags": ["connectivity-management"]
+      }
+    },
+    "/api/v1/oauth/mcp/complete": {
+      "post": {
+        "operationId": "post_oauth_mcp_complete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteMCPOAuthRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -20741,55 +21614,7 @@
             "SessionAuth": []
           }
         ],
-        "summary": "Mcp Oauth Callback",
-        "tags": ["connectivity-management"]
-      }
-    },
-    "/api/v1/oauth/mcp/client-metadata.json": {
-      "get": {
-        "operationId": "get_oauth_mcp_client_metadata_json",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MCPClientMetadata"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service error.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Mcp Client Metadata",
+        "summary": "Complete Mcp Oauth",
         "tags": ["connectivity-management"]
       }
     },
@@ -35643,6 +36468,23 @@
               ],
               "title": "Enabled"
             }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": ["organization", "workspace"],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scope"
+            }
           }
         ],
         "responses": {
@@ -38596,6 +39438,90 @@
         "tags": ["threads"]
       }
     },
+    "/api/v1/workspaces/{workspace}/trace-query": {
+      "get": {
+        "operationId": "get_workspaces_workspace_trace_query",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraceQueryDescriptor"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Trace Query",
+        "tags": ["trace-query"]
+      }
+    },
     "/api/v1/workspaces/{workspace}/traces": {
       "get": {
         "operationId": "get_workspaces_workspace_traces",
@@ -38755,6 +39681,15 @@
               ],
               "title": "Run Attempt Id"
             }
+          },
+          {
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TraceView",
+              "default": "compact"
+            }
           }
         ],
         "responses": {
@@ -38866,7 +39801,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TraceDetail"
+                  "$ref": "#/components/schemas/Trace"
                 }
               }
             },
@@ -38928,6 +39863,139 @@
           }
         ],
         "summary": "Get Trace",
+        "tags": ["trace-query"]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/traces/{trace_id}/observations": {
+      "get": {
+        "operationId": "get_workspaces_workspace_traces_trace_id_observations",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "trace_id",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Trace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TraceView",
+              "default": "compact"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 8192,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObservationCollection"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "List Trace Observations",
         "tags": ["trace-query"]
       }
     }

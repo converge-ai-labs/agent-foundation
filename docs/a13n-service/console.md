@@ -22,25 +22,25 @@ Console permission hints determine which controls appear; the Service authorizes
 
 ## Find the right page
 
-The following routes are relative to `/:organizationKey/:workspaceKey`:
+The following routes are relative to `/workspace/:workspaceKey`:
 
-| Page                 | Route                                                              | Work supported                                                             |
-| -------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------- |
-| Agents               | `agents`, `agents/new`, `agents/:agentKey`                         | Definitions, configuration, immutable revisions, lifecycle controls        |
-| Conversations        | `sessions`, `sessions/new`                                         | Sessions, Threads, Runs, live/retained output, attachments                 |
-| A specific Run       | `sessions/:sessionId/threads/:threadId/runs/:runId`                | Output, waiting feedback, control actions, execution detail                |
-| Models               | `models`, `models/providers`                                       | Models and configured Providers                                            |
-| Search               | `search-providers`                                                 | Provider accounts, tests, and references                                   |
-| Skills               | `skills`, `skills/:skillId`                                        | Uploads, resources, and immutable revisions                                |
-| Assets               | `assets`                                                           | Published binary content and logical deletion                              |
-| Environments         | `environments`, `environments/providers`, `environments/instances` | Templates, Provider configuration, actual runtime targets                  |
-| Application Accounts | `application-accounts`, `application-accounts/:accountId`          | Provider reception and object-specific routing                             |
-| Connectors           | `connectors`, `connectors/providers`                               | Connections, configured Providers, setup, and discovery                    |
-| MCP                  | `mcp`                                                              | Remote connections, credentials/authorization, and tool discovery          |
-| Traces               | `traces`, `traces/:traceId`                                        | Authorized backend diagnostics or an explicit unavailable state            |
-| Workspace settings   | `settings`                                                         | Membership, invitations, keys, service accounts, permissions, and settings |
+| Page                 | Route                                                     | Work supported                                                              |
+| -------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Agents               | `agents`, `agents/new`, `agents/:agentKey`                | Definitions, configuration, immutable revisions, lifecycle controls         |
+| Conversations        | `sessions`, `sessions/new`                                | Sessions, Threads, Runs, live/retained output, attachments                  |
+| A specific Run       | `sessions/:sessionId/threads/:threadId/runs/:runId`       | Output, waiting feedback, control actions, execution detail                 |
+| Models               | `models`                                                  | Models and configured Providers                                             |
+| Search               | `settings?section=providers&category=search`              | Provider accounts, tests, and references                                    |
+| Skills               | `skills`, `skills/:skillId`                               | Uploads, resources, and immutable revisions                                 |
+| Environments         | `environments`, `environments/instances`                  | Templates, Provider configuration, actual runtime targets                   |
+| Application Accounts | `application-accounts`, `application-accounts/:accountId` | Provider reception and object-specific routing                              |
+| Connections          | `connections`                                             | Connected accounts and remote MCP servers; unified search and authorization |
+| Traces               | `traces`, `traces/:traceId`                               | Authorized backend diagnostics or an explicit unavailable state             |
+| Workspace settings   | `settings`                                                | Membership, invitations, keys, service accounts, permissions, and settings  |
 
-Organization settings live at `/:organizationKey/settings`; personal settings live at `/settings/profile`. Profile images, active sessions, password/email changes, and security activity belong to their identity settings, not Agent configuration.
+Provider management lives in Workspace or Organization settings under `section=providers`, with `category=connectors` for Composio. The Connections dialog combines Provider applications, remote MCP presets, and a custom URL; saved accounts and servers retain their separate backend resources.
+
+Organization settings live at `/organization/settings`; personal settings live at `/settings/profile`. Profile images, active sessions, password/email changes, and security activity belong to their identity settings, not Agent configuration.
 
 ## Work with conversations
 
@@ -58,9 +58,11 @@ One-time API credentials are displayed only at creation. Save them in an appropr
 
 ## Current limits
 
-Usage and Schedules are marked coming soon. Console does not provide Plugin, Secret, or Hook editors. Editing supported fields preserves existing hidden configuration; the absence of an editor does not mean the corresponding Service field is absent.
+Usage and Schedules are marked coming soon. Console does not provide Asset management or Plugin, Secret, or Hook editors. Editing supported fields preserves existing hidden configuration; the absence of an editor does not mean the corresponding Service field is absent.
 
-Trace querying requires both backend configuration and a trusted Service access authorizer. A configured exporter or reachable Langfuse UI is insufficient. MCP OAuth also has [callback requirements](identity.md#browser-oauth-callbacks); a provider redirect alone cannot bypass session/CSRF validation.
+Traces offers only the configured backend's supported search targets and distinguishes disabled querying from temporary backend failures. Detail loads a root plus paginated observations, merges the root by ID, and preserves missing parents until their pages arrive. Root metrics are not trace totals; status and severity are separate. Full/compact selection controls retained content and diagnostic attributes, while the Run link provides authoritative execution outcome.
+
+Trace querying requires query-backend configuration and permission to read the owning Run and its traces. Default Service composition supplies the Run/IAM authorizer. A configured exporter or reachable Langfuse UI is insufficient. MCP OAuth also has [callback requirements](identity.md#browser-oauth-callbacks); a provider redirect alone cannot bypass session/CSRF validation.
 
 ## Hosting and development
 

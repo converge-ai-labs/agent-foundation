@@ -112,6 +112,7 @@ export function AgentDetail() {
       back={`${basePath}/agents`}
       name={agent.name}
       agentId={agent.id}
+      agentKey={agent.key}
       imageUrl={agent.image_url}
       description={agent.description ?? ""}
       environment={
@@ -137,6 +138,7 @@ export function AgentDetail() {
               </Button>
             }
             title={t("Edit agent details")}
+            description={t("Update how this agent appears in your workspace.")}
             closeLabel={t("Close")}
           >
             <AgentDetails

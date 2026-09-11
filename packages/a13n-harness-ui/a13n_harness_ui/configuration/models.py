@@ -10,7 +10,9 @@ from pathlib import Path
 from typing import Annotated, Literal, Self, get_args, get_origin
 from urllib.parse import unquote_plus, urlsplit
 
+from a13n_harness.capabilities import ToolProxyConfig
 from a13n_harness.spec import HarnessModelCharacteristics
+from a13n_harness.tools.tool_proxy import validate_group
 from pydantic import (
     BaseModel,
     BeforeValidator,
@@ -365,6 +367,63 @@ class AgentSubagentSelection(StrictModel):
 type SubagentSelection = MarkdownSubagentSelection | AgentSubagentSelection
 
 
+class _ToolProxyConfigurationError(ValueError):
+    """Authored source/group diagnostic safe to expose without resource inputs."""
+
+
+class AgentToolProxyGroup(StrictModel):
+    description: str = Field(min_length=1, max_length=512)
+    mcp_servers: tuple[ResourceId, ...] = ()
+    harness_plugins: tuple[ResourceId, ...] = ()
+
+
+class AgentToolProxy(StrictModel):
+    groups: dict[str, AgentToolProxyGroup] = Field(default_factory=dict)
+    config: ToolProxyConfig = Field(default_factory=ToolProxyConfig)
+
+    @field_validator("config", mode="before")
+    @classmethod
+    def _parse_config(cls, value: object) -> object:
+        if isinstance(value, dict):
+            try:
+                return ToolProxyConfig(**value)
+            except (TypeError, ValueError) as exc:
+                raise _ToolProxyConfigurationError(f"Invalid tool_proxy.config: {exc}") from exc
+        return value
+
+    @model_validator(mode="after")
+    def _valid_groups(self) -> Self:
+        owners: dict[str, str] = {}
+        for name, group in self.groups.items():
+            try:
+                validate_group(name, group.description)
+            except ValueError as exc:
+                raise _ToolProxyConfigurationError(f"Invalid tool_proxy group {name!r}: {exc}") from exc
+            for source in (*group.mcp_servers, *group.harness_plugins):
+                if source in owners:
+                    raise _ToolProxyConfigurationError(
+                        f"ToolProxy source {source!r} is selected more than once ({owners[source]!r}, {name!r})"
+                    )
+                owners[source] = name
+        return self
+
+    def selected(self, *, mcp_servers: tuple[str, ...], harness_plugins: tuple[str, ...]) -> AgentToolProxy:
+        """Capture only enabled membership, without activating dormant references."""
+        return AgentToolProxy(
+            groups={
+                name: AgentToolProxyGroup(
+                    description=group.description,
+                    mcp_servers=tuple(source for source in group.mcp_servers if source in mcp_servers),
+                    harness_plugins=tuple(source for source in group.harness_plugins if source in harness_plugins),
+                )
+                for name, group in self.groups.items()
+                if any(source in mcp_servers for source in group.mcp_servers)
+                or any(source in harness_plugins for source in group.harness_plugins)
+            },
+            config=self.config,
+        )
+
+
 class AgentResource(StrictModel):
     schema_version: Literal["1"]
     kind: Literal["agent"]
@@ -376,6 +435,7 @@ class AgentResource(StrictModel):
     harness_plugins: tuple[ResourceId, ...] | None = None
     mcp_servers: tuple[ResourceId, ...] | None = None
     tools: tuple[ToolName, ...] | None = None
+    tool_proxy: AgentToolProxy | None = Field(default=None, exclude_if=lambda value: value is None)
     subagents: tuple[SubagentSelection, ...] = Field(default=(), max_length=256)
 
     @model_validator(mode="after")
@@ -407,6 +467,25 @@ class ProjectRoot(StrictModel):
         return str(expanded.resolve(strict=False))
 
 
+class ProjectDefaults(StrictModel):
+    """One creation combination; omission falls back and empty lists select none."""
+
+    agent: ResourceId | None = Field(default=None, exclude_if=lambda value: value is None)
+    environment_profile: ResourceId | None = Field(default=None, exclude_if=lambda value: value is None)
+    harness_plugins: tuple[ResourceId, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
+    environment_run_extensions: tuple[ResourceId, ...] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    mcp_servers: tuple[ResourceId, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
+
+    @model_validator(mode="after")
+    def _valid_selections(self) -> Self:
+        for name, value in self.model_dump().items():
+            if isinstance(value, tuple) and len(value) != len(set(value)):
+                raise ValueError(f"Project defaults.{name} must be unique and ordered")
+        return self
+
+
 class ProjectResource(StrictModel):
     schema_version: Literal["1"]
     kind: Literal["project"]
@@ -414,6 +493,7 @@ class ProjectResource(StrictModel):
     name: str = Field(min_length=1, max_length=256)
     position: int = Field(default=0)
     roots: tuple[ProjectRoot, ...] = Field(min_length=1, max_length=64)
+    defaults: ProjectDefaults = Field(default_factory=ProjectDefaults)
 
     @model_validator(mode="after")
     def _valid_resource(self) -> Self:
@@ -509,6 +589,26 @@ class LoadedHarnessUiConfiguration(StrictModel):
         for item in defaults.mcp_servers:
             _require_reference(item, self.mcp_servers, "defaults.mcp_servers")
 
+        for project in self.projects.values():
+            selected = project.defaults
+            _require_reference(selected.agent, self.agents, f"{project.id}.defaults.agent")
+            if (
+                selected.environment_profile is not None
+                and built_in_environment_profile(selected.environment_profile) is None
+            ):
+                _require_reference(
+                    selected.environment_profile,
+                    self.environment_profiles,
+                    f"{project.id}.defaults.environment_profile",
+                )
+            for values, resources, name in (
+                (selected.harness_plugins, self.harness_plugins, "harness_plugins"),
+                (selected.environment_run_extensions, self.environment_run_extensions, "environment_run_extensions"),
+                (selected.mcp_servers, self.mcp_servers, "mcp_servers"),
+            ):
+                for item in values or ():
+                    _require_reference(item, resources, f"{project.id}.defaults.{name}")
+
         for agent in self.agents.values():
             if agent.model is not None:
                 _require_reference(agent.model, self.models, f"{agent.id}.model")
@@ -516,6 +616,17 @@ class LoadedHarnessUiConfiguration(StrictModel):
                 _require_reference(item, self.harness_plugins, f"{agent.id}.harness_plugins")
             for item in agent.mcp_servers or ():
                 _require_reference(item, self.mcp_servers, f"{agent.id}.mcp_servers")
+            if agent.tool_proxy is not None:
+                for name, group in agent.tool_proxy.groups.items():
+                    for values, resources, kind in (
+                        (group.mcp_servers, self.mcp_servers, "mcp_servers"),
+                        (group.harness_plugins, self.harness_plugins, "harness_plugins"),
+                    ):
+                        for item in values:
+                            if item not in resources:
+                                raise _ToolProxyConfigurationError(
+                                    f"{agent.id}.tool_proxy.groups.{name}.{kind} references unknown source {item!r}"
+                                )
             roster_names: list[str] = []
             for selection in agent.subagents:
                 if isinstance(selection, AgentSubagentSelection):
@@ -645,6 +756,7 @@ __all__ = [
     "ModelAuthentication",
     "ModelResource",
     "ProcessConfiguration",
+    "ProjectDefaults",
     "ProjectResource",
     "ProjectRoot",
     "SourceDocument",

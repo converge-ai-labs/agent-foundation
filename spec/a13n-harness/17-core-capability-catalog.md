@@ -36,6 +36,8 @@ Model self-healing remains optional. `SelfHealingModelCapability` installs the `
 
 ## Optional Capability Roles
 
+`ToolProxyCapability(groups=...)` optionally presents grouped local tools through one dynamic search/call pair. Each passive `ToolProxyGroup` supplies a Toolset or Capability source and a description; native composition preserves source Agent/run binding. This presentation composes with CodeAct but owns no independent executor; [Grouped ToolProxy Discovery](07-tool-execution.md#grouped-toolproxy-discovery) owns its contract.
+
 | Role                             | Preferred Pydantic primitive                                                                                                                        | Owning document                                                                  |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | Managed function policy          | Fresh typed policy Capability consumed by the core wrapper                                                                                          | [Tool Execution](07-tool-execution.md)                                           |

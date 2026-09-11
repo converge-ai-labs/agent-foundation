@@ -21,9 +21,10 @@ from a13n_harness.recovery import (
     is_recoverable_model_failure,
     normalize_interrupted_history,
 )
+from a13n_harness.tools import RECOVERY_RETRY_SAFE_METADATA_KEY
 from pydantic import BaseModel
 from pydantic_ai.agent.spec import AgentSpec
-from pydantic_ai.capabilities import Capability
+from pydantic_ai.capabilities import Capability, SetToolMetadata
 from pydantic_ai.exceptions import CallDeferred, ModelRetry, UnexpectedModelBehavior
 from pydantic_ai.messages import (
     ModelMessage,
@@ -43,7 +44,7 @@ from pydantic_ai.models.function import AgentInfo, DeltaThinkingPart, DeltaToolC
 from pydantic_ai.models.wrapper import WrapperModel
 from pydantic_ai.output import ToolOutput
 from pydantic_ai.settings import ModelSettings
-from pydantic_ai.tools import RunContext
+from pydantic_ai.tools import RunContext, Tool
 from pydantic_ai.usage import UsageLimits
 
 pytestmark = pytest.mark.anyio
@@ -1177,8 +1178,8 @@ async def test_upstream_history_cleanup_removes_stale_tool_results_before_retry(
     assert isinstance(sent[result_index - 1], ModelResponse)
 
 
-@pytest.mark.parametrize("execute_pending_tools", [False, True])
-async def test_saved_interrupted_tool_history_is_repaired_before_rerun(execute_pending_tools: bool) -> None:
+@pytest.mark.parametrize("tool_recovery", ["never", "always", "declared"])
+async def test_saved_interrupted_tool_history_is_repaired_before_rerun(tool_recovery: str) -> None:
     calls: list[list[ModelMessage]] = []
     history = (
         ModelResponse(
@@ -1208,7 +1209,7 @@ async def test_saved_interrupted_tool_history_is_repaired_before_rerun(execute_p
         "continue",
         bindings=RunBindings.embedded(),
         previous_state=HarnessState.new(message_history=history),
-        execute_pending_tools=execute_pending_tools,
+        tool_recovery=tool_recovery,
     )
 
     assert result.output_or_raise() == "continued safely"
@@ -1280,9 +1281,9 @@ def test_retry_prompt_counts_as_a_real_tool_result_and_deferred_frontier_is_pres
 
 
 @pytest.mark.parametrize("entrypoint", ["run", "stream"])
-@pytest.mark.parametrize("execute_pending_tools", [None, False, True])
-async def test_restored_tool_calls_require_execution_opt_in(
-    entrypoint: str, execute_pending_tools: bool | None
+@pytest.mark.parametrize("tool_recovery", [None, "never", "always"])
+async def test_unmarked_restored_tool_calls_require_execution_opt_in(
+    entrypoint: str, tool_recovery: str | None
 ) -> None:
     executions: list[int] = []
     model_history: list[list[ModelMessage]] = []
@@ -1315,7 +1316,7 @@ async def test_restored_tool_calls_require_execution_opt_in(
     )
     payload = state.model_dump_json()
     restored = HarnessState.model_validate_json(payload)
-    options = {} if execute_pending_tools is None else {"execute_pending_tools": execute_pending_tools}
+    options = {} if tool_recovery is None else {"tool_recovery": tool_recovery}
     if entrypoint == "run":
         result = await executable.run(previous_state=restored, **options)
     else:
@@ -1335,7 +1336,7 @@ async def test_restored_tool_calls_require_execution_opt_in(
         if isinstance(part, ToolReturnPart)
     }
     assert set(returns) == {"call-1", "call-2"}
-    if execute_pending_tools:
+    if tool_recovery == "always":
         assert sorted(executions) == [1, 2]
         assert [returns[f"call-{value}"].content for value in (1, 2)] == [1, 2]
     else:
@@ -1345,7 +1346,8 @@ async def test_restored_tool_calls_require_execution_opt_in(
 
 
 @pytest.mark.parametrize("input", [None, "Continue"])
-async def test_restored_partial_tool_results_preserve_completed_work(input: str | None) -> None:
+@pytest.mark.parametrize("tool_recovery", ["never", "declared"])
+async def test_restored_partial_tool_results_preserve_completed_work(input: str | None, tool_recovery) -> None:
     executions: list[str] = []
     model_history: list[list[ModelMessage]] = []
 
@@ -1373,7 +1375,9 @@ async def test_restored_partial_tool_results_preserve_completed_work(input: str 
         ),
         ModelRequest(parts=[ToolReturnPart(tool_name="change", tool_call_id="done", content="saved")]),
     )
-    result = await executable.run(input, previous_state=HarnessState.new(message_history=history))
+    result = await executable.run(
+        input, previous_state=HarnessState.new(message_history=history), tool_recovery=tool_recovery
+    )
 
     assert result.output_or_raise() == "continued"
     assert executions == []
@@ -1394,3 +1398,158 @@ def test_restored_provider_suspension_is_not_closed_as_unknown() -> None:
     normalized, closed = normalize_interrupted_history(history, close_pending_tools=True)
     assert normalized == history
     assert closed == 0
+
+
+@pytest.mark.parametrize("entrypoint", ["run", "stream"])
+@pytest.mark.parametrize("mode", ["never", "always", "declared"])
+async def test_declared_recovery_selects_marked_calls_and_allows_fresh_calls(entrypoint: str, mode) -> None:
+    executions: list[str] = []
+    histories: list[list[ModelMessage]] = []
+
+    def lookup() -> str:
+        executions.append("lookup")
+        return "current value"
+
+    def send() -> str:
+        executions.append("send")
+        return "sent"
+
+    async def model_stream(messages, info) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
+        histories.append(deepcopy(messages))
+        if len(histories) == 1:
+            yield {0: DeltaToolCall(name="send", json_args="{}", tool_call_id="fresh-write")}
+        else:
+            yield "done"
+
+    executable = HarnessBuilder(instrumentation=None).build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model_stream),
+        capabilities=[
+            Capability(id="test.lookup", tools=[lookup]),
+            Capability(id="test.send", tools=[send]),
+            SetToolMetadata(
+                tools=lambda ctx, tool: tool.capability_id == "test.lookup",
+                **{RECOVERY_RETRY_SAFE_METADATA_KEY: True},
+            ),
+        ],
+    )
+    state = HarnessState.new(
+        message_history=(
+            ModelResponse(
+                parts=[
+                    ToolCallPart(tool_name="lookup", args={}, tool_call_id="old-read"),
+                    ToolCallPart(tool_name="send", args={}, tool_call_id="old-write"),
+                ]
+            ),
+        )
+    )
+    payload = state.model_dump_json()
+    restored = HarnessState.model_validate_json(payload)
+    if entrypoint == "run":
+        result = await executable.run(previous_state=restored, tool_recovery=mode)
+    else:
+        result = None
+        async with executable.stream(previous_state=restored, tool_recovery=mode) as stream:
+            async for event in stream:
+                if isinstance(event, HarnessRunResultEvent):
+                    result = event.result
+        assert result is not None
+    assert result.output_or_raise() == "done"
+    if mode == "never":
+        assert executions == ["send"]
+    elif mode == "always":
+        assert sorted(executions) == ["lookup", "send", "send"]
+    else:
+        assert executions == ["lookup", "send"]
+    returns = {p.tool_call_id: p for m in histories[0] for p in m.parts if isinstance(p, ToolReturnPart)}
+    assert returns["old-read"].content == (INTERRUPTED_TOOL_RESULT if mode == "never" else "current value")
+    assert returns["old-write"].content == ("sent" if mode == "always" else INTERRUPTED_TOOL_RESULT)
+    if mode != "always":
+        assert returns["old-write"].outcome == "failed"
+    assert restored.model_dump_json() == payload
+
+
+@pytest.mark.parametrize("marker", [None, False, "true", True])
+async def test_declared_recovery_does_not_treat_retry_safety_as_approval(marker: object) -> None:
+    executions: list[str] = []
+    histories: list[list[ModelMessage]] = []
+
+    def guarded() -> str:
+        executions.append("executed")
+        return "done"
+
+    async def model_stream(messages, info) -> AsyncIterator[str]:
+        histories.append(deepcopy(messages))
+        yield "continued"
+
+    executable = HarnessBuilder(instrumentation=None).build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model_stream),
+        capabilities=[
+            Capability(
+                id="test.guarded",
+                tools=[
+                    Tool(
+                        guarded,
+                        requires_approval=True,
+                        metadata={RECOVERY_RETRY_SAFE_METADATA_KEY: marker},
+                    )
+                ],
+            )
+        ],
+    )
+    state = HarnessState.new(
+        message_history=(
+            ModelResponse(
+                parts=[
+                    ToolCallPart(tool_name="guarded", args={}, tool_call_id="old-call"),
+                ]
+            ),
+        )
+    )
+    result = await executable.run(previous_state=state, tool_recovery="declared")
+    assert executions == []
+    if marker is True:
+        assert result.status == "suspended"
+        assert result.deferred is not None
+        assert [call.tool_call_id for call in result.deferred.approvals] == ["old-call"]
+        assert histories == []
+    else:
+        assert result.output_or_raise() == "continued"
+        returns = [p for m in histories[0] for p in m.parts if isinstance(p, ToolReturnPart)]
+        assert returns[0].content == INTERRUPTED_TOOL_RESULT
+
+
+async def test_declared_recovery_closes_unmarked_call_before_argument_validation() -> None:
+    def change(value: int) -> int:
+        pytest.fail("An unmarked restored call must not execute")
+
+    histories: list[list[ModelMessage]] = []
+
+    async def model_stream(messages, info) -> AsyncIterator[str]:
+        histories.append(deepcopy(messages))
+        yield "continued"
+
+    executable = HarnessBuilder(instrumentation=None).build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model_stream),
+        capabilities=[Capability(id="test.change", tools=[change])],
+    )
+    result = await executable.run(
+        tool_recovery="declared",
+        previous_state=HarnessState.new(
+            message_history=(
+                ModelResponse(
+                    parts=[
+                        ToolCallPart(tool_name="change", args={"value": "invalid"}, tool_call_id="old-call"),
+                    ]
+                ),
+            )
+        ),
+    )
+    assert result.output_or_raise() == "continued"
+    returns = [p for m in histories[0] for p in m.parts if isinstance(p, ToolReturnPart)]
+    assert returns[0].content == INTERRUPTED_TOOL_RESULT

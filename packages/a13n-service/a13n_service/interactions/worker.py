@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.ids import new_object_id
-from a13n_service.storage import is_database_unavailable, short_session
+from a13n_service.storage import is_database_contention, is_database_unavailable, short_session
 
 from .attempts import AttemptContext, AttemptLease
 from .domain import RunAttemptYieldReason, RunStatus
@@ -158,10 +158,14 @@ class WorkerExecutionLoop:
                                         if slot is not None:
                                             slot.release()
                     except Exception as error:
-                        if not is_database_unavailable(error):
+                        contention = is_database_contention(error)
+                        if not contention and not is_database_unavailable(error):
                             raise
                         productive = False
-                        logger.warning("worker_database_unavailable", extra={"retry_seconds": self._poll_seconds})
+                        logger.warning(
+                            "worker_database_contention" if contention else "worker_database_unavailable",
+                            extra={"retry_seconds": self._poll_seconds},
+                        )
                     finally:
                         self._admission_scope = None
                     if productive and self._capacity.value > 0:

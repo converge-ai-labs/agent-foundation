@@ -1181,6 +1181,69 @@ func (e MCPConnectionStatusReason) Valid() bool {
 	}
 }
 
+// Defines values for MCPOAuthClientConfigurationTokenEndpointAuthMethod.
+const (
+	MCPOAuthClientConfigurationTokenEndpointAuthMethodClientSecretBasic MCPOAuthClientConfigurationTokenEndpointAuthMethod = "client_secret_basic"
+	MCPOAuthClientConfigurationTokenEndpointAuthMethodClientSecretPost  MCPOAuthClientConfigurationTokenEndpointAuthMethod = "client_secret_post"
+	MCPOAuthClientConfigurationTokenEndpointAuthMethodNone              MCPOAuthClientConfigurationTokenEndpointAuthMethod = "none"
+)
+
+// Valid indicates whether the value is a known member of the MCPOAuthClientConfigurationTokenEndpointAuthMethod enum.
+func (e MCPOAuthClientConfigurationTokenEndpointAuthMethod) Valid() bool {
+	switch e {
+	case MCPOAuthClientConfigurationTokenEndpointAuthMethodClientSecretBasic:
+		return true
+	case MCPOAuthClientConfigurationTokenEndpointAuthMethodClientSecretPost:
+		return true
+	case MCPOAuthClientConfigurationTokenEndpointAuthMethodNone:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MCPOAuthClientInputTokenEndpointAuthMethod.
+const (
+	MCPOAuthClientInputTokenEndpointAuthMethodClientSecretBasic MCPOAuthClientInputTokenEndpointAuthMethod = "client_secret_basic"
+	MCPOAuthClientInputTokenEndpointAuthMethodClientSecretPost  MCPOAuthClientInputTokenEndpointAuthMethod = "client_secret_post"
+	MCPOAuthClientInputTokenEndpointAuthMethodNone              MCPOAuthClientInputTokenEndpointAuthMethod = "none"
+)
+
+// Valid indicates whether the value is a known member of the MCPOAuthClientInputTokenEndpointAuthMethod enum.
+func (e MCPOAuthClientInputTokenEndpointAuthMethod) Valid() bool {
+	switch e {
+	case MCPOAuthClientInputTokenEndpointAuthMethodClientSecretBasic:
+		return true
+	case MCPOAuthClientInputTokenEndpointAuthMethodClientSecretPost:
+		return true
+	case MCPOAuthClientInputTokenEndpointAuthMethodNone:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MCPOAuthDiscoveryTokenEndpointAuthMethodsSupported.
+const (
+	MCPOAuthDiscoveryTokenEndpointAuthMethodsSupportedClientSecretBasic MCPOAuthDiscoveryTokenEndpointAuthMethodsSupported = "client_secret_basic"
+	MCPOAuthDiscoveryTokenEndpointAuthMethodsSupportedClientSecretPost  MCPOAuthDiscoveryTokenEndpointAuthMethodsSupported = "client_secret_post"
+	MCPOAuthDiscoveryTokenEndpointAuthMethodsSupportedNone              MCPOAuthDiscoveryTokenEndpointAuthMethodsSupported = "none"
+)
+
+// Valid indicates whether the value is a known member of the MCPOAuthDiscoveryTokenEndpointAuthMethodsSupported enum.
+func (e MCPOAuthDiscoveryTokenEndpointAuthMethodsSupported) Valid() bool {
+	switch e {
+	case MCPOAuthDiscoveryTokenEndpointAuthMethodsSupportedClientSecretBasic:
+		return true
+	case MCPOAuthDiscoveryTokenEndpointAuthMethodsSupportedClientSecretPost:
+		return true
+	case MCPOAuthDiscoveryTokenEndpointAuthMethodsSupportedNone:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ModelCandidateParameterSupport.
 const (
 	ModelCandidateParameterSupportSupported   ModelCandidateParameterSupport = "supported"
@@ -1327,43 +1390,19 @@ func (e NotificationSubscriptionTopics) Valid() bool {
 
 // Defines values for ObservationStatus.
 const (
-	ObservationStatusError ObservationStatus = "error"
-	ObservationStatusOk    ObservationStatus = "ok"
-	ObservationStatusUnset ObservationStatus = "unset"
+	Error ObservationStatus = "error"
+	Ok    ObservationStatus = "ok"
+	Unset ObservationStatus = "unset"
 )
 
 // Valid indicates whether the value is a known member of the ObservationStatus enum.
 func (e ObservationStatus) Valid() bool {
 	switch e {
-	case ObservationStatusError:
+	case Error:
 		return true
-	case ObservationStatusOk:
+	case Ok:
 		return true
-	case ObservationStatusUnset:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for ObservationType.
-const (
-	ObservationTypeEvent      ObservationType = "event"
-	ObservationTypeGeneration ObservationType = "generation"
-	ObservationTypeSpan       ObservationType = "span"
-	ObservationTypeUnknown    ObservationType = "unknown"
-)
-
-// Valid indicates whether the value is a known member of the ObservationType enum.
-func (e ObservationType) Valid() bool {
-	switch e {
-	case ObservationTypeEvent:
-		return true
-	case ObservationTypeGeneration:
-		return true
-	case ObservationTypeSpan:
-		return true
-	case ObservationTypeUnknown:
+	case Unset:
 		return true
 	default:
 		return false
@@ -2018,51 +2057,6 @@ func (e ToolMessageRole) Valid() bool {
 	}
 }
 
-// Defines values for TraceSummaryRunAttemptOutcome.
-const (
-	TraceSummaryRunAttemptOutcomeCancelled TraceSummaryRunAttemptOutcome = "cancelled"
-	TraceSummaryRunAttemptOutcomeFailed    TraceSummaryRunAttemptOutcome = "failed"
-	TraceSummaryRunAttemptOutcomeSucceeded TraceSummaryRunAttemptOutcome = "succeeded"
-	TraceSummaryRunAttemptOutcomeYielded   TraceSummaryRunAttemptOutcome = "yielded"
-)
-
-// Valid indicates whether the value is a known member of the TraceSummaryRunAttemptOutcome enum.
-func (e TraceSummaryRunAttemptOutcome) Valid() bool {
-	switch e {
-	case TraceSummaryRunAttemptOutcomeCancelled:
-		return true
-	case TraceSummaryRunAttemptOutcomeFailed:
-		return true
-	case TraceSummaryRunAttemptOutcomeSucceeded:
-		return true
-	case TraceSummaryRunAttemptOutcomeYielded:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for TraceSummaryTraceStatus.
-const (
-	TraceSummaryTraceStatusError TraceSummaryTraceStatus = "error"
-	TraceSummaryTraceStatusOk    TraceSummaryTraceStatus = "ok"
-	TraceSummaryTraceStatusUnset TraceSummaryTraceStatus = "unset"
-)
-
-// Valid indicates whether the value is a known member of the TraceSummaryTraceStatus enum.
-func (e TraceSummaryTraceStatus) Valid() bool {
-	switch e {
-	case TraceSummaryTraceStatusError:
-		return true
-	case TraceSummaryTraceStatusOk:
-		return true
-	case TraceSummaryTraceStatusUnset:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for TraceView.
 const (
 	TraceViewCompact TraceView = "compact"
@@ -2345,6 +2339,24 @@ func (e PostWorkspacesWorkspaceAgentsAgentActionParamsAction) Valid() bool {
 	case PostWorkspacesWorkspaceAgentsAgentActionParamsActionEnable:
 		return true
 	case PostWorkspacesWorkspaceAgentsAgentActionParamsActionUnarchive:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetWorkspacesWorkspaceModelsParamsScope.
+const (
+	GetWorkspacesWorkspaceModelsParamsScopeOrganization GetWorkspacesWorkspaceModelsParamsScope = "organization"
+	GetWorkspacesWorkspaceModelsParamsScopeWorkspace    GetWorkspacesWorkspaceModelsParamsScope = "workspace"
+)
+
+// Valid indicates whether the value is a known member of the GetWorkspacesWorkspaceModelsParamsScope enum.
+func (e GetWorkspacesWorkspaceModelsParamsScope) Valid() bool {
+	switch e {
+	case GetWorkspacesWorkspaceModelsParamsScopeOrganization:
+		return true
+	case GetWorkspacesWorkspaceModelsParamsScopeWorkspace:
 		return true
 	default:
 		return false
@@ -2879,6 +2891,12 @@ type CompleteEmailChangeRequest struct {
 	Token *string `json:"token,omitempty"`
 }
 
+// CompleteMCPOAuthRequest defines model for CompleteMCPOAuthRequest.
+type CompleteMCPOAuthRequest struct {
+	Receipt string `json:"receipt"`
+	State   string `json:"state"`
+}
+
 // CompletePasswordResetRequest defines model for CompletePasswordResetRequest.
 type CompletePasswordResetRequest struct {
 	Password *string `json:"password,omitempty"`
@@ -2894,6 +2912,12 @@ type CompletePendingResolution struct {
 
 // CompletePendingResolutionAction defines model for CompletePendingResolution.Action.
 type CompletePendingResolutionAction string
+
+// ConfigureMCPOAuthClientRequest defines model for ConfigureMCPOAuthClientRequest.
+type ConfigureMCPOAuthClientRequest struct {
+	Client          nullable.Nullable[MCPOAuthClientInput] `json:"client"`
+	ExpectedVersion int                                    `json:"expected_version"`
+}
 
 // ConnectionCleanupReceipt defines model for ConnectionCleanupReceipt.
 type ConnectionCleanupReceipt struct {
@@ -2914,14 +2938,17 @@ type Connector struct {
 	ConnectorProviderId   string                    `json:"connector_provider_id"`
 	Description           nullable.Nullable[string] `json:"description,omitempty"`
 	Key                   string                    `json:"key"`
+	LogoUrl               nullable.Nullable[string] `json:"logo_url,omitempty"`
 	Name                  string                    `json:"name"`
 	SetupSchema           map[string]JsonValue      `json:"setup_schema"`
+	UnavailableReason     nullable.Nullable[string] `json:"unavailable_reason,omitempty"`
 }
 
 // ConnectorCollection defines model for ConnectorCollection.
 type ConnectorCollection struct {
-	Items      []Connector            `json:"items"`
-	NextCursor nullable.Nullable[any] `json:"next_cursor,omitempty"`
+	Items       []Connector                  `json:"items"`
+	NextCursor  nullable.Nullable[string]    `json:"next_cursor,omitempty"`
+	RefreshedAt nullable.Nullable[time.Time] `json:"refreshed_at,omitempty"`
 }
 
 // ConnectorConnection defines model for ConnectorConnection.
@@ -3066,6 +3093,12 @@ type ConsumeQueuedSubmissionRequest struct {
 	ExpectedThreadVersion int `json:"expected_thread_version"`
 }
 
+// Content defines model for Content.
+type Content struct {
+	MediaType nullable.Nullable[string] `json:"media_type"`
+	Value     JsonValue                 `json:"value"`
+}
+
 // Context Additional context for the agent.
 type Context struct {
 	Description          string                 `json:"description"`
@@ -3165,6 +3198,7 @@ type CreateModelProviderRequest struct {
 	Configuration *map[string]interface{}   `json:"configuration,omitempty"`
 	Credential    nullable.Nullable[string] `json:"credential,omitempty"`
 	Enabled       *bool                     `json:"enabled,omitempty"`
+	ExtraHeaders  *map[string]interface{}   `json:"extra_headers,omitempty"`
 	Name          string                    `json:"name"`
 	Type          string                    `json:"type"`
 }
@@ -3691,6 +3725,13 @@ type InputOverride struct {
 	Skills         nullable.Nullable[[]SkillSelection]                   `json:"skills,omitempty"`
 }
 
+// InstrumentationScope defines model for InstrumentationScope.
+type InstrumentationScope struct {
+	Attributes nullable.Nullable[map[string]JsonValue] `json:"attributes"`
+	Name       nullable.Nullable[string]               `json:"name"`
+	Version    nullable.Nullable[string]               `json:"version"`
+}
+
 // InterruptReceipt defines model for InterruptReceipt.
 type InterruptReceipt struct {
 	InterruptedAt time.Time                      `json:"interrupted_at"`
@@ -3891,6 +3932,38 @@ type MCPConnectionToolSelection struct {
 	Tools           nullable.Nullable[[]string] `json:"tools,omitempty"`
 }
 
+// MCPOAuthClientConfiguration defines model for MCPOAuthClientConfiguration.
+type MCPOAuthClientConfiguration struct {
+	ClientId                string                                             `json:"client_id"`
+	IssuerUrl               string                                             `json:"issuer_url"`
+	TokenEndpointAuthMethod MCPOAuthClientConfigurationTokenEndpointAuthMethod `json:"token_endpoint_auth_method"`
+}
+
+// MCPOAuthClientConfigurationTokenEndpointAuthMethod defines model for MCPOAuthClientConfiguration.TokenEndpointAuthMethod.
+type MCPOAuthClientConfigurationTokenEndpointAuthMethod string
+
+// MCPOAuthClientInput defines model for MCPOAuthClientInput.
+type MCPOAuthClientInput struct {
+	ClientId                string                                     `json:"client_id"`
+	ClientSecret            nullable.Nullable[string]                  `json:"client_secret,omitempty"`
+	IssuerUrl               string                                     `json:"issuer_url"`
+	TokenEndpointAuthMethod MCPOAuthClientInputTokenEndpointAuthMethod `json:"token_endpoint_auth_method"`
+}
+
+// MCPOAuthClientInputTokenEndpointAuthMethod defines model for MCPOAuthClientInput.TokenEndpointAuthMethod.
+type MCPOAuthClientInputTokenEndpointAuthMethod string
+
+// MCPOAuthDiscovery defines model for MCPOAuthDiscovery.
+type MCPOAuthDiscovery struct {
+	AuthorizationResponseIssParameterSupported bool                                                 `json:"authorization_response_iss_parameter_supported"`
+	IssuerUrl                                  string                                               `json:"issuer_url"`
+	RedirectUri                                string                                               `json:"redirect_uri"`
+	TokenEndpointAuthMethodsSupported          []MCPOAuthDiscoveryTokenEndpointAuthMethodsSupported `json:"token_endpoint_auth_methods_supported"`
+}
+
+// MCPOAuthDiscoveryTokenEndpointAuthMethodsSupported defines model for MCPOAuthDiscovery.TokenEndpointAuthMethodsSupported.
+type MCPOAuthDiscoveryTokenEndpointAuthMethodsSupported string
+
 // MCPTool defines model for MCPTool.
 type MCPTool struct {
 	Annotations  *map[string]JsonValue                   `json:"annotations,omitempty"`
@@ -3984,6 +4057,12 @@ type ModelDiscovery struct {
 	SettingsSchemas map[string]map[string]interface{} `json:"settings_schemas"`
 }
 
+// ModelIdentity defines model for ModelIdentity.
+type ModelIdentity struct {
+	Requested nullable.Nullable[string] `json:"requested"`
+	Response  nullable.Nullable[string] `json:"response"`
+}
+
 // ModelLimits defines model for ModelLimits.
 type ModelLimits struct {
 	ContextWindowTokens nullable.Nullable[int] `json:"context_window_tokens,omitempty"`
@@ -4019,6 +4098,7 @@ type ModelProvider struct {
 	CreatedBy            PrincipalRef              `json:"created_by"`
 	CredentialConfigured bool                      `json:"credential_configured"`
 	Enabled              bool                      `json:"enabled"`
+	HeaderNames          *[]string                 `json:"header_names,omitempty"`
 	Id                   string                    `json:"id"`
 	Name                 string                    `json:"name"`
 	OrganizationId       string                    `json:"organization_id"`
@@ -4076,27 +4156,49 @@ type NotificationSubscriptionTopics string
 
 // Observation defines model for Observation.
 type Observation struct {
-	CostUsd    nullable.Nullable[string]         `json:"cost_usd"`
-	DurationMs nullable.Nullable[int]            `json:"duration_ms"`
-	EndedAt    nullable.Nullable[time.Time]      `json:"ended_at"`
-	Id         string                            `json:"id"`
-	Input      nullable.Nullable[JsonValue]      `json:"input"`
-	Metadata   map[string]JsonValue              `json:"metadata"`
-	Model      nullable.Nullable[string]         `json:"model"`
-	Name       string                            `json:"name"`
-	Output     nullable.Nullable[JsonValue]      `json:"output"`
-	ParentId   nullable.Nullable[string]         `json:"parent_id"`
-	StartedAt  time.Time                         `json:"started_at"`
-	Status     ObservationStatus                 `json:"status"`
-	Type       ObservationType                   `json:"type"`
-	Usage      nullable.Nullable[map[string]int] `json:"usage"`
+	Attributes         nullable.Nullable[map[string]JsonValue] `json:"attributes"`
+	CostUsd            nullable.Nullable[string]               `json:"cost_usd"`
+	EndedAt            nullable.Nullable[time.Time]            `json:"ended_at"`
+	Events             nullable.Nullable[[]ObservationEvent]   `json:"events"`
+	Id                 string                                  `json:"id"`
+	Input              nullable.Nullable[Content]              `json:"input"`
+	Level              nullable.Nullable[string]               `json:"level"`
+	Links              nullable.Nullable[[]ObservationLink]    `json:"links"`
+	Model              nullable.Nullable[ModelIdentity]        `json:"model"`
+	Name               string                                  `json:"name"`
+	Output             nullable.Nullable[Content]              `json:"output"`
+	ParentId           nullable.Nullable[string]               `json:"parent_id"`
+	ResourceAttributes nullable.Nullable[map[string]JsonValue] `json:"resource_attributes"`
+	Scope              nullable.Nullable[InstrumentationScope] `json:"scope"`
+	StartedAt          time.Time                               `json:"started_at"`
+	Status             nullable.Nullable[ObservationStatus]    `json:"status"`
+	StatusMessage      nullable.Nullable[string]               `json:"status_message"`
+	Type               string                                  `json:"type"`
+	Usage              nullable.Nullable[map[string]int]       `json:"usage"`
 }
 
 // ObservationStatus defines model for Observation.Status.
 type ObservationStatus string
 
-// ObservationType defines model for Observation.Type.
-type ObservationType string
+// ObservationCollection defines model for ObservationCollection.
+type ObservationCollection struct {
+	Items      []Observation             `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor"`
+}
+
+// ObservationEvent defines model for ObservationEvent.
+type ObservationEvent struct {
+	Attributes map[string]JsonValue `json:"attributes"`
+	Name       string               `json:"name"`
+	OccurredAt time.Time            `json:"occurred_at"`
+}
+
+// ObservationLink defines model for ObservationLink.
+type ObservationLink struct {
+	Attributes    nullable.Nullable[map[string]JsonValue] `json:"attributes"`
+	ObservationId string                                  `json:"observation_id"`
+	TraceId       string                                  `json:"trace_id"`
+}
 
 // Organization defines model for Organization.
 type Organization struct {
@@ -5243,46 +5345,39 @@ type ToolMessage struct {
 // ToolMessageRole defines model for ToolMessage.Role.
 type ToolMessageRole string
 
+// Trace defines model for Trace.
+type Trace struct {
+	Correlation TraceCorrelation          `json:"correlation"`
+	Id          string                    `json:"id"`
+	Provider    string                    `json:"provider"`
+	Root        Observation               `json:"root"`
+	SourceUrl   nullable.Nullable[string] `json:"source_url"`
+}
+
 // TraceCollection defines model for TraceCollection.
 type TraceCollection struct {
-	Items      []TraceSummary            `json:"items"`
+	Items      []Trace                   `json:"items"`
 	NextCursor nullable.Nullable[string] `json:"next_cursor"`
 }
 
-// TraceDetail defines model for TraceDetail.
-type TraceDetail struct {
-	Observations []Observation `json:"observations"`
-	Trace        TraceSummary  `json:"trace"`
+// TraceCorrelation defines model for TraceCorrelation.
+type TraceCorrelation struct {
+	AgentId        string `json:"agent_id"`
+	OrganizationId string `json:"organization_id"`
+	RunAttemptId   string `json:"run_attempt_id"`
+	RunId          string `json:"run_id"`
+	SessionId      string `json:"session_id"`
+	ThreadId       string `json:"thread_id"`
+	WorkspaceId    string `json:"workspace_id"`
 }
 
-// TraceSummary defines model for TraceSummary.
-type TraceSummary struct {
-	DurationMs        nullable.Nullable[int]                           `json:"duration_ms"`
-	EndedAt           nullable.Nullable[time.Time]                     `json:"ended_at"`
-	Id                string                                           `json:"id"`
-	Input             nullable.Nullable[JsonValue]                     `json:"input"`
-	Models            []string                                         `json:"models"`
-	Name              string                                           `json:"name"`
-	ObservationCount  nullable.Nullable[int]                           `json:"observation_count"`
-	Output            nullable.Nullable[JsonValue]                     `json:"output"`
-	RunAttemptId      string                                           `json:"run_attempt_id"`
-	RunAttemptNumber  int                                              `json:"run_attempt_number"`
-	RunAttemptOutcome nullable.Nullable[TraceSummaryRunAttemptOutcome] `json:"run_attempt_outcome"`
-	RunId             string                                           `json:"run_id"`
-	SessionId         string                                           `json:"session_id"`
-	SourceUrl         nullable.Nullable[string]                        `json:"source_url"`
-	StartedAt         time.Time                                        `json:"started_at"`
-	ThreadId          string                                           `json:"thread_id"`
-	TotalCostUsd      nullable.Nullable[string]                        `json:"total_cost_usd"`
-	TraceStatus       TraceSummaryTraceStatus                          `json:"trace_status"`
-	Usage             nullable.Nullable[map[string]int]                `json:"usage"`
+// TraceQueryDescriptor defines model for TraceQueryDescriptor.
+type TraceQueryDescriptor struct {
+	Enabled     bool                         `json:"enabled"`
+	HistoryFrom nullable.Nullable[time.Time] `json:"history_from"`
+	Provider    string                       `json:"provider"`
+	SearchIn    []SearchIn                   `json:"search_in"`
 }
-
-// TraceSummaryRunAttemptOutcome defines model for TraceSummary.RunAttemptOutcome.
-type TraceSummaryRunAttemptOutcome string
-
-// TraceSummaryTraceStatus defines model for TraceSummary.TraceStatus.
-type TraceSummaryTraceStatus string
 
 // TraceView defines model for TraceView.
 type TraceView string
@@ -5346,6 +5441,7 @@ type UpdateModelProviderRequest struct {
 	Configuration nullable.Nullable[map[string]interface{}] `json:"configuration,omitempty"`
 	Credential    nullable.Nullable[string]                 `json:"credential,omitempty"`
 	Enabled       nullable.Nullable[bool]                   `json:"enabled,omitempty"`
+	ExtraHeaders  *map[string]interface{}                   `json:"extra_headers,omitempty"`
 	Name          nullable.Nullable[string]                 `json:"name,omitempty"`
 }
 
@@ -5704,6 +5800,14 @@ type PostConnectorProvidersConnectorProviderIdCredentialsParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
 }
 
+// PostConnectorProvidersConnectorProviderIdDiscoverConnectorsParams defines parameters for PostConnectorProvidersConnectorProviderIdDiscoverConnectors.
+type PostConnectorProvidersConnectorProviderIdDiscoverConnectorsParams struct {
+	Query   *string `form:"query,omitempty" json:"query,omitempty"`
+	Cursor  *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit   *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Refresh *bool   `form:"refresh,omitempty" json:"refresh,omitempty"`
+}
+
 // PostConnectorProvidersConnectorProviderIdTestParams defines parameters for PostConnectorProvidersConnectorProviderIdTest.
 type PostConnectorProvidersConnectorProviderIdTestParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
@@ -5791,13 +5895,6 @@ type PostMcpConnectionsConnectionIdActionParams struct {
 
 // PostMcpConnectionsConnectionIdActionParamsAction defines parameters for PostMcpConnectionsConnectionIdAction.
 type PostMcpConnectionsConnectionIdActionParamsAction string
-
-// GetOauthMcpCallbackParams defines parameters for GetOauthMcpCallback.
-type GetOauthMcpCallbackParams struct {
-	Code  string `form:"code" json:"code"`
-	State string `form:"state" json:"state"`
-	Iss   string `form:"iss" json:"iss"`
-}
 
 // PatchOrganizationsOrganizationParams defines parameters for PatchOrganizationsOrganization.
 type PatchOrganizationsOrganizationParams struct {
@@ -6312,12 +6409,16 @@ type PatchWorkspacesWorkspaceModelProvidersProviderIdParams struct {
 
 // GetWorkspacesWorkspaceModelsParams defines parameters for GetWorkspacesWorkspaceModels.
 type GetWorkspacesWorkspaceModelsParams struct {
-	Limit      *int    `form:"limit,omitempty" json:"limit,omitempty"`
-	Cursor     *string `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Query      *string `form:"query,omitempty" json:"query,omitempty"`
-	ProviderId *string `form:"provider_id,omitempty" json:"provider_id,omitempty"`
-	Enabled    *bool   `form:"enabled,omitempty" json:"enabled,omitempty"`
+	Limit      *int                                     `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor     *string                                  `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Query      *string                                  `form:"query,omitempty" json:"query,omitempty"`
+	ProviderId *string                                  `form:"provider_id,omitempty" json:"provider_id,omitempty"`
+	Enabled    *bool                                    `form:"enabled,omitempty" json:"enabled,omitempty"`
+	Scope      *GetWorkspacesWorkspaceModelsParamsScope `form:"scope,omitempty" json:"scope,omitempty"`
 }
+
+// GetWorkspacesWorkspaceModelsParamsScope defines parameters for GetWorkspacesWorkspaceModels.
+type GetWorkspacesWorkspaceModelsParamsScope string
 
 // PatchWorkspacesWorkspaceModelsModelIdParams defines parameters for PatchWorkspacesWorkspaceModelsModelId.
 type PatchWorkspacesWorkspaceModelsModelIdParams struct {
@@ -6430,11 +6531,19 @@ type GetWorkspacesWorkspaceTracesParams struct {
 	ThreadId     *string    `form:"thread_id,omitempty" json:"thread_id,omitempty"`
 	RunId        *string    `form:"run_id,omitempty" json:"run_id,omitempty"`
 	RunAttemptId *string    `form:"run_attempt_id,omitempty" json:"run_attempt_id,omitempty"`
+	View         *TraceView `form:"view,omitempty" json:"view,omitempty"`
 }
 
 // GetWorkspacesWorkspaceTracesTraceIdParams defines parameters for GetWorkspacesWorkspaceTracesTraceId.
 type GetWorkspacesWorkspaceTracesTraceIdParams struct {
 	View *TraceView `form:"view,omitempty" json:"view,omitempty"`
+}
+
+// GetWorkspacesWorkspaceTracesTraceIdObservationsParams defines parameters for GetWorkspacesWorkspaceTracesTraceIdObservations.
+type GetWorkspacesWorkspaceTracesTraceIdObservationsParams struct {
+	View   *TraceView `form:"view,omitempty" json:"view,omitempty"`
+	Limit  *int       `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string    `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
 // PatchApplicationAccountsAccountIdJSONRequestBody defines body for PatchApplicationAccountsAccountId for application/json ContentType.
@@ -6530,11 +6639,17 @@ type PostMcpConnectionsConnectionIdCredentialsJSONRequestBody = ReplaceMCPCreden
 // PostMcpConnectionsConnectionIdDiscoverJSONRequestBody defines body for PostMcpConnectionsConnectionIdDiscover for application/json ContentType.
 type PostMcpConnectionsConnectionIdDiscoverJSONRequestBody = MCPConnectionCommandRequest
 
+// PutMcpConnectionsConnectionIdOauthClientJSONRequestBody defines body for PutMcpConnectionsConnectionIdOauthClient for application/json ContentType.
+type PutMcpConnectionsConnectionIdOauthClientJSONRequestBody = ConfigureMCPOAuthClientRequest
+
 // PostMcpConnectionsConnectionIdReconnectJSONRequestBody defines body for PostMcpConnectionsConnectionIdReconnect for application/json ContentType.
 type PostMcpConnectionsConnectionIdReconnectJSONRequestBody = MCPConnectionCommandRequest
 
 // PostMcpConnectionsConnectionIdActionJSONRequestBody defines body for PostMcpConnectionsConnectionIdAction for application/json ContentType.
 type PostMcpConnectionsConnectionIdActionJSONRequestBody = MCPConnectionCommandRequest
+
+// PostOauthMcpCompleteJSONRequestBody defines body for PostOauthMcpComplete for application/json ContentType.
+type PostOauthMcpCompleteJSONRequestBody = CompleteMCPOAuthRequest
 
 // PatchOrganizationsOrganizationJSONRequestBody defines body for PatchOrganizationsOrganization for application/json ContentType.
 type PatchOrganizationsOrganizationJSONRequestBody = UpdateResourceProfileRequest
@@ -11607,6 +11722,11 @@ type ClientInterface interface {
 	// Corresponds with PATCH /api/v1/connector-providers/{connector_provider_id} (the `PatchConnectorProvidersConnectorProviderId` operationId).
 	PatchConnectorProvidersConnectorProviderId(ctx context.Context, connectorProviderId string, body PatchConnectorProvidersConnectorProviderIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetConnectorProvidersConnectorProviderIdConnectorsConnectorKey Get Connector
+	//
+	// Corresponds with GET /api/v1/connector-providers/{connector_provider_id}/connectors/{connector_key} (the `GetConnectorProvidersConnectorProviderIdConnectorsConnectorKey` operationId).
+	GetConnectorProvidersConnectorProviderIdConnectorsConnectorKey(ctx context.Context, connectorProviderId string, connectorKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyTools Preview Connector Tools
 	//
 	// Corresponds with GET /api/v1/connector-providers/{connector_provider_id}/connectors/{connector_key}/tools (the `GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyTools` operationId).
@@ -11629,7 +11749,7 @@ type ClientInterface interface {
 	// PostConnectorProvidersConnectorProviderIdDiscoverConnectors Discover Connectors
 	//
 	// Corresponds with POST /api/v1/connector-providers/{connector_provider_id}/discover-connectors (the `PostConnectorProvidersConnectorProviderIdDiscoverConnectors` operationId).
-	PostConnectorProvidersConnectorProviderIdDiscoverConnectors(ctx context.Context, connectorProviderId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+	PostConnectorProvidersConnectorProviderIdDiscoverConnectors(ctx context.Context, connectorProviderId string, params *PostConnectorProvidersConnectorProviderIdDiscoverConnectorsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostConnectorProvidersConnectorProviderIdTestWithBody Test Connector Provider
 	//
@@ -11930,6 +12050,30 @@ type ClientInterface interface {
 	// Corresponds with POST /api/v1/mcp-connections/{connection_id}/discover (the `PostMcpConnectionsConnectionIdDiscover` operationId).
 	PostMcpConnectionsConnectionIdDiscover(ctx context.Context, connectionId string, body PostMcpConnectionsConnectionIdDiscoverJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetMcpConnectionsConnectionIdOauthClient Get Mcp Oauth Client
+	//
+	// Corresponds with GET /api/v1/mcp-connections/{connection_id}/oauth-client (the `GetMcpConnectionsConnectionIdOauthClient` operationId).
+	GetMcpConnectionsConnectionIdOauthClient(ctx context.Context, connectionId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutMcpConnectionsConnectionIdOauthClientWithBody Configure Mcp Oauth Client
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /api/v1/mcp-connections/{connection_id}/oauth-client (the `PutMcpConnectionsConnectionIdOauthClient` operationId).
+	PutMcpConnectionsConnectionIdOauthClientWithBody(ctx context.Context, connectionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutMcpConnectionsConnectionIdOauthClient Configure Mcp Oauth Client
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /api/v1/mcp-connections/{connection_id}/oauth-client (the `PutMcpConnectionsConnectionIdOauthClient` operationId).
+	PutMcpConnectionsConnectionIdOauthClient(ctx context.Context, connectionId string, body PutMcpConnectionsConnectionIdOauthClientJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostMcpConnectionsConnectionIdOauthDiscovery Discover Mcp Oauth
+	//
+	// Corresponds with POST /api/v1/mcp-connections/{connection_id}/oauth-discovery (the `PostMcpConnectionsConnectionIdOauthDiscovery` operationId).
+	PostMcpConnectionsConnectionIdOauthDiscovery(ctx context.Context, connectionId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// PostMcpConnectionsConnectionIdReconnectWithBody Reconnect Mcp Connection
 	//
 	// Takes any type of body and a specified content type.
@@ -11963,15 +12107,24 @@ type ClientInterface interface {
 	// Corresponds with GET /api/v1/model-provider-types (the `GetModelProviderTypes` operationId).
 	GetModelProviderTypes(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetOauthMcpCallback Mcp Oauth Callback
+	// GetOauthMcpClientMetadataIssuerKeyJson Mcp Client Metadata
 	//
-	// Corresponds with GET /api/v1/oauth/mcp/callback (the `GetOauthMcpCallback` operationId).
-	GetOauthMcpCallback(ctx context.Context, params *GetOauthMcpCallbackParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// Corresponds with GET /api/v1/oauth/mcp/client-metadata/{issuer_key}.json (the `GetOauthMcpClientMetadataIssuerKeyJson` operationId).
+	GetOauthMcpClientMetadataIssuerKeyJson(ctx context.Context, issuerKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetOauthMcpClientMetadataJson Mcp Client Metadata
+	// PostOauthMcpCompleteWithBody Complete Mcp Oauth
 	//
-	// Corresponds with GET /api/v1/oauth/mcp/client-metadata.json (the `GetOauthMcpClientMetadataJson` operationId).
-	GetOauthMcpClientMetadataJson(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/oauth/mcp/complete (the `PostOauthMcpComplete` operationId).
+	PostOauthMcpCompleteWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostOauthMcpComplete Complete Mcp Oauth
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/oauth/mcp/complete (the `PostOauthMcpComplete` operationId).
+	PostOauthMcpComplete(ctx context.Context, body PostOauthMcpCompleteJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetOrganizations Organizations
 	//
@@ -13448,6 +13601,11 @@ type ClientInterface interface {
 	// Corresponds with POST /api/v1/workspaces/{workspace}/threads (the `PostWorkspacesWorkspaceThreads` operationId).
 	PostWorkspacesWorkspaceThreads(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceThreadsParams, body PostWorkspacesWorkspaceThreadsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetWorkspacesWorkspaceTraceQuery Get Trace Query
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/trace-query (the `GetWorkspacesWorkspaceTraceQuery` operationId).
+	GetWorkspacesWorkspaceTraceQuery(ctx context.Context, workspace string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetWorkspacesWorkspaceTraces List Traces
 	//
 	// Corresponds with GET /api/v1/workspaces/{workspace}/traces (the `GetWorkspacesWorkspaceTraces` operationId).
@@ -13457,6 +13615,11 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /api/v1/workspaces/{workspace}/traces/{trace_id} (the `GetWorkspacesWorkspaceTracesTraceId` operationId).
 	GetWorkspacesWorkspaceTracesTraceId(ctx context.Context, workspace string, traceId string, params *GetWorkspacesWorkspaceTracesTraceIdParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWorkspacesWorkspaceTracesTraceIdObservations List Trace Observations
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/traces/{trace_id}/observations (the `GetWorkspacesWorkspaceTracesTraceIdObservations` operationId).
+	GetWorkspacesWorkspaceTracesTraceIdObservations(ctx context.Context, workspace string, traceId string, params *GetWorkspacesWorkspaceTracesTraceIdObservationsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 // GetAgentRevisionsAgentRevisionId Get Agent Revision
@@ -14220,6 +14383,21 @@ func (c *Client) PatchConnectorProvidersConnectorProviderId(ctx context.Context,
 	return c.Client.Do(req)
 }
 
+// GetConnectorProvidersConnectorProviderIdConnectorsConnectorKey Get Connector
+//
+// Corresponds with GET /api/v1/connector-providers/{connector_provider_id}/connectors/{connector_key} (the `GetConnectorProvidersConnectorProviderIdConnectorsConnectorKey` operationId).
+func (c *Client) GetConnectorProvidersConnectorProviderIdConnectorsConnectorKey(ctx context.Context, connectorProviderId string, connectorKey string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyRequest(c.Server, connectorProviderId, connectorKey)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyTools Preview Connector Tools
 //
 // Corresponds with GET /api/v1/connector-providers/{connector_provider_id}/connectors/{connector_key}/tools (the `GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyTools` operationId).
@@ -14272,8 +14450,8 @@ func (c *Client) PostConnectorProvidersConnectorProviderIdCredentials(ctx contex
 // PostConnectorProvidersConnectorProviderIdDiscoverConnectors Discover Connectors
 //
 // Corresponds with POST /api/v1/connector-providers/{connector_provider_id}/discover-connectors (the `PostConnectorProvidersConnectorProviderIdDiscoverConnectors` operationId).
-func (c *Client) PostConnectorProvidersConnectorProviderIdDiscoverConnectors(ctx context.Context, connectorProviderId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostConnectorProvidersConnectorProviderIdDiscoverConnectorsRequest(c.Server, connectorProviderId)
+func (c *Client) PostConnectorProvidersConnectorProviderIdDiscoverConnectors(ctx context.Context, connectorProviderId string, params *PostConnectorProvidersConnectorProviderIdDiscoverConnectorsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostConnectorProvidersConnectorProviderIdDiscoverConnectorsRequest(c.Server, connectorProviderId, params)
 	if err != nil {
 		return nil, err
 	}
@@ -15053,6 +15231,70 @@ func (c *Client) PostMcpConnectionsConnectionIdDiscover(ctx context.Context, con
 	return c.Client.Do(req)
 }
 
+// GetMcpConnectionsConnectionIdOauthClient Get Mcp Oauth Client
+//
+// Corresponds with GET /api/v1/mcp-connections/{connection_id}/oauth-client (the `GetMcpConnectionsConnectionIdOauthClient` operationId).
+func (c *Client) GetMcpConnectionsConnectionIdOauthClient(ctx context.Context, connectionId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetMcpConnectionsConnectionIdOauthClientRequest(c.Server, connectionId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutMcpConnectionsConnectionIdOauthClientWithBody Configure Mcp Oauth Client
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /api/v1/mcp-connections/{connection_id}/oauth-client (the `PutMcpConnectionsConnectionIdOauthClient` operationId).
+func (c *Client) PutMcpConnectionsConnectionIdOauthClientWithBody(ctx context.Context, connectionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutMcpConnectionsConnectionIdOauthClientRequestWithBody(c.Server, connectionId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutMcpConnectionsConnectionIdOauthClient Configure Mcp Oauth Client
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /api/v1/mcp-connections/{connection_id}/oauth-client (the `PutMcpConnectionsConnectionIdOauthClient` operationId).
+func (c *Client) PutMcpConnectionsConnectionIdOauthClient(ctx context.Context, connectionId string, body PutMcpConnectionsConnectionIdOauthClientJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutMcpConnectionsConnectionIdOauthClientRequest(c.Server, connectionId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostMcpConnectionsConnectionIdOauthDiscovery Discover Mcp Oauth
+//
+// Corresponds with POST /api/v1/mcp-connections/{connection_id}/oauth-discovery (the `PostMcpConnectionsConnectionIdOauthDiscovery` operationId).
+func (c *Client) PostMcpConnectionsConnectionIdOauthDiscovery(ctx context.Context, connectionId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostMcpConnectionsConnectionIdOauthDiscoveryRequest(c.Server, connectionId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // PostMcpConnectionsConnectionIdReconnectWithBody Reconnect Mcp Connection
 //
 // Takes any type of body and a specified content type.
@@ -15136,11 +15378,11 @@ func (c *Client) GetModelProviderTypes(ctx context.Context, reqEditors ...Reques
 	return c.Client.Do(req)
 }
 
-// GetOauthMcpCallback Mcp Oauth Callback
+// GetOauthMcpClientMetadataIssuerKeyJson Mcp Client Metadata
 //
-// Corresponds with GET /api/v1/oauth/mcp/callback (the `GetOauthMcpCallback` operationId).
-func (c *Client) GetOauthMcpCallback(ctx context.Context, params *GetOauthMcpCallbackParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetOauthMcpCallbackRequest(c.Server, params)
+// Corresponds with GET /api/v1/oauth/mcp/client-metadata/{issuer_key}.json (the `GetOauthMcpClientMetadataIssuerKeyJson` operationId).
+func (c *Client) GetOauthMcpClientMetadataIssuerKeyJson(ctx context.Context, issuerKey string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetOauthMcpClientMetadataIssuerKeyJsonRequest(c.Server, issuerKey)
 	if err != nil {
 		return nil, err
 	}
@@ -15151,11 +15393,30 @@ func (c *Client) GetOauthMcpCallback(ctx context.Context, params *GetOauthMcpCal
 	return c.Client.Do(req)
 }
 
-// GetOauthMcpClientMetadataJson Mcp Client Metadata
+// PostOauthMcpCompleteWithBody Complete Mcp Oauth
 //
-// Corresponds with GET /api/v1/oauth/mcp/client-metadata.json (the `GetOauthMcpClientMetadataJson` operationId).
-func (c *Client) GetOauthMcpClientMetadataJson(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetOauthMcpClientMetadataJsonRequest(c.Server)
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/oauth/mcp/complete (the `PostOauthMcpComplete` operationId).
+func (c *Client) PostOauthMcpCompleteWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostOauthMcpCompleteRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostOauthMcpComplete Complete Mcp Oauth
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/oauth/mcp/complete (the `PostOauthMcpComplete` operationId).
+func (c *Client) PostOauthMcpComplete(ctx context.Context, body PostOauthMcpCompleteJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostOauthMcpCompleteRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -19031,6 +19292,21 @@ func (c *Client) PostWorkspacesWorkspaceThreads(ctx context.Context, workspace s
 	return c.Client.Do(req)
 }
 
+// GetWorkspacesWorkspaceTraceQuery Get Trace Query
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/trace-query (the `GetWorkspacesWorkspaceTraceQuery` operationId).
+func (c *Client) GetWorkspacesWorkspaceTraceQuery(ctx context.Context, workspace string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspacesWorkspaceTraceQueryRequest(c.Server, workspace)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetWorkspacesWorkspaceTraces List Traces
 //
 // Corresponds with GET /api/v1/workspaces/{workspace}/traces (the `GetWorkspacesWorkspaceTraces` operationId).
@@ -19051,6 +19327,21 @@ func (c *Client) GetWorkspacesWorkspaceTraces(ctx context.Context, workspace str
 // Corresponds with GET /api/v1/workspaces/{workspace}/traces/{trace_id} (the `GetWorkspacesWorkspaceTracesTraceId` operationId).
 func (c *Client) GetWorkspacesWorkspaceTracesTraceId(ctx context.Context, workspace string, traceId string, params *GetWorkspacesWorkspaceTracesTraceIdParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetWorkspacesWorkspaceTracesTraceIdRequest(c.Server, workspace, traceId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetWorkspacesWorkspaceTracesTraceIdObservations List Trace Observations
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/traces/{trace_id}/observations (the `GetWorkspacesWorkspaceTracesTraceIdObservations` operationId).
+func (c *Client) GetWorkspacesWorkspaceTracesTraceIdObservations(ctx context.Context, workspace string, traceId string, params *GetWorkspacesWorkspaceTracesTraceIdObservationsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspacesWorkspaceTracesTraceIdObservationsRequest(c.Server, workspace, traceId, params)
 	if err != nil {
 		return nil, err
 	}
@@ -20556,6 +20847,47 @@ func NewPatchConnectorProvidersConnectorProviderIdRequestWithBody(server string,
 	return req, nil
 }
 
+// NewGetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyRequest constructs an http.Request for the GetConnectorProvidersConnectorProviderIdConnectorsConnectorKey method
+func NewGetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyRequest(server string, connectorProviderId string, connectorKey string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "connector_provider_id", connectorProviderId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "connector_key", connectorKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/connector-providers/%s/connectors/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyToolsRequest constructs an http.Request for the GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyTools method
 func NewGetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyToolsRequest(server string, connectorProviderId string, connectorKey string) (*http.Request, error) {
 	var err error
@@ -20658,7 +20990,7 @@ func NewPostConnectorProvidersConnectorProviderIdCredentialsRequestWithBody(serv
 }
 
 // NewPostConnectorProvidersConnectorProviderIdDiscoverConnectorsRequest constructs an http.Request for the PostConnectorProvidersConnectorProviderIdDiscoverConnectors method
-func NewPostConnectorProvidersConnectorProviderIdDiscoverConnectorsRequest(server string, connectorProviderId string) (*http.Request, error) {
+func NewPostConnectorProvidersConnectorProviderIdDiscoverConnectorsRequest(server string, connectorProviderId string, params *PostConnectorProvidersConnectorProviderIdDiscoverConnectorsParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -20681,6 +21013,69 @@ func NewPostConnectorProvidersConnectorProviderIdDiscoverConnectorsRequest(serve
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Query != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "query", *params.Query, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Refresh != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "refresh", *params.Refresh, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
@@ -22184,6 +22579,121 @@ func NewPostMcpConnectionsConnectionIdDiscoverRequestWithBody(server string, con
 	return req, nil
 }
 
+// NewGetMcpConnectionsConnectionIdOauthClientRequest constructs an http.Request for the GetMcpConnectionsConnectionIdOauthClient method
+func NewGetMcpConnectionsConnectionIdOauthClientRequest(server string, connectionId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "connection_id", connectionId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/mcp-connections/%s/oauth-client", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutMcpConnectionsConnectionIdOauthClientRequest calls the generic PutMcpConnectionsConnectionIdOauthClient builder with application/json body
+func NewPutMcpConnectionsConnectionIdOauthClientRequest(server string, connectionId string, body PutMcpConnectionsConnectionIdOauthClientJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutMcpConnectionsConnectionIdOauthClientRequestWithBody(server, connectionId, "application/json", bodyReader)
+}
+
+// NewPutMcpConnectionsConnectionIdOauthClientRequestWithBody constructs an http.Request for the PutMcpConnectionsConnectionIdOauthClient method, with any body, and a specified content type
+func NewPutMcpConnectionsConnectionIdOauthClientRequestWithBody(server string, connectionId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "connection_id", connectionId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/mcp-connections/%s/oauth-client", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPostMcpConnectionsConnectionIdOauthDiscoveryRequest constructs an http.Request for the PostMcpConnectionsConnectionIdOauthDiscovery method
+func NewPostMcpConnectionsConnectionIdOauthDiscoveryRequest(server string, connectionId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "connection_id", connectionId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/mcp-connections/%s/oauth-discovery", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewPostMcpConnectionsConnectionIdReconnectRequest calls the generic PostMcpConnectionsConnectionIdReconnect builder with application/json body
 func NewPostMcpConnectionsConnectionIdReconnectRequest(server string, connectionId string, params *PostMcpConnectionsConnectionIdReconnectParams, body PostMcpConnectionsConnectionIdReconnectJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -22338,16 +22848,23 @@ func NewGetModelProviderTypesRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
-// NewGetOauthMcpCallbackRequest constructs an http.Request for the GetOauthMcpCallback method
-func NewGetOauthMcpCallbackRequest(server string, params *GetOauthMcpCallbackParams) (*http.Request, error) {
+// NewGetOauthMcpClientMetadataIssuerKeyJsonRequest constructs an http.Request for the GetOauthMcpClientMetadataIssuerKeyJson method
+func NewGetOauthMcpClientMetadataIssuerKeyJsonRequest(server string, issuerKey string) (*http.Request, error) {
 	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "issuer_key", issuerKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
 
 	serverURL, err := url.Parse(server)
 	if err != nil {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/v1/oauth/mcp/callback")
+	operationPath := fmt.Sprintf("/api/v1/oauth/mcp/client-metadata/%s.json", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -22355,45 +22872,6 @@ func NewGetOauthMcpCallbackRequest(server string, params *GetOauthMcpCallbackPar
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
-	}
-
-	if params != nil {
-		// queryValues collects non-styled parameters (passthrough, JSON)
-		// that are safe to round-trip through url.Values.Encode().
-		queryValues := queryURL.Query()
-		// rawQueryFragments collects pre-encoded query fragments from
-		// styled parameters, preserving literal commas as delimiters
-		// per the OpenAPI spec (e.g. "color=blue,black,brown").
-		var rawQueryFragments []string
-
-		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "code", params.Code, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-			return nil, err
-		} else {
-			for _, qp := range strings.Split(queryFrag, "&") {
-				rawQueryFragments = append(rawQueryFragments, qp)
-			}
-		}
-
-		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "state", params.State, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-			return nil, err
-		} else {
-			for _, qp := range strings.Split(queryFrag, "&") {
-				rawQueryFragments = append(rawQueryFragments, qp)
-			}
-		}
-
-		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "iss", params.Iss, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-			return nil, err
-		} else {
-			for _, qp := range strings.Split(queryFrag, "&") {
-				rawQueryFragments = append(rawQueryFragments, qp)
-			}
-		}
-
-		if encoded := queryValues.Encode(); encoded != "" {
-			rawQueryFragments = append(rawQueryFragments, encoded)
-		}
-		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -22404,8 +22882,19 @@ func NewGetOauthMcpCallbackRequest(server string, params *GetOauthMcpCallbackPar
 	return req, nil
 }
 
-// NewGetOauthMcpClientMetadataJsonRequest constructs an http.Request for the GetOauthMcpClientMetadataJson method
-func NewGetOauthMcpClientMetadataJsonRequest(server string) (*http.Request, error) {
+// NewPostOauthMcpCompleteRequest calls the generic PostOauthMcpComplete builder with application/json body
+func NewPostOauthMcpCompleteRequest(server string, body PostOauthMcpCompleteJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostOauthMcpCompleteRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPostOauthMcpCompleteRequestWithBody constructs an http.Request for the PostOauthMcpComplete method, with any body, and a specified content type
+func NewPostOauthMcpCompleteRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -22413,7 +22902,7 @@ func NewGetOauthMcpClientMetadataJsonRequest(server string) (*http.Request, erro
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/v1/oauth/mcp/client-metadata.json")
+	operationPath := fmt.Sprintf("/api/v1/oauth/mcp/complete")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -22423,10 +22912,12 @@ func NewGetOauthMcpClientMetadataJsonRequest(server string) (*http.Request, erro
 		return nil, err
 	}
 
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -30775,6 +31266,18 @@ func NewGetWorkspacesWorkspaceModelsRequest(server string, workspace string, par
 
 		}
 
+		if params.Scope != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "scope", *params.Scope, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -32436,6 +32939,40 @@ func NewPostWorkspacesWorkspaceThreadsRequestWithBody(server string, workspace s
 	return req, nil
 }
 
+// NewGetWorkspacesWorkspaceTraceQueryRequest constructs an http.Request for the GetWorkspacesWorkspaceTraceQuery method
+func NewGetWorkspacesWorkspaceTraceQueryRequest(server string, workspace string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/trace-query", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetWorkspacesWorkspaceTracesRequest constructs an http.Request for the GetWorkspacesWorkspaceTraces method
 func NewGetWorkspacesWorkspaceTracesRequest(server string, workspace string, params *GetWorkspacesWorkspaceTracesParams) (*http.Request, error) {
 	var err error
@@ -32579,6 +33116,18 @@ func NewGetWorkspacesWorkspaceTracesRequest(server string, workspace string, par
 
 		}
 
+		if params.View != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "view", *params.View, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -32638,6 +33187,98 @@ func NewGetWorkspacesWorkspaceTracesTraceIdRequest(server string, workspace stri
 		if params.View != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "view", *params.View, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetWorkspacesWorkspaceTracesTraceIdObservationsRequest constructs an http.Request for the GetWorkspacesWorkspaceTracesTraceIdObservations method
+func NewGetWorkspacesWorkspaceTracesTraceIdObservationsRequest(server string, workspace string, traceId string, params *GetWorkspacesWorkspaceTracesTraceIdObservationsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "trace_id", traceId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/traces/%s/observations", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.View != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "view", *params.View, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -33034,6 +33675,13 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with PATCH /api/v1/connector-providers/{connector_provider_id} (the `PatchConnectorProvidersConnectorProviderId` operationId).
 	PatchConnectorProvidersConnectorProviderIdWithResponse(ctx context.Context, connectorProviderId string, body PatchConnectorProvidersConnectorProviderIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchConnectorProvidersConnectorProviderIdResponse, error)
 
+	// GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyWithResponse Get Connector
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/connector-providers/{connector_provider_id}/connectors/{connector_key} (the `GetConnectorProvidersConnectorProviderIdConnectorsConnectorKey` operationId).
+	GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyWithResponse(ctx context.Context, connectorProviderId string, connectorKey string, reqEditors ...RequestEditorFn) (*GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponse, error)
+
 	// GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyToolsWithResponse Preview Connector Tools
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -33060,7 +33708,7 @@ type ClientWithResponsesInterface interface {
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /api/v1/connector-providers/{connector_provider_id}/discover-connectors (the `PostConnectorProvidersConnectorProviderIdDiscoverConnectors` operationId).
-	PostConnectorProvidersConnectorProviderIdDiscoverConnectorsWithResponse(ctx context.Context, connectorProviderId string, reqEditors ...RequestEditorFn) (*PostConnectorProvidersConnectorProviderIdDiscoverConnectorsResponse, error)
+	PostConnectorProvidersConnectorProviderIdDiscoverConnectorsWithResponse(ctx context.Context, connectorProviderId string, params *PostConnectorProvidersConnectorProviderIdDiscoverConnectorsParams, reqEditors ...RequestEditorFn) (*PostConnectorProvidersConnectorProviderIdDiscoverConnectorsResponse, error)
 
 	// PostConnectorProvidersConnectorProviderIdTestWithBodyWithResponse Test Connector Provider
 	//
@@ -33391,6 +34039,34 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /api/v1/mcp-connections/{connection_id}/discover (the `PostMcpConnectionsConnectionIdDiscover` operationId).
 	PostMcpConnectionsConnectionIdDiscoverWithResponse(ctx context.Context, connectionId string, body PostMcpConnectionsConnectionIdDiscoverJSONRequestBody, reqEditors ...RequestEditorFn) (*PostMcpConnectionsConnectionIdDiscoverResponse, error)
 
+	// GetMcpConnectionsConnectionIdOauthClientWithResponse Get Mcp Oauth Client
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/mcp-connections/{connection_id}/oauth-client (the `GetMcpConnectionsConnectionIdOauthClient` operationId).
+	GetMcpConnectionsConnectionIdOauthClientWithResponse(ctx context.Context, connectionId string, reqEditors ...RequestEditorFn) (*GetMcpConnectionsConnectionIdOauthClientResponse, error)
+
+	// PutMcpConnectionsConnectionIdOauthClientWithBodyWithResponse Configure Mcp Oauth Client
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v1/mcp-connections/{connection_id}/oauth-client (the `PutMcpConnectionsConnectionIdOauthClient` operationId).
+	PutMcpConnectionsConnectionIdOauthClientWithBodyWithResponse(ctx context.Context, connectionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutMcpConnectionsConnectionIdOauthClientResponse, error)
+
+	// PutMcpConnectionsConnectionIdOauthClientWithResponse Configure Mcp Oauth Client
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v1/mcp-connections/{connection_id}/oauth-client (the `PutMcpConnectionsConnectionIdOauthClient` operationId).
+	PutMcpConnectionsConnectionIdOauthClientWithResponse(ctx context.Context, connectionId string, body PutMcpConnectionsConnectionIdOauthClientJSONRequestBody, reqEditors ...RequestEditorFn) (*PutMcpConnectionsConnectionIdOauthClientResponse, error)
+
+	// PostMcpConnectionsConnectionIdOauthDiscoveryWithResponse Discover Mcp Oauth
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/mcp-connections/{connection_id}/oauth-discovery (the `PostMcpConnectionsConnectionIdOauthDiscovery` operationId).
+	PostMcpConnectionsConnectionIdOauthDiscoveryWithResponse(ctx context.Context, connectionId string, reqEditors ...RequestEditorFn) (*PostMcpConnectionsConnectionIdOauthDiscoveryResponse, error)
+
 	// PostMcpConnectionsConnectionIdReconnectWithBodyWithResponse Reconnect Mcp Connection
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
@@ -33426,19 +34102,26 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /api/v1/model-provider-types (the `GetModelProviderTypes` operationId).
 	GetModelProviderTypesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetModelProviderTypesResponse, error)
 
-	// GetOauthMcpCallbackWithResponse Mcp Oauth Callback
+	// GetOauthMcpClientMetadataIssuerKeyJsonWithResponse Mcp Client Metadata
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
-	// Corresponds with GET /api/v1/oauth/mcp/callback (the `GetOauthMcpCallback` operationId).
-	GetOauthMcpCallbackWithResponse(ctx context.Context, params *GetOauthMcpCallbackParams, reqEditors ...RequestEditorFn) (*GetOauthMcpCallbackResponse, error)
+	// Corresponds with GET /api/v1/oauth/mcp/client-metadata/{issuer_key}.json (the `GetOauthMcpClientMetadataIssuerKeyJson` operationId).
+	GetOauthMcpClientMetadataIssuerKeyJsonWithResponse(ctx context.Context, issuerKey string, reqEditors ...RequestEditorFn) (*GetOauthMcpClientMetadataIssuerKeyJsonResponse, error)
 
-	// GetOauthMcpClientMetadataJsonWithResponse Mcp Client Metadata
+	// PostOauthMcpCompleteWithBodyWithResponse Complete Mcp Oauth
 	//
-	// Returns a wrapper object for the known response body format(s).
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
-	// Corresponds with GET /api/v1/oauth/mcp/client-metadata.json (the `GetOauthMcpClientMetadataJson` operationId).
-	GetOauthMcpClientMetadataJsonWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetOauthMcpClientMetadataJsonResponse, error)
+	// Corresponds with POST /api/v1/oauth/mcp/complete (the `PostOauthMcpComplete` operationId).
+	PostOauthMcpCompleteWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostOauthMcpCompleteResponse, error)
+
+	// PostOauthMcpCompleteWithResponse Complete Mcp Oauth
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/oauth/mcp/complete (the `PostOauthMcpComplete` operationId).
+	PostOauthMcpCompleteWithResponse(ctx context.Context, body PostOauthMcpCompleteJSONRequestBody, reqEditors ...RequestEditorFn) (*PostOauthMcpCompleteResponse, error)
 
 	// GetOrganizationsWithResponse Organizations
 	//
@@ -35113,6 +35796,13 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /api/v1/workspaces/{workspace}/threads (the `PostWorkspacesWorkspaceThreads` operationId).
 	PostWorkspacesWorkspaceThreadsWithResponse(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceThreadsParams, body PostWorkspacesWorkspaceThreadsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceThreadsResponse, error)
 
+	// GetWorkspacesWorkspaceTraceQueryWithResponse Get Trace Query
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/trace-query (the `GetWorkspacesWorkspaceTraceQuery` operationId).
+	GetWorkspacesWorkspaceTraceQueryWithResponse(ctx context.Context, workspace string, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceTraceQueryResponse, error)
+
 	// GetWorkspacesWorkspaceTracesWithResponse List Traces
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -35126,6 +35816,13 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /api/v1/workspaces/{workspace}/traces/{trace_id} (the `GetWorkspacesWorkspaceTracesTraceId` operationId).
 	GetWorkspacesWorkspaceTracesTraceIdWithResponse(ctx context.Context, workspace string, traceId string, params *GetWorkspacesWorkspaceTracesTraceIdParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceTracesTraceIdResponse, error)
+
+	// GetWorkspacesWorkspaceTracesTraceIdObservationsWithResponse List Trace Observations
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/traces/{trace_id}/observations (the `GetWorkspacesWorkspaceTracesTraceIdObservations` operationId).
+	GetWorkspacesWorkspaceTracesTraceIdObservationsWithResponse(ctx context.Context, workspace string, traceId string, params *GetWorkspacesWorkspaceTracesTraceIdObservationsParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceTracesTraceIdObservationsResponse, error)
 }
 
 // GetAgentRevisionsAgentRevisionIdResponse200Headers the declared response headers of an HTTP 200 response for GetAgentRevisionsAgentRevisionId
@@ -37552,6 +38249,83 @@ func (r PatchConnectorProvidersConnectorProviderIdResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r PatchConnectorProvidersConnectorProviderIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponse200Headers the declared response headers of an HTTP 200 response for GetConnectorProvidersConnectorProviderIdConnectorsConnectorKey
+type GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponse400Headers the declared response headers of an HTTP 400 response for GetConnectorProvidersConnectorProviderIdConnectorsConnectorKey
+type GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponseDefaultHeaders the declared response headers of an HTTP default response for GetConnectorProvidersConnectorProviderIdConnectorsConnectorKey
+type GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Connector
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponse) GetJSON200() *Connector {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -40148,6 +40922,237 @@ func (r PostMcpConnectionsConnectionIdDiscoverResponse) ContentType() string {
 	return ""
 }
 
+// GetMcpConnectionsConnectionIdOauthClientResponse200Headers the declared response headers of an HTTP 200 response for GetMcpConnectionsConnectionIdOauthClient
+type GetMcpConnectionsConnectionIdOauthClientResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetMcpConnectionsConnectionIdOauthClientResponse400Headers the declared response headers of an HTTP 400 response for GetMcpConnectionsConnectionIdOauthClient
+type GetMcpConnectionsConnectionIdOauthClientResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetMcpConnectionsConnectionIdOauthClientResponseDefaultHeaders the declared response headers of an HTTP default response for GetMcpConnectionsConnectionIdOauthClient
+type GetMcpConnectionsConnectionIdOauthClientResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetMcpConnectionsConnectionIdOauthClientResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MCPOAuthClientConfiguration
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetMcpConnectionsConnectionIdOauthClientResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetMcpConnectionsConnectionIdOauthClientResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetMcpConnectionsConnectionIdOauthClientResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetMcpConnectionsConnectionIdOauthClientResponse) GetJSON200() *MCPOAuthClientConfiguration {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetMcpConnectionsConnectionIdOauthClientResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetMcpConnectionsConnectionIdOauthClientResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetMcpConnectionsConnectionIdOauthClientResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetMcpConnectionsConnectionIdOauthClientResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetMcpConnectionsConnectionIdOauthClientResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetMcpConnectionsConnectionIdOauthClientResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PutMcpConnectionsConnectionIdOauthClientResponse200Headers the declared response headers of an HTTP 200 response for PutMcpConnectionsConnectionIdOauthClient
+type PutMcpConnectionsConnectionIdOauthClientResponse200Headers struct {
+	XRequestID *string
+}
+
+// PutMcpConnectionsConnectionIdOauthClientResponse400Headers the declared response headers of an HTTP 400 response for PutMcpConnectionsConnectionIdOauthClient
+type PutMcpConnectionsConnectionIdOauthClientResponse400Headers struct {
+	XRequestID *string
+}
+
+// PutMcpConnectionsConnectionIdOauthClientResponseDefaultHeaders the declared response headers of an HTTP default response for PutMcpConnectionsConnectionIdOauthClient
+type PutMcpConnectionsConnectionIdOauthClientResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PutMcpConnectionsConnectionIdOauthClientResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MCPConnection
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PutMcpConnectionsConnectionIdOauthClientResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PutMcpConnectionsConnectionIdOauthClientResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PutMcpConnectionsConnectionIdOauthClientResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PutMcpConnectionsConnectionIdOauthClientResponse) GetJSON200() *MCPConnection {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PutMcpConnectionsConnectionIdOauthClientResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PutMcpConnectionsConnectionIdOauthClientResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PutMcpConnectionsConnectionIdOauthClientResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PutMcpConnectionsConnectionIdOauthClientResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutMcpConnectionsConnectionIdOauthClientResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PutMcpConnectionsConnectionIdOauthClientResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PostMcpConnectionsConnectionIdOauthDiscoveryResponse200Headers the declared response headers of an HTTP 200 response for PostMcpConnectionsConnectionIdOauthDiscovery
+type PostMcpConnectionsConnectionIdOauthDiscoveryResponse200Headers struct {
+	XRequestID *string
+}
+
+// PostMcpConnectionsConnectionIdOauthDiscoveryResponse400Headers the declared response headers of an HTTP 400 response for PostMcpConnectionsConnectionIdOauthDiscovery
+type PostMcpConnectionsConnectionIdOauthDiscoveryResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostMcpConnectionsConnectionIdOauthDiscoveryResponseDefaultHeaders the declared response headers of an HTTP default response for PostMcpConnectionsConnectionIdOauthDiscovery
+type PostMcpConnectionsConnectionIdOauthDiscoveryResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostMcpConnectionsConnectionIdOauthDiscoveryResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MCPOAuthDiscovery
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PostMcpConnectionsConnectionIdOauthDiscoveryResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostMcpConnectionsConnectionIdOauthDiscoveryResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostMcpConnectionsConnectionIdOauthDiscoveryResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostMcpConnectionsConnectionIdOauthDiscoveryResponse) GetJSON200() *MCPOAuthDiscovery {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostMcpConnectionsConnectionIdOauthDiscoveryResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostMcpConnectionsConnectionIdOauthDiscoveryResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostMcpConnectionsConnectionIdOauthDiscoveryResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostMcpConnectionsConnectionIdOauthDiscoveryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostMcpConnectionsConnectionIdOauthDiscoveryResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostMcpConnectionsConnectionIdOauthDiscoveryResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // PostMcpConnectionsConnectionIdReconnectResponse200Headers the declared response headers of an HTTP 200 response for PostMcpConnectionsConnectionIdReconnect
 type PostMcpConnectionsConnectionIdReconnectResponse200Headers struct {
 	XRequestID *string
@@ -40365,23 +41370,100 @@ func (r GetModelProviderTypesResponse) ContentType() string {
 	return ""
 }
 
-// GetOauthMcpCallbackResponse200Headers the declared response headers of an HTTP 200 response for GetOauthMcpCallback
-type GetOauthMcpCallbackResponse200Headers struct {
+// GetOauthMcpClientMetadataIssuerKeyJsonResponse200Headers the declared response headers of an HTTP 200 response for GetOauthMcpClientMetadataIssuerKeyJson
+type GetOauthMcpClientMetadataIssuerKeyJsonResponse200Headers struct {
 	XRequestID *string
 }
 
-// GetOauthMcpCallbackResponse400Headers the declared response headers of an HTTP 400 response for GetOauthMcpCallback
-type GetOauthMcpCallbackResponse400Headers struct {
+// GetOauthMcpClientMetadataIssuerKeyJsonResponse400Headers the declared response headers of an HTTP 400 response for GetOauthMcpClientMetadataIssuerKeyJson
+type GetOauthMcpClientMetadataIssuerKeyJsonResponse400Headers struct {
 	XRequestID *string
 }
 
-// GetOauthMcpCallbackResponseDefaultHeaders the declared response headers of an HTTP default response for GetOauthMcpCallback
-type GetOauthMcpCallbackResponseDefaultHeaders struct {
+// GetOauthMcpClientMetadataIssuerKeyJsonResponseDefaultHeaders the declared response headers of an HTTP default response for GetOauthMcpClientMetadataIssuerKeyJson
+type GetOauthMcpClientMetadataIssuerKeyJsonResponseDefaultHeaders struct {
 	RetryAfter *string
 	XRequestID *string
 }
 
-type GetOauthMcpCallbackResponse struct {
+type GetOauthMcpClientMetadataIssuerKeyJsonResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MCPClientMetadata
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetOauthMcpClientMetadataIssuerKeyJsonResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetOauthMcpClientMetadataIssuerKeyJsonResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetOauthMcpClientMetadataIssuerKeyJsonResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetOauthMcpClientMetadataIssuerKeyJsonResponse) GetJSON200() *MCPClientMetadata {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetOauthMcpClientMetadataIssuerKeyJsonResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetOauthMcpClientMetadataIssuerKeyJsonResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetOauthMcpClientMetadataIssuerKeyJsonResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetOauthMcpClientMetadataIssuerKeyJsonResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetOauthMcpClientMetadataIssuerKeyJsonResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetOauthMcpClientMetadataIssuerKeyJsonResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PostOauthMcpCompleteResponse200Headers the declared response headers of an HTTP 200 response for PostOauthMcpComplete
+type PostOauthMcpCompleteResponse200Headers struct {
+	XRequestID *string
+}
+
+// PostOauthMcpCompleteResponse400Headers the declared response headers of an HTTP 400 response for PostOauthMcpComplete
+type PostOauthMcpCompleteResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostOauthMcpCompleteResponseDefaultHeaders the declared response headers of an HTTP default response for PostOauthMcpComplete
+type PostOauthMcpCompleteResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostOauthMcpCompleteResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
@@ -40391,35 +41473,35 @@ type GetOauthMcpCallbackResponse struct {
 	// JSONDefault the response for an HTTP default `application/json` response
 	JSONDefault *ErrorResponse
 	// Headers200 the parsed response headers for an HTTP 200 response
-	Headers200 *GetOauthMcpCallbackResponse200Headers
+	Headers200 *PostOauthMcpCompleteResponse200Headers
 	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *GetOauthMcpCallbackResponse400Headers
+	Headers400 *PostOauthMcpCompleteResponse400Headers
 	// HeadersDefault the parsed response headers for an HTTP default response
-	HeadersDefault *GetOauthMcpCallbackResponseDefaultHeaders
+	HeadersDefault *PostOauthMcpCompleteResponseDefaultHeaders
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r GetOauthMcpCallbackResponse) GetJSON200() *MCPConnection {
+func (r PostOauthMcpCompleteResponse) GetJSON200() *MCPConnection {
 	return r.JSON200
 }
 
 // GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r GetOauthMcpCallbackResponse) GetJSON400() *ErrorResponse {
+func (r PostOauthMcpCompleteResponse) GetJSON400() *ErrorResponse {
 	return r.JSON400
 }
 
 // GetJSONDefault returns the response for an HTTP default `application/json` response
-func (r GetOauthMcpCallbackResponse) GetJSONDefault() *ErrorResponse {
+func (r PostOauthMcpCompleteResponse) GetJSONDefault() *ErrorResponse {
 	return r.JSONDefault
 }
 
 // GetBody returns the raw response body bytes
-func (r GetOauthMcpCallbackResponse) GetBody() []byte {
+func (r PostOauthMcpCompleteResponse) GetBody() []byte {
 	return r.Body
 }
 
 // Status returns HTTPResponse.Status
-func (r GetOauthMcpCallbackResponse) Status() string {
+func (r PostOauthMcpCompleteResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -40427,7 +41509,7 @@ func (r GetOauthMcpCallbackResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetOauthMcpCallbackResponse) StatusCode() int {
+func (r PostOauthMcpCompleteResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -40435,70 +41517,7 @@ func (r GetOauthMcpCallbackResponse) StatusCode() int {
 }
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetOauthMcpCallbackResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-// GetOauthMcpClientMetadataJsonResponse200Headers the declared response headers of an HTTP 200 response for GetOauthMcpClientMetadataJson
-type GetOauthMcpClientMetadataJsonResponse200Headers struct {
-	XRequestID *string
-}
-
-// GetOauthMcpClientMetadataJsonResponseDefaultHeaders the declared response headers of an HTTP default response for GetOauthMcpClientMetadataJson
-type GetOauthMcpClientMetadataJsonResponseDefaultHeaders struct {
-	RetryAfter *string
-	XRequestID *string
-}
-
-type GetOauthMcpClientMetadataJsonResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *MCPClientMetadata
-	// JSONDefault the response for an HTTP default `application/json` response
-	JSONDefault *ErrorResponse
-	// Headers200 the parsed response headers for an HTTP 200 response
-	Headers200 *GetOauthMcpClientMetadataJsonResponse200Headers
-	// HeadersDefault the parsed response headers for an HTTP default response
-	HeadersDefault *GetOauthMcpClientMetadataJsonResponseDefaultHeaders
-}
-
-// GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r GetOauthMcpClientMetadataJsonResponse) GetJSON200() *MCPClientMetadata {
-	return r.JSON200
-}
-
-// GetJSONDefault returns the response for an HTTP default `application/json` response
-func (r GetOauthMcpClientMetadataJsonResponse) GetJSONDefault() *ErrorResponse {
-	return r.JSONDefault
-}
-
-// GetBody returns the raw response body bytes
-func (r GetOauthMcpClientMetadataJsonResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r GetOauthMcpClientMetadataJsonResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetOauthMcpClientMetadataJsonResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetOauthMcpClientMetadataJsonResponse) ContentType() string {
+func (r PostOauthMcpCompleteResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -53629,6 +54648,83 @@ func (r PostWorkspacesWorkspaceThreadsResponse) ContentType() string {
 	return ""
 }
 
+// GetWorkspacesWorkspaceTraceQueryResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceTraceQuery
+type GetWorkspacesWorkspaceTraceQueryResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceTraceQueryResponse400Headers the declared response headers of an HTTP 400 response for GetWorkspacesWorkspaceTraceQuery
+type GetWorkspacesWorkspaceTraceQueryResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceTraceQueryResponseDefaultHeaders the declared response headers of an HTTP default response for GetWorkspacesWorkspaceTraceQuery
+type GetWorkspacesWorkspaceTraceQueryResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetWorkspacesWorkspaceTraceQueryResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *TraceQueryDescriptor
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetWorkspacesWorkspaceTraceQueryResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetWorkspacesWorkspaceTraceQueryResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetWorkspacesWorkspaceTraceQueryResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetWorkspacesWorkspaceTraceQueryResponse) GetJSON200() *TraceQueryDescriptor {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetWorkspacesWorkspaceTraceQueryResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetWorkspacesWorkspaceTraceQueryResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetWorkspacesWorkspaceTraceQueryResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkspacesWorkspaceTraceQueryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkspacesWorkspaceTraceQueryResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetWorkspacesWorkspaceTraceQueryResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // GetWorkspacesWorkspaceTracesResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceTraces
 type GetWorkspacesWorkspaceTracesResponse200Headers struct {
 	XRequestID *string
@@ -53726,7 +54822,7 @@ type GetWorkspacesWorkspaceTracesTraceIdResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *TraceDetail
+	JSON200 *Trace
 	// JSON400 the response for an HTTP 400 `application/json` response
 	JSON400 *ErrorResponse
 	// JSONDefault the response for an HTTP default `application/json` response
@@ -53740,7 +54836,7 @@ type GetWorkspacesWorkspaceTracesTraceIdResponse struct {
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r GetWorkspacesWorkspaceTracesTraceIdResponse) GetJSON200() *TraceDetail {
+func (r GetWorkspacesWorkspaceTracesTraceIdResponse) GetJSON200() *Trace {
 	return r.JSON200
 }
 
@@ -53777,6 +54873,83 @@ func (r GetWorkspacesWorkspaceTracesTraceIdResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetWorkspacesWorkspaceTracesTraceIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetWorkspacesWorkspaceTracesTraceIdObservationsResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceTracesTraceIdObservations
+type GetWorkspacesWorkspaceTracesTraceIdObservationsResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceTracesTraceIdObservationsResponse400Headers the declared response headers of an HTTP 400 response for GetWorkspacesWorkspaceTracesTraceIdObservations
+type GetWorkspacesWorkspaceTracesTraceIdObservationsResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceTracesTraceIdObservationsResponseDefaultHeaders the declared response headers of an HTTP default response for GetWorkspacesWorkspaceTracesTraceIdObservations
+type GetWorkspacesWorkspaceTracesTraceIdObservationsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetWorkspacesWorkspaceTracesTraceIdObservationsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ObservationCollection
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetWorkspacesWorkspaceTracesTraceIdObservationsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetWorkspacesWorkspaceTracesTraceIdObservationsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetWorkspacesWorkspaceTracesTraceIdObservationsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetWorkspacesWorkspaceTracesTraceIdObservationsResponse) GetJSON200() *ObservationCollection {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetWorkspacesWorkspaceTracesTraceIdObservationsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetWorkspacesWorkspaceTracesTraceIdObservationsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetWorkspacesWorkspaceTracesTraceIdObservationsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkspacesWorkspaceTracesTraceIdObservationsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkspacesWorkspaceTracesTraceIdObservationsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetWorkspacesWorkspaceTracesTraceIdObservationsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -54394,6 +55567,19 @@ func (c *ClientWithResponses) PatchConnectorProvidersConnectorProviderIdWithResp
 	return ParsePatchConnectorProvidersConnectorProviderIdResponse(rsp)
 }
 
+// GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyWithResponse Get Connector
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/connector-providers/{connector_provider_id}/connectors/{connector_key} (the `GetConnectorProvidersConnectorProviderIdConnectorsConnectorKey` operationId).
+func (c *ClientWithResponses) GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyWithResponse(ctx context.Context, connectorProviderId string, connectorKey string, reqEditors ...RequestEditorFn) (*GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponse, error) {
+	rsp, err := c.GetConnectorProvidersConnectorProviderIdConnectorsConnectorKey(ctx, connectorProviderId, connectorKey, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponse(rsp)
+}
+
 // GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyToolsWithResponse Preview Connector Tools
 //
 // Returns a wrapper object for the known response body format(s).
@@ -54438,8 +55624,8 @@ func (c *ClientWithResponses) PostConnectorProvidersConnectorProviderIdCredentia
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /api/v1/connector-providers/{connector_provider_id}/discover-connectors (the `PostConnectorProvidersConnectorProviderIdDiscoverConnectors` operationId).
-func (c *ClientWithResponses) PostConnectorProvidersConnectorProviderIdDiscoverConnectorsWithResponse(ctx context.Context, connectorProviderId string, reqEditors ...RequestEditorFn) (*PostConnectorProvidersConnectorProviderIdDiscoverConnectorsResponse, error) {
-	rsp, err := c.PostConnectorProvidersConnectorProviderIdDiscoverConnectors(ctx, connectorProviderId, reqEditors...)
+func (c *ClientWithResponses) PostConnectorProvidersConnectorProviderIdDiscoverConnectorsWithResponse(ctx context.Context, connectorProviderId string, params *PostConnectorProvidersConnectorProviderIdDiscoverConnectorsParams, reqEditors ...RequestEditorFn) (*PostConnectorProvidersConnectorProviderIdDiscoverConnectorsResponse, error) {
+	rsp, err := c.PostConnectorProvidersConnectorProviderIdDiscoverConnectors(ctx, connectorProviderId, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -55057,6 +56243,58 @@ func (c *ClientWithResponses) PostMcpConnectionsConnectionIdDiscoverWithResponse
 	return ParsePostMcpConnectionsConnectionIdDiscoverResponse(rsp)
 }
 
+// GetMcpConnectionsConnectionIdOauthClientWithResponse Get Mcp Oauth Client
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/mcp-connections/{connection_id}/oauth-client (the `GetMcpConnectionsConnectionIdOauthClient` operationId).
+func (c *ClientWithResponses) GetMcpConnectionsConnectionIdOauthClientWithResponse(ctx context.Context, connectionId string, reqEditors ...RequestEditorFn) (*GetMcpConnectionsConnectionIdOauthClientResponse, error) {
+	rsp, err := c.GetMcpConnectionsConnectionIdOauthClient(ctx, connectionId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetMcpConnectionsConnectionIdOauthClientResponse(rsp)
+}
+
+// PutMcpConnectionsConnectionIdOauthClientWithBodyWithResponse Configure Mcp Oauth Client
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v1/mcp-connections/{connection_id}/oauth-client (the `PutMcpConnectionsConnectionIdOauthClient` operationId).
+func (c *ClientWithResponses) PutMcpConnectionsConnectionIdOauthClientWithBodyWithResponse(ctx context.Context, connectionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutMcpConnectionsConnectionIdOauthClientResponse, error) {
+	rsp, err := c.PutMcpConnectionsConnectionIdOauthClientWithBody(ctx, connectionId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutMcpConnectionsConnectionIdOauthClientResponse(rsp)
+}
+
+// PutMcpConnectionsConnectionIdOauthClientWithResponse Configure Mcp Oauth Client
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v1/mcp-connections/{connection_id}/oauth-client (the `PutMcpConnectionsConnectionIdOauthClient` operationId).
+func (c *ClientWithResponses) PutMcpConnectionsConnectionIdOauthClientWithResponse(ctx context.Context, connectionId string, body PutMcpConnectionsConnectionIdOauthClientJSONRequestBody, reqEditors ...RequestEditorFn) (*PutMcpConnectionsConnectionIdOauthClientResponse, error) {
+	rsp, err := c.PutMcpConnectionsConnectionIdOauthClient(ctx, connectionId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutMcpConnectionsConnectionIdOauthClientResponse(rsp)
+}
+
+// PostMcpConnectionsConnectionIdOauthDiscoveryWithResponse Discover Mcp Oauth
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/mcp-connections/{connection_id}/oauth-discovery (the `PostMcpConnectionsConnectionIdOauthDiscovery` operationId).
+func (c *ClientWithResponses) PostMcpConnectionsConnectionIdOauthDiscoveryWithResponse(ctx context.Context, connectionId string, reqEditors ...RequestEditorFn) (*PostMcpConnectionsConnectionIdOauthDiscoveryResponse, error) {
+	rsp, err := c.PostMcpConnectionsConnectionIdOauthDiscovery(ctx, connectionId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostMcpConnectionsConnectionIdOauthDiscoveryResponse(rsp)
+}
+
 // PostMcpConnectionsConnectionIdReconnectWithBodyWithResponse Reconnect Mcp Connection
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
@@ -55122,30 +56360,43 @@ func (c *ClientWithResponses) GetModelProviderTypesWithResponse(ctx context.Cont
 	return ParseGetModelProviderTypesResponse(rsp)
 }
 
-// GetOauthMcpCallbackWithResponse Mcp Oauth Callback
+// GetOauthMcpClientMetadataIssuerKeyJsonWithResponse Mcp Client Metadata
 //
 // Returns a wrapper object for the known response body format(s).
 //
-// Corresponds with GET /api/v1/oauth/mcp/callback (the `GetOauthMcpCallback` operationId).
-func (c *ClientWithResponses) GetOauthMcpCallbackWithResponse(ctx context.Context, params *GetOauthMcpCallbackParams, reqEditors ...RequestEditorFn) (*GetOauthMcpCallbackResponse, error) {
-	rsp, err := c.GetOauthMcpCallback(ctx, params, reqEditors...)
+// Corresponds with GET /api/v1/oauth/mcp/client-metadata/{issuer_key}.json (the `GetOauthMcpClientMetadataIssuerKeyJson` operationId).
+func (c *ClientWithResponses) GetOauthMcpClientMetadataIssuerKeyJsonWithResponse(ctx context.Context, issuerKey string, reqEditors ...RequestEditorFn) (*GetOauthMcpClientMetadataIssuerKeyJsonResponse, error) {
+	rsp, err := c.GetOauthMcpClientMetadataIssuerKeyJson(ctx, issuerKey, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetOauthMcpCallbackResponse(rsp)
+	return ParseGetOauthMcpClientMetadataIssuerKeyJsonResponse(rsp)
 }
 
-// GetOauthMcpClientMetadataJsonWithResponse Mcp Client Metadata
+// PostOauthMcpCompleteWithBodyWithResponse Complete Mcp Oauth
 //
-// Returns a wrapper object for the known response body format(s).
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
-// Corresponds with GET /api/v1/oauth/mcp/client-metadata.json (the `GetOauthMcpClientMetadataJson` operationId).
-func (c *ClientWithResponses) GetOauthMcpClientMetadataJsonWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetOauthMcpClientMetadataJsonResponse, error) {
-	rsp, err := c.GetOauthMcpClientMetadataJson(ctx, reqEditors...)
+// Corresponds with POST /api/v1/oauth/mcp/complete (the `PostOauthMcpComplete` operationId).
+func (c *ClientWithResponses) PostOauthMcpCompleteWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostOauthMcpCompleteResponse, error) {
+	rsp, err := c.PostOauthMcpCompleteWithBody(ctx, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetOauthMcpClientMetadataJsonResponse(rsp)
+	return ParsePostOauthMcpCompleteResponse(rsp)
+}
+
+// PostOauthMcpCompleteWithResponse Complete Mcp Oauth
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/oauth/mcp/complete (the `PostOauthMcpComplete` operationId).
+func (c *ClientWithResponses) PostOauthMcpCompleteWithResponse(ctx context.Context, body PostOauthMcpCompleteJSONRequestBody, reqEditors ...RequestEditorFn) (*PostOauthMcpCompleteResponse, error) {
+	rsp, err := c.PostOauthMcpComplete(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostOauthMcpCompleteResponse(rsp)
 }
 
 // GetOrganizationsWithResponse Organizations
@@ -58255,6 +59506,19 @@ func (c *ClientWithResponses) PostWorkspacesWorkspaceThreadsWithResponse(ctx con
 	return ParsePostWorkspacesWorkspaceThreadsResponse(rsp)
 }
 
+// GetWorkspacesWorkspaceTraceQueryWithResponse Get Trace Query
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/trace-query (the `GetWorkspacesWorkspaceTraceQuery` operationId).
+func (c *ClientWithResponses) GetWorkspacesWorkspaceTraceQueryWithResponse(ctx context.Context, workspace string, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceTraceQueryResponse, error) {
+	rsp, err := c.GetWorkspacesWorkspaceTraceQuery(ctx, workspace, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkspacesWorkspaceTraceQueryResponse(rsp)
+}
+
 // GetWorkspacesWorkspaceTracesWithResponse List Traces
 //
 // Returns a wrapper object for the known response body format(s).
@@ -58279,6 +59543,19 @@ func (c *ClientWithResponses) GetWorkspacesWorkspaceTracesTraceIdWithResponse(ct
 		return nil, err
 	}
 	return ParseGetWorkspacesWorkspaceTracesTraceIdResponse(rsp)
+}
+
+// GetWorkspacesWorkspaceTracesTraceIdObservationsWithResponse List Trace Observations
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/traces/{trace_id}/observations (the `GetWorkspacesWorkspaceTracesTraceIdObservations` operationId).
+func (c *ClientWithResponses) GetWorkspacesWorkspaceTracesTraceIdObservationsWithResponse(ctx context.Context, workspace string, traceId string, params *GetWorkspacesWorkspaceTracesTraceIdObservationsParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceTracesTraceIdObservationsResponse, error) {
+	rsp, err := c.GetWorkspacesWorkspaceTracesTraceIdObservations(ctx, workspace, traceId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkspacesWorkspaceTracesTraceIdObservationsResponse(rsp)
 }
 
 // ParseGetAgentRevisionsAgentRevisionIdResponse parses an HTTP response from a GetAgentRevisionsAgentRevisionIdWithResponse call
@@ -60796,6 +62073,86 @@ func ParsePatchConnectorProvidersConnectorProviderIdResponse(rsp *http.Response)
 		response.Headers400 = &headers
 	case true:
 		var headers PatchConnectorProvidersConnectorProviderIdResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponse parses an HTTP response from a GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyWithResponse call
+func ParseGetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponse(rsp *http.Response) (*GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Connector
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyResponseDefaultHeaders
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
@@ -63511,6 +64868,246 @@ func ParsePostMcpConnectionsConnectionIdDiscoverResponse(rsp *http.Response) (*P
 	return response, nil
 }
 
+// ParseGetMcpConnectionsConnectionIdOauthClientResponse parses an HTTP response from a GetMcpConnectionsConnectionIdOauthClientWithResponse call
+func ParseGetMcpConnectionsConnectionIdOauthClientResponse(rsp *http.Response) (*GetMcpConnectionsConnectionIdOauthClientResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetMcpConnectionsConnectionIdOauthClientResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MCPOAuthClientConfiguration
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetMcpConnectionsConnectionIdOauthClientResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetMcpConnectionsConnectionIdOauthClientResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetMcpConnectionsConnectionIdOauthClientResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePutMcpConnectionsConnectionIdOauthClientResponse parses an HTTP response from a PutMcpConnectionsConnectionIdOauthClientWithResponse call
+func ParsePutMcpConnectionsConnectionIdOauthClientResponse(rsp *http.Response) (*PutMcpConnectionsConnectionIdOauthClientResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutMcpConnectionsConnectionIdOauthClientResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MCPConnection
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PutMcpConnectionsConnectionIdOauthClientResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PutMcpConnectionsConnectionIdOauthClientResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PutMcpConnectionsConnectionIdOauthClientResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostMcpConnectionsConnectionIdOauthDiscoveryResponse parses an HTTP response from a PostMcpConnectionsConnectionIdOauthDiscoveryWithResponse call
+func ParsePostMcpConnectionsConnectionIdOauthDiscoveryResponse(rsp *http.Response) (*PostMcpConnectionsConnectionIdOauthDiscoveryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostMcpConnectionsConnectionIdOauthDiscoveryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MCPOAuthDiscovery
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PostMcpConnectionsConnectionIdOauthDiscoveryResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostMcpConnectionsConnectionIdOauthDiscoveryResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostMcpConnectionsConnectionIdOauthDiscoveryResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
 // ParsePostMcpConnectionsConnectionIdReconnectResponse parses an HTTP response from a PostMcpConnectionsConnectionIdReconnectWithResponse call
 func ParsePostMcpConnectionsConnectionIdReconnectResponse(rsp *http.Response) (*PostMcpConnectionsConnectionIdReconnectResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -63734,15 +65331,95 @@ func ParseGetModelProviderTypesResponse(rsp *http.Response) (*GetModelProviderTy
 	return response, nil
 }
 
-// ParseGetOauthMcpCallbackResponse parses an HTTP response from a GetOauthMcpCallbackWithResponse call
-func ParseGetOauthMcpCallbackResponse(rsp *http.Response) (*GetOauthMcpCallbackResponse, error) {
+// ParseGetOauthMcpClientMetadataIssuerKeyJsonResponse parses an HTTP response from a GetOauthMcpClientMetadataIssuerKeyJsonWithResponse call
+func ParseGetOauthMcpClientMetadataIssuerKeyJsonResponse(rsp *http.Response) (*GetOauthMcpClientMetadataIssuerKeyJsonResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetOauthMcpCallbackResponse{
+	response := &GetOauthMcpClientMetadataIssuerKeyJsonResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MCPClientMetadata
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetOauthMcpClientMetadataIssuerKeyJsonResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetOauthMcpClientMetadataIssuerKeyJsonResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetOauthMcpClientMetadataIssuerKeyJsonResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostOauthMcpCompleteResponse parses an HTTP response from a PostOauthMcpCompleteWithResponse call
+func ParsePostOauthMcpCompleteResponse(rsp *http.Response) (*PostOauthMcpCompleteResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostOauthMcpCompleteResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -63773,7 +65450,7 @@ func ParseGetOauthMcpCallbackResponse(rsp *http.Response) (*GetOauthMcpCallbackR
 
 	switch {
 	case rsp.StatusCode == 200:
-		var headers GetOauthMcpCallbackResponse200Headers
+		var headers PostOauthMcpCompleteResponse200Headers
 		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
@@ -63783,7 +65460,7 @@ func ParseGetOauthMcpCallbackResponse(rsp *http.Response) (*GetOauthMcpCallbackR
 		}
 		response.Headers200 = &headers
 	case rsp.StatusCode == 400:
-		var headers GetOauthMcpCallbackResponse400Headers
+		var headers PostOauthMcpCompleteResponse400Headers
 		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
@@ -63793,70 +65470,7 @@ func ParseGetOauthMcpCallbackResponse(rsp *http.Response) (*GetOauthMcpCallbackR
 		}
 		response.Headers400 = &headers
 	case true:
-		var headers GetOauthMcpCallbackResponseDefaultHeaders
-		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.RetryAfter = &value
-		}
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.HeadersDefault = &headers
-	}
-
-	return response, nil
-}
-
-// ParseGetOauthMcpClientMetadataJsonResponse parses an HTTP response from a GetOauthMcpClientMetadataJsonWithResponse call
-func ParseGetOauthMcpClientMetadataJsonResponse(rsp *http.Response) (*GetOauthMcpClientMetadataJsonResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetOauthMcpClientMetadataJsonResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MCPClientMetadata
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	switch {
-	case rsp.StatusCode == 200:
-		var headers GetOauthMcpClientMetadataJsonResponse200Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers200 = &headers
-	case true:
-		var headers GetOauthMcpClientMetadataJsonResponseDefaultHeaders
+		var headers PostOauthMcpCompleteResponseDefaultHeaders
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
@@ -77568,6 +79182,86 @@ func ParsePostWorkspacesWorkspaceThreadsResponse(rsp *http.Response) (*PostWorks
 	return response, nil
 }
 
+// ParseGetWorkspacesWorkspaceTraceQueryResponse parses an HTTP response from a GetWorkspacesWorkspaceTraceQueryWithResponse call
+func ParseGetWorkspacesWorkspaceTraceQueryResponse(rsp *http.Response) (*GetWorkspacesWorkspaceTraceQueryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkspacesWorkspaceTraceQueryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest TraceQueryDescriptor
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetWorkspacesWorkspaceTraceQueryResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetWorkspacesWorkspaceTraceQueryResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetWorkspacesWorkspaceTraceQueryResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
 // ParseGetWorkspacesWorkspaceTracesResponse parses an HTTP response from a GetWorkspacesWorkspaceTracesWithResponse call
 func ParseGetWorkspacesWorkspaceTracesResponse(rsp *http.Response) (*GetWorkspacesWorkspaceTracesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -77663,7 +79357,7 @@ func ParseGetWorkspacesWorkspaceTracesTraceIdResponse(rsp *http.Response) (*GetW
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest TraceDetail
+		var dest Trace
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -77708,6 +79402,86 @@ func ParseGetWorkspacesWorkspaceTracesTraceIdResponse(rsp *http.Response) (*GetW
 		response.Headers400 = &headers
 	case true:
 		var headers GetWorkspacesWorkspaceTracesTraceIdResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkspacesWorkspaceTracesTraceIdObservationsResponse parses an HTTP response from a GetWorkspacesWorkspaceTracesTraceIdObservationsWithResponse call
+func ParseGetWorkspacesWorkspaceTracesTraceIdObservationsResponse(rsp *http.Response) (*GetWorkspacesWorkspaceTracesTraceIdObservationsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkspacesWorkspaceTracesTraceIdObservationsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ObservationCollection
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetWorkspacesWorkspaceTracesTraceIdObservationsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetWorkspacesWorkspaceTracesTraceIdObservationsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetWorkspacesWorkspaceTracesTraceIdObservationsResponseDefaultHeaders
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {

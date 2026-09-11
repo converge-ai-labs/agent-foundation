@@ -4,10 +4,8 @@ import {
   HeartIcon,
   CubeIcon,
   PlugsConnectedIcon,
-  FileIcon,
   ChatsIcon,
   MonitorIcon,
-  TreeStructureIcon,
   PlugIcon,
   PuzzlePieceIcon,
 } from "@phosphor-icons/react";
@@ -27,7 +25,6 @@ export const navigationGroups: {
     entries: [
       ["models", "Models", CubeIcon],
       ["skills", "Skills", PuzzlePieceIcon],
-      ["assets", "Assets", FileIcon],
       [
         "environments",
         "Environments",
@@ -43,8 +40,7 @@ export const navigationGroups: {
     label: "Integrations",
     entries: [
       ["application-accounts", "Application accounts", PlugsConnectedIcon],
-      ["connectors", "Connectors", PlugIcon],
-      ["mcp", "MCP connections", TreeStructureIcon],
+      ["connections", "Connections", PlugIcon],
     ],
   },
   {

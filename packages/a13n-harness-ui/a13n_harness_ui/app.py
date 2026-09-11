@@ -47,12 +47,20 @@ from a13n_harness_ui.configuration import (
     mutate_configuration_source,
     preview_external_subagent_import,
 )
+from a13n_harness_ui.configuration.mutation import validate_configuration_source
 from a13n_harness_ui.configuration.setup import (
     SetupPreview,
     SetupPublication,
     SetupSelection,
     preview_setup,
     publish_setup,
+)
+from a13n_harness_ui.configuration.views import (
+    ConfigurationSourceCatalog,
+    ConfigurationSourceView,
+    ConfigurationValidation,
+    source_catalog,
+    source_view,
 )
 from a13n_harness_ui.content_plugins import ContentPluginStore
 from a13n_harness_ui.environment_profiles import BUILT_IN_ENVIRONMENT_PROFILES
@@ -61,18 +69,36 @@ from a13n_harness_ui.environment_runtime import (
     EnvironmentSnapshotReconstructor,
     ProviderRuntimeFactory,
 )
-from a13n_harness_ui.errors import AppStateError, ConfigurationError, HarnessUiError
+from a13n_harness_ui.errors import AppStateError, ConfigurationError, HarnessUiError, LivePresentationError
 from a13n_harness_ui.extensions import (
     CatalogReference,
     EnvironmentProjectAdapter,
     HarnessUiExtensionCatalog,
 )
+from a13n_harness_ui.file_context import context_text
+from a13n_harness_ui.host_files import (
+    DirectoryCreateRequest,
+    DirectoryPage,
+    FileCapture,
+    FileCaptureRequest,
+    FileDeleteRequest,
+    FileDeletion,
+    FileEntry,
+    FileMoveRequest,
+    FileReadRequest,
+    FileSnapshot,
+    FileText,
+    FileWriteRequest,
+    HostFiles,
+)
+from a13n_harness_ui.host_git import GitCaptureRequest, GitDiff, GitDiffRequest, GitDiscovery, GitStatus, HostGit
 from a13n_harness_ui.live import (
     HarnessUiLiveHub,
     HarnessUiSummaryHub,
     LiveCursor,
     LiveEvent,
     LiveSubscription,
+    RootStreamReplay,
     SummaryCursor,
     SummarySubscription,
 )
@@ -102,6 +128,7 @@ from a13n_harness_ui.setup import EnvironmentReadiness, SetupProvider, SetupStat
 from a13n_harness_ui.storage import (
     AgentResourceSource,
     LocalStore,
+    ThreadConfiguration,
     ThreadConfigurationMutation,
     open_local_store,
 )
@@ -122,6 +149,8 @@ from a13n_harness_ui.surfaces import (
     LaunchProjectResolution,
     NewThreadDefaults,
     NotePage,
+    ProjectDefaultsApply,
+    ProjectDefaultsPreview,
     ProjectPathCompletionPage,
     ProjectSummary,
     QuestionResponse,
@@ -197,10 +226,15 @@ class AppStatus(BaseModel):
 class ThreadWatch:
     snapshot: ThreadFocusSnapshot
     events: LiveSubscription
+    root_stream: RootStreamReplay | None = None
 
 
 def _cwd_project_ids(source: LoadedHarnessUiConfiguration, directory: str) -> tuple[str, ...]:
     return tuple(sorted(project.id for project in source.projects.values() if project.roots[0].path == directory))
+
+
+def _new_cwd_project_id(directory: str) -> str:
+    return "project-cwd-" + hashlib.sha256(directory.encode()).hexdigest()[:20]
 
 
 class HarnessUiApp:
@@ -233,6 +267,7 @@ class HarnessUiApp:
         codex_login: CodexLoginCallback | None,
         grok_login: GrokLoginCallback | None,
         candidate_error: HarnessUiError | None = None,
+        share_computer: bool = False,
     ) -> None:
         self._settings = settings
         self._store = store
@@ -246,6 +281,8 @@ class HarnessUiApp:
         self._projections = projections
         self._terminal_projections = terminal_projections
         self._thread_files = thread_files
+        self._host_files = HostFiles(enabled=share_computer)
+        self._host_git = HostGit(enabled=share_computer)
         self._root_runs = root_runs
         self._subagent_operator = subagent_operator
         self._live_hub = live_hub
@@ -394,6 +431,28 @@ class HarnessUiApp:
                 self._configuration_fingerprint = fingerprint
                 await self._reload_configuration_from_path()
 
+    async def configuration_sources(self) -> ConfigurationSourceCatalog:
+        """List the accepted generation, not a live filesystem or credential inventory."""
+        async with self._operation():
+            return source_catalog(await self._configurations.current(), self._require_configuration_path())
+
+    async def configuration_source(self, *, relative_path: str) -> ConfigurationSourceView:
+        async with self._operation():
+            return source_view(await self._configurations.current(), self._require_configuration_path(), relative_path)
+
+    async def validate_configuration(
+        self, *, relative_path: str, request: ResourceMutationRequest
+    ) -> ConfigurationValidation:
+        async with self._operation(), self._configuration_lock:
+            candidate = await validate_configuration_source(
+                self._require_configuration_path(),
+                relative_path,
+                request,
+                validate_candidate=self._configurations.validate,
+                content_plugin_root=self._content_plugin_root,
+            )
+            return ConfigurationValidation(candidate_digest=candidate.source_digest)
+
     async def mutate_configuration(
         self,
         *,
@@ -524,6 +583,38 @@ class HarnessUiApp:
         source = await self.current_configuration()
         return () if source is None else _cwd_project_ids(source, str(normalized))
 
+    async def cwd_model_preference(
+        self, directory: Path, *, project_id: str | None = None
+    ) -> tuple[str, str | None] | None:
+        """Read the launch Project's Model preference without creating resources.
+
+        A resumed Project disambiguates exact-root matches. An unmatched directory
+        uses the same prospective identity as first submission. Ambiguity has no
+        implicit preference; a missing Model ID is returned for the UI to explain.
+        """
+        normalized = await to_thread.run_sync(lambda: directory.resolve(strict=True))
+        async with self._operation():
+            source = await self._configurations.current()
+            if source is None:
+                return None
+            matches = _cwd_project_ids(source, str(normalized))
+            if project_id not in matches:
+                if len(matches) > 1:
+                    return None
+                project_id = matches[0] if matches else _new_cwd_project_id(str(normalized))
+            assert project_id is not None
+            return project_id, await self._store.project_models.get(project_id)
+
+    async def remember_project_model(self, *, project_id: str, model_id: str | None) -> None:
+        """Persist an explicit terminal choice; None clears it. No YAML is changed."""
+        async with self._operation():
+            source = await self._configurations.current()
+            if source is None:
+                raise AppStateError("Configure a model first.", code="configuration_unavailable")
+            if model_id is not None and model_id not in source.models:
+                raise AppStateError("The selected Model no longer exists.", code="model_missing")
+            await self._store.project_models.set(project_id, model_id)
+
     async def ensure_cwd_project(self, directory: Path) -> str:
         """Select or create an ordinary Project without retargeting saved Threads.
 
@@ -534,7 +625,7 @@ class HarnessUiApp:
         if not normalized.is_dir():
             raise AppStateError("Project root must be a directory.", code="project_root_invalid")
         root = str(normalized)
-        project_id = "project-cwd-" + hashlib.sha256(root.encode()).hexdigest()[:20]
+        project_id = _new_cwd_project_id(root)
         source = await self.current_configuration()
         if source is None:
             raise AppStateError("Configure a model with /setup first.", code="configuration_unavailable")
@@ -770,6 +861,31 @@ class HarnessUiApp:
             await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
             return await self._projections.get_thread(thread.thread_id)
 
+    async def preview_thread_configuration(
+        self, *, defaults: NewThreadDefaults | RootThreadDefaults | None = None
+    ) -> ThreadConfiguration:
+        """Resolve creation without allocating a Thread or publishing its initial state."""
+        async with self._operation():
+            selected = (
+                RootThreadDefaults(**defaults.model_dump(exclude_unset=True))
+                if isinstance(defaults, NewThreadDefaults)
+                else defaults
+            )
+            return await self._threads.preview_creation(selected)
+
+    async def preview_project_defaults(self, *, thread_id: str) -> ProjectDefaultsPreview:
+        async with self._operation():
+            return await self._threads.preview_project_defaults(thread_id)
+
+    async def apply_project_defaults(self, *, thread_id: str, request: ProjectDefaultsApply) -> ThreadSummary:
+        # Serialize with this App's generation acceptance, not with Agent execution.
+        async with self._operation(), self._configuration_lock:
+            await self._threads.apply_project_defaults(
+                thread_id=thread_id, expected_version=request.expected_version, defaults_digest=request.defaults_digest
+            )
+            await self._summary_hub.publish(kind="thread", thread_id=thread_id)
+            return await self._projections.get_thread(thread_id)
+
     async def get_thread(self, thread_id: str) -> ThreadDetail:
         async with self._operation():
             return await self._projections.detail(thread_id)
@@ -819,6 +935,11 @@ class HarnessUiApp:
         mutation: ThreadConfigurationMutation,
     ) -> ThreadSummary:
         async with self._operation():
+            thread = await self._threads.get(thread_id)
+            if thread.parent_thread_id is not None:
+                raise AppStateError(
+                    "Child Threads are managed through their parent execution.", code="child_thread_scoped"
+                )
             await self._threads.update_configuration(
                 thread_id=thread_id,
                 mutation=mutation,
@@ -837,14 +958,7 @@ class HarnessUiApp:
         if "agent_id" in patch.model_fields_set:
             assert patch.agent_id is not None
             values["agent_source"] = AgentResourceSource(id=patch.agent_id)
-        for surface_name, stored_name in (
-            ("environment_profile_id", "environment_profile_id"),
-            ("harness_plugin_ids", "harness_plugin_ids"),
-            ("environment_run_extension_ids", "environment_run_extension_ids"),
-            ("mcp_server_ids", "mcp_server_ids"),
-        ):
-            if surface_name in patch.model_fields_set:
-                values[stored_name] = getattr(patch, surface_name)
+        values.update(patch.model_dump(exclude_unset=True, exclude={"agent_id"}))
         stored = StoredThreadConfigurationPatch.model_validate(values, strict=True)
         return await self.update_thread_configuration(
             thread_id=thread_id,
@@ -868,6 +982,113 @@ class HarnessUiApp:
                 await self._threads.update_metadata(thread_id=thread_id, mutation=mutation)
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
             return await self._projections.get_thread(thread_id)
+
+    @property
+    def shares_computer(self) -> bool:
+        return self._host_files.enabled
+
+    def require_host_files(self) -> None:
+        self._host_files.require_enabled()
+
+    async def host_file_metadata(self, path: str) -> FileEntry:
+        async with self._operation():
+            return await self._host_files.metadata(path)
+
+    async def browse_host_files(
+        self, path: str, *, offset: int = 0, limit: int = 200, revision: str | None = None
+    ) -> DirectoryPage:
+        async with self._operation():
+            return await self._host_files.browse(path, offset=offset, limit=limit, revision=revision)
+
+    async def read_host_file(self, request: FileReadRequest) -> FileText:
+        async with self._operation():
+            return await self._host_files.read_text(request)
+
+    async def download_host_file(self, request: FileReadRequest) -> FileSnapshot:
+        async with self._operation():
+            return await self._host_files.download(request)
+
+    async def write_host_file(self, request: FileWriteRequest) -> FileEntry:
+        async with self._operation():
+            self.require_host_files()
+            return await self._host_files.write_text(request)
+
+    async def upload_host_file(self, path: str, data: bytes, *, expected_revision: str | None = None) -> FileEntry:
+        async with self._operation():
+            return await self._host_files.write(path, data, expected_revision=expected_revision)
+
+    async def create_host_directory(self, request: DirectoryCreateRequest) -> FileEntry:
+        async with self._operation():
+            return await self._host_files.create_directory(request)
+
+    async def move_host_file(self, request: FileMoveRequest) -> FileEntry:
+        async with self._operation():
+            return await self._host_files.move(request)
+
+    async def delete_host_file(self, request: FileDeleteRequest) -> FileDeletion:
+        async with self._operation():
+            return await self._host_files.delete(request)
+
+    async def capture_host_file(self, *, thread_id: str, request: FileCaptureRequest) -> FileCapture:
+        async with self._operation():
+            self.require_host_files()
+            await self._threads.get(thread_id)
+            selected = await self._host_files.capture(request)
+            attachment = await self._thread_files.stage(
+                thread_id,
+                AttachmentUpload(
+                    name=Path(selected.source.path).name,
+                    data=selected.data,
+                    media_type="application/octet-stream",
+                    source=selected.source,
+                ),
+            )
+            return FileCapture(attachment=attachment, prompt_text=context_text(selected.source, selected.data))
+
+    @property
+    def host_git_available(self) -> bool:
+        return self._host_git.available
+
+    def require_host_git(self) -> None:
+        self._host_git.require_enabled()
+
+    async def discover_host_repository(self, path: str) -> GitDiscovery:
+        async with self._operation():
+            return await self._host_git.discover(path)
+
+    async def host_git_status(
+        self,
+        path: str,
+        *,
+        include_ignored: bool = False,
+        offset: int = 0,
+        limit: int = 200,
+        expected_revision: str | None = None,
+    ) -> GitStatus:
+        async with self._operation():
+            return await self._host_git.status(
+                path, include_ignored=include_ignored, offset=offset, limit=limit, expected_revision=expected_revision
+            )
+
+    async def read_host_git_diff(self, request: GitDiffRequest) -> GitDiff:
+        async with self._operation():
+            return await self._host_git.diff(request)
+
+    async def capture_host_git_diff(self, *, thread_id: str, request: GitCaptureRequest) -> FileCapture:
+        async with self._operation():
+            self.require_host_git()
+            await self._threads.get(thread_id)
+            selected = await self._host_git.capture(request)
+            attachment = await self._thread_files.stage(
+                thread_id,
+                AttachmentUpload(
+                    name=f"{Path(selected.source.path).name}.diff",
+                    data=selected.data,
+                    media_type="text/plain",
+                    source=selected.source,
+                ),
+            )
+            return FileCapture(attachment=attachment, prompt_text=context_text(selected.source, selected.data))
 
     async def stage_thread_attachment(self, *, thread_id: str, upload: AttachmentUpload) -> ThreadAttachment:
         async with self._operation():
@@ -913,12 +1134,19 @@ class HarnessUiApp:
             await self._thread_files.retain(thread_id, item.attachment_id)
             path = f"attachments/{item.attachment_id}/content"
             metadata = {"harness_ui": {"attachment": item.model_dump(), "mount": "thread-files", "path": path}}
+            source_description = (
+                "" if item.source is None else f" Selected Host source: {item.source.model_dump_json()}."
+            )
             parts.append(
                 TextContent(
-                    f"Attachment {item.name!r} ({item.media_type}): {path} on the thread-files Environment mount.",
+                    f"Attachment {item.name!r} ({item.media_type}): {path} on the thread-files Environment mount.{source_description}",
                     metadata=metadata,
                 )
             )
+            if item.source is not None:
+                captured_text = context_text(item.source, data)
+                if captured_text is not None:
+                    parts.append(TextContent(captured_text, metadata=metadata))
             if item.media_type.startswith("image/"):
                 parts.append(BinaryContent(data=data, media_type=item.media_type, vendor_metadata=metadata))
         await self._thread_files.touch(thread_id)
@@ -1300,9 +1528,16 @@ class HarnessUiApp:
         child_limit: int = 20,
     ) -> AsyncGenerator[ThreadWatch]:
         self._require_ready()
+        async with self._operation():
+            selected = await self._threads.get(root_thread_id)
+            base_continuation_id = selected.continuation.logical_digest if selected.continuation is not None else None
         async with self._live_hub.subscribe(root_thread_id=root_thread_id) as subscription:
             async with self._operation():
                 thread = await self._projections.detail(root_thread_id)
+                if thread.continuation_id != base_continuation_id:
+                    raise LivePresentationError(
+                        "The selected history changed during focused bootstrap.", code="live_snapshot_changed"
+                    )
                 if thread.thread.parent_thread_id is not None:
                     raise AppStateError("A focused watch requires a root Thread.", code="child_thread_scoped")
                 children = await self._subagent_operator.query_child_executions(
@@ -1315,6 +1550,13 @@ class HarnessUiApp:
                     expected_continuation_id=thread.continuation_id,
                 )
             cursor = subscription.cursor
+            root_stream = subscription.root_stream
+            if tasks.continuation_id != thread.continuation_id or (
+                root_stream is not None and root_stream.summary.base_continuation_id != thread.continuation_id
+            ):
+                raise LivePresentationError(
+                    "The selected history changed during focused bootstrap.", code="live_snapshot_changed"
+                )
             recent = await self._live_hub.snapshot(root_thread_id=root_thread_id)
             retained_events: list[LiveEvent] = []
             remaining_bytes = 128 * 1024
@@ -1335,8 +1577,10 @@ class HarnessUiApp:
                     children=children,
                     tasks=tasks,
                     recent_events=tuple(reversed(retained_events)),
+                    root_stream=root_stream.summary if root_stream is not None else None,
                 ),
                 events=subscription,
+                root_stream=root_stream,
             )
 
     @asynccontextmanager
@@ -1491,6 +1735,7 @@ async def open_harness_ui_app(
     *,
     configuration_path: Path | None = None,
     host_mode: Literal["local", "webui"] = "local",
+    share_computer: bool = False,
     configuration_error: ConfigurationError | None = None,
     codex_login: CodexLoginCallback | None = None,
     grok_scope: str | None = None,
@@ -1696,6 +1941,7 @@ async def open_harness_ui_app(
                 codex_login=codex_login,
                 grok_login=grok_login,
                 candidate_error=candidate_error,
+                share_computer=share_computer,
             )
             if host_mode == "webui":
                 thread_tools = ThreadToolController(

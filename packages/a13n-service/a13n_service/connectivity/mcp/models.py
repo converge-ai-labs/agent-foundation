@@ -113,7 +113,9 @@ class MCPOAuthSessionRecord(ResourceCredential[str], Base):
             ("mcp_connections.id", "mcp_connections.organization_id", "mcp_connections.workspace_id"),
             ondelete="RESTRICT",
         ),
-        CheckConstraint("status IN ('pending', 'exchanging', 'completed', 'failed', 'expired')", name="status_valid"),
+        CheckConstraint(
+            "status IN ('pending', 'received', 'exchanging', 'completed', 'failed', 'expired')", name="status_valid"
+        ),
         CheckConstraint("credential_generation >= 1", name="credential_generation_positive"),
         CheckConstraint("claim_generation >= 0", name="claim_generation_non_negative"),
         Index("uq_mcp_oauth_sessions_state", "state_digest", unique=True),
@@ -143,3 +145,28 @@ class MCPOAuthSessionRecord(ResourceCredential[str], Base):
     @property
     def credential_owner_id(self) -> str:
         return self.mcp_connection_id
+
+
+class MCPConnectionOAuthClientRecord(ResourceCredential[str], Base):
+    """Connection-owned app registration, independent of its access token."""
+
+    credential_owner_type = "mcp_oauth_client"
+    __tablename__ = "mcp_oauth_clients"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ("id", "organization_id", "workspace_id"),
+            ("mcp_connections.id", "mcp_connections.organization_id", "mcp_connections.workspace_id"),
+            ondelete="CASCADE",
+        ),
+        CheckConstraint(
+            "(ciphertext IS NULL AND nonce IS NULL AND encryption_key_id IS NULL) OR "
+            "(ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL)",
+            name="credential_material_consistent",
+        ),
+        CheckConstraint("credential_generation >= 0", name="credential_generation_non_negative"),
+    )
+
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    configuration_json: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)

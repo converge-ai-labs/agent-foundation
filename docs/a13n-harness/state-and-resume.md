@@ -88,23 +88,56 @@ async with executable.stream("Work", bindings=fresh_bindings()) as stream:
 
 ## Resume Unanswered Tool Calls
 
-When a saved history contains tool calls without results, `run()` and `stream()` default to `execute_pending_tools=False`. The Harness fills in an unknown-result `ToolReturnPart` for each unanswered ordinary call and continues with the model. It preserves recorded results and does not execute the unanswered calls itself. Newly generated tool calls still execute normally.
+A checkpoint can contain tool calls whose results were never recorded. After a crash, those operations may have run even though their results are missing. `run()` and `stream()` use the per-run `tool_recovery` option to decide which unanswered calls may execute again:
 
-This is useful when a Host saved a model response before its tool results: after a crash, the missing results cannot establish whether the operations ran. The same unknown-result handling applies even if a call never started. The model can inspect current state and decide what to do next.
+| Mode                   | Unanswered restored calls                                                                    |
+| ---------------------- | -------------------------------------------------------------------------------------------- |
+| `"declared"` (default) | Execute tools explicitly declared recovery-retryable; fill other calls with unknown results. |
+| `"never"`              | Fill every unanswered call with an unknown-result `ToolReturnPart`.                          |
+| `"always"`             | Execute every unanswered call still available in the current tool surface.                   |
 
-To explicitly execute calls retained in a trailing complete model response, omit new input and opt in:
+Recorded tool returns and argument retry results remain authoritative. Recovery preserves the original call IDs and any partial results, including when the saved frontier is interrupted. A tool no longer available receives an unknown result. An existing unknown-result return is already a result and is never reopened, even with `"always"`. Newly generated calls execute normally.
+
+### Declare Retryable Tools at Their Source
+
+Use `recovery_retryable()` as a decorator or wrap an existing function or native `Tool`:
+
+```python
+from a13n_harness.tools import recovery_retryable
+from pydantic_ai import Tool
+from pydantic_ai.capabilities import Capability
+
+@recovery_retryable
+def lookup_record(record_id: str) -> str:
+    return read_record(record_id)
+
+catalog = Capability(
+    id="acme.catalog",
+    tools=[lookup_record, recovery_retryable(Tool(search_records, name="search"))],
+)
+```
+
+The helper returns a native `Tool`. It adds metadata without wrapping execution; an existing `Tool` is copied with its settings and other metadata preserved. For instance methods, call `recovery_retryable(self.lookup_record)` when constructing the Capability. A Plugin can declare its own individual tools this way without requiring the Host to know their names.
+
+Dynamic Toolsets can use the same helper while building their current tools. For integrations that already produce `ToolDefinition` metadata, set `RECOVERY_RETRY_SAFE_METADATA_KEY` from `a13n_harness.tools` to the boolean `True`. Native `SetToolMetadata` also works. The declaration is read from the freshly prepared definition, not from saved messages.
+
+The declaration asserts that repeating the operation is acceptable despite an unknown earlier outcome. It is separate from provider dispatch retries and `HarnessToolMetadata.idempotency`: a provider key alone does not prove a restored call will reuse the original upstream operation.
+
+### Resume with a Policy
 
 ```python
 result = await executable.run(
     bindings=fresh_bindings(),
     previous_state=checkpoint,
-    execute_pending_tools=True,
+    tool_recovery="declared",  # The default; use "never" to disable all replay.
 )
 ```
 
-This opts into Pydantic AI's native pending-tool execution and can repeat an external effect. Applications that previously relied on automatic execution of these saved calls now need this flag. Already interrupted history continues to receive unknown results with either setting. The flag is a per-run option, not part of serialized state or the model retry policy.
+You may also supply new input. Native Pydantic AI continuation processes the retained calls and partial results before the next model request. Recovery uses native `ToolApproved` values as programmatic permission to replay selected calls. Native argument validation still runs, tools currently requiring approval or external execution still suspend, and managed invocations are checked against fresh policy and resources. Recovery permission does not substitute for resource-bound approval evidence. Explicit `deferred_resume` and provider-suspended responses retain their existing continuation paths.
 
-Structured approvals and external results supplied through `deferred_resume` retain their existing behavior without opting in. Provider-suspended model responses also continue through their native path. This option does not provide exactly-once execution or block a later model decision from requesting a new call.
+This option belongs to the run, not serialized state or model retry policy. It does not guarantee exactly-once effects or stop a later model decision from requesting another call.
+
+The former `execute_pending_tools` argument is replaced by `tool_recovery`: migrate `False` to `"never"`, `True` to `"always"`, and `"auto"` to `"declared"`. The default now follows per-tool declarations; unmarked tools continue to receive unknown results.
 
 ## Structured Suspension
 

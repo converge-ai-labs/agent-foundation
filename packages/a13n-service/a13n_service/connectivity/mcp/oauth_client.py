@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -23,7 +24,7 @@ from a13n_service.connectivity.http import (
 )
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 
-from .domain import MCP_PROTOCOL_REVISION
+from .domain import MCP_PROTOCOL_REVISION, MCPClientMetadata, MCPOAuthClientInput, OAuthTokenAuthMethod
 from .oauth_http import OAuthTransport
 
 _BEARER_PARAMETER = re.compile(r'(?P<name>[A-Za-z_][A-Za-z0-9_-]*)=(?:"(?P<quoted>[^"\\]*)"|(?P<token>[^,\s]+))')
@@ -38,6 +39,7 @@ class MCPOAuthError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class OAuthPreparation:
+    redirect_uri: str
     resource_url: str
     issuer_url: str
     authorization_endpoint: str
@@ -49,6 +51,44 @@ class OAuthPreparation:
     registration_access_token: str | None
     registration_client_uri: str | None
     scope: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class OAuthDiscovery:
+    resource_url: str
+    issuer_url: str
+    authorization_endpoint: str
+    token_endpoint: str
+    scope: str | None
+    metadata: dict[str, Any]
+    token_auth_methods: tuple[OAuthTokenAuthMethod, ...]
+
+
+def _metadata_issuer_matches(expected: str, actual: object) -> bool:
+    if actual == expected:
+        return True
+    parsed = urlsplit(expected)
+    if parsed.path not in {"", "/"}:
+        return False
+    # Root URLs share one metadata location; keep its declared spelling for callbacks.
+    alternate = urlunsplit(parsed._replace(path="/" if not parsed.path else ""))
+    return actual == alternate
+
+
+def issuer_key(issuer: str) -> str:
+    return hashlib.sha256(issuer.encode()).hexdigest()
+
+
+def oauth_redirect_uri(public_origin: str, key: str) -> str:
+    return f"{public_origin}/api/v1/oauth/mcp/callback/{key}"
+
+
+def oauth_client_metadata(public_origin: str, key: str, client_name: str) -> MCPClientMetadata:
+    return MCPClientMetadata(
+        client_id=f"{public_origin}/api/v1/oauth/mcp/client-metadata/{key}.json",
+        client_name=client_name,
+        redirect_uris=(oauth_redirect_uri(public_origin, key),),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,10 +119,41 @@ class MCPOAuthClient:
         self,
         endpoint_url: str,
         *,
-        client_metadata_url: str,
-        redirect_uri: str,
+        public_origin: str,
         client_name: str,
+        client: MCPOAuthClientInput | None = None,
     ) -> OAuthPreparation:
+        discovered = await self.discover(endpoint_url)
+        metadata = discovered.metadata
+        key = issuer_key(discovered.issuer_url)
+        identity = oauth_client_metadata(public_origin, key, client_name)
+        redirect_uri = identity.redirect_uris[0]
+        if client is not None and client.issuer_url != discovered.issuer_url:
+            raise MCPOAuthError("configured_issuer_mismatch")
+        registration = await self._client_registration(
+            metadata,
+            client=client,
+            supported_auth_methods=discovered.token_auth_methods,
+            client_metadata_url=identity.client_id,
+            redirect_uri=redirect_uri,
+            client_name=client_name,
+        )
+        return OAuthPreparation(
+            redirect_uri=redirect_uri,
+            resource_url=discovered.resource_url,
+            issuer_url=discovered.issuer_url,
+            authorization_endpoint=discovered.authorization_endpoint,
+            token_endpoint=discovered.token_endpoint,
+            registration_endpoint=registration.endpoint,
+            client_id=registration.client_id,
+            client_secret=registration.client_secret,
+            token_endpoint_auth_method=registration.token_auth_method,
+            registration_access_token=registration.access_token,
+            registration_client_uri=registration.management_uri,
+            scope=discovered.scope,
+        )
+
+    async def discover(self, endpoint_url: str) -> OAuthDiscovery:
         endpoint = await self._validate(endpoint_url)
         challenge = await self._challenge(endpoint)
         resource_metadata = await self._resource_metadata(endpoint, challenge.get("resource_metadata"))
@@ -90,8 +161,6 @@ class MCPOAuthClient:
             ProtectedResourceMetadata.model_validate(resource_metadata)
         except ValidationError as error:
             raise MCPOAuthError("invalid_resource_metadata") from error
-        if resource_metadata.get("resource") != endpoint:
-            raise MCPOAuthError("resource_mismatch")
         issuers = resource_metadata.get("authorization_servers")
         if not isinstance(issuers, list) or not issuers or not isinstance(issuers[0], str):
             raise MCPOAuthError("authorization_server_missing")
@@ -99,6 +168,13 @@ class MCPOAuthClient:
         metadata = await self._authorization_metadata(issuer)
         try:
             OAuthMetadata.model_validate(metadata)
+            for key in ("authorization_response_iss_parameter_supported", "client_id_metadata_document_supported"):
+                if key in metadata and not isinstance(metadata[key], bool):
+                    raise MCPOAuthError("invalid_authorization_metadata")
+            if "token_endpoint_auth_methods_supported" in metadata and not isinstance(
+                metadata["token_endpoint_auth_methods_supported"], list
+            ):
+                raise MCPOAuthError("invalid_authorization_metadata")
         except ValidationError as error:
             raise MCPOAuthError("invalid_authorization_metadata") from error
         authorization_endpoint = await self._metadata_endpoint(metadata, "authorization_endpoint")
@@ -114,24 +190,14 @@ class MCPOAuthClient:
             if isinstance(scopes, list) and len(scopes) <= 128 and all(isinstance(item, str) for item in scopes):
                 scope = " ".join(scopes) or None
         scope = _safe_scope(scope)
-        registration = await self._client_registration(
-            metadata,
-            client_metadata_url=client_metadata_url,
-            redirect_uri=redirect_uri,
-            client_name=client_name,
-        )
-        return OAuthPreparation(
-            resource_url=endpoint,
-            issuer_url=issuer,
+        return OAuthDiscovery(
+            resource_url=resource_metadata["resource"],
+            issuer_url=metadata["issuer"],
             authorization_endpoint=authorization_endpoint,
             token_endpoint=token_endpoint,
-            registration_endpoint=registration.endpoint,
-            client_id=registration.client_id,
-            client_secret=registration.client_secret,
-            token_endpoint_auth_method=registration.token_auth_method,
-            registration_access_token=registration.access_token,
-            registration_client_uri=registration.management_uri,
             scope=scope,
+            metadata=metadata,
+            token_auth_methods=_supported_token_auth_methods(metadata),
         )
 
     async def _client_registration(
@@ -141,12 +207,23 @@ class MCPOAuthClient:
         client_metadata_url: str,
         redirect_uri: str,
         client_name: str,
+        client: MCPOAuthClientInput | None,
+        supported_auth_methods: tuple[OAuthTokenAuthMethod, ...],
     ) -> _ClientRegistration:
+        if client is not None:
+            if client.token_endpoint_auth_method not in supported_auth_methods:
+                raise MCPOAuthError("unsupported_token_endpoint_auth_method")
+            secret = client.client_secret.get_secret_value() if client.client_secret is not None else None
+            return _ClientRegistration(None, client.client_id, secret, client.token_endpoint_auth_method, None, None)
         if metadata.get("client_id_metadata_document_supported") is True:
+            if "none" not in supported_auth_methods:
+                raise MCPOAuthError("unsupported_token_endpoint_auth_method")
             return _ClientRegistration(None, client_metadata_url, None, "none", None, None)
         endpoint = await self._metadata_endpoint(metadata, "registration_endpoint", required=False)
         if endpoint is None:
             raise MCPOAuthError("client_registration_unsupported")
+        if not supported_auth_methods:
+            raise MCPOAuthError("unsupported_token_endpoint_auth_method")
         response = await self._post_json(
             endpoint,
             {
@@ -154,11 +231,14 @@ class MCPOAuthClient:
                 "redirect_uris": [redirect_uri],
                 "grant_types": ["authorization_code", "refresh_token"],
                 "response_types": ["code"],
-                "token_endpoint_auth_method": "none",
+                "token_endpoint_auth_method": supported_auth_methods[0],
             },
         )
         try:
-            return _client_registration(response, endpoint=endpoint)
+            registration = _client_registration(response, endpoint=endpoint)
+            if registration.token_auth_method not in supported_auth_methods:
+                raise MCPOAuthError("unsupported_token_endpoint_auth_method")
+            return registration
         except MCPOAuthError:
             try:
                 await self.cleanup_registration_bundle(response)
@@ -172,13 +252,12 @@ class MCPOAuthClient:
         *,
         code: str,
         verifier: str,
-        redirect_uri: str,
     ) -> dict[str, Any]:
         client = self._token_client(
             preparation.client_id,
             preparation.client_secret,
             preparation.token_endpoint_auth_method,
-            redirect_uri=redirect_uri,
+            redirect_uri=preparation.redirect_uri,
         )
         try:
             # Authlib's dynamic httpx2 import hides its AsyncClient base from Pyright.
@@ -280,7 +359,9 @@ class MCPOAuthClient:
         )
         if response.status_code != 401:
             return {}
-        value = response.headers.get("www-authenticate", "")
+        value = response.headers.get("www-authenticate")
+        if value is None:
+            return {}
         if (
             len(value.encode()) > 8192
             or any(ord(character) < 32 or ord(character) == 127 for character in value)
@@ -296,12 +377,13 @@ class MCPOAuthClient:
         return parameters
 
     async def _resource_metadata(self, endpoint: str, advertised: str | None) -> dict[str, Any]:
-        candidates = [advertised] if advertised is not None else _resource_metadata_urls(endpoint)
-        for candidate in candidates:
-            if candidate is None:
-                continue
+        candidates = [(advertised, endpoint)] if advertised is not None else _resource_metadata_locations(endpoint)
+        for candidate, expected_resource in candidates:
             try:
-                return await self._get_json(candidate)
+                metadata = await self._get_json(candidate)
+                if metadata.get("resource") != expected_resource:
+                    raise MCPOAuthError("resource_mismatch")
+                return metadata
             except MCPOAuthError as error:
                 if advertised is not None or error.code != "metadata_not_found":
                     raise
@@ -310,19 +392,22 @@ class MCPOAuthClient:
     async def _authorization_metadata(self, issuer: str) -> dict[str, Any]:
         parsed = urlsplit(issuer)
         base = urlunsplit((parsed.scheme, parsed.netloc, "", "", ""))
+        if parsed.query:
+            raise MCPOAuthError("invalid_issuer_identifier")
         path = parsed.path.rstrip("/")
         candidates = (
             f"{base}/.well-known/oauth-authorization-server{path}",
+            f"{base}/.well-known/openid-configuration{path}",
             f"{issuer.rstrip('/')}/.well-known/openid-configuration",
         )
-        for candidate in candidates:
+        for candidate in dict.fromkeys(candidates):
             try:
                 metadata = await self._get_json(candidate)
             except MCPOAuthError as error:
                 if error.code == "metadata_not_found":
                     continue
                 raise
-            if metadata.get("issuer") != issuer:
+            if not _metadata_issuer_matches(issuer, metadata.get("issuer")):
                 raise MCPOAuthError("issuer_mismatch")
             return metadata
         raise MCPOAuthError("authorization_metadata_missing")
@@ -381,7 +466,8 @@ class MCPOAuthClient:
 
     async def _validate(self, endpoint: str) -> str:
         try:
-            return await self._policy.validate(endpoint, resolve_dns=True)
+            await self._policy.validate(endpoint, resolve_dns=True)
+            return endpoint
         except EndpointPolicyError as error:
             raise MCPOAuthError("unsafe_oauth_endpoint") from error
 
@@ -437,14 +523,13 @@ class MCPOAuthClient:
 def authorization_url(
     preparation: OAuthPreparation,
     *,
-    redirect_uri: str,
     state: str,
     code_verifier: str,
 ) -> str:
     client = OAuth2Client(
         session=None,
         client_id=preparation.client_id,
-        redirect_uri=redirect_uri,
+        redirect_uri=preparation.redirect_uri,
         scope=preparation.scope,
         code_challenge_method="S256",
     )
@@ -471,13 +556,22 @@ def _token_error(error: Exception) -> MCPOAuthError:
     return MCPOAuthError("invalid_oauth_response")
 
 
-def _resource_metadata_urls(endpoint: str) -> tuple[str, ...]:
+def _resource_metadata_locations(endpoint: str) -> tuple[tuple[str, str], ...]:
     parsed = urlsplit(endpoint)
     origin = urlunsplit((parsed.scheme, parsed.netloc, "", "", ""))
-    path = parsed.path or ""
-    path_location = f"{origin}/.well-known/oauth-protected-resource{path}"
+    path = parsed.path.rstrip("/")
+    path_location = urlunsplit(
+        (parsed.scheme, parsed.netloc, f"/.well-known/oauth-protected-resource{path}", parsed.query, "")
+    )
     root_location = f"{origin}/.well-known/oauth-protected-resource"
-    return (path_location,) if path_location == root_location else (path_location, root_location)
+    locations = ((path_location, endpoint), (root_location, origin))
+    return locations[:1] if path_location == root_location else locations
+
+
+def _supported_token_auth_methods(metadata: dict[str, Any]) -> tuple[OAuthTokenAuthMethod, ...]:
+    supported = metadata.get("token_endpoint_auth_methods_supported", ["client_secret_basic"])
+    methods: tuple[OAuthTokenAuthMethod, ...] = ("none", "client_secret_basic", "client_secret_post")
+    return tuple(method for method in methods if method in supported)
 
 
 def _optional_string(value: dict[str, Any], key: str) -> str | None:
@@ -493,7 +587,7 @@ def _client_registration(value: dict[str, Any], *, endpoint: str) -> _ClientRegi
     client_id = value.get("client_id")
     if not isinstance(client_id, str) or not client_id:
         raise MCPOAuthError("invalid_client_registration")
-    token_auth_method = value.get("token_endpoint_auth_method", "none")
+    token_auth_method = value.get("token_endpoint_auth_method", "client_secret_basic")
     if not isinstance(token_auth_method, str) or token_auth_method not in {
         "none",
         "client_secret_basic",

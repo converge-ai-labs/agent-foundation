@@ -81,7 +81,7 @@ Provider ingress uses the configured Application Account's adapter and authentic
 
 ## Traces and usage
 
-Telemetry export and trace-query access are separate. Export can be enabled for execution diagnostics without enabling the Service Trace Query API. Trace queries require an installed backend adapter and a trusted RunAttempt-backed authorizer; default composition does not provide that authorizer and remains fail-closed.
+Telemetry export and trace-query access are separate. Export can be enabled for execution diagnostics without enabling the Service Trace Query API. Trace queries require a configured installed backend adapter. Default composition supplies the Run/IAM-backed authorizer, checking `trace.read`, owning Run visibility, and retained correlation records. Disabled data reads still return the shared unavailable error; the authenticated query descriptor remains available to report the disabled state.
 
 A trace's correlation attributes are not permission evidence. Credentials for Langfuse or another backend do not by themselves authorize a Workspace user to query traces. Backend UI access has its own policy. Usage data describes observed consumption, not an invoice or a guarantee of final cost.
 

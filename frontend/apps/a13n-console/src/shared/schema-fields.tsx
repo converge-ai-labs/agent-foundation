@@ -37,8 +37,8 @@ function fieldSchema(
     };
   return value;
 }
-/** Apply fixed provider values to the submitted object as well as the form. */
-export function withSchemaConstants(
+/** Apply schema defaults and fixed values to the submitted object as well as the form. */
+export function withSchemaValues(
   schema: Record<string, unknown>,
   value: Record<string, unknown>,
 ) {
@@ -47,6 +47,16 @@ export function withSchemaConstants(
     for (const [key, definition] of Object.entries(schema.properties)) {
       const field = fieldSchema(definition, schema);
       if (Object.hasOwn(field, "const")) result[key] = field.const;
+      else if (result[key] === undefined && Object.hasOwn(field, "default"))
+        result[key] = field.default;
+      if (field.type === "object" && object(field.properties)) {
+        const nested = withSchemaValues(
+          field,
+          object(result[key]) ? result[key] : {},
+        );
+        if (Object.keys(nested).length || Object.hasOwn(result, key))
+          result[key] = nested;
+      }
     }
   }
   return result;
@@ -87,10 +97,26 @@ export function SchemaFields({
             : undefined;
         if (Object.hasOwn(field, "const")) return null;
         const current = value[key] ?? field.default;
-        if (
-          Array.isArray(field.enum) &&
-          field.enum.every((item) => typeof item === "string")
-        )
+        const options = Array.isArray(field.oneOf)
+          ? field.oneOf.flatMap((choice) =>
+              object(choice) && typeof choice.const === "string"
+                ? [
+                    {
+                      value: choice.const,
+                      label:
+                        typeof choice.title === "string"
+                          ? t(choice.title)
+                          : choice.const,
+                    },
+                  ]
+                : [],
+            )
+          : Array.isArray(field.enum)
+            ? field.enum.flatMap((item) =>
+                typeof item === "string" ? [{ value: item, label: item }] : [],
+              )
+            : [];
+        if (options.length)
           return (
             <ChoiceField
               key={key}
@@ -100,13 +126,25 @@ export function SchemaFields({
               required={required}
               onValueChange={(next) => change(key, next)}
               label={label}
-              options={field.enum.map((item) => ({
-                value: String(item),
-                label: String(item),
-              }))}
+              options={options}
               description={description}
             />
           );
+        if (field.type === "object" && object(field.properties)) {
+          if (!Object.keys(field.properties).length) return null;
+          return (
+            <fieldset key={key} className={styles.stack}>
+              <legend>{label}</legend>
+              <SchemaFields
+                schema={field}
+                value={object(current) ? current : {}}
+                onChange={(next) => change(key, next)}
+                secret={secret}
+                descriptions={descriptions}
+              />
+            </fieldset>
+          );
+        }
         if (field.type === "boolean")
           return (
             <Label key={key} className="flex items-center gap-2">

@@ -112,11 +112,11 @@ Each consuming package owns its cross-release-group Python requirements in its `
 
 The current cross-group requirements are:
 
-| Consumer            | Dependency                            | Published requirement                     |
-| ------------------- | ------------------------------------- | ----------------------------------------- |
-| Harness UI          | Environment, Harness, Stream Protocol | `>=0.0.5,<0.1.0`, identical for all three |
-| Harness UI, Harness | `a13n-logging`                        | `>=0.1.0,<0.2.0`                          |
-| Environment         | `a13n-envd-client`                    | `>=0.0.6,<0.1.0`                          |
+| Consumer            | Dependency                            | Published requirement                      |
+| ------------------- | ------------------------------------- | ------------------------------------------ |
+| Harness UI          | Environment, Harness, Stream Protocol | `>=0.0.11,<0.1.0`, identical for all three |
+| Harness UI, Harness | `a13n-logging`                        | `>=0.1.0,<0.2.0`                           |
+| Environment         | `a13n-envd-client`                    | `>=0.0.6,<0.1.0`                           |
 
 Independent release lines do not force consumer releases or lower-bound bumps for every dependency patch. Raise the minimum when the consumer needs newer APIs or behavior; a breaking compatibility change crosses the declared line and requires an explicit consumer update. These bounded requirements are reviewed compatibility policy, not a general semantic-versioning guarantee for all `0.x` releases. Python prerelease resolution follows standard package-manager rules.
 
@@ -126,7 +126,9 @@ Every release channel accepts a canonical stable `X.Y.Z` identity or RC `X.Y.Z-r
 
 An RC runs the owning release workflow, publishes its normal immutable artifacts to the owning registries, and creates a GitHub prerelease. It never advances a stable mutable selector: a13n Service and a13n-envd RCs do not modify the corresponding container `latest` tag, and a TypeScript SDK RC publishes under the npm `rc` dist-tag rather than `latest`. A stable release creates a normal GitHub Release and advances only the mutable `latest` selectors defined by its owning channel. The a13n Service CLI channel has no mutable selector for stable or RC releases. Standalone a13n-envd installers resolve only stable `release/a13n-envd-v*` releases by default; an RC requires an explicit canonical version.
 
-Generated notes for a stable release compare with the preceding stable tag and therefore exclude RC tags as comparison bases. Generated notes for an RC compare with the immediately preceding canonical release identity in that component channel, so the first RC follows the previous stable release and later RCs follow the preceding RC.
+Release notes are generated automatically when a component tag is published; no separate notes file or preparation step is required. Entries are selected from first-parent Git history by changed paths belonging to that component, including its shipped assets and component documentation, rather than repository-wide pull-request activity. PR labels at generation time determine categories and exclusions; historical unlabelled PRs and direct commits fall back to Conventional Commit titles and explicit breaking-change markers. PR labels are automatically inferred from titles and breaking-change markers on opening and readiness, preserving existing type labels without introducing a merge gate. Draft PRs skip code CI; readiness and subsequent code updates trigger the applicable checks independently of label presence. Optional reviewed notes may supplement the generated entries. The Full Changelog link remains a repository-wide comparison, not a component-filtered view.
+
+Comparison bases are canonical tags in the same component channel that are ancestors of the release tag. A stable release compares with the preceding stable tag, excluding RC tags as comparison bases. An RC compares with an earlier RC for the same target version when available, otherwise with the preceding stable tag. The first release without a comparison base uses initial-release notes rather than repository-wide history.
 
 ## Repository Automation
 

@@ -150,12 +150,18 @@ Rules:
 
 1. Creation and update submit replacement content for an approved source path. An existing destination is replaced; callers supply no expected digest. Resource-ID uniqueness and reference validation still apply to the candidate.
 2. Deletion removes the current non-root source without a digest precondition. An already absent source is a successful no-op.
-3. New content or removal is validated as part of a complete candidate generation before publication. Source paths, regular-file bounds, encoding, schema, and composition validation remain in force.
+3. New content or removal is validated as part of a complete candidate generation before publication. The replaced or removed source need not itself parse successfully; other current sources must form a valid candidate with the requested change. Source paths, regular-file bounds, encoding, schema, and composition validation remain in force. Validation alone returns a candidate digest without publishing or accepting it; publication repeats validation rather than treating that digest as a write precondition.
 4. Publication uses a same-directory temporary file, file sync, and atomic replacement, followed by directory sync. It does not compare the current source or generation to an earlier read, detach an existing file into a recovery directory, or compare written bytes to the subsequently loaded generation.
 5. A concurrent editor or App save is not a conflict: the last filesystem write to each selected path wins. Writes to unselected paths are not undone. Validation is not a transaction over concurrent edits; automatic reload accepts the latest valid generation and retains the prior accepted generation when current files are invalid.
 6. Direct editor writes do not need a Harness UI token or command. They participate through the same stable-read and generation-validation path.
 
 A completed source write is not a promise that its bytes remain current after another writer saves. Source digests remain read/provenance facts for accepted generations and frozen Runs, not file-write preconditions. Internal SQLite head selection and immutable-object integrity follow [Local Storage](03-local-storage-and-recovery.md); last-write-wins file publication does not change Thread, continuation, or execution concurrency contracts.
+
+### Agent Tool-Proxy Configuration and Preview
+
+Agent YAML owns tool-proxy groups. `config show` exposes a static preview for Agents with grouping configured: the Agent ID, authored grouping configuration, and configured MCP/Harness Plugin source identities with enabled membership and `active`, `dormant`, `direct`, or `disabled` presentation. It uses Agent creation defaults, not a particular Thread's sticky selections or live tools. Neither preview nor validation constructs MCP clients or discovers tools.
+
+Grouping semantics and immutable Run capture belong to [Agent composition](02-agent-composition-and-snapshots.md#tool-proxy-groups). Browser group editing is not implemented; the existing configuration source HTTP contract is unchanged.
 
 ## First-use Initialization
 

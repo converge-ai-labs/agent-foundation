@@ -1,4 +1,5 @@
 .card {
+  position: relative;
   color: var(--a13n-text);
   text-decoration: none;
   transition: background-color 150ms;
@@ -6,9 +7,23 @@
 .card:hover {
   background: var(--a13n-selected);
 }
-.card:focus-visible {
+.card:has(.cardLink:focus-visible) {
   outline: 2px solid var(--a13n-text);
   outline-offset: 3px;
+}
+.cardLink {
+  color: inherit;
+  text-decoration: none;
+}
+.cardLink::after {
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  content: "";
+}
+.card header > button {
+  position: relative;
+  z-index: 1;
 }
 .card > header {
   display: flex;
@@ -24,11 +39,7 @@
   font-weight: 500;
   overflow-wrap: anywhere;
 }
-.card code {
-  font: 12px var(--a13n-mono);
-  color: var(--a13n-secondary);
-  overflow-wrap: anywhere;
-}
+
 .card footer {
   display: flex;
   flex-wrap: wrap;
@@ -156,7 +167,6 @@
   gap: 12px;
   padding: 12px 20px;
   border-bottom: 1px solid var(--a13n-border);
-  font-family: var(--a13n-mono);
   font-size: 12px;
 }
 .fileHeading span {

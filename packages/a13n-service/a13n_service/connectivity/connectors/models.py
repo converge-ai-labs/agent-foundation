@@ -73,6 +73,11 @@ class ConnectorProviderRecord(ResourceCredential[str | None], Base):
     normalized_name: Mapped[str] = mapped_column(String(CASEFOLDED_NAME_MAX_LENGTH), nullable=False)
     type: Mapped[str] = mapped_column(String(64), nullable=False)
     configuration_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    setup_claims_json: Mapped[dict[str, int]] = mapped_column(
+        JSON, nullable=False, default=dict, server_default=text("'{}'")
+    )
+    directory_json: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON)
+    directory_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     created_by_type: Mapped[str] = mapped_column(String(32), nullable=False)

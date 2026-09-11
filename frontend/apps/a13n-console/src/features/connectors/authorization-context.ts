@@ -32,7 +32,7 @@ export function readAuthorization(): BrowserAuthorization | null {
       !/^[a-f0-9]{64}$/.test(value.browser_nonce) ||
       typeof value.workspace_id !== "string" ||
       typeof value.return_path !== "string" ||
-      !/^\/[a-z0-9-]+\/[a-z0-9-]+\/connectors$/.test(value.return_path) ||
+      !/^\/workspace\/[a-z0-9-]+\/connections$/.test(value.return_path) ||
       typeof value.connection_id !== "string" ||
       typeof value.attempt_id !== "string" ||
       typeof value.expires_at !== "string" ||

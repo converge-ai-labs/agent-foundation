@@ -23,6 +23,8 @@ An Observation is never execution, continuation, side-effect, result, checkpoint
 
 A Harness component owns a span only when its operation remains independently meaningful after Pydantic model and tool execution are removed. Otherwise it enriches the current owning span or retains the existing event.
 
+Built-in shell review and media-understanding Agents inherit the active Run's selected providers and content policy at invocation time. Their native Agent and model spans are descendants of the invoking tool span, including nested CodeAct tools, not new logical Harness Runs or model attempts. Disabled signals do not fall back to global Pydantic instrumentation. Same-Agent compaction retains native instrumentation beneath its compaction operation; explicit `summarize` records the supplied handoff rather than inventing a separate model call. Existing usage records remain authoritative for attribution; telemetry does not add usage records.
+
 ## Instrumentation Contract
 
 `HarnessInstrumentation` and its content-policy enum are frozen process-local public values. The following Python-like schema is conceptual and is not a wire format:
@@ -312,6 +314,18 @@ The logical-run Observation records terminal meaning through `a13n.run.outcome`,
 | unhandled or cleanup failure | `ERROR`     | Stable safe Harness classification only.                                                          |
 
 If cleanup fails while external cancellation is primary, `a13n.run.outcome` remains `cancelled` and the span status is `ERROR` to record cleanup failure; cancellation still propagates and no terminal result event is emitted. Harness-owned span status descriptions and events contain no raw exception message, provider response body, input, output, credential, or path. Harness-owned code does not record raw exception objects on its spans. This safe projection does not alter independently owned Pydantic exception events.
+
+### Returned Tool Operation Outcomes
+
+Pydantic AI remains the sole owner of tool spans and native exception, retry, deferral, and cancellation handling. On normal tool return, the Harness enriches that existing span with `a13n.tool.result.status=returned`. This means the call returned, not that an arbitrary business result succeeded.
+
+First-party file, shell, Web, document conversion, media, Mem0, and task/note error projectors, and the managed invocation preparation boundary, explicitly report recognized operation failures before converting them into model-visible results. Batch calls report failure when at least one item fails; an intentionally successful absence check or idempotent no-op is not an operation failure. Such a normal return instead records `a13n.tool.result.status=operation_failed` and sets only the owning tool span to OTel `ERROR`. It does not fail the enclosing Run, change events, raise an exception, trigger a retry, or alter the returned JSON. Unknown operation outcome remains unknown; this marker is not a claim that side effects did not occur.
+
+Trusted Host tool owners can explicitly report uncertainty with `a13n_harness.observation.record_tool_outcome_unknown()`. A normally returned call with uncertainty and no reported operation failure records `a13n.tool.result.status=outcome_unknown` without setting OTel `ERROR`. Uncertainty is not proof of failure or of absent side effects and never initiates a retry. An explicitly reported operation failure takes precedence when both are reported. `set_tool_span_attributes()` lets trusted owners attach their safe, bounded structural attributes to the same scoped tool span without reading SDK-specific span attributes. Callers own attribute meaning and content safety; neither helper parses returned business data.
+
+Bounded `a13n.tool.failure.code`, optional `a13n.tool.failure.reason`, and `a13n.tool.failure.stage` (`preparation` or `execution`) identify the first reported failure in the call. Code and reason accept only lowercase machine classifications of at most 64 characters; raw exception text, hints, paths, arguments, and other details are omitted. These fields and result status receive span-local `langfuse.observation.metadata.tool_*` aliases and remain available with `trace_content=none`. No synthetic exception event or status description is emitted.
+
+Reporting is scoped to the exact active native tool span selected by Harness instrumentation. Parallel and nested calls, including CodeAct calls, keep independent observations; nested failures do not mark their caller as failed. Disabled tracing, metrics-only instrumentation, and non-recording spans do not enrich an ambient Host span. Arbitrary business dictionaries, including `ok:false`, are never interpreted as failure reports. MCP error results and exceptions retain native Pydantic handling. Shell process exit codes, returned child Run status, and other domain data are not inferred to be tool-operation failures: the process or child remains the semantic owner. Observation errors do not replace tool execution or results.
 
 ## Events and Usage Boundary
 

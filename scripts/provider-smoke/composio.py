@@ -19,13 +19,12 @@ from a13n_service.connectivity.connectors.contracts import (
 )
 from a13n_service.connectivity.connectors.http import ConnectorHttpClient
 from a13n_service.connectivity.connectors.providers import built_in_connector_provider_registry
-from a13n_service.connectivity.connectors.providers.composio.configuration import ComposioConfiguration
+from a13n_service.connectivity.connectors.providers.composio.configuration import COMPOSIO_ENDPOINT
 from a13n_service.connectivity.connectors.providers.composio.runtime import ComposioToolCatalog
 from a13n_service.connectivity.connectors.providers.configuration import ApiKeyCredentials
 from a13n_service.connectivity.connectors.providers.discovery import DirectoryBudget, directory_items
-from a13n_service.connectivity.connectors.registry import ConnectorProviderImplementation
 from a13n_service.connectivity.connectors.tool_discovery import ToolCatalog, discover_tools
-from a13n_service.connectivity.connectors.validation import normalized_endpoint, required_object, required_string
+from a13n_service.connectivity.connectors.validation import required_object, required_string
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.endpoint_policy import EndpointPolicy
 from common import required_input, run_cli, show
@@ -44,9 +43,8 @@ async def inspect_connection(connection: ConnectorConnectionRuntime, *, require_
 
 async def authorize_account(args: argparse.Namespace, provider: ConnectorProviderRuntime) -> bool:
     print("\n[4] Discover hosted authorization options", flush=True)
-    connectors = await provider.discover_connectors()
-    connector = next((item for item in connectors if item.key == args.connector), None)
-    if connector is None or not connector.authentication_methods:
+    connector = await provider.discover_connector(args.connector)
+    if not connector.authentication_methods:
         raise ValueError(
             "No supported hosted auth configuration. Create an OAuth auth configuration in the provider dashboard first."
         )
@@ -79,10 +77,11 @@ async def authorize_account(args: argparse.Namespace, provider: ConnectorProvide
         raise ValueError("Provider returned no authorization URL; inspect the saved connection ID in its dashboard")
     input("Open the authorization URL in your browser, complete authorization, then press Enter to verify: ")
     if started.supports_verified_callback:
-        session_uri = getpass("session_uri from the callback (hidden; Enter uses the setup session handle): ").strip()
-        session_uri = session_uri or started.external_handle
+        session_uri = getpass("session_uri from the callback (hidden): ").strip()
         if not session_uri:
             raise ValueError("A session_uri is required to complete authorization")
+        if started.external_ref is None:
+            raise ValueError("Provider returned no connected account ID")
         inspection = await provider.complete_setup(
             session_uri=session_uri,
             context=context,
@@ -165,20 +164,17 @@ async def use_connection(
 
 
 async def browse_directory(
-    args: argparse.Namespace,
     key: str,
     client: httpx2.AsyncClient,
     policy: EndpointPolicy,
-    implementation: ConnectorProviderImplementation,
 ) -> set[str]:
-    endpoint = normalized_endpoint(args.endpoint or implementation.configuration_model.model_fields["endpoint"].default)
     credentials = ApiKeyCredentials(api_key=key)
     http = ConnectorHttpClient(client, policy, response_max_bytes=RESPONSE_MAX_BYTES)
     print("\n[0] Browse the upstream connector directory before selecting a connector", flush=True)
-    print(f"Endpoint: {endpoint}", flush=True)
+    print(f"Endpoint: {COMPOSIO_ENDPOINT}", flush=True)
     items = await directory_items(
         http,
-        endpoint=endpoint,
+        endpoint=COMPOSIO_ENDPOINT,
         api_key=credentials.api_key,
         path="/api/v3.1/toolkits",
         budget=DirectoryBudget(),
@@ -199,12 +195,12 @@ async def browse_directory(
 
 
 async def run(args: argparse.Namespace, key: str, client: httpx2.AsyncClient) -> int:
-    policy = EndpointPolicy.from_operator_allowlist(private_domains=args.allow_private_domain)
+    policy = EndpointPolicy()
     implementation = built_in_connector_provider_registry(
         client, policy, response_max_bytes=RESPONSE_MAX_BYTES
     ).require(args.provider)
     if args.connector is None and args.command in {"walkthrough", "discover"}:
-        available = await browse_directory(args, key, client, policy, implementation)
+        available = await browse_directory(key, client, policy)
         if args.command == "discover":
             return 0
         if not available:
@@ -213,9 +209,7 @@ async def run(args: argparse.Namespace, key: str, client: httpx2.AsyncClient) ->
         if args.connector not in available:
             raise ValueError("Selected connector is absent from the directory")
     args.connector = required_input(args.connector, "Connector/toolkit slug (for example github)")
-    configuration: JsonObject = {"enabled_toolkits": [args.connector]}
-    if args.endpoint:
-        configuration["endpoint"] = args.endpoint
+    configuration: JsonObject = {}
     configuration = implementation.validate_configuration(configuration)
     provider = implementation.configure(configuration, {"api_key": key})
     try:
@@ -227,18 +221,14 @@ async def run(args: argparse.Namespace, key: str, client: httpx2.AsyncClient) ->
             return 0
         if args.command == "discover":
             print("\nDiscover selected connector and available authentication configurations", flush=True)
-            connectors = await provider.discover_connectors()
-            show([connector.model_dump(mode="json") for connector in connectors])
-            if not connectors:
-                raise ValueError("Selected connector was not found in the provider directory")
+            connector = await provider.discover_connector(args.connector)
+            show(connector.model_dump(mode="json"))
             return 0
         if args.command == "inspect":
             return await use_connection(args, provider, None)
         http = ConnectorHttpClient(client, policy, response_max_bytes=RESPONSE_MAX_BYTES)
         credentials = ApiKeyCredentials(api_key=key)
-        catalog: ToolCatalog = ComposioToolCatalog(
-            http, ComposioConfiguration.model_validate(configuration), credentials, args.connector
-        )
+        catalog: ToolCatalog = ComposioToolCatalog(http, credentials, args.connector)
         print("\n[2] Preview tool definitions before account authorization", flush=True)
         tools, version = await discover_tools(catalog)
         print(f"Discovered {len(tools)} tools; catalog version: {version}", flush=True)
@@ -290,8 +280,6 @@ Complete authorization in your browser, then return to verify the account. Accou
 are printed for reuse; nothing is saved locally, and accounts are never auto-revoked.
 Call requires an existing authorized account and its exact provider user ID; it rechecks
 ownership, readiness, and the current tool definition before dispatch.
-Use --endpoint URL to select a compatible Composio endpoint.
-Private endpoints also need --allow-private-domain HOST (including localhost if used).
 Calls are never automatically retried. --execute authorizes the selected tool call.
 The scripts do not load .env files or use a13n Service authentication/storage.
 """,
@@ -311,14 +299,6 @@ The scripts do not load .env files or use a13n Service authentication/storage.
     parser.add_argument("--auth-config-id", help="Existing provider OAuth authentication configuration ID")
     parser.add_argument("--callback-url", help="Browser callback URL for Composio hosted authorization")
     parser.add_argument("--execute", action="store_true", help="Execute without the interactive CALL prompt")
-    parser.add_argument("--endpoint", help="Override the provider endpoint")
-    parser.add_argument(
-        "--allow-private-domain",
-        action="append",
-        default=[],
-        metavar="HOST",
-        help="Explicitly allow a private endpoint host",
-    )
     args = parser.parse_args()
     if args.command != "walkthrough":
         required = [] if args.command == "discover" else ["connector"]

@@ -35,10 +35,11 @@ from a13n_service.iam.resource_scope import visible_workspace
 from a13n_service.ids import new_object_id
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import transaction
-from a13n_service.temporal import Clock, utc_now
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .connection_access import external_error
-from .contracts import ConnectorProviderRuntime, ConnectorToolPage
+from .contracts import ConnectorProviderRuntime, ConnectorToolPage, DiscoveredConnector
+from .directory import directory_page
 from .discovery import validate_connectors
 from .domain import (
     Connector,
@@ -89,16 +90,69 @@ class ConnectorProviderService:
         return ConnectorProviderDefinitionCollection(items=self._adapters.definitions())
 
     async def discover_connectors(
-        self, *, actor: AuthenticatedActor, connector_provider_id: str
+        self,
+        *,
+        actor: AuthenticatedActor,
+        connector_provider_id: str,
+        query: str = "",
+        cursor: str | None = None,
+        limit: int = 100,
+        refresh: bool = False,
     ) -> ConnectorCollection:
-        async with self._discovery_runtime(actor=actor, connector_provider_id=connector_provider_id) as runtime:
-            discovered = await runtime.discover_connectors()
-            validate_connectors(discovered)
-        return ConnectorCollection(
-            items=tuple(
-                Connector(connector_provider_id=connector_provider_id, **item.model_dump()) for item in discovered
+        async with transaction(self._sessions) as session:
+            record = await require_connector_provider(
+                session, connector_provider_id, scope=await connector_actor_scope(session, actor)
             )
+            await authorize_provider(session, actor, record, manage=False)
+            if record.status != ConnectorProviderStatus.active.value:
+                raise ConnectorError(
+                    "connector_provider_disabled", "Connector Provider is disabled.", category=ErrorCategory.conflict
+                )
+            generation = record.credential_generation
+            cached = record.directory_json
+            refreshed_at = record.directory_updated_at
+        if refresh or cached is None or refreshed_at is None:
+            started_at = self._clock()
+            async with self._discovery_runtime(actor=actor, connector_provider_id=connector_provider_id) as runtime:
+                discovered = await runtime.discover_connectors()
+                validate_connectors(discovered)
+            async with transaction(self._sessions) as session:
+                current = await require_connector_provider(
+                    session, connector_provider_id, scope=await connector_actor_scope(session, actor), lock=True
+                )
+                await authorize_provider(session, actor, current, manage=False)
+                if (
+                    current.credential_generation != generation
+                    or current.status != ConnectorProviderStatus.active.value
+                ):
+                    raise ConnectorError(
+                        "connector_provider_changed",
+                        "Connector Provider changed during discovery.",
+                        category=ErrorCategory.conflict,
+                    )
+                # An older refresh must not replace a newer complete snapshot.
+                if current.directory_updated_at is None or assume_utc(current.directory_updated_at) < started_at:
+                    current.directory_json = [item.model_dump(mode="json") for item in discovered]
+                    current.directory_updated_at = started_at
+                cached = current.directory_json
+                refreshed_at = current.directory_updated_at
+        assert cached is not None and refreshed_at is not None
+        return directory_page(
+            tuple(DiscoveredConnector.model_validate(item) for item in cached),
+            provider_id=connector_provider_id,
+            refreshed_at=assume_utc(refreshed_at),
+            query=query,
+            cursor=cursor,
+            limit=limit,
         )
+
+    async def discover_connector(
+        self, *, actor: AuthenticatedActor, connector_provider_id: str, connector_key: str
+    ) -> Connector:
+        async with self._discovery_runtime(actor=actor, connector_provider_id=connector_provider_id) as runtime:
+            connector = await runtime.discover_connector(connector_key)
+            validate_connectors((connector,))
+        return Connector(connector_provider_id=connector_provider_id, **connector.model_dump())
 
     async def preview_tools(
         self, *, actor: AuthenticatedActor, connector_provider_id: str, connector_key: str
@@ -377,6 +431,8 @@ class ConnectorProviderService:
         try:
             validated = adapter.validate_credentials(credentials)
             record.replace_credential(canonical_json(validated), self._protector)
+            record.directory_json = None
+            record.directory_updated_at = None
         except SecretProtectionError as error:
             raise ConnectorError(
                 "credential_conflict",

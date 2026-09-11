@@ -4,16 +4,14 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 from a13n_service.connectivity.domain import AdapterKey, DisplayName, JsonObject
 from a13n_service.iam.domain import PrincipalRef
 
-from .contracts import ProviderAccess
-
-ConnectorKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9._-]{0,127}$")]
+from .contracts import ConnectorKey, ProviderAccess
 
 
 class StrictModel(BaseModel):
@@ -156,7 +154,7 @@ class ConnectorConnectionCommandRequest(StrictModel):
 class StartConnectorConnectionSetupRequest(ConnectorConnectionCommandRequest):
     browser_nonce: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$", repr=False)
     setup: JsonObject
-    return_path: str = Field(pattern=r"^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,2047}$")
+    return_path: str = Field(pattern=r"^/([A-Za-z0-9._~!$&'()*+,;=:@%-][A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,2046})?$")
 
 
 class ReconnectConnectorConnectionRequest(StartConnectorConnectionSetupRequest):
@@ -195,10 +193,13 @@ class Connector(StrictModel):
     key: ConnectorKey
     name: DisplayName
     description: str | None = Field(default=None, max_length=16_384)
+    logo_url: str | None = Field(default=None, max_length=2048)
+    unavailable_reason: str | None = Field(default=None, max_length=512)
     setup_schema: JsonObject
     authentication_methods: tuple[str, ...] = Field(max_length=32)
 
 
 class ConnectorCollection(StrictModel):
     items: tuple[Connector, ...] = Field(max_length=2_048)
-    next_cursor: None = None
+    next_cursor: str | None = None
+    refreshed_at: datetime | None = None

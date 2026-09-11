@@ -12,6 +12,7 @@ from pydantic_ai.providers import Provider
 
 from ..descriptions import default_candidate
 from ..domain import ModelCandidate
+from ..headers import validate_header_names
 from .types import CredentialFormat, ProviderConfiguration, RuntimeProvider, ValidatedProviderConfiguration
 
 
@@ -121,27 +122,38 @@ class ProviderIntegration:
     endpoint_configuration_field: str | None = None
     credential_validator: CredentialValidator | None = None
     model_discovery: ModelDiscoveryAdapter | None = None
+    reserved_headers: tuple[str, ...] = ("authorization",)
+    additional_endpoint_fields: tuple[str, ...] = ()
 
     def validate_configuration(
-        self, configuration: Mapping[str, object], *, credential_configured: bool
+        self,
+        configuration: Mapping[str, object],
+        *,
+        credential_configured: bool,
+        header_names: Sequence[str] = (),
     ) -> ValidatedProviderConfiguration:
         if self.credential_required and not credential_configured:
             raise ValueError("the provider credential is required")
         if self.credential_format is None and credential_configured:
             raise ValueError("the provider does not accept a credential")
-        normalized = self.configuration_model.model_validate(dict(configuration)).model_dump(
-            mode="json", exclude_none=True
+        parsed = self.configuration_model.model_validate(dict(configuration))
+        validate_header_names(
+            header_names,
+            reserved=(*self.reserved_headers, *parsed.authentication_headers),
         )
+        normalized = parsed.model_dump(mode="json", exclude_none=True, exclude_defaults=True)
         if self.credential_validator is not None:
             self.credential_validator(normalized, credential_configured)
-        endpoint = self.endpoint(normalized) if callable(self.endpoint) else self.endpoint
+        endpoint = parsed.base_url or (self.endpoint(normalized) if callable(self.endpoint) else self.endpoint)
         return ValidatedProviderConfiguration(configuration=normalized, endpoint=endpoint)
 
     def with_validated_endpoint(
         self, validated: ValidatedProviderConfiguration, endpoint: str
     ) -> ValidatedProviderConfiguration:
         normalized = dict(validated.configuration)
-        if self.endpoint_configuration_field is not None:
+        if "base_url" in normalized:
+            normalized["base_url"] = endpoint
+        elif self.endpoint_configuration_field is not None:
             normalized[self.endpoint_configuration_field] = endpoint
         return ValidatedProviderConfiguration(configuration=normalized, endpoint=endpoint)
 

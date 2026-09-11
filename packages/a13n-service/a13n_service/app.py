@@ -8,12 +8,11 @@ from contextlib import asynccontextmanager
 
 from anyio import fail_after
 from fastapi import FastAPI, HTTPException, Request, status
-from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from a13n_service import __version__
 from a13n_service.agents.router import router as agent_router
-from a13n_service.api import install_api_conventions
+from a13n_service.api import api_error_response, install_api_conventions
 from a13n_service.assets.router import router as asset_router
 from a13n_service.connectivity.accounts.router import router as account_router
 from a13n_service.connectivity.accounts.target_router import router as target_router
@@ -86,10 +85,11 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
         components or Components(),
     )
     trace_query_provider_registry = resolved_components.trace_query_provider_registry or TraceQueryProviderRegistry()
-    if "langfuse" in trace_query_provider_registry.keys():
-        raise ValueError("Trace Query provider key is already registered: langfuse")
+    for key in ("langfuse", "logfire"):
+        if key in trace_query_provider_registry.keys():
+            raise ValueError(f"Trace Query provider key is already registered: {key}")
     resolved_settings.validate_trace_query_configuration(
-        registered_provider_keys=(*trace_query_provider_registry.keys(), "langfuse")
+        registered_provider_keys=(*trace_query_provider_registry.keys(), "langfuse", "logfire")
     )
     process_status = ProcessStatus()
     serves_control_plane = owns_control(resolved_settings.service.role)
@@ -108,16 +108,20 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
         swagger_ui_oauth2_redirect_url="/api/docs/oauth2-redirect" if serves_control_plane else None,
     )
     app.state.settings = resolved_settings
-    install_api_conventions(app)
 
     @app.middleware("http")
     async def reject_during_drain(request: Request, call_next):
         if process_status.draining and request.url.path not in {"/healthz", "/readyz"}:
-            return JSONResponse(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                content={"detail": "service draining"},
+            return api_error_response(
+                request,
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "service_unavailable",
+                "The service is temporarily unavailable.",
             )
         return await call_next(request)
+
+    # Register identity last so it also wraps early middleware responses.
+    install_api_conventions(app)
 
     @app.get("/healthz", include_in_schema=False)
     async def health() -> dict[str, str]:

@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   Badge,
   Button,
+  ChoiceField,
   Empty,
   EmptyDescription,
   EmptyHeader,
@@ -22,8 +23,11 @@ const resources = [
 ];
 export function CollectionDemo({ t }: { t: Translate }) {
   const [query, setQuery] = useState("");
-  const visible = resources.filter((item) =>
-    item.name.toLowerCase().includes(query.toLowerCase()),
+  const [status, setStatus] = useState("all");
+  const visible = resources.filter(
+    (item) =>
+      item.name.toLowerCase().includes(query.toLowerCase()) &&
+      (status === "all" || item.status === status),
   );
   return (
     <>
@@ -36,14 +40,27 @@ export function CollectionDemo({ t }: { t: Translate }) {
           )}
         </p>
       </div>
-      <Input
-        type="search"
-        aria-label={t("Search resources", "搜索资源")}
-        placeholder={t("Search resources…", "搜索资源…")}
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        className="max-w-sm"
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          type="search"
+          aria-label={t("Search resources", "搜索资源")}
+          placeholder={t("Search resources…", "搜索资源…")}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          className="max-w-80"
+        />
+        <ChoiceField
+          label={t("Status", "状态")}
+          variant="filter"
+          value={status}
+          onValueChange={setStatus}
+          options={[
+            { value: "all", label: t("All", "全部") },
+            { value: "Ready", label: t("Ready", "就绪") },
+            { value: "Draft", label: t("Draft", "草稿") },
+          ]}
+        />
+      </div>
       {visible.length ? (
         <Table>
           <TableHeader>
@@ -79,7 +96,13 @@ export function CollectionDemo({ t }: { t: Translate }) {
               {t("Try another name.", "试试其他名称。")}
             </EmptyDescription>
           </EmptyHeader>
-          <Button variant="outline" onClick={() => setQuery("")}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setQuery("");
+              setStatus("all");
+            }}
+          >
             {t("Clear search", "清除搜索")}
           </Button>
         </Empty>

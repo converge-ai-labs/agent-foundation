@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UserMessage {
     #[serde(rename = "content")]
-    pub content: Box<models::Content>,
+    pub content: Box<models::Content1>,
 
     #[serde(
         rename = "encryptedValue",
@@ -42,7 +42,7 @@ pub struct UserMessage {
 
 impl UserMessage {
     /// A user message supporting text or multimodal content.
-    pub fn new(content: models::Content, id: String) -> UserMessage {
+    pub fn new(content: models::Content1, id: String) -> UserMessage {
         UserMessage {
             content: Box::new(content),
             encrypted_value: None,

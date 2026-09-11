@@ -25,21 +25,61 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from a13n_harness_ui import __version__
 from a13n_harness_ui.app import AppState, AppStatus, HarnessUiApp
+from a13n_harness_ui.configuration import ResourceMutationRequest
 from a13n_harness_ui.configuration.setup import SetupPreview, SetupPublication, SetupSelection
+from a13n_harness_ui.configuration.views import (
+    ConfigurationPublication,
+    ConfigurationSourceCatalog,
+    ConfigurationSourceView,
+    ConfigurationValidation,
+)
 from a13n_harness_ui.errors import HarnessUiError
-from a13n_harness_ui.live import LiveCursor, LiveEvent, SummaryCursor, SummaryInvalidation
+from a13n_harness_ui.host_files import (
+    DirectoryCreateRequest,
+    DirectoryPage,
+    FileCapture,
+    FileCaptureRequest,
+    FileDeleteRequest,
+    FileDeletion,
+    FileEntry,
+    FileMoveRequest,
+    FileReadRequest,
+    FileText,
+    FileWriteRequest,
+    NativePath,
+    Revision,
+)
+from a13n_harness_ui.host_git import (
+    Comparison,
+    GitCaptureRequest,
+    GitDiff,
+    GitDiffRequest,
+    GitDiscovery,
+    GitPath,
+    GitStatus,
+)
+from a13n_harness_ui.live import LiveCursor, LiveEvent, RootStreamEvent, SummaryCursor, SummaryInvalidation
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginStatus
 from a13n_harness_ui.setup import EnvironmentReadiness, SetupStatus
+from a13n_harness_ui.storage import ThreadConfiguration
 from a13n_harness_ui.surfaces import (
+    ChildControlResult,
+    ChildExecutionPage,
     DecisionBatchView,
     DecisionResponseBatch,
     NewThreadDefaults,
+    ProjectDefaultsApply,
+    ProjectDefaultsPreview,
     ProjectSummary,
+    ReviewView,
     RootControlResult,
     RootOperationView,
     RootRunReceipt,
     SurfaceModel,
+    TaskPage,
+    ThreadActivityPage,
+    ThreadConfigurationMutationInput,
     ThreadDetail,
     ThreadFocusSnapshot,
     ThreadMetadataMutation,
@@ -60,8 +100,8 @@ class ListenerFeatures(SurfaceModel):
     """Implemented browser facilities, not the eventual workbench roadmap."""
 
     shared_drafts: Literal[False] = False
-    host_files: Literal[False] = False
-    host_git: Literal[False] = False
+    host_files: bool = False
+    host_git: bool = False
     host_terminal: Literal[False] = False
 
 
@@ -85,6 +125,10 @@ class PromptRequest(SurfaceModel):
     attachment_ids: tuple[str, ...] = Field(default=(), max_length=8)
 
 
+class SteerRequest(SurfaceModel):
+    prompt: str = Field(min_length=1, max_length=256 * 1024)
+
+
 class SetupApplyRequest(SurfaceModel):
     selection: SetupSelection
 
@@ -97,6 +141,17 @@ class PreflightRequest(SurfaceModel):
 class FocusSnapshotFrame(SurfaceModel):
     kind: Literal["snapshot"] = "snapshot"
     snapshot: ThreadFocusSnapshot
+    resume_cursor: str | None
+
+
+class FocusReplayFrame(SurfaceModel):
+    kind: Literal["root_stream"] = "root_stream"
+    run_id: str
+    events: tuple[RootStreamEvent, ...] = Field(min_length=1, max_length=16)
+
+
+class FocusReadyFrame(SurfaceModel):
+    kind: Literal["ready"] = "ready"
     resume_cursor: str
 
 
@@ -287,10 +342,23 @@ def create_webui(
     async def app_error(_request: Request, exc: HarnessUiError) -> JSONResponse:
         code = exc.code
         status = 409 if "conflict" in code or "stale" in code or "preflight_required" in code else 400
-        if code == "request_too_large":
+        if code in {"request_too_large", "host_files_too_large", "host_git_too_large"}:
             status = 413
-        elif code in {"app_not_ready", "app_stopping"}:
+        elif code in {
+            "host_files_disabled",
+            "host_files_permission_denied",
+            "host_git_disabled",
+            "host_git_permission_denied",
+        }:
+            status = 403
+        elif code == "host_files_partial_failure":
+            status = 409
+        elif code == "host_files_io_error":
+            status = 500
+        elif code in {"app_not_ready", "app_stopping", "host_git_unavailable"}:
             status = 503
+        elif code == "host_git_timeout":
+            status = 504
         elif code.endswith("not_found"):
             status = 404
         return _error(code, str(exc), status)
@@ -319,8 +387,129 @@ def create_webui(
             version=__version__,
             build_revision=os.environ.get("A13N_HARNESS_UI_BUILD_REVISION"),
             app=await app().status(),
+            features=ListenerFeatures(host_files=app().shares_computer, host_git=app().host_git_available),
             host=host,
             access="api_key" if api_key is not None else "dangerous_bypass",
+        )
+
+    @server.get("/api/host/files/metadata", response_model=FileEntry)
+    async def host_file_metadata(path: NativePath) -> FileEntry:
+        return await app().host_file_metadata(path)
+
+    @server.get("/api/host/files", response_model=DirectoryPage)
+    async def host_files(
+        path: NativePath,
+        offset: Annotated[int, Query(ge=0, le=10000)] = 0,
+        limit: Annotated[int, Query(ge=1, le=500)] = 200,
+        revision: Revision | None = None,
+    ) -> DirectoryPage:
+        return await app().browse_host_files(path, offset=offset, limit=limit, revision=revision)
+
+    @server.get("/api/host/files/text", response_model=FileText)
+    async def host_file_text(path: NativePath, expected_revision: Revision | None = None) -> FileText:
+        return await app().read_host_file(FileReadRequest(path=path, expected_revision=expected_revision))
+
+    @server.put("/api/host/files/text", response_model=FileEntry, openapi_extra=_body(FileWriteRequest))
+    async def save_host_text(request: Request) -> FileEntry:
+        app().require_host_files()
+        return await app().write_host_file(await _document(request, FileWriteRequest))
+
+    @server.post("/api/host/files/directories", response_model=FileEntry, openapi_extra=_body(DirectoryCreateRequest))
+    async def create_host_directory(request: Request) -> FileEntry:
+        app().require_host_files()
+        return await app().create_host_directory(await _document(request, DirectoryCreateRequest))
+
+    @server.post("/api/host/files/move", response_model=FileEntry, openapi_extra=_body(FileMoveRequest))
+    async def move_host_file(request: Request) -> FileEntry:
+        app().require_host_files()
+        return await app().move_host_file(await _document(request, FileMoveRequest))
+
+    @server.post("/api/host/files/delete", response_model=FileDeletion, openapi_extra=_body(FileDeleteRequest))
+    async def delete_host_file(request: Request) -> FileDeletion:
+        app().require_host_files()
+        return await app().delete_host_file(await _document(request, FileDeleteRequest))
+
+    @server.put(
+        "/api/host/files/content",
+        response_model=FileEntry,
+        openapi_extra={
+            "requestBody": {
+                "required": True,
+                "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}},
+            }
+        },
+    )
+    async def upload_host_file(
+        request: Request, path: NativePath, expected_revision: Revision | None = None
+    ) -> FileEntry:
+        app().require_host_files()
+        data = bytearray()
+        async for chunk in request.stream():
+            if len(data) + len(chunk) > MAX_ATTACHMENT_BYTES:
+                raise HarnessUiError("Upload exceeds 10 MiB; no file was written.", code="request_too_large")
+            data.extend(chunk)
+        return await app().upload_host_file(path, bytes(data), expected_revision=expected_revision)
+
+    @server.get("/api/host/files/content")
+    async def download_host_file(path: NativePath, expected_revision: Revision | None = None) -> Response:
+        snapshot = await app().download_host_file(FileReadRequest(path=path, expected_revision=expected_revision))
+        return Response(
+            snapshot.data,
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{quote(Path(path).name, safe='')}",
+                "Content-Security-Policy": "sandbox; default-src 'none'",
+                "ETag": f'"{snapshot.entry.revision}"',
+            },
+        )
+
+    @server.post(
+        "/api/threads/{thread_id}/host-file-captures",
+        response_model=FileCapture,
+        openapi_extra=_body(FileCaptureRequest),
+    )
+    async def capture_host_file(thread_id: str, request: Request) -> FileCapture:
+        app().require_host_files()
+        return await app().capture_host_file(thread_id=thread_id, request=await _document(request, FileCaptureRequest))
+
+    @server.get("/api/host/git/repository", response_model=GitDiscovery)
+    async def host_repository(path: NativePath) -> GitDiscovery:
+        return await app().discover_host_repository(path)
+
+    @server.get("/api/host/git/status", response_model=GitStatus)
+    async def host_git_status(
+        path: NativePath,
+        include_ignored: bool = False,
+        offset: Annotated[int, Query(ge=0, le=10000)] = 0,
+        limit: Annotated[int, Query(ge=1, le=500)] = 200,
+        expected_revision: Revision | None = None,
+    ) -> GitStatus:
+        return await app().host_git_status(
+            path, include_ignored=include_ignored, offset=offset, limit=limit, expected_revision=expected_revision
+        )
+
+    @server.get("/api/host/git/diff", response_model=GitDiff)
+    async def host_git_diff(
+        repository_path: NativePath,
+        path: GitPath,
+        comparison: Comparison = "unstaged",
+        expected_revision: Revision | None = None,
+    ) -> GitDiff:
+        return await app().read_host_git_diff(
+            GitDiffRequest(
+                repository_path=repository_path, path=path, comparison=comparison, expected_revision=expected_revision
+            )
+        )
+
+    @server.post(
+        "/api/threads/{thread_id}/host-git-captures",
+        response_model=FileCapture,
+        openapi_extra=_body(GitCaptureRequest),
+    )
+    async def capture_host_git_diff(thread_id: str, request: Request) -> FileCapture:
+        app().require_host_git()
+        return await app().capture_host_git_diff(
+            thread_id=thread_id, request=await _document(request, GitCaptureRequest)
         )
 
     @server.get("/api/setup", response_model=SetupStatus)
@@ -382,17 +571,154 @@ def create_webui(
     async def cancel_login(session_id: str) -> LoginStatus:
         return await app().cancel_login(session_id)
 
+    @server.get("/api/configuration/sources", response_model=ConfigurationSourceCatalog)
+    async def configuration_sources() -> ConfigurationSourceCatalog:
+        return await app().configuration_sources()
+
+    @server.get("/api/configuration/sources/{relative_path:path}", response_model=ConfigurationSourceView)
+    async def configuration_source(relative_path: str) -> ConfigurationSourceView:
+        return await app().configuration_source(relative_path=relative_path)
+
+    @server.post(
+        "/api/configuration/validate",
+        response_model=ConfigurationValidation,
+        openapi_extra=_body(ResourceMutationRequest),
+    )
+    async def validate_source(
+        request: Request, path: Annotated[str, Query(min_length=1, max_length=4096)]
+    ) -> ConfigurationValidation:
+        return await app().validate_configuration(
+            relative_path=path, request=await _document(request, ResourceMutationRequest)
+        )
+
+    @server.put(
+        "/api/configuration/sources/{relative_path:path}",
+        response_model=ConfigurationPublication,
+        openapi_extra=_body(ResourceMutationRequest),
+    )
+    async def put_source(relative_path: str, request: Request) -> ConfigurationPublication:
+        result = await app().mutate_configuration(
+            relative_path=relative_path, request=await _document(request, ResourceMutationRequest)
+        )
+        return ConfigurationPublication.from_result(result)
+
+    @server.delete("/api/configuration/sources/{relative_path:path}", response_model=ConfigurationPublication)
+    async def delete_source(relative_path: str) -> ConfigurationPublication:
+        return ConfigurationPublication.from_result(await app().delete_configuration(relative_path=relative_path))
+
+    @server.post("/api/threads/preview", response_model=ThreadConfiguration, openapi_extra=_body(NewThreadDefaults))
+    async def preview_thread(request: Request) -> ThreadConfiguration:
+        return await app().preview_thread_configuration(defaults=await _document(request, NewThreadDefaults))
+
+    @server.patch(
+        "/api/threads/{thread_id}/configuration",
+        response_model=ThreadSummary,
+        openapi_extra=_body(ThreadConfigurationMutationInput),
+    )
+    async def patch_configuration(thread_id: str, request: Request) -> ThreadSummary:
+        return await app().patch_thread_configuration(
+            thread_id=thread_id, mutation=await _document(request, ThreadConfigurationMutationInput)
+        )
+
+    @server.get(
+        "/api/threads/{thread_id}/project-defaults",
+        response_model=ProjectDefaultsPreview,
+        response_model_exclude_unset=True,
+    )
+    async def project_defaults(thread_id: str) -> ProjectDefaultsPreview:
+        return await app().preview_project_defaults(thread_id=thread_id)
+
+    @server.post(
+        "/api/threads/{thread_id}/project-defaults",
+        response_model=ThreadSummary,
+        openapi_extra=_body(ProjectDefaultsApply),
+    )
+    async def apply_project_defaults(thread_id: str, request: Request) -> ThreadSummary:
+        return await app().apply_project_defaults(
+            thread_id=thread_id, request=await _document(request, ProjectDefaultsApply)
+        )
+
     @server.get("/api/projects", response_model=tuple[ProjectSummary, ...])
     async def projects() -> tuple[ProjectSummary, ...]:
         return await app().projects()
 
     @server.get("/api/threads/{thread_id}/decisions", response_model=DecisionBatchView | None)
-    async def decision_batch(thread_id: str) -> DecisionBatchView | None:
-        return await app().thread_decisions(thread_id=thread_id)
+    async def decision_batch(
+        thread_id: str, expected_continuation_id: Annotated[str | None, Query(max_length=80)] = None
+    ) -> DecisionBatchView | None:
+        return await app().thread_decisions(thread_id=thread_id, expected_continuation_id=expected_continuation_id)
 
     @server.get("/api/selectors", response_model=ThreadSelectorCatalog)
     async def selectors() -> ThreadSelectorCatalog:
         return await app().thread_selectors()
+
+    @server.get("/api/threads/activity", response_model=ThreadActivityPage)
+    async def thread_activity(
+        project_id: Annotated[str | None, Query(max_length=128)] = None,
+        query: Annotated[str | None, Query(max_length=512)] = None,
+        include_archived: bool = False,
+        cursor: Annotated[str | None, Query(max_length=2048)] = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    ) -> ThreadActivityPage:
+        return await app().thread_activity(
+            project_id=project_id, query=query, include_archived=include_archived, cursor=cursor, limit=limit
+        )
+
+    @server.get("/api/threads/{thread_id}/tasks", response_model=TaskPage)
+    async def tasks(
+        thread_id: str,
+        expected_continuation_id: Annotated[str | None, Query(max_length=80)] = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 100,
+    ) -> TaskPage:
+        return await app().thread_tasks(
+            thread_id=thread_id, expected_continuation_id=expected_continuation_id, limit=limit
+        )
+
+    @server.get("/api/threads/{thread_id}/children", response_model=ChildExecutionPage)
+    async def children(
+        thread_id: str,
+        execution_id: Annotated[str | None, Query(max_length=80)] = None,
+        cursor: Annotated[str | None, Query(max_length=2048)] = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    ) -> ChildExecutionPage:
+        return await app().query_child_executions(
+            parent_thread_id=thread_id, execution_id=execution_id, cursor=cursor, limit=limit
+        )
+
+    @server.get("/api/threads/{thread_id}/children/wait", response_model=ChildExecutionPage)
+    async def wait_children(
+        thread_id: str,
+        execution_id: Annotated[str | None, Query(max_length=80)] = None,
+        cursor: Annotated[str | None, Query(max_length=2048)] = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 20,
+        timeout_seconds: Annotated[float, Query(ge=0, le=60)] = 10,
+    ) -> ChildExecutionPage:
+        return await app().wait_child_executions(
+            parent_thread_id=thread_id,
+            execution_id=execution_id,
+            cursor=cursor,
+            limit=limit,
+            timeout_seconds=timeout_seconds,
+        )
+
+    @server.get("/api/threads/{thread_id}/children/{execution_id}/review", response_model=ReviewView)
+    async def child_review(thread_id: str, execution_id: str) -> ReviewView:
+        return await app().child_review(parent_thread_id=thread_id, execution_id=execution_id)
+
+    @server.post(
+        "/api/threads/{thread_id}/children/{execution_id}/steer",
+        response_model=ChildControlResult,
+        openapi_extra=_body(SteerRequest),
+    )
+    async def steer_child(thread_id: str, execution_id: str, request: Request) -> ChildControlResult:
+        body = await _document(request, SteerRequest)
+        return await app().steer_child_execution(
+            parent_thread_id=thread_id, execution_id=execution_id, message=body.prompt
+        )
+
+    @server.post("/api/threads/{thread_id}/children/{execution_id}/cancel", response_model=ChildControlResult)
+    async def cancel_child(thread_id: str, execution_id: str) -> ChildControlResult:
+        return await app().cancel_child_execution(parent_thread_id=thread_id, execution_id=execution_id)
 
     @server.get("/api/threads", response_model=ThreadPage)
     async def threads(
@@ -503,17 +829,20 @@ def create_webui(
         return await app().get_root_operation(receipt_id)
 
     @server.post(
-        "/api/operations/{receipt_id}/steer", response_model=RootControlResult, openapi_extra=_body(PromptRequest)
+        "/api/operations/{receipt_id}/steer", response_model=RootControlResult, openapi_extra=_body(SteerRequest)
     )
     async def steer(receipt_id: str, request: Request) -> RootControlResult:
-        document = await _document(request, PromptRequest)
+        document = await _document(request, SteerRequest)
         return await app().steer_root_operation(receipt_id=receipt_id, message=document.prompt)
 
     @server.post("/api/operations/{receipt_id}/cancel", response_model=RootControlResult)
     async def cancel(receipt_id: str) -> RootControlResult:
         return await app().cancel_root_operation(receipt_id)
 
-    @server.get("/api/threads/{thread_id}/events", response_model=FocusSnapshotFrame | FocusEventFrame | ResetFrame)
+    @server.get(
+        "/api/threads/{thread_id}/events",
+        response_model=FocusSnapshotFrame | FocusReplayFrame | FocusReadyFrame | FocusEventFrame | ResetFrame,
+    )
     async def focused(thread_id: str, after: Annotated[str | None, Query(max_length=1024)] = None) -> StreamingResponse:
         # Validate before response headers; the watch remains owned by the
         # generator task so cancellation closes delivery, never the root Run.
@@ -537,11 +866,23 @@ def create_webui(
                         yield _frame(
                             FocusSnapshotFrame(
                                 snapshot=watch.snapshot,
-                                resume_cursor=_cursor(
-                                    "focus", thread_id, watch.snapshot.epoch, watch.snapshot.cutover_sequence
+                                resume_cursor=(
+                                    _cursor("focus", thread_id, watch.snapshot.epoch, watch.snapshot.cutover_sequence)
+                                    if watch.root_stream is None
+                                    else None
                                 ),
                             )
                         )
+                        if watch.root_stream is not None:
+                            for batch in watch.root_stream.batches():
+                                yield _frame(FocusReplayFrame(run_id=watch.root_stream.summary.run_id, events=batch))
+                            yield _frame(
+                                FocusReadyFrame(
+                                    resume_cursor=_cursor(
+                                        "focus", thread_id, watch.snapshot.epoch, watch.snapshot.cutover_sequence
+                                    )
+                                )
+                            )
                         async for event in watch.events:
                             yield _frame(
                                 FocusEventFrame(

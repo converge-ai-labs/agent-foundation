@@ -64,6 +64,7 @@
   color: var(--a13n-secondary);
 }
 .code [data-slot="textarea"],
+.codeValue,
 .json {
   font-family: var(--a13n-mono);
   font-size: 12px;
@@ -96,7 +97,7 @@
 .toolbar {
   display: flex;
   justify-content: flex-start;
-  gap: 16px;
+  gap: 8px;
   margin-bottom: 0;
   align-items: end;
   flex-wrap: wrap;
@@ -136,8 +137,14 @@
 .resourceIdentity {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
   min-width: 180px;
+}
+.resourceIdentityLink {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
 }
 .resourceIcon {
   display: inline-grid;
@@ -154,8 +161,13 @@
   min-width: 0;
 }
 .resourceCopy strong {
+  display: block;
+  max-width: min(420px, 40vw);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-weight: 500;
-  font-size: 13px;
+  font-size: 14px;
 }
 .resourceCopy small {
   max-width: 420px;
@@ -215,14 +227,25 @@
 .filters {
   display: flex;
   flex-wrap: wrap;
-  align-items: end;
-  gap: 16px;
-  margin-bottom: 24px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
 }
 .filters > [data-slot="field"] {
-  flex: 0 1 220px;
+  flex: 0 1 auto;
   min-width: 0;
 }
 .filters > [data-slot="field"]:has(input[type="search"]) {
-  flex: 1 1 240px;
+  flex: 0 1 320px;
+}
+
+.codeValue {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+}
+
+.schemaFields:empty {
+  display: none;
 }

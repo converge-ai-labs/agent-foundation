@@ -17,8 +17,8 @@ from a13n_service.storage import short_session, transaction
 from sqlalchemy import select
 
 from .conftest import NOW, WORKSPACE_ID, actor
+from .connector_helpers import AllowEndpoint
 from .test_connector_service import create_connection
-from .test_openconnector_catalog import AllowEndpoint
 
 pytestmark = pytest.mark.anyio
 NONCE = "b" * 64
@@ -39,9 +39,31 @@ async def composio_setup(composio_sessions, credential_protector):
     async def respond(request):
         requests.append(request)
         path = request.url.path
-        if path.endswith("/toolkits"):
+        if path.endswith("/toolkits") or path.endswith("/toolkits/github"):
+            toolkit = {
+                "slug": "github",
+                "name": "GitHub",
+                "meta": {"version": "20260903_01"},
+                "auth_config_details": [
+                    {"mode": "OAUTH2", "fields": {"connected_account_initiation": {"required": [], "optional": []}}}
+                ],
+            }
+            return httpx2.Response(200, json={"items": [toolkit]} if path.endswith("/toolkits") else toolkit)
+        if path.endswith("/tools"):
             return httpx2.Response(
-                200, json={"items": [{"slug": "github", "name": "GitHub", "meta": {"version": "20260903_01"}}]}
+                200,
+                json={
+                    "items": [
+                        {
+                            "slug": "GITHUB_GET_USER",
+                            "toolkit": {"slug": "github"},
+                            "version": "20260903_01",
+                            "description": "Read current user",
+                            "input_parameters": {"type": "object", "properties": {}},
+                            "output_parameters": {"type": "object"},
+                        }
+                    ]
+                },
             )
         if path.endswith("/auth_configs"):
             return httpx2.Response(
@@ -57,9 +79,9 @@ async def composio_setup(composio_sessions, credential_protector):
             state["user_id"] = json.loads(request.content)["user_id"]
             async with short_session(sessions) as session:
                 attempt = await session.scalar(
-                    select(ConnectorSetupAttemptRecord).order_by(ConnectorSetupAttemptRecord.created_at.desc())
+                    select(ConnectorSetupAttemptRecord).order_by(ConnectorSetupAttemptRecord.generation.desc())
                 )
-                assert attempt.status == "starting" and attempt.claim_owner and attempt.claim_generation == 1
+                assert attempt.status == "starting" and attempt.claim_owner and attempt.claim_generation >= 1
                 assert attempt.browser_binding_digest and NONCE not in attempt.browser_binding_digest
             if state.get("lose_link"):
                 raise httpx2.ReadTimeout("response lost")
@@ -94,8 +116,14 @@ async def composio_setup(composio_sessions, credential_protector):
             },
         )
 
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
+    async def response(request):
+        result = await respond(request)
+        hook = state.get("response_hook")
+        return await hook(request, result) if hook is not None else result
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(response)) as http:
         registry = built_in_connector_provider_registry(http, AllowEndpoint(), response_max_bytes=1024 * 1024)
+        state["registry"] = registry
         providers = ConnectorProviderService(sessions, registry, credential_protector, clock=lambda: now[0])
         service = ConnectorConnectionService(
             sessions,
@@ -113,7 +141,7 @@ async def composio_setup(composio_sessions, credential_protector):
             request=CreateConnectorProviderRequest(
                 name="Composio",
                 type="composio",
-                configuration={"enabled_toolkits": ["github"]},
+                configuration={},
                 credentials={"api_key": "secret"},
             ),
         )
@@ -337,3 +365,38 @@ async def test_late_redemption_owner_cannot_publish_after_lease_expires(composio
     assert await reconciler.reconcile_once()
     assert (await service.get(actor=actor(), connection_id=connection.id)).status == "ready"
     assert state["redeem_calls"] == 1
+
+
+@pytest.mark.parametrize(
+    "composio_sessions", ["connectivity_sessions", "postgres_connectivity_sessions"], indirect=True
+)
+async def test_new_idempotency_key_cannot_start_same_setup_generation(composio_setup):
+    service, connection, _, sessions, _, state, _ = composio_setup
+    first = await launch(service, connection)
+    for nonce in (NONCE, "c" * 64):
+        with pytest.raises(ConnectorError) as raised:
+            await service.start_setup(
+                actor=actor(),
+                connection_id=connection.id,
+                expected_version=connection.version,
+                idempotency_key=f"different-{nonce[0]}",
+                setup={"auth_config_id": "ac_test", "toolkit_version": "20260903_01"},
+                return_path="/connections",
+                browser_nonce=nonce,
+            )
+        assert raised.value.code == "setup_already_started"
+    assert state["link_calls"] == 1
+    assert (await launch(service, connection)).attempt_id == first.attempt_id
+    async with short_session(sessions) as session:
+        attempts = list(await session.scalars(select(ConnectorSetupAttemptRecord)))
+        assert len(attempts) == 1
+    restarted = await service.reconnect(
+        actor=actor(),
+        connection_id=connection.id,
+        expected_version=connection.version,
+        idempotency_key="explicit-restart",
+        setup={"auth_config_id": "ac_test", "toolkit_version": "20260903_01"},
+        return_path="/connections",
+        browser_nonce=NONCE,
+    )
+    assert restarted.attempt_id != first.attempt_id and state["link_calls"] == 2

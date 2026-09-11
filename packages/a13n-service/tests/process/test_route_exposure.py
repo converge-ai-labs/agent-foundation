@@ -42,7 +42,15 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
         "SkillPackageManifest",
         "SkillRevision",
     } <= schemas.keys()
-    assert {"Observation", "TraceCollection", "TraceDetail", "TraceSummary"} <= schemas.keys()
+    assert {
+        "Observation",
+        "ObservationCollection",
+        "Trace",
+        "TraceCollection",
+        "TraceCorrelation",
+        "TraceQueryDescriptor",
+    } <= schemas.keys()
+    assert {"TraceDetail", "TraceSummary"}.isdisjoint(schemas)
     assert {
         "Ingress",
         "Route",
@@ -57,6 +65,8 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert request(app, "/docs/oauth2-redirect").status_code == 404
     assert "/api/v1/workspaces/{workspace}/traces" in document["paths"]
     assert "/api/v1/workspaces/{workspace}/traces/{trace_id}" in document["paths"]
+    assert "/api/v1/workspaces/{workspace}/traces/{trace_id}/observations" in document["paths"]
+    assert "/api/v1/workspaces/{workspace}/trace-query" in document["paths"]
     assert "/api/v1/plugins" not in document["paths"]
     assert "/api/v1/plugins/{plugin_id}/versions" not in document["paths"]
     assert "/api/v1/plugin-versions/{plugin_version_id}" not in document["paths"]
@@ -109,7 +119,7 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert "/api/v1/application-accounts/{account_id}/targets/{target_id}" in document["paths"]
     assert "/api/v1/workspaces/{workspace}/mcp-connections" in document["paths"]
     assert "/api/v1/mcp-connections/{connection_id}/authorize" in document["paths"]
-    assert "/api/v1/oauth/mcp/client-metadata.json" in document["paths"]
+    assert "/api/v1/oauth/mcp/client-metadata/{issuer_key}.json" in document["paths"]
     connectivity_paths = {
         path: operations
         for path, operations in document["paths"].items()
@@ -150,7 +160,14 @@ def test_unknown_api_paths_return_json_errors() -> None:
         response = request(app, path)
         assert response.status_code == 404
         assert response.headers["content-type"].startswith("application/json")
-        assert response.json() == {"detail": "API route not found"}
+        assert response.json() == {
+            "error": {
+                "code": "resource_not_found",
+                "message": "The requested resource was not found.",
+                "details": {},
+                "request_id": response.headers["X-Request-ID"],
+            }
+        }
 
 
 def test_worker_role_serves_only_operational_endpoints() -> None:

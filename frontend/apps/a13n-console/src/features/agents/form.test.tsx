@@ -46,12 +46,18 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function editor(readonly = false) {
+function editor(
+  readonly = false,
+  connectorTools: NonNullable<
+    ReturnType<typeof initialConfig>["connector_tools"]
+  > = [],
+) {
   const submit = vi.fn();
   const initial = {
     ...initialConfig("Research"),
     model: { model_key: "research" },
     instructions: "Check the evidence.",
+    connector_tools: connectorTools,
     skills: [{ skill_key: "sources", version: 3 }],
     secret_requirements: [{ key: "research-token", required: true }],
   };
@@ -95,6 +101,13 @@ it("edits capabilities inline and preserves pinned versions, hidden configuratio
   );
   await user.click(screen.getByRole("button", { name: "Add Connectors" }));
   await user.click(screen.getByRole("checkbox", { name: "Repository" }));
+  await user.type(
+    screen.getAllByRole("textbox", { name: "Tool names" })[1],
+    "profile.read, search",
+  );
+  await user.click(
+    screen.getByRole("checkbox", { name: "Load tools on demand" }),
+  );
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   expect(screen.queryByRole("alert")?.textContent).toBeUndefined();
   expect(submit).toHaveBeenCalledWith(
@@ -108,7 +121,13 @@ it("edits capabilities inline and preserves pinned versions, hidden configuratio
           tools: ["search", "read"],
         },
       ],
-      connector_tools: [{ connector_connection_id: "conn_0123456789abcdef" }],
+      connector_tools: [
+        {
+          connector_connection_id: "conn_0123456789abcdef",
+          tools: ["profile.read", "search"],
+          defer_loading: true,
+        },
+      ],
     }),
     "Research",
     "",
@@ -116,18 +135,20 @@ it("edits capabilities inline and preserves pinned versions, hidden configuratio
   );
 });
 
-it("keeps inline capability controls inert for readers", async () => {
-  const user = userEvent.setup(),
-    { submit } = editor(true);
-  await user.click(screen.getByRole("button", { name: "Add MCP connections" }));
-  expect(screen.queryByRole("checkbox", { name: "Web tools" })).toBeNull();
+it("shows configuration as readable values for readers", () => {
+  const { submit } = editor(true);
   expect(
-    (
-      screen.getByRole("button", {
-        name: "Remove Source verification",
-      }) as HTMLButtonElement
-    ).matches(":disabled"),
-  ).toBe(true);
+    screen.queryByRole("button", { name: "Add MCP connections" }),
+  ).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Remove Source verification" }),
+  ).toBeNull();
+  expect(
+    screen.queryByRole("textbox", { name: "System instructions" }),
+  ).toBeNull();
+  expect(
+    screen.getByRole("group", { name: "System instructions" }).textContent,
+  ).toContain("Check the evidence.");
   expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
   expect(submit).not.toHaveBeenCalled();
 });
@@ -157,3 +178,51 @@ it("requires saving the instruction draft before trial or agent management", asy
     7,
   );
 });
+
+it("distinguishes an empty Connector allowlist from all tools", async () => {
+  const user = userEvent.setup(),
+    { submit } = editor();
+  await user.click(screen.getByRole("button", { name: "Add Connectors" }));
+  await user.click(screen.getByRole("checkbox", { name: "Repository" }));
+  await user.click(screen.getByRole("checkbox", { name: "Select no tools" }));
+  expect(
+    (screen.getByRole("textbox", { name: "Tool names" }) as HTMLInputElement)
+      .disabled,
+  ).toBe(true);
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(submit.mock.calls[0][0].connector_tools[0].tools).toEqual([]);
+  await user.click(screen.getByRole("checkbox", { name: "Select no tools" }));
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(submit.mock.calls[1][0].connector_tools[0].tools).toBeNull();
+});
+
+it.each([
+  { tools: null, label: "All tools" },
+  { tools: [], label: "No tools" },
+  { tools: ["profile.read"], label: "profile.read" },
+])(
+  "preserves read-only Connector tool selection: $label",
+  async ({ tools, label }) => {
+    const user = userEvent.setup();
+    const { submit } = editor(true, [
+      {
+        connector_connection_id: "conn_0123456789abcdef",
+        tools,
+        defer_loading: true,
+      },
+    ]);
+    expect(screen.queryByRole("textbox", { name: "Tool names" })).toBeNull();
+    expect(
+      screen.getByRole("group", { name: "Tool names" }).textContent,
+    ).toContain(label);
+    for (const name of ["Select no tools", "Load tools on demand"]) {
+      const checkbox = screen.getByRole("checkbox", { name });
+      expect(checkbox.getAttribute("aria-disabled")).toBe("true");
+      const checked = checkbox.getAttribute("aria-checked");
+      await user.click(checkbox);
+      expect(checkbox.getAttribute("aria-checked")).toBe(checked);
+    }
+    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+    expect(submit).not.toHaveBeenCalled();
+  },
+);

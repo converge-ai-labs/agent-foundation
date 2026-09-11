@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
 class CredentialFormat(StrEnum):
@@ -17,9 +18,13 @@ class CredentialFormat(StrEnum):
 class ProviderConfiguration(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    base_url: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2048)] | None = Field(
+        default=None, title="Base URL", description="Leave empty to use the Provider's default endpoint."
+    )
 
-class EmptyProviderConfiguration(ProviderConfiguration):
-    pass
+    @property
+    def authentication_headers(self) -> tuple[str, ...]:
+        return ()
 
 
 class ValidatedProviderConfiguration(BaseModel):
@@ -34,4 +39,5 @@ class RuntimeProvider:
     type: str
     configuration: dict[str, object]
     endpoint: str | None
-    credential: str | None
+    credential: str | None = field(repr=False)
+    extra_headers: dict[str, str] = field(default_factory=dict, repr=False)

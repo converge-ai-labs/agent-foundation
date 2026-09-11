@@ -13,6 +13,15 @@ use crate::generated::{apis::ResponseContent, models};
 use reqwest;
 use serde::{Deserialize, Serialize, de::Error as _};
 
+/// struct for typed errors of method [`get_workspaces_workspace_trace_query`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum GetWorkspacesWorkspaceTraceQueryError {
+    Status400(models::ErrorResponse),
+    DefaultResponse(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
 /// struct for typed errors of method [`get_workspaces_workspace_traces`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -31,6 +40,82 @@ pub enum GetWorkspacesWorkspaceTracesTraceIdError {
     UnknownValue(serde_json::Value),
 }
 
+/// struct for typed errors of method [`get_workspaces_workspace_traces_trace_id_observations`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum GetWorkspacesWorkspaceTracesTraceIdObservationsError {
+    Status400(models::ErrorResponse),
+    DefaultResponse(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
+pub async fn get_workspaces_workspace_trace_query(
+    configuration: &configuration::Configuration,
+    workspace: &str,
+) -> Result<Response<models::TraceQueryDescriptor>, Error<GetWorkspacesWorkspaceTraceQueryError>> {
+    // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_workspace = workspace;
+
+    let uri_str = format!(
+        "{}/api/v1/workspaces/{workspace}/trace-query",
+        configuration.base_path,
+        workspace = crate::generated::apis::urlencode(p_path_workspace)
+    );
+    let mut req_builder = configuration.client.request(reqwest::Method::GET, &uri_str);
+
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+    if let Some(ref token) = configuration.bearer_access_token {
+        req_builder = req_builder.bearer_auth(token.to_owned());
+    };
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content)
+                .map(|data| Response {
+                    data,
+                    status,
+                    headers,
+                })
+                .map_err(Error::from),
+            ContentType::Text => {
+                return Err(Error::from(serde_json::Error::custom(
+                    "Received `text/plain` content type response that cannot be converted to `models::TraceQueryDescriptor`",
+                )));
+            }
+            ContentType::Unsupported(unknown_type) => {
+                return Err(Error::from(serde_json::Error::custom(format!(
+                    "Received `{unknown_type}` content type response that cannot be converted to `models::TraceQueryDescriptor`"
+                ))));
+            }
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<GetWorkspacesWorkspaceTraceQueryError> =
+            serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(Box::new(ResponseContent {
+            status,
+            headers,
+            content,
+            entity,
+        })))
+    }
+}
+
 pub async fn get_workspaces_workspace_traces(
     configuration: &configuration::Configuration,
     workspace: &str,
@@ -43,6 +128,7 @@ pub async fn get_workspaces_workspace_traces(
     thread_id: Option<&str>,
     run_id: Option<&str>,
     run_attempt_id: Option<&str>,
+    view: Option<&str>,
 ) -> Result<Response<models::TraceCollection>, Error<GetWorkspacesWorkspaceTracesError>> {
     // add a prefix to parameters to efficiently prevent name collisions
     let p_path_workspace = workspace;
@@ -55,6 +141,7 @@ pub async fn get_workspaces_workspace_traces(
     let p_query_thread_id = thread_id;
     let p_query_run_id = run_id;
     let p_query_run_attempt_id = run_attempt_id;
+    let p_query_view = view;
 
     let uri_str = format!(
         "{}/api/v1/workspaces/{workspace}/traces",
@@ -89,6 +176,9 @@ pub async fn get_workspaces_workspace_traces(
     }
     if let Some(ref param_value) = p_query_run_attempt_id {
         req_builder = req_builder.query(&[("run_attempt_id", &param_value.to_string())]);
+    }
+    if let Some(ref param_value) = p_query_view {
+        req_builder = req_builder.query(&[("view", &param_value.to_string())]);
     }
     if let Some(ref user_agent) = configuration.user_agent {
         req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
@@ -147,7 +237,7 @@ pub async fn get_workspaces_workspace_traces_trace_id(
     trace_id: &str,
     workspace: &str,
     view: Option<&str>,
-) -> Result<Response<models::TraceDetail>, Error<GetWorkspacesWorkspaceTracesTraceIdError>> {
+) -> Result<Response<models::Trace>, Error<GetWorkspacesWorkspaceTracesTraceIdError>> {
     // add a prefix to parameters to efficiently prevent name collisions
     let p_path_trace_id = trace_id;
     let p_path_workspace = workspace;
@@ -195,18 +285,106 @@ pub async fn get_workspaces_workspace_traces_trace_id(
                 .map_err(Error::from),
             ContentType::Text => {
                 return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::TraceDetail`",
+                    "Received `text/plain` content type response that cannot be converted to `models::Trace`",
                 )));
             }
             ContentType::Unsupported(unknown_type) => {
                 return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::TraceDetail`"
+                    "Received `{unknown_type}` content type response that cannot be converted to `models::Trace`"
                 ))));
             }
         }
     } else {
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceTracesTraceIdError> =
+            serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(Box::new(ResponseContent {
+            status,
+            headers,
+            content,
+            entity,
+        })))
+    }
+}
+
+pub async fn get_workspaces_workspace_traces_trace_id_observations(
+    configuration: &configuration::Configuration,
+    trace_id: &str,
+    workspace: &str,
+    view: Option<&str>,
+    limit: Option<i32>,
+    cursor: Option<&str>,
+) -> Result<
+    Response<models::ObservationCollection>,
+    Error<GetWorkspacesWorkspaceTracesTraceIdObservationsError>,
+> {
+    // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_trace_id = trace_id;
+    let p_path_workspace = workspace;
+    let p_query_view = view;
+    let p_query_limit = limit;
+    let p_query_cursor = cursor;
+
+    let uri_str = format!(
+        "{}/api/v1/workspaces/{workspace}/traces/{trace_id}/observations",
+        configuration.base_path,
+        trace_id = crate::generated::apis::urlencode(p_path_trace_id),
+        workspace = crate::generated::apis::urlencode(p_path_workspace)
+    );
+    let mut req_builder = configuration.client.request(reqwest::Method::GET, &uri_str);
+
+    if let Some(ref param_value) = p_query_view {
+        req_builder = req_builder.query(&[("view", &param_value.to_string())]);
+    }
+    if let Some(ref param_value) = p_query_limit {
+        req_builder = req_builder.query(&[("limit", &param_value.to_string())]);
+    }
+    if let Some(ref param_value) = p_query_cursor {
+        req_builder = req_builder.query(&[("cursor", &param_value.to_string())]);
+    }
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+    if let Some(ref token) = configuration.bearer_access_token {
+        req_builder = req_builder.bearer_auth(token.to_owned());
+    };
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content)
+                .map(|data| Response {
+                    data,
+                    status,
+                    headers,
+                })
+                .map_err(Error::from),
+            ContentType::Text => {
+                return Err(Error::from(serde_json::Error::custom(
+                    "Received `text/plain` content type response that cannot be converted to `models::ObservationCollection`",
+                )));
+            }
+            ContentType::Unsupported(unknown_type) => {
+                return Err(Error::from(serde_json::Error::custom(format!(
+                    "Received `{unknown_type}` content type response that cannot be converted to `models::ObservationCollection`"
+                ))));
+            }
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<GetWorkspacesWorkspaceTracesTraceIdObservationsError> =
             serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,

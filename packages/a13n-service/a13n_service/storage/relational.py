@@ -197,3 +197,19 @@ def is_database_unavailable(error: BaseException) -> bool:
         sqlstate = error.orig.sqlstate
         return sqlstate is None or sqlstate.startswith("08") or sqlstate in {"53300", "57P01", "57P02", "57P03"}
     return False
+
+
+def is_database_contention(error: BaseException) -> bool:
+    """Recognize transactions aborted by PostgreSQL contention or query deadlines.
+
+    Only a fresh transactional admission/sweep may retry these failures after its
+    transaction context rolls back. This never authorizes external-effect replay.
+    """
+    if isinstance(error, BaseExceptionGroup):
+        return all(is_database_contention(item) for item in error.exceptions)
+    return isinstance(error, DBAPIError) and getattr(error.orig, "sqlstate", None) in {
+        "40001",  # serialization_failure
+        "40P01",  # deadlock_detected
+        "55P03",  # lock_not_available
+        "57014",  # query_canceled (including statement_timeout)
+    }

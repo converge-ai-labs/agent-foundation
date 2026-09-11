@@ -10,6 +10,7 @@ import re
 from contextlib import aclosing
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from functools import partial
 
 from anyio import fail_after, move_on_after
 from sqlalchemy import select
@@ -54,6 +55,7 @@ from .management import (
     require_connector_provider,
 )
 from .models import ConnectorConnectionRecord, ConnectorProviderRecord, ConnectorSetupAttemptRecord
+from .shared_setup import reserve_shared_setup
 
 logger = logging.getLogger("a13n_service.connectivity.connector_setup")
 
@@ -82,6 +84,8 @@ class SetupSnapshot:
 
 @dataclass(frozen=True, slots=True)
 class AttemptSnapshot:
+    provider_id: str
+    credential_generation: int
     attempt: SetupSnapshot
     connector: ProviderSnapshot
     credentials: JsonObject
@@ -353,6 +357,13 @@ class ConnectorSetupCoordinator:
                                 setup=snapshot.attempt.setup_json,
                                 context=_setup_context(snapshot.attempt, callback_url=self.callback_url()),
                                 resume_ref=snapshot.attempt.setup_ref,
+                                before_shared_setup=partial(
+                                    reserve_shared_setup,
+                                    self._sessions,
+                                    provider_id=snapshot.provider_id,
+                                    credential_generation=snapshot.credential_generation,
+                                    connector_key=snapshot.attempt.connector_key,
+                                ),
                             )
                     except TimeoutError as error:
                         raise ConnectorProviderError("setup_outcome_unknown", outcome_unknown=True) from error
@@ -555,7 +566,13 @@ class ConnectorSetupCoordinator:
                 "ConnectorProvider credentials are unavailable.",
                 category=ErrorCategory.unavailable,
             ) from error
-        return AttemptSnapshot(attempt=setup, connector=provider, credentials=decode_credentials(raw))
+        return AttemptSnapshot(
+            provider_id=connector.id,
+            credential_generation=credential.generation,
+            attempt=setup,
+            connector=provider,
+            credentials=decode_credentials(raw),
+        )
 
     async def record_attempt_failure(
         self,

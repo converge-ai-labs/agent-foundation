@@ -1,3 +1,4 @@
+import { ResourceIdentity } from "../../shared/collection";
 import {
   Button,
   Tabs,
@@ -42,13 +43,18 @@ export function ImportSkill({
       }
       size={"md"}
       title={t(skill ? "New version" : "Import skill")}
-      description={t("Import a skill from a ZIP file or GitHub repository.")}
+      description={
+        skill
+          ? t("Publish an updated package as a new version of this skill.")
+          : t("Import a skill from a ZIP file or GitHub repository.")
+      }
       closeLabel={t("Close")}
       open={open}
     >
       {open && (
         <ImportForm
           skill={skill}
+          onCancel={() => setOpen(false)}
           onSuccess={(result) => {
             setOpen(false);
             onSuccess?.(result);
@@ -61,9 +67,11 @@ export function ImportSkill({
 function ImportForm({
   skill,
   onSuccess,
+  onCancel,
 }: {
   skill?: Schema["Skill"];
   onSuccess: (skill: Schema["Skill"]) => void;
+  onCancel: () => void;
 }) {
   const client = useClient(),
     { workspace } = useWorkspace(),
@@ -145,6 +153,16 @@ function ImportForm({
         publish.mutate();
       }}
     >
+      {basis && (
+        <ResourceIdentity
+          name={basis.name}
+          resourceId={basis.id}
+          resourceKey={basis.key}
+          description={t("Current version {{version}}", {
+            version: basis.version,
+          })}
+        />
+      )}
       {!basis && (
         <FormField
           className="min-w-0 w-full"
@@ -182,6 +200,7 @@ function ImportForm({
           <FileUpload
             label={t("ZIP file")}
             file={upload?.file}
+            disabled={stage.isPending || publish.isPending}
             acceptedFileTypes={[".zip", "application/zip"]}
             onSelect={(file) => {
               setUpload(file ? { file, key: crypto.randomUUID() } : undefined);
@@ -189,19 +208,33 @@ function ImportForm({
               stage.reset();
             }}
           />
-          <Button
-            variant="outline"
-            disabled={!upload}
-            loading={stage.isPending}
-            onClick={() => stage.mutate()}
-            type="button"
-          >
-            {t("Validate package")}
-          </Button>
+          {upload && !receipt && (
+            <Button
+              variant="outline"
+              disabled={!upload}
+              loading={stage.isPending}
+              onClick={() => stage.mutate()}
+              type="button"
+            >
+              {t("Validate package")}
+            </Button>
+          )}
           {receipt && (
-            <DisclosureSection title={<>{t("Validated package")}</>}>
-              <JsonView value={receipt.manifest} />
-            </DisclosureSection>
+            <div className={styles.stack} role="status">
+              <ResourceIdentity
+                name={receipt.manifest.skill_name}
+                description={receipt.manifest.description}
+              />
+              <p className={styles.muted}>
+                {t("Validated · {{count}} files · {{size}} KB", {
+                  count: receipt.manifest.files.length,
+                  size: Math.ceil(receipt.manifest.total_size_bytes / 1024),
+                })}
+              </p>
+              <DisclosureSection title={t("Package manifest")}>
+                <JsonView value={receipt.manifest} />
+              </DisclosureSection>
+            </div>
           )}
           <ErrorNotice error={stage.error} />
         </TabsPanel>
@@ -215,14 +248,26 @@ function ImportForm({
               placeholder="https://github.com/owner/repository"
             />
           </FormField>
-          <FormField className="min-w-0 w-full" label={t("Git ref")}>
+          <FormField
+            className="min-w-0 w-full"
+            label={t("Git ref")}
+            description={t(
+              "Use a branch, tag, or commit. Leave empty for the default branch.",
+            )}
+          >
             <Input
               value={ref}
               onChange={(event) => setRef(event.target.value)}
               placeholder={t("Default branch")}
             />
           </FormField>
-          <FormField className="min-w-0 w-full" label={t("Subdirectory")}>
+          <FormField
+            className="min-w-0 w-full"
+            label={t("Subdirectory")}
+            description={t(
+              "Path to the skill inside the repository. Leave empty for the repository root.",
+            )}
+          >
             <Input
               value={subdirectory}
               onChange={(event) => setSubdirectory(event.target.value)}
@@ -242,6 +287,8 @@ function ImportForm({
       <ErrorNotice error={publish.error} />
       <FormActions
         pending={publish.isPending}
+        onCancel={onCancel}
+        disabled={stage.isPending || (kind === "zip_upload" && !receipt)}
         label={t(basis ? "Publish version" : "Import skill")}
       />
     </form>

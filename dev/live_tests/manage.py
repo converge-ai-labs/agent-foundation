@@ -142,7 +142,7 @@ async def provision() -> None:
             "model_provider_id",
             base + "/model-providers",
             {
-                "type": "openai_compatible",
+                "type": "openai",
                 "name": "Local live-test model",
                 "credential": config["token"],
                 "configuration": {"base_url": config["control_url"] + "/__live__/model/v1", "auth_mode": "bearer"},

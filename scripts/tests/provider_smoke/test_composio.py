@@ -30,8 +30,6 @@ def smoke(monkeypatch):
         tool="GITHUB_LOOKUP",
         arguments='{"query":"hello"}',
         execute=False,
-        endpoint=None,
-        allow_private_domain=[],
         auth_config_id="auth-1",
         callback_url="https://callback.example/complete",
     )
@@ -53,7 +51,12 @@ def smoke(monkeypatch):
             item.update({"toolkit": {"slug": "github"}, "status": "ENABLED", "auth_scheme": "OAUTH2"})
             value = {"items": [item], "total": 1}
         elif path.endswith("/toolkits/github"):
-            value = {"slug": "github", "meta": {"version": version}}
+            value = {
+                "slug": "github",
+                "name": "GitHub",
+                "meta": {"version": version},
+                "auth_config_details": [{"mode": "OAUTH2", "fields": {"connected_account_initiation": {}}}],
+            }
         elif path.endswith("/tools"):
             value = {"items": [{"slug": "GITHUB_LOOKUP", "version": version}]}
             assert req.url.params["toolkit_versions[github]"] == version

@@ -63,6 +63,7 @@ async def build_control_runtime(
     trace_queries = await build_trace_query_service(
         settings,
         components,
+        shared,
         trace_query_provider_registry,
         stack,
     )

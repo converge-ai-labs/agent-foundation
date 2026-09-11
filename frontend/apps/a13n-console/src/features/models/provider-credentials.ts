@@ -7,6 +7,6 @@ export function requiresProviderCredential(
 ) {
   return (
     definition?.credential_schema.type !== "null" &&
-    (type !== "openai_compatible" || configuration.auth_mode !== "none")
+    (type !== "openai" || configuration.auth_mode !== "none")
   );
 }

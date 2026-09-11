@@ -1,15 +1,25 @@
 import { useTranslation } from "react-i18next";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
 import styles from "./markdown.module.css";
 
-export function MarkdownContent({ text }: { text: string }) {
+export function MarkdownContent({
+  text,
+  literalHtml = false,
+}: {
+  text: string;
+  literalHtml?: boolean;
+}) {
   const { t } = useTranslation();
   return (
     <div className={styles.markdown}>
       <Markdown
-        skipHtml
+        skipHtml={!literalHtml}
         remarkPlugins={[remarkGfm]}
+        rehypePlugins={
+          text.length <= 100_000 ? [[rehypeHighlight, { detect: false }]] : []
+        }
         components={{
           pre: ({ children }) => (
             <pre className="a13n-scrollbar">{children}</pre>

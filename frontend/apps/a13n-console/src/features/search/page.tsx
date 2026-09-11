@@ -1,3 +1,4 @@
+import { Identifier } from "../../shared/copy";
 import { useResourceRows } from "../../shared/resource-modal";
 import type { Schema } from "../../shared/api";
 import { ProviderIcon } from "../../shared/provider-icon";
@@ -75,18 +76,21 @@ export function SearchProviders({ scope }: { scope: SearchScope }) {
             columns={[
               {
                 label: t("Provider"),
+                tone: "primary",
                 render: (item) => (
                   <div className="flex min-w-0 items-center gap-3">
                     <ProviderIcon key={item.type} type={item.type} />
                     <ResourceIdentity
                       name={item.name}
                       description={item.type}
+                      resourceId={item.id}
                     />
                   </div>
                 ),
               },
               {
                 label: t("Scope"),
+                tone: "muted",
                 render: (item) => (
                   <ScopeBadge workspaceId={item.workspace_id} />
                 ),
@@ -173,14 +177,16 @@ function SearchReferences({
             columns={[
               {
                 label: t("Agent"),
-                render: (item) => <code>{item.agent_id}</code>,
+                tone: "primary",
+                render: (item) => <Identifier value={item.agent_id} primary />,
               },
               {
                 label: t("Revision"),
+                tone: "muted",
                 render: (item) => (
                   <>
-                    <code>{item.agent_revision_id}</code> · v{item.version}{" "}
-                    {item.is_current && t("Current")}
+                    <Identifier value={item.agent_revision_id} /> · v
+                    {item.version} {item.is_current && t("Current")}
                   </>
                 ),
               },

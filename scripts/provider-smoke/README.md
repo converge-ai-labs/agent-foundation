@@ -16,8 +16,6 @@ bash scripts/provider-smoke/composio.sh
 
 Each script accepts `--help` for individual commands. Missing keys are requested through hidden input; `.env` files are not loaded. The Bash entry points also work from another directory when invoked by absolute path. Keys are never written to files by these scripts.
 
-OpenConnector authorization is initiated through a13n Service's ConnectorConnection management flow. Follow the [external tools guide](../../docs/a13n-service/external-tools.md); its managed adapter is covered by a13n Service connectivity tests.
-
 ## Composio and OpenRouter
 
 Composio previews tools before account authorization. Hosted OAuth requires an existing auth configuration, your browser callback URL, and `AUTHORIZE` confirmation. After completing authorization in the browser, return to verify the account and its exact provider user ID. The script rechecks ownership, readiness, and the pinned tool definition before a call. Tool execution requires `CALL` or an explicit `--execute`.

@@ -52,7 +52,7 @@ from a13n_harness.observation import (
     HarnessTraceContent,
 )
 from a13n_harness.plugins import AbstractHarnessPlugin, PluginOrdering
-from a13n_harness.recovery import ModelRecoveryPolicy
+from a13n_harness.recovery import ModelRecoveryPolicy, ToolRecoveryMode
 from a13n_harness.result import HarnessRunResult, SafeFailure
 from a13n_harness.spec import AgentSpec, HarnessModelCharacteristics, ModelCapability
 from a13n_harness.state import HarnessState
@@ -110,6 +110,7 @@ __all__ = [
     "StateError",
     "SubagentDefinition",
     "SubagentIdentityPolicy",
+    "ToolRecoveryMode",
     "__version__",
     "derive_child_identity",
     "infer_model",

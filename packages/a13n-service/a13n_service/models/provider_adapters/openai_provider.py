@@ -19,6 +19,14 @@ from .base import (
 from .types import RuntimeProvider
 
 
+class ClientEndpointProvider(Provider[AsyncOpenAI]):
+    """Keep native vendor behavior while reporting the injected client's real endpoint."""
+
+    @property
+    def base_url(self) -> str:
+        return str(self.client.base_url)
+
+
 def build[NativeOpenAIProvider: Provider[AsyncOpenAI]](
     provider: RuntimeProvider,
     http_client: httpx2.AsyncClient,
@@ -30,6 +38,7 @@ def build[NativeOpenAIProvider: Provider[AsyncOpenAI]](
         api_key=require_credential(provider),
         base_url=require_endpoint(provider),
         http_client=http_client,
+        default_headers=provider.extra_headers,
     )
     return provider_factory(openai_client=client)
 

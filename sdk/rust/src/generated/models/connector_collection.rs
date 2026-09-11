@@ -15,9 +15,22 @@ use serde::{Deserialize, Serialize};
 pub struct ConnectorCollection {
     #[serde(rename = "items")]
     pub items: Vec<models::Connector>,
-    #[serde(default, deserialize_with = "deserialize_optional_null")]
-    #[serde(rename = "next_cursor", skip_serializing_if = "Option::is_none")]
-    pub next_cursor: Option<()>,
+
+    #[serde(
+        rename = "next_cursor",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub next_cursor: Option<Option<String>>,
+
+    #[serde(
+        rename = "refreshed_at",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub refreshed_at: Option<Option<chrono::DateTime<chrono::FixedOffset>>>,
 }
 
 impl ConnectorCollection {
@@ -25,11 +38,7 @@ impl ConnectorCollection {
         ConnectorCollection {
             items,
             next_cursor: None,
+            refreshed_at: None,
         }
     }
-}
-fn deserialize_optional_null<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<()>, D::Error> {
-    <()>::deserialize(deserializer).map(Some)
 }

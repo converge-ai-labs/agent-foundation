@@ -70,18 +70,21 @@ export function Providers({ scope }: { scope: ModelScope }) {
             columns={[
               {
                 label: t("Provider"),
+                tone: "primary",
                 render: (item) => (
                   <div className="flex min-w-0 items-center gap-3">
                     <ProviderIcon key={item.type} type={item.type} />
                     <ResourceIdentity
                       name={item.name}
                       description={item.type}
+                      resourceId={item.id}
                     />
                   </div>
                 ),
               },
               {
                 label: t("Scope"),
+                tone: "muted",
                 render: (item) => (
                   <ScopeBadge workspaceId={item.workspace_id} />
                 ),
@@ -170,11 +173,11 @@ export function ProviderEditor({
           />
         ) : undefined
       }
-      size={"md"}
+      size={"lg"}
       title={t(providerId ? "Edit provider" : "Add provider")}
-      description={t(
-        "Credentials are stored securely and never returned by the service.",
-      )}
+      description={
+        providerId ? undefined : t("Connect a model service to add its models.")
+      }
       closeLabel={t("Close")}
     >
       {open &&

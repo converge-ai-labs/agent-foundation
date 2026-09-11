@@ -10,9 +10,11 @@ import styles from "./copy.module.css";
 export function CopyButton({
   value,
   iconOnly = false,
+  copyLabel,
 }: {
   value: string;
   iconOnly?: boolean;
+  copyLabel?: string;
 }) {
   const { t } = useTranslation();
   const copy = useMutation({
@@ -23,7 +25,9 @@ export function CopyButton({
     const timer = window.setTimeout(() => copy.reset(), 1500);
     return () => window.clearTimeout(timer);
   }, [copy.isSuccess, copy.reset]);
-  const label = t(copy.isSuccess ? "Copied" : iconOnly ? "Copy ID" : "Copy");
+  const label = copy.isSuccess
+    ? t("Copied")
+    : (copyLabel ?? t(iconOnly ? "Copy ID" : "Copy"));
   return (
     <span className={styles.control}>
       <Button
@@ -54,11 +58,47 @@ export function CopyButton({
   );
 }
 
-export function CopyableId({ value }: { value: string }) {
+export function Identifier({
+  value,
+  primary = false,
+}: {
+  value: string;
+  primary?: boolean;
+}) {
+  return (
+    <span
+      className={styles.identifierText}
+      data-primary={primary || undefined}
+      title={value}
+    >
+      {value}
+    </span>
+  );
+}
+
+export function CopyableId({
+  value,
+  primary = false,
+}: {
+  value: string;
+  primary?: boolean;
+}) {
   return (
     <span className={styles.identifier}>
-      <code>{value}</code>
+      <Identifier value={value} primary={primary} />
       <CopyButton key={value} value={value} iconOnly />
+    </span>
+  );
+}
+
+export function CopyableResourceKey({ value }: { value: string }) {
+  const { t } = useTranslation();
+  return (
+    <span className="relative z-1 flex min-w-0 items-center gap-1 text-muted-foreground">
+      <code className="max-w-[min(360px,35vw)] truncate text-xs" title={value}>
+        {value}
+      </code>
+      <CopyButton value={value} iconOnly copyLabel={t("Copy resource key")} />
     </span>
   );
 }

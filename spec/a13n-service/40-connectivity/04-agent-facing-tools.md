@@ -167,6 +167,8 @@ A native Ingress adapter returns a typed internal receipt when the provider supp
 
 If an external effect may have occurred but its response or subsequent correlation commit is unknown, the outcome remains unknown unless the source supports a stable operation identity, idempotency key, outbound echo, task identity, or reconciliation evidence. Service does not automatically repeat non-idempotent actions, fabricate receipts, report rollback, or create a generic per-tool durable execution ledger. Replacement Attempts cannot infer completion from missing local results.
 
+Known Connector provider refusals return a typed tool outcome with `kind="failed"` and a bounded `error` containing a code and a Service-owned explanatory message. Missing OAuth scopes, denied permissions, rejected authentication, missing or inaccessible resources, rate limits, and other explicit tool rejections remain distinguishable. They complete the tool call so the model can explain the failure; they do not abort the Run merely because the provider refused it. A completed Run does not imply a successful tool action. Error projection never copies arbitrary upstream messages, response bodies, credentials, or account references. Local authority failures still prevent dispatch and are not converted into provider refusals. Uncertain dispatches remain `outcome_unknown`; neither kind triggers an automatic provider retry. Missing or malformed execution envelopes, incompatible successful payloads, and results exceeding the result depth or byte bound after dispatch also return `outcome_unknown` without publishing the invalid payload.
+
 ## Invariants
 
 1. Local native and Connector tool groups use in-process a13n MCP; remote sources use independent Worker-controlled MCP clients.

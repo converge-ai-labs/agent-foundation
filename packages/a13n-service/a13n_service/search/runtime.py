@@ -11,8 +11,8 @@ from a13n_harness.capabilities.web import (
     WebSearchConfiguration,
 )
 from a13n_harness.errors import RunError
+from a13n_harness.observation import set_tool_span_attributes
 from a13n_harness.tools.invocation import current_invocation_scope
-from opentelemetry import trace
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import EffectiveAgentConfig
@@ -101,14 +101,9 @@ class SearchRuntime:
             if invocation.tool_id != "web.search":
                 raise RunError("Search requires an authorized tool invocation.", code="search_provider_unavailable")
             snapshot = await self._snapshot(run, workspace_id, agent_id, selection, current_context)
-            span = trace.get_current_span()
-            attributes = getattr(span, "attributes", None) or {}
-            if (
-                attributes.get("gen_ai.operation.name") == "execute_tool"
-                and attributes.get("gen_ai.tool.call.id") == invocation.tool_call_id
-            ):
-                span.set_attribute("a13n.search.provider.id", snapshot.provider_id)
-                span.set_attribute("a13n.search.provider.type", snapshot.provider_type)
+            set_tool_span_attributes(
+                {"a13n.search.provider.id": snapshot.provider_id, "a13n.search.provider.type": snapshot.provider_type}
+            )
             return snapshot
 
         async def reauthorize() -> None:

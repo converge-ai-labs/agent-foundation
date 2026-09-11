@@ -24,27 +24,17 @@ class EnvironmentSettings(Settings):
 class ComposioSettings(Settings):
     provider: Literal["composio"]
     api_key: SecretStr = Field(min_length=1)
-    toolkits: list[str] = Field(default_factory=lambda: ["github"], min_length=1)
-
-
-class OpenConnectorSettings(Settings):
-    provider: Literal["openconnector"]
-    project_api_key: SecretStr = Field(min_length=1)
-    catalog_api_key: SecretStr = Field(min_length=1)
-    services: list[str] = Field(default_factory=lambda: ["slack"], min_length=1)
 
 
 class ModelSettings(Settings):
-    provider: Literal["openrouter", "openai_compatible"]
+    provider: Literal["openrouter", "openai"]
     api_key: SecretStr = Field(min_length=1)
     model: str = Field(min_length=1)
     base_url: str = ""
 
     @model_validator(mode="after")
     def endpoint(self):
-        if self.provider == "openrouter":
-            if self.base_url:
-                raise ValueError("OpenRouter uses its built-in endpoint; leave base_url empty")
+        if not self.base_url:
             return self
         parts = urlsplit(self.base_url)
         if (
@@ -71,7 +61,7 @@ class BraveSearchSettings(Settings):
 
 class ProviderSettings(Settings):
     environment: EnvironmentSettings | None = None
-    connector: ComposioSettings | OpenConnectorSettings | None = Field(default=None, discriminator="provider")
+    connector: ComposioSettings | None = None
     model: ModelSettings | None = None
     search: SearchSettings | None = None
     brave_search: BraveSearchSettings | None = None

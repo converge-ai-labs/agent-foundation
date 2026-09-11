@@ -1,12 +1,13 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button, FormField, Input } from "a13n-ui";
+import { Button } from "a13n-ui";
+import { MCPCredentialFields } from "./credentials";
+import { MCPOAuthSetup } from "./oauth-setup";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
-import { AuthorizationLink } from "../../shared/authorization-link";
-import { ErrorNotice, StateBadge } from "../../shared/feedback";
+import { ErrorNotice } from "../../shared/feedback";
 import { FormActions } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
@@ -14,36 +15,20 @@ import styles from "../../shared/shared.module.css";
 export function MCPAuthorization({
   initial,
   reload,
+  onConnectionChange,
 }: {
   initial: Schema["MCPConnection"];
   reload: () => Promise<void>;
+  onConnectionChange: (connection: Schema["MCPConnection"]) => void;
 }) {
   const client = useClient(),
     cache = useQueryClient(),
     { workspace } = useWorkspace(),
     { t } = useTranslation(),
     key = useIdempotency(),
-    [basis] = useState(initial),
+    basis = initial,
     [bearer, setBearer] = useState(""),
     [headers, setHeaders] = useState<Record<string, string>>({});
-  const authorize = useMutation({
-    gcTime: 0,
-    mutationFn: () => {
-      const body = { expected_version: basis.version };
-      return client.http
-        .POST("/api/v1/mcp-connections/{connection_id}/authorize", {
-          params: {
-            path: { connection_id: basis.id },
-            header: commandHeaders(
-              workspace.id,
-              key.forBody({ authorize: basis.id, ...body }),
-            ),
-          },
-          body,
-        })
-        .then(data);
-    },
-  });
   const credentials = useMutation({
     gcTime: 0,
     mutationFn: () => {
@@ -92,25 +77,23 @@ export function MCPAuthorization({
     },
   });
   return (
-    <div className={styles.stack}>
-      <StateBadge state={basis.status} />
+    <div className="grid justify-items-start gap-4">
+      <div className="grid gap-1">
+        <h3 className="text-sm font-medium">{t(`auth.${basis.auth_mode}`)}</h3>
+        <p className="text-sm text-muted-foreground">
+          {t(
+            basis.auth_mode === "none"
+              ? "This server does not require credentials. Verify the connection to refresh its available tools."
+              : "Manage the credentials used to access this server.",
+          )}
+        </p>
+      </div>
       {basis.auth_mode === "oauth" ? (
         <>
-          {authorize.data ? (
-            <AuthorizationLink
-              url={authorize.data.authorization_url}
-              expiresAt={authorize.data.expires_at}
-            />
-          ) : (
-            <Button
-              variant="default"
-              loading={authorize.isPending}
-              onClick={() => authorize.mutate()}
-              type="button"
-            >
-              {t("Authorize with OAuth")}
-            </Button>
-          )}
+          <MCPOAuthSetup
+            connection={basis}
+            onConnectionChange={onConnectionChange}
+          />
           <Button variant="outline" onClick={() => void reload()} type="button">
             {t("Refresh connection")}
           </Button>
@@ -130,35 +113,14 @@ export function MCPAuthorization({
                 "Existing credentials are never displayed. Supply a complete replacement.",
               )}
             </p>
-            {basis.auth_mode === "bearer" ? (
-              <FormField className="min-w-0 w-full" label={t("Bearer token")}>
-                <Input
-                  required={true}
-                  type="password"
-                  autoComplete="off"
-                  value={bearer}
-                  onChange={(event) => setBearer(event.target.value)}
-                />
-              </FormField>
-            ) : (
-              basis.static_header_names.map((name) => (
-                <FormField className="min-w-0 w-full" label={name} key={name}>
-                  <Input
-                    required={true}
-
-                    type="password"
-                    autoComplete="off"
-                    value={headers[name] ?? ""}
-                    onChange={(event) =>
-                      setHeaders((current) => ({
-                        ...current,
-                        [name]: event.target.value,
-                      }))
-                    }
-                  />
-                </FormField>
-              ))
-            )}
+            <MCPCredentialFields
+              mode={basis.auth_mode}
+              names={basis.static_header_names}
+              bearer={bearer}
+              onBearer={setBearer}
+              headers={headers}
+              onHeaders={setHeaders}
+            />
             <FormActions
               pending={credentials.isPending}
               label={t("Save credentials")}
@@ -172,10 +134,10 @@ export function MCPAuthorization({
         onClick={() => reconnect.mutate()}
         type="button"
       >
-        {t("Reconnect and verify tools")}
+        {t("Verify connection")}
       </Button>
       <ErrorNotice
-        error={authorize.error ?? credentials.error ?? reconnect.error}
+        error={credentials.error ?? reconnect.error}
         retry={() => void reload()}
       />
     </div>

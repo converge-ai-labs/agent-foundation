@@ -14,20 +14,21 @@ from .base import (
     ModelListSchema,
     ProviderIntegration,
     bearer_models_request,
-    require_credential,
 )
-from .openai_provider import OpenAIModelDiscovery
-from .types import EmptyProviderConfiguration, RuntimeProvider
+from .openai_provider import ClientEndpointProvider, OpenAIModelDiscovery, build
+from .types import ProviderConfiguration, RuntimeProvider
+
+
+class _OpenRouterProvider(ClientEndpointProvider, OpenRouterProvider):
+    pass
 
 
 def _build_provider(
     provider: RuntimeProvider,
     http_client: httpx2.AsyncClient,
-    _model_api: str,
+    model_api: str,
 ) -> OpenRouterProvider:
-    native = OpenRouterProvider(api_key=require_credential(provider), http_client=http_client)
-    native.client.max_retries = 0
-    return native
+    return build(provider, http_client, model_api, _OpenRouterProvider)
 
 
 class OpenRouterDiscovery(OpenAIModelDiscovery):
@@ -87,7 +88,7 @@ class OpenRouterDiscovery(OpenAIModelDiscovery):
 INTEGRATION = ProviderIntegration(
     type="openrouter",
     display_name="OpenRouter",
-    configuration_model=EmptyProviderConfiguration,
+    configuration_model=ProviderConfiguration,
     supported_model_apis=("openrouter.chat_completions",),
     build_provider=_build_provider,
     endpoint="https://openrouter.ai/api/v1",

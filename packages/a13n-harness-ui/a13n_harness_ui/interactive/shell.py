@@ -1117,6 +1117,9 @@ class CliShell:
         assert self.backend is not None
         result = await self.backend.resume(selected)
         self._restore_resumed_history()
+        for notice in self.status.notices:
+            self.emit(notice)
+        self.status.notices.clear()
         return result
 
     async def run(self, backend: SessionBackend, *, terminal_task: asyncio.Task[None] | None = None) -> None:
@@ -1131,6 +1134,9 @@ class CliShell:
         )
         if not local_sandbox_supported():
             self.emit(WINDOWS_EXECUTION_NOTICE)
+        for notice in self.status.notices:
+            self.emit(notice)
+        self.status.notices.clear()
         await self._activate_decisions()
         self.registry.set_skills(await backend.skill_catalog())
         if backend.thread_id is not None:
@@ -1742,5 +1748,5 @@ class CliShell:
             self.open_history()
         elif name == "config":
             self.emit(
-                f"Configuration: {self.request.config_path or Path.home() / '.a13n-harness-ui/a13n-harness-ui.yaml'}\n/agent selects an agent; /model temporarily overrides only its model in this TUI session; /thinking adjusts reasoning for subsequent turns; /fast temporarily selects priority service (/fast reset restores Model configuration).\nLaunch flags override file defaults; no slash command silently rewrites model files.\nUse `a13n-harness-ui config show --format json` for accepted values and `a13n-harness-ui config validate` after editing."
+                f"Configuration: {self.request.config_path or Path.home() / '.a13n-harness-ui/a13n-harness-ui.yaml'}\n/agent selects an agent; /model selects and remembers a model for this project (/model default clears it); /thinking adjusts reasoning for subsequent turns; /fast temporarily selects priority service (/fast reset restores Model configuration).\nLaunch flags override file defaults; no slash command silently rewrites model files.\nUse `a13n-harness-ui config show --format json` for accepted values and `a13n-harness-ui config validate` after editing."
             )

@@ -46,7 +46,6 @@ def test_ui_ci_keeps_main_linux_and_separate_windows_backstop() -> None:
         ("ci-a13n-harness-ui.yml", "tests"),
         ("ci-a13n-harness-ui.yml", "distribution"),
         ("ci-a13n-harness-ui.yml", "windows"),
-        ("ci-a13n-harness-ui-webui.yml", "webui"),
     ],
 )
 def test_editable_ui_jobs_prepare_skills_after_dependency_sync(workflow_name: str, job: str) -> None:
@@ -81,20 +80,19 @@ def test_source_ui_consumers_prepare_skills(target: str, consumer: str) -> None:
 
 
 def test_linux_keeps_full_tests_and_distribution_checks() -> None:
-    steps = yaml.safe_load(WORKFLOW.read_text())["jobs"]["tests"]["steps"]
+    jobs = yaml.safe_load(WORKFLOW.read_text())["jobs"]
+    steps = jobs["tests"]["steps"]
     by_name = {step["name"]: step for step in steps}
     tests = by_name["Test UI"]
     arguments = shlex.split(tests["run"])
     assert "scripts.run_python_tests" in arguments
-    assert arguments[arguments.index("--workers") + 1] == "2"
+    assert arguments[arguments.index("--workers") + 1] == "7"
+    assert jobs["tests"]["runs-on"] == "ubuntu-24.04-8core"
     assert "packages/a13n-harness-ui/tests" in arguments
     assert not any(arg.startswith("scripts/tests/") for arg in arguments)
     assert "--durations=20" in tests["env"]["PYTEST_ADDOPTS"]
-    for test in ("test_webui.py", "test_webui_startup.py"):
-        assert f"--ignore=packages/a13n-harness-ui/tests/{test}" in tests["env"]["PYTEST_ADDOPTS"]
     assert "Test native command lifecycle" in by_name
     assert not any("pnpm" in step.get("run", "") for step in steps)
-    jobs = yaml.safe_load(WORKFLOW.read_text())["jobs"]
     for name in ("tests", "frontend", "distribution"):
         assert "needs" not in jobs[name]
         assert jobs[name]["if"] == jobs["tests"]["if"]
@@ -145,6 +143,8 @@ def test_windows_native_selection_exists_and_full_suite_is_retained() -> None:
             assert node in names, selection
     assert "packages/a13n-harness-ui/tests/test_entrypoint.py" in selections
     assert "packages/a13n-harness-ui/tests/test_thread_files.py" in selections
+    assert "packages/a13n-harness-ui/tests/test_host_files.py" in selections
+    assert "packages/a13n-harness-ui/tests/test_host_git.py" in selections
     assert "packages/a13n-harness-ui/tests/test_configuration_mutation.py" in selections
     full = by_name["Test full UI suite on Windows"]
     assert full["if"] == "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'"
@@ -153,18 +153,6 @@ def test_windows_native_selection_exists_and_full_suite_is_retained() -> None:
     assert "if" not in lifecycle
     for name in ("test_direct_local.py", "test_direct_local_processes.py"):
         assert f"packages/a13n-environment/tests/{name}" in shlex.split(lifecycle["run"])
-
-
-def test_webui_ci_only_runs_unit_contract_and_http_tests() -> None:
-    workflow = yaml.safe_load((ROOT / ".github/workflows/ci-a13n-harness-ui-webui.yml").read_text())
-    assert "schedule" not in workflow[True]
-    assert len(workflow["jobs"]) == 1
-    steps = workflow["jobs"]["webui"]["steps"]
-    commands = "\n".join(step.get("run", "") for step in steps)
-    assert "test_webui.py" in commands and "test_webui_startup.py" in commands
-    assert "a13n-harness-ui-webui run check" in commands
-    assert "docker" not in str(steps).lower()
-    assert "uv build" not in commands
 
 
 def test_bundled_documentation_is_a_ui_image_input() -> None:

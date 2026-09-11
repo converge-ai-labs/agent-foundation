@@ -184,9 +184,22 @@ class HarnessAguiObserver:
         self._events.extend(stored)
         return _copy_events(stored)
 
-    def snapshot(self) -> tuple[Event, ...]:
-        """Return a detached immutable view of all accumulated events."""
-        return _copy_events(self._events)
+    @property
+    def event_count(self) -> int:
+        """Number of accumulated frames, usable as a finite snapshot boundary."""
+        return len(self._events)
+
+    def snapshot(self, *, start: int = 0, stop: int | None = None) -> tuple[Event, ...]:
+        """Return detached accumulated frames in the requested half-open range.
+
+        Capture ``event_count`` once and use it as ``stop`` when reading a
+        growing observer in batches. Positions are observer-local, not transport
+        sequence numbers. The no-argument form retains the complete snapshot.
+        """
+        end = len(self._events) if stop is None else stop
+        if start < 0 or end < start or end > len(self._events):
+            raise ValueError("snapshot range is outside the accumulated events")
+        return _copy_events(self._events[start:end])
 
     def _validate_correlation(self, item: HarnessStreamEvent[Any]) -> None:
         if self._thread_id is not None and item.thread_id != self._thread_id:

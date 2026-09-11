@@ -33,6 +33,10 @@
   color: inherit;
   text-decoration: none;
 }
+.sessionSummary[data-empty] {
+  color: var(--a13n-muted);
+  font-weight: 400;
+}
 .sessionAgent {
   display: block;
   width: clamp(120px, 12vw, 180px);
@@ -562,11 +566,6 @@
 
 .sessionId {
   width: 150px;
-}
-.sessionId code {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 @media (max-width: 1400px) {

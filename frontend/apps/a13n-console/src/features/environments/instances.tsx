@@ -1,9 +1,13 @@
+import { ResourceIdentity } from "../../shared/collection";
+import { ProviderIcon } from "../../shared/provider-icon";
+import { CopyableId } from "../../shared/copy";
 import {
   Button,
   ChoiceField,
   DisclosureSection,
   FormField,
   Input,
+  ReadOnlyField,
   ModalFrame,
 } from "a13n-ui";
 
@@ -23,12 +27,7 @@ import {
   StateBadge,
   Timestamp,
 } from "../../shared/feedback";
-import {
-  Confirm,
-  FormActions,
-  JsonView,
-  TextAreaField,
-} from "../../shared/form";
+import { Confirm, FormActions, TextAreaField } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
 import { jsonObject, jsonValue } from "../../shared/validation";
@@ -69,9 +68,10 @@ export function EnvironmentInstances() {
             columns={[
               {
                 label: t("Environment"),
+                tone: "primary",
                 render: (item) => (
                   <>
-                    <code>{item.id}</code>
+                    <CopyableId value={item.id} primary />
                     <small>
                       {t(item.ownership === "managed" ? "Managed" : "External")}
                     </small>
@@ -82,7 +82,11 @@ export function EnvironmentInstances() {
                 label: t("Status"),
                 render: (item) => <StateBadge state={item.status} />,
               },
-              { label: t("Generation"), render: (item) => item.generation },
+              {
+                label: t("Generation"),
+                align: "right",
+                render: (item) => item.generation,
+              },
               {
                 label: t("Activity"),
                 render: (item) => (
@@ -91,6 +95,7 @@ export function EnvironmentInstances() {
               },
               {
                 label: t("Updated"),
+                tone: "muted",
                 render: (item) => <Timestamp value={item.updated_at} />,
               },
               {
@@ -133,6 +138,17 @@ function EnvironmentDetails({
       client.http
         .GET("/api/v1/environments/{resource_id}", {
           params: { path: { resource_id: environment.id } },
+          signal,
+        })
+        .then(data),
+  });
+  const provider = useQuery({
+    queryKey: ["environment-provider", environment.provider_id],
+    enabled: open,
+    queryFn: ({ signal }) =>
+      client.http
+        .GET("/api/v1/environment-providers/{resource_id}", {
+          params: { path: { resource_id: environment.provider_id } },
           signal,
         })
         .then(data),
@@ -184,15 +200,68 @@ function EnvironmentDetails({
       }
       size={"md"}
       title={t("Environment details")}
-      description={t(
-        "Deleting a managed target removes its files. Later use may rebuild an empty target from the original recipe.",
-      )}
       closeLabel={t("Close")}
       open={open}
     >
       <div className={styles.stack}>
         <ErrorNotice error={detail.error ?? command.error} />
-        {detail.isPending ? <Loading /> : <JsonView value={detail.data} />}
+        {detail.isPending ? (
+          <Loading />
+        ) : (
+          detail.data && (
+            <>
+              <CopyableId value={detail.data.id} primary />
+              <div className={styles.twoColumns}>
+                <ReadOnlyField label={t("Status")}>
+                  <StateBadge state={detail.data.status} />
+                </ReadOnlyField>
+                <ReadOnlyField label={t("Activity")}>
+                  <StateBadge state={detail.data.retention_condition} />
+                </ReadOnlyField>
+                <ReadOnlyField label={t("Generation")}>
+                  {detail.data.generation}
+                </ReadOnlyField>
+                <ReadOnlyField label={t("Access ceiling")}>
+                  {t(
+                    detail.data.access === "full"
+                      ? "Full access"
+                      : detail.data.access === "read_only"
+                        ? "Read only"
+                        : "Read and write",
+                  )}
+                </ReadOnlyField>
+                <ReadOnlyField label={t("Updated")}>
+                  <Timestamp value={detail.data.updated_at} />
+                </ReadOnlyField>
+              </div>
+              <div className={`${styles.stack} border-t border-border pt-4`}>
+                <ReadOnlyField label={t("Ownership")}>
+                  {t(
+                    detail.data.ownership === "managed"
+                      ? "Managed"
+                      : "External",
+                  )}
+                </ReadOnlyField>
+                <ReadOnlyField label={t("Provider")}>
+                  {provider.data ? (
+                    <ResourceIdentity
+                      name={provider.data.name}
+                      resourceId={provider.data.id}
+                      icon={<ProviderIcon type={provider.data.type} />}
+                    />
+                  ) : (
+                    <CopyableId value={detail.data.provider_id} />
+                  )}
+                </ReadOnlyField>
+                {detail.data.template_revision_id && (
+                  <ReadOnlyField label={t("Template revision")}>
+                    <CopyableId value={detail.data.template_revision_id} />
+                  </ReadOnlyField>
+                )}
+              </div>
+            </>
+          )
+        )}
         {command.data && (
           <div role="status">
             <strong>{t("Lifecycle command")}</strong>{" "}
@@ -201,7 +270,7 @@ function EnvironmentDetails({
           </div>
         )}
         {can("environment.manage") && environment.ownership === "managed" && (
-          <div className={styles.actions}>
+          <div className={`${styles.actions} border-t border-border pt-4`}>
             <Confirm
               title={t("Stop environment target")}
               description={t(
@@ -217,6 +286,7 @@ function EnvironmentDetails({
               )}
               trigger={t("Delete target")}
               danger
+              triggerVariant="outline"
               action={() => act("delete")}
             />
           </div>

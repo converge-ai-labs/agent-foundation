@@ -183,6 +183,10 @@ Restricted code receives generated typed host functions. A nested call validates
 
 A nested call that may have reached an external side effect is never reported as safely retryable merely because the Python program failed later.
 
+### Large Tool Collections with ToolProxy
+
+[Grouped ToolProxy](tool-proxy.md#use-with-codeact) keeps large collections out of the runner's eager directory. CodeAct receives the proxy search/call functions, discovers exact schemas on demand, and dispatches the resolved target through its existing `ToolManager` bridge. Grouping never grants CodeAct eligibility: publish a typed policy on the source tools first. Both `run_code` and `run_program` support this path; proxy calls are conservatively sequential even inside `asyncio.gather`.
+
 ### Runtime State
 
 `run_code` state lasts for the current logical Harness run. Calls can retain ordinary interpreter values across invocations and clear them with `restart=True`. It does not enter `HarnessState` and does not survive a new run.

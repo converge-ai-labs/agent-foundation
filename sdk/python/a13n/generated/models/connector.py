@@ -24,6 +24,8 @@ class Connector:
         name (str):
         setup_schema (ConnectorSetupSchema):
         description (None | str | Unset):
+        logo_url (None | str | Unset):
+        unavailable_reason (None | str | Unset):
     """
 
     authentication_methods: list[str]
@@ -32,6 +34,8 @@ class Connector:
     name: str
     setup_schema: ConnectorSetupSchema
     description: str | Unset | None = UNSET
+    logo_url: str | Unset | None = UNSET
+    unavailable_reason: str | Unset | None = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         authentication_methods = self.authentication_methods
@@ -50,6 +54,18 @@ class Connector:
         else:
             description = self.description
 
+        logo_url: str | Unset | None
+        if isinstance(self.logo_url, Unset):
+            logo_url = UNSET
+        else:
+            logo_url = self.logo_url
+
+        unavailable_reason: str | Unset | None
+        if isinstance(self.unavailable_reason, Unset):
+            unavailable_reason = UNSET
+        else:
+            unavailable_reason = self.unavailable_reason
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -63,6 +79,10 @@ class Connector:
         )
         if description is not UNSET:
             field_dict["description"] = description
+        if logo_url is not UNSET:
+            field_dict["logo_url"] = logo_url
+        if unavailable_reason is not UNSET:
+            field_dict["unavailable_reason"] = unavailable_reason
 
         return field_dict
 
@@ -90,6 +110,24 @@ class Connector:
 
         description = _parse_description(d.pop("description", UNSET))
 
+        def _parse_logo_url(data: object) -> str | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(str | Unset | None, data)
+
+        logo_url = _parse_logo_url(d.pop("logo_url", UNSET))
+
+        def _parse_unavailable_reason(data: object) -> str | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(str | Unset | None, data)
+
+        unavailable_reason = _parse_unavailable_reason(d.pop("unavailable_reason", UNSET))
+
         connector = cls(
             authentication_methods=authentication_methods,
             connector_provider_id=connector_provider_id,
@@ -97,6 +135,8 @@ class Connector:
             name=name,
             setup_schema=setup_schema,
             description=description,
+            logo_url=logo_url,
+            unavailable_reason=unavailable_reason,
         )
 
         return connector

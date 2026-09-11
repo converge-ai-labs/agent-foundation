@@ -59,14 +59,14 @@ const cases = ["workspace", "organization"].flatMap((kind) =>
 function setup(kind: "workspace" | "organization", surface: string) {
   const connector = surface === "connector";
   const scope = { kind, id: kind === "workspace" ? "ws_test" : "org_test" };
-  const type = connector ? "openconnector" : "e2b";
+  const type = connector ? "composio" : "e2b";
   const provider = {
     id: "provider_test",
     name: "Existing provider",
     type,
     organization_id: "org_test",
     workspace_id: kind === "workspace" ? "ws_test" : null,
-    configuration: connector ? { enabled_services: ["github"] } : {},
+    configuration: {},
     status: "active",
     enabled: true,
     version: 3,
@@ -74,25 +74,16 @@ function setup(kind: "workspace" | "organization", surface: string) {
   };
   const definition = {
     type,
-    display_name: connector ? "OpenConnector" : "e2b",
+    display_name: connector ? "Composio" : "e2b",
     configuration_schema: {
       type: "object",
-      properties: connector
-        ? { enabled_services: { type: "array", items: { type: "string" } } }
-        : {},
-      required: connector ? ["enabled_services"] : [],
+      properties: {},
+      required: [],
     },
     credential_schema: {
       type: "object",
-      properties: connector
-        ? {
-            project_api_key: { type: "string" },
-            catalog_api_key: { type: "string" },
-          }
-        : { api_key: { type: "string" } },
-      required: connector
-        ? ["project_api_key", "catalog_api_key"]
-        : ["api_key"],
+      properties: { api_key: { type: "string" } },
+      required: ["api_key"],
     },
   };
   const listPath = `/api/v1/${kind === "workspace" ? "workspaces/{workspace}" : "organizations/{organization}"}/${surface}-providers`;
@@ -134,28 +125,25 @@ it.each(cases)(
     await screen.findByText("Existing provider");
     await user.click(screen.getByRole("button", { name: "Add provider" }));
     await user.click(screen.getByRole("combobox", { name: "Provider type" }));
+    expect(screen.queryByPlaceholderText("Search providers…")).toBeNull();
     await user.click(
       await screen.findByRole("option", {
-        name: connector ? "OpenConnector" : type,
+        name: connector ? "Composio" : type,
       }),
     );
-    await user.type(
-      screen.getByRole("textbox", { name: "Name" }),
-      "New provider",
-    );
-    const credentials = connector
-      ? { project_api_key: "test-project", catalog_api_key: "test-catalog" }
-      : { api_key: "test-environment" };
+    const nameField = screen.getByRole("textbox", {
+      name: "Name",
+    }) as HTMLInputElement;
+    expect(nameField.value).toBe(connector ? "Composio" : type);
+    await user.clear(nameField);
+    await user.type(nameField, "New provider");
+    const credentials = {
+      api_key: connector ? "test-project" : "test-environment",
+    };
     for (const [name, value] of Object.entries(credentials)) {
       const field = screen.getByLabelText(name) as HTMLInputElement;
       expect(field.type).toBe("password");
       await user.type(field, value);
-    }
-    if (connector) {
-      await user.click(
-        screen.getByRole("textbox", { name: "enabled_services" }),
-      );
-      await user.paste('["github"]');
     }
     expect(
       screen.queryByRole("button", { name: "Test connection" }),
@@ -163,7 +151,7 @@ it.each(cases)(
     expect(
       screen.queryByRole("button", { name: "Replace credentials" }),
     ).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await user.click(screen.getByRole("button", { name: "Add provider" }));
     await waitFor(() =>
       expect(http.POST).toHaveBeenCalledWith(
         listPath,
@@ -171,7 +159,7 @@ it.each(cases)(
           body: {
             name: "New provider",
             type,
-            configuration: connector ? { enabled_services: ["github"] } : {},
+            configuration: {},
             [connector ? "credentials" : "credential"]: credentials,
           },
         }),
@@ -188,7 +176,7 @@ it.each(cases)(
     ).toBe("");
     expect(
       screen.getByRole("combobox", { name: "Provider type" }).textContent,
-    ).toContain("Search providers…");
+    ).toContain("Select provider type");
   },
 );
 
@@ -205,12 +193,11 @@ it.each(cases)(
     const name = await screen.findByRole("textbox", { name: "Name" });
     expect((name as HTMLInputElement).value).toBe(provider.name);
     expect(
-      (
-        screen.getByRole("combobox", {
-          name: "Provider type",
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(true);
+      screen.queryByRole("combobox", { name: "Provider type" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("group", { name: "Provider type" }).textContent,
+    ).toContain(connector ? "Composio" : provider.type);
     expect(http.GET).toHaveBeenCalledWith(detailPath, expect.anything());
     await user.clear(name);
     await user.type(name, "Renamed provider");
@@ -251,8 +238,7 @@ it("saves connector name, credentials and enabled state in one atomic update", a
   const name = await screen.findByRole("textbox", { name: "Name" });
   await user.clear(name);
   await user.type(name, "Renamed");
-  await user.type(screen.getByLabelText("project_api_key"), "new-project");
-  await user.type(screen.getByLabelText("catalog_api_key"), "new-catalog");
+  await user.type(screen.getByLabelText("api_key"), "new-project");
   await user.click(screen.getByRole("switch", { name: "Enabled" }));
   expect(http.POST).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Save changes" }));
@@ -265,8 +251,7 @@ it("saves connector name, credentials and enabled state in one atomic update", a
         expected_version: 3,
         status: "disabled",
         credentials: {
-          project_api_key: "new-project",
-          catalog_api_key: "new-catalog",
+          api_key: "new-project",
         },
       },
     }),

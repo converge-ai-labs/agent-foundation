@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import httpx2
 import pytest
 from a13n_service.models.provider_adapters.base import ProviderOperationError
@@ -95,11 +97,11 @@ def test_provider_registry_projects_integration_discovery_support() -> None:
             "gpt-next",
             False,
             "https://example.openai.azure.com/openai/v1/models",
-            {"api-key": "secret"},
+            {"authorization": "Bearer secret"},
         ),
         (
             RuntimeProvider(
-                "openai_compatible",
+                "openai",
                 {
                     "base_url": "https://models.example/v1",
                     "auth_mode": "api_key_header",
@@ -124,7 +126,10 @@ async def test_provider_native_discovery_is_advisory(
     expected_url: str,
     expected_headers: dict[str, str],
 ) -> None:
+    provider = replace(provider, extra_headers={"x-routing-key": "private-routing-value"})
+
     async def handler(request: httpx2.Request) -> httpx2.Response:
+        assert request.headers["x-routing-key"] == "private-routing-value"
         assert str(request.url) == expected_url
         for name, value in expected_headers.items():
             assert request.headers[name] == value
@@ -137,6 +142,11 @@ async def test_provider_native_discovery_is_advisory(
             provider_resolver=_ProviderResolver(provider),
             registry=built_in_provider_registry(),
             http_client=client,
+        )
+        await operations.test(
+            provider_id="mprov_1234567890abcdef",
+            organization_id="org_1234567890abcdef",
+            workspace_id="ws_1234567890abcdef",
         )
         result = await operations.discover(
             provider_id="mprov_1234567890abcdef",

@@ -28,10 +28,16 @@ def resolve(root: Path, value: str, *, follow: bool = True) -> Path:
     return candidate
 
 
+class FileRequestError(ValueError):
+    def __init__(self, field: str, reason: str, hint: str) -> None:
+        self.details = {"field": field, "reason": reason, "hint": hint}
+        super().__init__(reason)
+
+
 def require_regular_file(path: Path) -> None:
     # stat preserves missing/denied errors that is_file() can collapse into False.
     if not stat.S_ISREG(path.stat().st_mode):
-        raise ValueError("not a regular file")
+        raise FileRequestError("path", "not_file", "Select a regular file, not a directory or special file.")
 
 
 def metadata(root: Path, path: Path, read_only: bool) -> dict:
@@ -117,6 +123,8 @@ def entries(root: Path, path: Path, request: dict, ceiling: int):
 
 
 def query(root: Path, path: Path, request: dict, config: dict) -> dict:
+    if not stat.S_ISDIR(path.stat().st_mode):
+        raise FileRequestError("root", "not_directory", "Select a directory; use text search to search a single file.")
     matcher = PathPattern(request["pattern"])
     results = []
     offset, limit = request.get("offset", 0), request["max_results"]
@@ -137,14 +145,26 @@ def query(root: Path, path: Path, request: dict, config: dict) -> dict:
 
 
 def search(root: Path, path: Path, request: dict, config: dict) -> dict:
+    mode = path.stat().st_mode
+    single_file = stat.S_ISREG(mode)
+    if not single_file and not stat.S_ISDIR(mode):
+        raise FileRequestError(
+            "root", "not_searchable", "Select a regular file or directory; special files cannot be searched."
+        )
     include = PathPattern(request["include"], "include")
     pattern = content_pattern(request["pattern"], request["regex"], request["case_sensitive"])
     matches = []
     result_bytes = 0
     seen = files_scanned = 0
     offset, maximum = request["offset"], request["max_matches"]
-    for candidate in entries(root, path, {**request, "recursive": True}, config["max_query_entries"]):
-        if not include.matches(candidate.relative_to(path).as_posix()):
+    candidates = (
+        iter((path,))
+        if single_file
+        else entries(root, path, {**request, "recursive": True}, config["max_query_entries"])
+    )
+    for candidate in candidates:
+        relative = Path(request["path"]).name if single_file else candidate.relative_to(path).as_posix()
+        if not include.matches(relative):
             continue
         item = metadata(root, candidate, config["read_only"])
         if item["kind"] != "file" or item["size"] > request["max_file_bytes"]:
@@ -166,6 +186,8 @@ def search(root: Path, path: Path, request: dict, config: dict) -> dict:
                 min(request["max_file_bytes"], config["max_file_bytes"]),
             )
         except OSError:
+            if single_file:
+                raise
             continue
         if scanned is None:
             continue
@@ -175,7 +197,7 @@ def search(root: Path, path: Path, request: dict, config: dict) -> dict:
             if len(matches) == maximum:
                 return {"matches": matches, "offset": offset, "has_more": True}
             match = {
-                "path": item["path"],
+                "path": request["path"] if single_file else item["path"],
                 "line": line,
                 "text": text,
                 "text_truncated": truncated,
@@ -284,7 +306,7 @@ def main() -> None:
         result = {"error": "environment_conflict"}
     except OverflowError:
         result = {"error": "environment_too_large"}
-    except PatternError as exc:
+    except (PatternError, FileRequestError) as exc:
         result = {"error": "environment_request_invalid", "details": exc.details}
     except (ValueError, NotADirectoryError, IsADirectoryError, re.error):
         result = {"error": "environment_request_invalid"}

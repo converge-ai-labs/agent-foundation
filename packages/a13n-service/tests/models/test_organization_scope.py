@@ -1,7 +1,9 @@
 from dataclasses import replace
+from unittest.mock import patch
 
 import pytest
 from a13n_service.etags import resource_etag
+from a13n_service.models.credentials import ProviderSecrets
 from a13n_service.models.domain import (
     CreateModelProviderRequest,
     CreateModelRequest,
@@ -57,7 +59,7 @@ async def test_shared_models_resolve_by_bare_key_and_use_owned_credentials(
         record = await session.get(ModelProviderRecord, org_provider.id)
         assert record is not None
         snapshot = record.credential_snapshot()
-        assert snapshot.decrypt(protector()) == "sk-shared"
+        assert ProviderSecrets.model_validate_json(snapshot.decrypt(protector())).credential == "sk-shared"
         with pytest.raises(SecretProtectionError):
             replace(snapshot, workspace_id=WORKSPACE_ID).decrypt(protector())
         with pytest.raises(SecretProtectionError):
@@ -70,14 +72,47 @@ async def test_shared_models_resolve_by_bare_key_and_use_owned_credentials(
             if_match=resource_etag(model.id, model.updated_at),
             request=UpdateModelRequest(enabled=False),
         )
-    with pytest.raises(ModelError):
+    with (
+        pytest.raises(ModelError),
+        patch(
+            "a13n_service.models.provider_service.CredentialSnapshot.decrypt",
+            side_effect=AssertionError("must authorize first"),
+        ),
+    ):
         await provider_service.update(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
             provider_id=org_provider.id,
             if_match=resource_etag(org_provider.id, org_provider.updated_at),
-            request=UpdateModelProviderRequest(enabled=False),
+            request=UpdateModelProviderRequest(credential="replacement"),
         )
+
+
+async def test_workspace_model_collection_filters_by_owner_scope(model_service, org_admin, org_provider):
+    organization_model = await model_service.create(
+        actor=org_admin,
+        workspace_id=None,
+        request=model_request(org_provider.id, "shared"),
+    )
+    workspace_model = await model_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=model_request(org_provider.id, "local"),
+    )
+
+    organization_models = await model_service.list(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        owner_scope="organization",
+    )
+    workspace_models = await model_service.list(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        owner_scope="workspace",
+    )
+
+    assert organization_models.items == (organization_model,)
+    assert workspace_models.items == (workspace_model,)
 
 
 @pytest.mark.parametrize("organization_first", [True, False])

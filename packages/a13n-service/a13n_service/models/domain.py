@@ -21,6 +21,8 @@ from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import ObjectId, new_object_id
 from a13n_service.names import DisplayName
 
+from .headers import HeaderUpdates
+
 BoundedDescription = Annotated[str, StringConstraints(max_length=2048)]
 UpstreamModel = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256)]
 ProviderType = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{1,63}$")]
@@ -84,6 +86,7 @@ class CreateModelProviderRequest(BaseModel):
     name: DisplayName
     configuration: dict[str, object] = Field(default_factory=dict)
     credential: SecretStr | None = Field(default=None, json_schema_extra={"writeOnly": True})
+    extra_headers: HeaderUpdates = Field(default_factory=dict)
     enabled: bool = True
 
 
@@ -93,6 +96,7 @@ class UpdateModelProviderRequest(BaseModel):
     name: DisplayName | None = None
     configuration: dict[str, object] | None = None
     credential: SecretStr | None = Field(default=None, json_schema_extra={"writeOnly": True})
+    extra_headers: HeaderUpdates = Field(default_factory=dict)
     enabled: bool | None = None
 
     @model_validator(mode="after")
@@ -115,6 +119,7 @@ class ModelProvider(BaseModel):
     name: str
     configuration: dict[str, object]
     credential_configured: bool
+    header_names: tuple[str, ...] = ()
     enabled: bool
     created_by: PrincipalRef
     updated_by: PrincipalRef

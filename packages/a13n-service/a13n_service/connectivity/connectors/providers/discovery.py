@@ -3,17 +3,13 @@
 from __future__ import annotations
 
 from asyncio import get_running_loop, timeout_at
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-
-from jsonschema import Draft202012Validator
-from pydantic import JsonValue
 
 from a13n_service.connectivity.bounds import DISCOVERY_MAX_BYTES, DISCOVERY_MAX_PAGES, DISCOVERY_MAX_TOOLS
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.management import canonical_json
 
-from ..contracts import ConnectorProviderError, DiscoveredConnector
+from ..contracts import ConnectorProviderError
 from ..http import ConnectorHttpClient
 from ..validation import optional_string, required_object
 
@@ -71,23 +67,3 @@ async def directory_items(
             raise ConnectorProviderError("invalid_provider_response")
         seen_cursors.add(cursor)
     raise ConnectorProviderError("directory_too_large")
-
-
-def setup_schema(auth_config_ids: list[str], *, toolkit_version: str | None = None) -> JsonObject:
-    ids: list[JsonValue] = [item for item in sorted(set(auth_config_ids))]
-    properties: JsonObject = {"auth_config_id": {"type": "string", "enum": ids}}
-    required: list[JsonValue] = ["auth_config_id"]
-    if toolkit_version is not None:
-        properties["toolkit_version"] = {"type": "string", "const": toolkit_version}
-        required.append("toolkit_version")
-    return {"type": "object", "properties": properties, "required": required, "additionalProperties": False}
-
-
-async def validate_discovered_setup(
-    discover: Callable[[], Awaitable[tuple[DiscoveredConnector, ...]]], connector_key: str, setup: JsonObject
-) -> None:
-    connector = next((item for item in await discover() if item.key == connector_key), None)
-    if connector is None or not connector.authentication_methods:
-        raise ConnectorProviderError("connector_setup_unavailable")
-    if not Draft202012Validator(connector.setup_schema).is_valid(setup):
-        raise ConnectorProviderError("invalid_setup_options")

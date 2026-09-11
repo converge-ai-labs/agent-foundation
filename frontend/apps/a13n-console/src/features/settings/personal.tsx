@@ -62,14 +62,17 @@ function BrowserSessions() {
           columns={[
             {
               label: t("Session"),
+              tone: "primary",
               render: (item) => <CopyableId value={item.id} />,
             },
             {
               label: t("Created"),
+              tone: "muted",
               render: (item) => <Timestamp value={item.created_at} />,
             },
             {
               label: t("Expires"),
+              tone: "muted",
               render: (item) => <Timestamp value={item.expires_at} />,
             },
             {
@@ -84,6 +87,7 @@ function BrowserSessions() {
               render: (item) =>
                 !item.revoked_at && (
                   <Confirm
+                    triggerVariant="ghost"
                     title={t("Revoke session")}
                     description={t("This browser will need to sign in again.")}
                     trigger={t("Revoke")}

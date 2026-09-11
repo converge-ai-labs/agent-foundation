@@ -1,3 +1,8 @@
+import { useSuggestedName } from "../../shared/suggested-name";
+import { FormSection, formSectionStyles } from "../../shared/form-section";
+import { ResourceModalTitle } from "../../shared/resource-modal-title";
+import { CredentialEditor } from "../../shared/credential-editor";
+import { ConfigurationSummary } from "../../shared/configuration-summary";
 import { ProviderTypeField } from "../../shared/provider-type-field";
 import { ProviderEnabled } from "../../shared/provider-enabled";
 import { ProviderIcon } from "../../shared/provider-icon";
@@ -11,10 +16,9 @@ import { ResourceIdentity } from "../../shared/collection";
 import { ScopeBadge } from "../../shared/scope-badge";
 import {
   Button,
-  SettingsSection,
-  SettingsRow,
-  DisclosureSection,
   FormField,
+  ReadOnlyField,
+  DisclosureSection,
   Input,
   ModalFrame,
 } from "a13n-ui";
@@ -29,7 +33,7 @@ import { useAccess } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
-import { FormActions, JsonView } from "../../shared/form";
+import { FormActions } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
 import { SchemaFields } from "../../shared/schema-fields";
 import styles from "../../shared/shared.module.css";
@@ -39,7 +43,6 @@ import {
   validateSettings,
 } from "../../shared/validation";
 import { connectorApi, type ConnectorScope } from "./api";
-import { ConnectorCatalog } from "./catalog";
 
 export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
   const client = useClient(),
@@ -93,18 +96,21 @@ export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
             columns={[
               {
                 label: t("Provider"),
+                tone: "primary",
                 render: (item) => (
                   <div className="flex min-w-0 items-center gap-3">
                     <ProviderIcon type={item.type} />
                     <ResourceIdentity
                       name={item.name}
                       description={item.type}
+                      resourceId={item.id}
                     />
                   </div>
                 ),
               },
               {
                 label: t("Scope"),
+                tone: "muted",
                 render: (item) => (
                   <ScopeBadge workspaceId={item.workspace_id} />
                 ),
@@ -196,12 +202,27 @@ function ProviderEditor({
         ) : undefined
       }
       size={"md"}
-      title={t(
-        readOnly ? "Provider" : providerId ? "Edit provider" : "Add provider",
-      )}
-      description={t(
-        "Credentials are stored securely and never returned by the service.",
-      )}
+      title={
+        providerId && resource.data ? (
+          <ResourceModalTitle name={resource.data.name} id={resource.data.id} />
+        ) : (
+          t("Add provider")
+        )
+      }
+      description={
+        providerId && resource.data ? (
+          <span className="flex flex-wrap items-center gap-2">
+            <span>
+              {definitions.data?.items.find(
+                (item) => item.type === resource.data?.type,
+              )?.display_name ?? resource.data.type}
+            </span>
+            <StateBadge state={resource.data.status} />
+          </span>
+        ) : (
+          t("Connect a service to browse connectors and authorize accounts.")
+        )
+      }
       closeLabel={t("Close")}
     >
       {open &&
@@ -211,11 +232,7 @@ function ProviderEditor({
           <ErrorNotice error={definitions.error ?? resource.error} />
         ) : readOnly && resource.data ? (
           <div className={styles.stack}>
-            <ResourceIdentity
-              name={resource.data.name}
-              description={resource.data.type}
-            />
-            <ConnectorCatalog provider={resource.data} />
+            <ConfigurationSummary value={resource.data.configuration} />
           </div>
         ) : (
           <ProviderForm
@@ -248,7 +265,7 @@ function ProviderForm({
     { t } = useTranslation(),
     key = useIdempotency(),
     [basis] = useState(initial),
-    [name, setName] = useState(initial?.name ?? ""),
+    { name, setName, suggestName } = useSuggestedName(initial?.name),
     [enabled, setEnabled] = useState(initial?.status === "active"),
     [type, setType] = useState(initial?.type ?? ""),
     [configuration, setConfiguration] = useState<Record<string, unknown>>(
@@ -315,112 +332,138 @@ function ProviderForm({
   return (
     <div className={styles.stack}>
       <form
-        className={styles.form}
+        className={formSectionStyles.form}
         onSubmit={(event) => {
           event.preventDefault();
           save.mutate();
         }}
       >
-        <FormField className="min-w-0 w-full" label={t("Name")}>
-          <Input
-            required={true}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            maxLength={128}
+        <FormSection>
+          <FormField className="min-w-0 w-full" label={t("Name")}>
+            <Input
+              required={true}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              maxLength={128}
+            />
+          </FormField>
+        </FormSection>
+        <FormSection title={t("Connection")}>
+          <ProviderTypeField
+            definitions={definitions}
+            value={type}
+            readOnly={!!basis}
+            onValueChange={(value) => {
+              setType(value);
+              suggestName(
+                definitions.find((item) => item.type === value)?.display_name ??
+                  value,
+              );
+              setConfiguration({});
+              setCredentials({});
+            }}
           />
-        </FormField>
-        <ProviderTypeField
-          definitions={definitions}
-          value={type}
-          disabled={!!basis}
-          onValueChange={(value) => {
-            setType(value);
-            setConfiguration({});
-            setCredentials({});
-          }}
-        />
-        {basis ? (
-          <>
-            {Object.keys(configuration).length > 0 && (
-              <DisclosureSection title={t("Configuration")}>
-                <JsonView value={configuration} />
-              </DisclosureSection>
-            )}
-          </>
-        ) : (
-          <>
-            {definition && (
-              <>
-                <SchemaFields
-                  key={type}
-                  schema={definition.configuration_schema}
-                  value={configuration}
-                  onChange={setConfiguration}
-                />
+          {basis ? (
+            <>
+              {Object.keys(configuration).length > 0 && (
+                <div className={styles.stack}>
+                  {typeof configuration.endpoint === "string" && (
+                    <ReadOnlyField label={t("Endpoint")}>
+                      {configuration.endpoint}
+                    </ReadOnlyField>
+                  )}
+                  <DisclosureSection title={t("Configuration details")}>
+                    <ConfigurationSummary
+                      value={Object.fromEntries(
+                        Object.entries(configuration).filter(
+                          ([key]) => key !== "endpoint",
+                        ),
+                      )}
+                      schema={definition?.configuration_schema}
+                    />
+                  </DisclosureSection>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {definition && (
+                <>
+                  <SchemaFields
+                    key={type}
+                    schema={definition.configuration_schema}
+                    value={configuration}
+                    onChange={setConfiguration}
+                  />
+                  <SchemaFields
+                    secret
+                    key={`${type}-credentials`}
+                    schema={definition.credential_schema}
+                    value={credentials}
+                    onChange={setCredentials}
+                  />
+                </>
+              )}
+            </>
+          )}
+          {basis &&
+            definition &&
+            Object.keys(definition.credential_schema.properties ?? {}).length >
+              0 && (
+              <CredentialEditor configured={basis.credential_configured}>
                 <SchemaFields
                   secret
-                  key={`${type}-credentials`}
-                  schema={definition.credential_schema}
+                  schema={{ ...definition.credential_schema, required: [] }}
                   value={credentials}
                   onChange={setCredentials}
                 />
-              </>
+              </CredentialEditor>
             )}
-          </>
-        )}
-        {basis && definition && (
-          <>
-            <p className={styles.muted}>
-              {t("Leave empty to keep the current credential.")}
-            </p>
-            <SchemaFields
-              secret
-              schema={{ ...definition.credential_schema, required: [] }}
-              value={credentials}
-              onChange={setCredentials}
-            />
-          </>
-        )}
-        {basis && (
-          <SettingsSection>
-            <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
-            <SettingsRow
-              stackOnNarrow={false}
-              label={t("Connection")}
-              description={t(
-                "Check the saved connection. May consume provider quota.",
+          {basis && (
+            <>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  loading={test.isPending}
+                  disabled={
+                    save.isPending ||
+                    name !== basis.name ||
+                    enabled !== (basis.status === "active") ||
+                    Object.keys(credentials).length > 0
+                  }
+                  onClick={() => test.mutate()}
+                  type="button"
+                >
+                  {t("Check connection")}
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  {t("May consume quota or incur cost.")}
+                </span>
+              </div>
+              <ErrorNotice error={test.error} retry={() => void reload()} />
+              {test.data && (
+                <p role="status" className={styles.muted}>
+                  {t("Connection verified")}
+                </p>
               )}
-            >
-              <Button
-                size="sm"
-                variant="outline"
-                loading={test.isPending}
-                disabled={
-                  save.isPending ||
-                  name !== basis.name ||
-                  enabled !== (basis.status === "active") ||
-                  Object.keys(credentials).length > 0
-                }
-                onClick={() => test.mutate()}
-                type="button"
-              >
-                {t("Check connection")}
-              </Button>
-            </SettingsRow>
-            <ErrorNotice error={test.error} retry={() => void reload()} />
-            {test.data && <JsonView value={test.data} />}
-            {scope.kind === "workspace" && basis.status === "active" && (
-              <SettingsRow label={t("Connectors")}>
-                <ConnectorCatalog provider={basis} />
-              </SettingsRow>
-            )}
-          </SettingsSection>
+            </>
+          )}
+        </FormSection>
+        {basis && (
+          <FormSection>
+            <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
+          </FormSection>
         )}
         <ErrorNotice
           error={save.error}
           retry={basis ? () => void reload() : undefined}
         />
-        <FormActions pending={save.isPending} onCancel={close} />
+        <FormActions
+          pending={save.isPending}
+          onCancel={close}
+          label={t(basis ? "Save changes" : "Add provider")}
+        />
       </form>
     </div>
   );

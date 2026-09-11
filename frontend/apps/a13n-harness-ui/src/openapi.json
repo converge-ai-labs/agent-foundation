@@ -23,6 +23,741 @@
         }
       }
     },
+    "/api/host/files/metadata": {
+      "get": {
+        "summary": "Host File Metadata",
+        "operationId": "host_file_metadata_api_host_files_metadata_get",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileEntry"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/host/files": {
+      "get": {
+        "summary": "Host Files",
+        "operationId": "host_files_api_host_files_get",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Path"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 10000,
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "revision",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Revision"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectoryPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/host/files/text": {
+      "get": {
+        "summary": "Host File Text",
+        "operationId": "host_file_text_api_host_files_text_get",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Path"
+            }
+          },
+          {
+            "name": "expected_revision",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Revision"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileText"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Save Host Text",
+        "operationId": "save_host_text_api_host_files_text_put",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileEntry"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileWriteRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/host/files/directories": {
+      "post": {
+        "summary": "Create Host Directory",
+        "operationId": "create_host_directory_api_host_files_directories_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectoryCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileEntry"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/host/files/move": {
+      "post": {
+        "summary": "Move Host File",
+        "operationId": "move_host_file_api_host_files_move_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileMoveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileEntry"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/host/files/delete": {
+      "post": {
+        "summary": "Delete Host File",
+        "operationId": "delete_host_file_api_host_files_delete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileDeletion"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/host/files/content": {
+      "put": {
+        "summary": "Upload Host File",
+        "operationId": "upload_host_file_api_host_files_content_put",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Path"
+            }
+          },
+          {
+            "name": "expected_revision",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Revision"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileEntry"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Download Host File",
+        "operationId": "download_host_file_api_host_files_content_get",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Path"
+            }
+          },
+          {
+            "name": "expected_revision",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Revision"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/host-file-captures": {
+      "post": {
+        "summary": "Capture Host File",
+        "operationId": "capture_host_file_api_threads__thread_id__host_file_captures_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileCapture"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileCaptureRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/host/git/repository": {
+      "get": {
+        "summary": "Host Repository",
+        "operationId": "host_repository_api_host_git_repository_get",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitDiscovery"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/host/git/status": {
+      "get": {
+        "summary": "Host Git Status",
+        "operationId": "host_git_status_api_host_git_status_get",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Path"
+            }
+          },
+          {
+            "name": "include_ignored",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Ignored"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 10000,
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "expected_revision",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Revision"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/host/git/diff": {
+      "get": {
+        "summary": "Host Git Diff",
+        "operationId": "host_git_diff_api_host_git_diff_get",
+        "parameters": [
+          {
+            "name": "repository_path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Repository Path"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Path"
+            }
+          },
+          {
+            "name": "comparison",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "staged",
+                "unstaged",
+                "untracked"
+              ],
+              "type": "string",
+              "default": "unstaged",
+              "title": "Comparison"
+            }
+          },
+          {
+            "name": "expected_revision",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Revision"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitDiff"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/host-git-captures": {
+      "post": {
+        "summary": "Capture Host Git Diff",
+        "operationId": "capture_host_git_diff_api_threads__thread_id__host_git_captures_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileCapture"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitCaptureRequest"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/setup": {
       "get": {
         "summary": "Setup",
@@ -336,6 +1071,361 @@
         }
       }
     },
+    "/api/configuration/sources": {
+      "get": {
+        "summary": "Configuration Sources",
+        "operationId": "configuration_sources_api_configuration_sources_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationSourceCatalog"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/configuration/sources/{relative_path}": {
+      "get": {
+        "summary": "Configuration Source",
+        "operationId": "configuration_source_api_configuration_sources__relative_path__get",
+        "parameters": [
+          {
+            "name": "relative_path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Relative Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationSourceView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Put Source",
+        "operationId": "put_source_api_configuration_sources__relative_path__put",
+        "parameters": [
+          {
+            "name": "relative_path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Relative Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationPublication"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceMutationRequest"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete Source",
+        "operationId": "delete_source_api_configuration_sources__relative_path__delete",
+        "parameters": [
+          {
+            "name": "relative_path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Relative Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationPublication"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/configuration/validate": {
+      "post": {
+        "summary": "Validate Source",
+        "operationId": "validate_source_api_configuration_validate_post",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationValidation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceMutationRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/preview": {
+      "post": {
+        "summary": "Preview Thread",
+        "operationId": "preview_thread_api_threads_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewThreadDefaults"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadConfiguration"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/configuration": {
+      "patch": {
+        "summary": "Patch Configuration",
+        "operationId": "patch_configuration_api_threads__thread_id__configuration_patch",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThreadConfigurationMutationInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/project-defaults": {
+      "get": {
+        "summary": "Project Defaults",
+        "operationId": "project_defaults_api_threads__thread_id__project_defaults_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectDefaultsPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Apply Project Defaults",
+        "operationId": "apply_project_defaults_api_threads__thread_id__project_defaults_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectDefaultsApply"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects": {
       "get": {
         "summary": "Projects",
@@ -370,6 +1460,23 @@
             "schema": {
               "type": "string",
               "title": "Thread Id"
+            }
+          },
+          {
+            "name": "expected_continuation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Continuation Id"
             }
           }
         ],
@@ -463,6 +1570,513 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ThreadSelectorCatalog"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/activity": {
+      "get": {
+        "summary": "Thread Activity",
+        "operationId": "thread_activity_api_threads_activity_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 512
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          },
+          {
+            "name": "include_archived",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Archived"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadActivityPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/tasks": {
+      "get": {
+        "summary": "Tasks",
+        "operationId": "tasks_api_threads__thread_id__tasks_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "expected_continuation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Continuation Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/children": {
+      "get": {
+        "summary": "Children",
+        "operationId": "children_api_threads__thread_id__children_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "execution_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Execution Id"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChildExecutionPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/children/wait": {
+      "get": {
+        "summary": "Wait Children",
+        "operationId": "wait_children_api_threads__thread_id__children_wait_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "execution_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Execution Id"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "timeout_seconds",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "maximum": 60,
+              "minimum": 0,
+              "default": 10,
+              "title": "Timeout Seconds"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChildExecutionPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/children/{execution_id}/review": {
+      "get": {
+        "summary": "Child Review",
+        "operationId": "child_review_api_threads__thread_id__children__execution_id__review_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "execution_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Execution Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/children/{execution_id}/steer": {
+      "post": {
+        "summary": "Steer Child",
+        "operationId": "steer_child_api_threads__thread_id__children__execution_id__steer_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "execution_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Execution Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChildControlResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SteerRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/children/{execution_id}/cancel": {
+      "post": {
+        "summary": "Cancel Child",
+        "operationId": "cancel_child_api_threads__thread_id__children__execution_id__cancel_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "execution_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Execution Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChildControlResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -1019,7 +2633,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PromptRequest"
+                "$ref": "#/components/schemas/SteerRequest"
               }
             }
           }
@@ -1108,6 +2722,12 @@
                       "$ref": "#/components/schemas/FocusSnapshotFrame"
                     },
                     {
+                      "$ref": "#/components/schemas/FocusReplayFrame"
+                    },
+                    {
+                      "$ref": "#/components/schemas/FocusReadyFrame"
+                    },
+                    {
                       "$ref": "#/components/schemas/FocusEventFrame"
                     },
                     {
@@ -1193,6 +2813,80 @@
   },
   "components": {
     "schemas": {
+      "ActivitySummary": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "assistant",
+              "reasoning",
+              "tool",
+              "child",
+              "decision",
+              "failure",
+              "notice"
+            ],
+            "title": "Kind"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Text"
+          },
+          "occurred_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Occurred At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "text"
+        ],
+        "title": "ActivitySummary"
+      },
+      "AgentResourceSource": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "agent",
+            "title": "Kind",
+            "default": "agent"
+          },
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "AgentResourceSource"
+      },
+      "AgentSource": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/AgentResourceSource"
+          },
+          {
+            "$ref": "#/components/schemas/MarkdownSubagentSource"
+          }
+        ]
+      },
       "AgentSourceView": {
         "properties": {
           "kind": {
@@ -1473,6 +3167,58 @@
         ],
         "title": "ChildActivityView"
       },
+      "ChildControlResult": {
+        "properties": {
+          "execution_id": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Execution Id"
+          },
+          "accepted": {
+            "type": "boolean",
+            "title": "Accepted"
+          },
+          "enqueue_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enqueue Id"
+          },
+          "persisted_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "running",
+                  "succeeded",
+                  "failed",
+                  "cancelled",
+                  "lost"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Persisted Status"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "execution_id",
+          "accepted"
+        ],
+        "title": "ChildControlResult"
+      },
       "ChildExecutionPage": {
         "properties": {
           "executions": {
@@ -1669,6 +3415,55 @@
         ],
         "title": "ChildExecutionView"
       },
+      "ChildStatusCounts": {
+        "properties": {
+          "running": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Running",
+            "default": 0
+          },
+          "succeeded": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Succeeded",
+            "default": 0
+          },
+          "failed": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Failed",
+            "default": 0
+          },
+          "cancelled": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Cancelled",
+            "default": 0
+          },
+          "lost": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Lost",
+            "default": 0
+          },
+          "active": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Active",
+            "default": 0
+          },
+          "unavailable": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unavailable",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ChildStatusCounts"
+      },
       "ChildToolCallView": {
         "properties": {
           "tool_call_id": {
@@ -1723,6 +3518,192 @@
           "status"
         ],
         "title": "ChildToolCallView"
+      },
+      "ConfigurationPublication": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "created",
+              "updated",
+              "deleted",
+              "unchanged"
+            ],
+            "title": "Action"
+          },
+          "relative_path": {
+            "type": "string",
+            "title": "Relative Path"
+          },
+          "source_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Digest"
+          },
+          "generation_digest": {
+            "type": "string",
+            "title": "Generation Digest"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "action",
+          "relative_path",
+          "source_digest",
+          "generation_digest"
+        ],
+        "title": "ConfigurationPublication"
+      },
+      "ConfigurationSourceCatalog": {
+        "properties": {
+          "generation_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation Digest"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigurationSourceInfo"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "generation_digest",
+          "sources"
+        ],
+        "title": "ConfigurationSourceCatalog"
+      },
+      "ConfigurationSourceInfo": {
+        "properties": {
+          "relative_path": {
+            "type": "string",
+            "title": "Relative Path"
+          },
+          "source_digest": {
+            "type": "string",
+            "title": "Source Digest"
+          },
+          "resource_kind": {
+            "type": "string",
+            "title": "Resource Kind"
+          },
+          "resource_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Resource Ids"
+          },
+          "writable": {
+            "type": "boolean",
+            "title": "Writable"
+          },
+          "content_available": {
+            "type": "boolean",
+            "title": "Content Available"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "relative_path",
+          "source_digest",
+          "resource_kind",
+          "resource_ids",
+          "writable",
+          "content_available"
+        ],
+        "title": "ConfigurationSourceInfo"
+      },
+      "ConfigurationSourceView": {
+        "properties": {
+          "relative_path": {
+            "type": "string",
+            "title": "Relative Path"
+          },
+          "source_digest": {
+            "type": "string",
+            "title": "Source Digest"
+          },
+          "resource_kind": {
+            "type": "string",
+            "title": "Resource Kind"
+          },
+          "resource_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Resource Ids"
+          },
+          "writable": {
+            "type": "boolean",
+            "title": "Writable"
+          },
+          "content_available": {
+            "type": "boolean",
+            "title": "Content Available"
+          },
+          "generation_digest": {
+            "type": "string",
+            "title": "Generation Digest"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "relative_path",
+          "source_digest",
+          "resource_kind",
+          "resource_ids",
+          "writable",
+          "content_available",
+          "generation_digest",
+          "content"
+        ],
+        "title": "ConfigurationSourceView"
+      },
+      "ConfigurationValidation": {
+        "properties": {
+          "candidate_digest": {
+            "type": "string",
+            "title": "Candidate Digest"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "candidate_digest"
+        ],
+        "title": "ConfigurationValidation"
       },
       "ContentMetadata": {
         "properties": {
@@ -1941,6 +3922,46 @@
           "tool_name"
         ],
         "title": "DeferredRequestView"
+      },
+      "DirectoryPage": {
+        "properties": {
+          "directory": {
+            "$ref": "#/components/schemas/FileEntry"
+          },
+          "resolved_path": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Resolved Path"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/FileEntry"
+            },
+            "type": "array",
+            "title": "Entries"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "directory",
+          "resolved_path",
+          "entries",
+          "next_offset"
+        ],
+        "title": "DirectoryPage"
       },
       "EnvironmentOutcomeView": {
         "properties": {
@@ -2192,6 +4213,213 @@
         ],
         "title": "FailureView"
       },
+      "FileCapture": {
+        "properties": {
+          "attachment": {
+            "$ref": "#/components/schemas/ThreadAttachment"
+          },
+          "prompt_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "attachment",
+          "prompt_text"
+        ],
+        "title": "FileCapture"
+      },
+      "FileContextSource": {
+        "properties": {
+          "location": {
+            "type": "string",
+            "const": "host",
+            "title": "Location",
+            "default": "host"
+          },
+          "path": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path"
+          },
+          "resolved_path": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Resolved Path"
+          },
+          "revision": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Revision"
+          },
+          "start_line": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Line"
+          },
+          "end_line": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Line"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "resolved_path",
+          "revision"
+        ],
+        "title": "FileContextSource"
+      },
+      "FileDeletion": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path"
+          },
+          "removed_entries": {
+            "type": "integer",
+            "title": "Removed Entries"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "removed_entries"
+        ],
+        "title": "FileDeletion"
+      },
+      "FileEntry": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "file",
+              "directory",
+              "symlink",
+              "other"
+            ],
+            "title": "Kind"
+          },
+          "revision": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Revision"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          },
+          "modified_ns": {
+            "type": "integer",
+            "title": "Modified Ns"
+          },
+          "mode": {
+            "type": "integer",
+            "title": "Mode"
+          },
+          "link_target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Link Target"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "kind",
+          "revision",
+          "size",
+          "modified_ns",
+          "mode"
+        ],
+        "title": "FileEntry"
+      },
+      "FileText": {
+        "properties": {
+          "entry": {
+            "$ref": "#/components/schemas/FileEntry"
+          },
+          "resolved_path": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Resolved Path"
+          },
+          "presentation": {
+            "type": "string",
+            "enum": [
+              "text",
+              "binary",
+              "too_large"
+            ],
+            "title": "Presentation"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "entry",
+          "resolved_path",
+          "presentation"
+        ],
+        "title": "FileText"
+      },
       "FocusEventFrame": {
         "properties": {
           "kind": {
@@ -2216,6 +4444,56 @@
         ],
         "title": "FocusEventFrame"
       },
+      "FocusReadyFrame": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "ready",
+            "title": "Kind",
+            "default": "ready"
+          },
+          "resume_cursor": {
+            "type": "string",
+            "title": "Resume Cursor"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "resume_cursor"
+        ],
+        "title": "FocusReadyFrame"
+      },
+      "FocusReplayFrame": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "root_stream",
+            "title": "Kind",
+            "default": "root_stream"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/RootStreamEvent"
+            },
+            "type": "array",
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Events"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id",
+          "events"
+        ],
+        "title": "FocusReplayFrame"
+      },
       "FocusSnapshotFrame": {
         "properties": {
           "kind": {
@@ -2228,7 +4506,14 @@
             "$ref": "#/components/schemas/ThreadFocusSnapshot"
           },
           "resume_cursor": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Resume Cursor"
           }
         },
@@ -2239,6 +4524,389 @@
           "resume_cursor"
         ],
         "title": "FocusSnapshotFrame"
+      },
+      "GitChange": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path"
+          },
+          "original_path": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Path"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "tracked",
+              "untracked",
+              "ignored",
+              "conflicted"
+            ],
+            "title": "Kind"
+          },
+          "index_status": {
+            "type": "string",
+            "title": "Index Status"
+          },
+          "worktree_status": {
+            "type": "string",
+            "title": "Worktree Status"
+          },
+          "submodule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submodule"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "kind",
+          "index_status",
+          "worktree_status"
+        ],
+        "title": "GitChange"
+      },
+      "GitContextSource": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "git_diff",
+            "title": "Kind",
+            "default": "git_diff"
+          },
+          "location": {
+            "type": "string",
+            "const": "host",
+            "title": "Location",
+            "default": "host"
+          },
+          "repository_path": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Repository Path"
+          },
+          "git_dir": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Git Dir"
+          },
+          "path": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path"
+          },
+          "original_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Path"
+          },
+          "comparison": {
+            "type": "string",
+            "enum": [
+              "staged",
+              "unstaged",
+              "untracked"
+            ],
+            "title": "Comparison"
+          },
+          "head_oid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Head Oid"
+          },
+          "index_revision": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Index Revision"
+          },
+          "revision": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Revision"
+          },
+          "start_line": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Line"
+          },
+          "end_line": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Line"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "repository_path",
+          "git_dir",
+          "path",
+          "comparison",
+          "head_oid",
+          "index_revision",
+          "revision"
+        ],
+        "title": "GitContextSource",
+        "description": "A reviewed Git comparison, not a revision of one mutable file."
+      },
+      "GitDiff": {
+        "properties": {
+          "repository": {
+            "$ref": "#/components/schemas/GitRepository"
+          },
+          "path": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path"
+          },
+          "original_path": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Path"
+          },
+          "comparison": {
+            "type": "string",
+            "enum": [
+              "staged",
+              "unstaged",
+              "untracked"
+            ],
+            "title": "Comparison"
+          },
+          "index_revision": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Index Revision"
+          },
+          "revision": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Revision"
+          },
+          "presentation": {
+            "type": "string",
+            "enum": [
+              "text",
+              "binary",
+              "unchanged"
+            ],
+            "title": "Presentation"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "repository",
+          "path",
+          "comparison",
+          "index_revision",
+          "revision",
+          "presentation"
+        ],
+        "title": "GitDiff"
+      },
+      "GitDiscovery": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "repository",
+              "not_repository",
+              "bare"
+            ],
+            "title": "State"
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GitRepository"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "state"
+        ],
+        "title": "GitDiscovery"
+      },
+      "GitRepository": {
+        "properties": {
+          "root": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Root"
+          },
+          "git_dir": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Git Dir"
+          },
+          "common_dir": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Common Dir"
+          },
+          "head_oid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Head Oid"
+          },
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "root",
+          "git_dir",
+          "common_dir",
+          "head_oid",
+          "branch"
+        ],
+        "title": "GitRepository"
+      },
+      "GitStatus": {
+        "properties": {
+          "repository": {
+            "$ref": "#/components/schemas/GitRepository"
+          },
+          "revision": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Revision"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/GitChange"
+            },
+            "type": "array",
+            "title": "Entries"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "repository",
+          "revision",
+          "entries",
+          "next_offset"
+        ],
+        "title": "GitStatus"
       },
       "HTTPValidationError": {
         "properties": {
@@ -2264,13 +4932,11 @@
           },
           "host_files": {
             "type": "boolean",
-            "const": false,
             "title": "Host Files",
             "default": false
           },
           "host_git": {
             "type": "boolean",
-            "const": false,
             "title": "Host Git",
             "default": false
           },
@@ -2538,6 +5204,250 @@
         ],
         "title": "LoginStatus"
       },
+      "MarkdownSubagentSource": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "markdown",
+            "title": "Kind",
+            "default": "markdown"
+          },
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "MarkdownSubagentSource"
+      },
+      "PendingDecisionSummary": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "question",
+              "approval",
+              "external",
+              "mixed"
+            ],
+            "title": "Kind"
+          },
+          "count": {
+            "type": "integer",
+            "maximum": 256.0,
+            "minimum": 1.0,
+            "title": "Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "count"
+        ],
+        "title": "PendingDecisionSummary"
+      },
+      "ProjectDefaults": {
+        "properties": {
+          "agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "environment_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "harness_plugins": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ResourceId"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Harness Plugins"
+          },
+          "environment_run_extensions": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ResourceId"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Run Extensions"
+          },
+          "mcp_servers": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ResourceId"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mcp Servers"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ProjectDefaults",
+        "description": "One creation combination; omission falls back and empty lists select none."
+      },
+      "ProjectDefaultsPatch": {
+        "properties": {
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "agent_source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "environment_profile_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Profile Id"
+          },
+          "harness_plugin_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Harness Plugin Ids"
+          },
+          "environment_run_extension_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Run Extension Ids"
+          },
+          "mcp_server_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mcp Server Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ProjectDefaultsPatch",
+        "description": "Stored-axis preview patch, distinct from the root selection command schema."
+      },
+      "ProjectDefaultsPreview": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "defaults_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Defaults Digest"
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          },
+          "patch": {
+            "$ref": "#/components/schemas/ProjectDefaultsPatch"
+          },
+          "current": {
+            "$ref": "#/components/schemas/ThreadConfiguration"
+          },
+          "replacement": {
+            "$ref": "#/components/schemas/ThreadConfiguration"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "thread_id",
+          "project_id",
+          "defaults_digest",
+          "expected_version",
+          "patch",
+          "current",
+          "replacement"
+        ],
+        "title": "ProjectDefaultsPreview"
+      },
       "ProjectSummary": {
         "properties": {
           "project_id": {
@@ -2576,6 +5486,9 @@
               }
             ],
             "title": "Last Active At"
+          },
+          "defaults": {
+            "$ref": "#/components/schemas/ProjectDefaults"
           }
         },
         "additionalProperties": false,
@@ -2674,6 +5587,102 @@
         "maxLength": 128,
         "minLength": 3,
         "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$"
+      },
+      "ReviewView": {
+        "properties": {
+          "lifecycle": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "closed",
+              "unavailable"
+            ],
+            "title": "Lifecycle"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "json",
+              "shell",
+              "task",
+              "child",
+              "diff",
+              "generic"
+            ],
+            "title": "Kind"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 262144
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "default": false
+          },
+          "omitted": {
+            "type": "boolean",
+            "title": "Omitted",
+            "default": false
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailable Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "lifecycle",
+          "kind",
+          "title"
+        ],
+        "title": "ReviewView"
       },
       "RootActivityState": {
         "type": "string",
@@ -2983,6 +5992,84 @@
           "submitted_at"
         ],
         "title": "RootRunReceipt"
+      },
+      "RootStreamEvent": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Index"
+          },
+          "event_type": {
+            "type": "string",
+            "title": "Event Type"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          },
+          "payload_omitted": {
+            "type": "boolean",
+            "title": "Payload Omitted"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "index",
+          "event_type",
+          "payload",
+          "payload_omitted"
+        ],
+        "title": "RootStreamEvent"
+      },
+      "RootStreamSummary": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "base_continuation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Continuation Id"
+          },
+          "event_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Event Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "thread_id",
+          "run_id",
+          "base_continuation_id",
+          "event_count"
+        ],
+        "title": "RootStreamSummary",
+        "description": "Finite observer prefix covered by a focused watch's cutover."
       },
       "SelectableResourceSummary": {
         "properties": {
@@ -3601,6 +6688,140 @@
         ],
         "title": "TaskView"
       },
+      "ThreadActivityPage": {
+        "properties": {
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ThreadActivityView"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rows",
+          "total"
+        ],
+        "title": "ThreadActivityPage"
+      },
+      "ThreadActivityView": {
+        "properties": {
+          "thread": {
+            "$ref": "#/components/schemas/ThreadSummary"
+          },
+          "project_name": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Project Name"
+          },
+          "agent_name": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Agent Name"
+          },
+          "environment_name": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Environment Name"
+          },
+          "pending_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PendingDecisionSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latest_operation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RootOperationView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "children": {
+            "$ref": "#/components/schemas/ChildStatusCounts"
+          },
+          "latest_activity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActivitySummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "available_actions": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "open",
+                "archive",
+                "respond",
+                "wait",
+                "steer",
+                "cancel"
+              ]
+            },
+            "type": "array",
+            "title": "Available Actions",
+            "default": [
+              "open"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "thread",
+          "project_name",
+          "agent_name",
+          "environment_name"
+        ],
+        "title": "ThreadActivityView"
+      },
       "ThreadAttachment": {
         "properties": {
           "attachment_id": {
@@ -3618,6 +6839,20 @@
           "size": {
             "type": "integer",
             "title": "Size"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FileContextSource"
+              },
+              {
+                "$ref": "#/components/schemas/GitContextSource"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
           }
         },
         "additionalProperties": false,
@@ -3630,6 +6865,69 @@
         ],
         "title": "ThreadAttachment",
         "description": "A Thread-scoped handle; paths are resolved by the App, never by clients."
+      },
+      "ThreadConfiguration": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "agent_source": {
+            "$ref": "#/components/schemas/AgentSource"
+          },
+          "environment_profile_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Environment Profile Id"
+          },
+          "harness_plugin_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Harness Plugin Ids",
+            "default": []
+          },
+          "environment_run_extension_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Environment Run Extension Ids",
+            "default": []
+          },
+          "mcp_server_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Mcp Server Ids",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "agent_source",
+          "environment_profile_id"
+        ],
+        "title": "ThreadConfiguration"
       },
       "ThreadConfigurationView": {
         "properties": {
@@ -3782,6 +7080,16 @@
             "type": "array",
             "title": "Recent Events",
             "default": []
+          },
+          "root_stream": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RootStreamSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -4185,6 +7493,226 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "FileWriteRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "expected_revision": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Revision"
+          },
+          "text": {
+            "maxLength": 524288,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "text"
+        ],
+        "title": "FileWriteRequest",
+        "type": "object"
+      },
+      "DirectoryCreateRequest": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "title": "DirectoryCreateRequest"
+      },
+      "FileMoveRequest": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path"
+          },
+          "destination": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Destination"
+          },
+          "expected_revision": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Expected Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "destination",
+          "expected_revision"
+        ],
+        "title": "FileMoveRequest"
+      },
+      "FileDeleteRequest": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path"
+          },
+          "expected_revision": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Expected Revision"
+          },
+          "recursive": {
+            "type": "boolean",
+            "title": "Recursive",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "expected_revision"
+        ],
+        "title": "FileDeleteRequest"
+      },
+      "FileCaptureRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "expected_revision": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Expected Revision",
+            "type": "string"
+          },
+          "start_line": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Line"
+          },
+          "end_line": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Line"
+          }
+        },
+        "required": [
+          "path",
+          "expected_revision"
+        ],
+        "title": "FileCaptureRequest",
+        "type": "object"
+      },
+      "GitCaptureRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "repository_path": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Repository Path",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "comparison": {
+            "default": "unstaged",
+            "enum": [
+              "staged",
+              "unstaged",
+              "untracked"
+            ],
+            "title": "Comparison",
+            "type": "string"
+          },
+          "expected_revision": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Expected Revision",
+            "type": "string"
+          },
+          "start_line": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Line"
+          },
+          "end_line": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Line"
+          }
+        },
+        "required": [
+          "repository_path",
+          "path",
+          "expected_revision"
+        ],
+        "title": "GitCaptureRequest",
+        "type": "object"
       },
       "ApiKeyAuthentication": {
         "properties": {
@@ -4658,6 +8186,237 @@
         ],
         "title": "LoginRequest"
       },
+      "ResourceMutationRequest": {
+        "additionalProperties": false,
+        "description": "Replacement content for a create or update.",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "ResourceMutationRequest",
+        "type": "object"
+      },
+      "NewThreadDefaults": {
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "agent_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
+          },
+          "environment_profile_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Profile Id"
+          },
+          "harness_plugin_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Harness Plugin Ids"
+          },
+          "environment_run_extension_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Run Extension Ids"
+          },
+          "mcp_server_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mcp Server Ids"
+          }
+        },
+        "title": "NewThreadDefaults",
+        "type": "object"
+      },
+      "ThreadConfigurationPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "agent_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
+          },
+          "environment_profile_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Profile Id"
+          },
+          "harness_plugin_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Harness Plugin Ids"
+          },
+          "environment_run_extension_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Run Extension Ids"
+          },
+          "mcp_server_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mcp Server Ids"
+          }
+        },
+        "title": "ThreadConfigurationPatch",
+        "type": "object"
+      },
+      "ThreadConfigurationMutationInput": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_version": {
+            "minimum": 1,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "patch": {
+            "$ref": "#/components/schemas/ThreadConfigurationPatch"
+          }
+        },
+        "required": [
+          "expected_version",
+          "patch"
+        ],
+        "title": "ThreadConfigurationMutationInput",
+        "type": "object"
+      },
+      "ProjectDefaultsApply": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_version": {
+            "minimum": 1,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "defaults_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Defaults Digest",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_version",
+          "defaults_digest"
+        ],
+        "title": "ProjectDefaultsApply",
+        "type": "object"
+      },
       "ApprovalDecision": {
         "additionalProperties": false,
         "properties": {
@@ -4847,92 +8606,20 @@
         "title": "DecisionResponseBatch",
         "type": "object"
       },
-      "NewThreadDefaults": {
+      "SteerRequest": {
         "additionalProperties": false,
         "properties": {
-          "project_id": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Project Id"
-          },
-          "agent_id": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Agent Id"
-          },
-          "environment_profile_id": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Environment Profile Id"
-          },
-          "harness_plugin_ids": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Harness Plugin Ids"
-          },
-          "environment_run_extension_ids": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Environment Run Extension Ids"
-          },
-          "mcp_server_ids": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Mcp Server Ids"
+          "prompt": {
+            "maxLength": 262144,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
           }
         },
-        "title": "NewThreadDefaults",
+        "required": [
+          "prompt"
+        ],
+        "title": "SteerRequest",
         "type": "object"
       },
       "CreateThreadRequest": {

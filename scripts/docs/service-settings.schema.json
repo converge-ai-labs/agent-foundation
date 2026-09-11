@@ -1113,6 +1113,49 @@
     "ObservabilityQuerySettings": {
       "additionalProperties": false,
       "properties": {
+        "logfire_base_url": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Logfire Base Url"
+        },
+        "logfire_read_token": {
+          "anyOf": [
+            {
+              "format": "password",
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string",
+              "writeOnly": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Logfire Read Token"
+        },
+        "logfire_history_from": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Logfire History From"
+        },
         "provider": {
           "default": "none",
           "maxLength": 64,

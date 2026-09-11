@@ -144,7 +144,13 @@ async def test_failure_mapping_rejects_redirects_without_echoing_content(status,
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    "content", [b"not json", b"{}", b'{"results":[{"url":"file:///secret"}]}', b" " * (1024 * 1024 + 1)]
+    "content",
+    [
+        pytest.param(b"not json", id="invalid-json"),
+        pytest.param(b"{}", id="missing-results"),
+        pytest.param(b'{"results":[{"url":"file:///secret"}]}', id="invalid-result-url"),
+        pytest.param(b" " * (1024 * 1024 + 1), id="oversized-response"),
+    ],
 )
 async def test_invalid_and_oversized_responses_fail(content) -> None:
     with pytest.raises(WebProviderError, match="web_search_response_invalid"):

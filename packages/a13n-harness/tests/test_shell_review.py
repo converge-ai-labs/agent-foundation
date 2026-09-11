@@ -47,7 +47,7 @@ from a13n_harness.usage import (
 from pydantic_ai import ToolApproved
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.exceptions import ModelHTTPError
-from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
+from pydantic_ai.messages import ModelMessage, ModelRequest, SystemPromptPart, ToolReturnPart
 from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.providers import Provider
@@ -285,16 +285,26 @@ async def test_shell_review_model_uses_builder_gateway_provider_factory(
     assert executed == [{"command": "printf safe"}]
 
 
-async def test_default_reviewer_uses_only_output_tool_with_auto_choice_and_records_one_request_usage() -> None:
+@pytest.mark.parametrize("risk", list(ShellRiskLevel))
+async def test_default_reviewer_uses_only_output_tool_with_auto_choice_and_records_one_request_usage(
+    risk: ShellRiskLevel,
+) -> None:
     seen_info: list[AgentInfo] = []
+    seen_prompts: list[str] = []
 
     async def review_model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[DeltaToolCalls]:
-        del messages
+        seen_prompts.extend(
+            part.content
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, SystemPromptPart)
+        )
         seen_info.append(info)
         yield {
             0: DeltaToolCall(
                 name=info.output_tools[0].name,
-                json_args='{"risk":"medium","reason":"bounded workspace mutation"}',
+                json_args=json.dumps({"risk": risk.value, "reason": "concrete command risk signal"}),
             )
         }
 
@@ -311,10 +321,21 @@ async def test_default_reviewer_uses_only_output_tool_with_auto_choice_and_recor
         context=cast(AgentContext, object()),  # The default reviewer intentionally ignores Harness context.
     )
 
-    assert result.assessment.risk == ShellRiskLevel.MEDIUM
+    assert result.assessment.risk == risk
     assert len(seen_info) == 1
     assert seen_info[0].function_tools == []
     assert len(seen_info[0].output_tools) == 1
+    output_tool = seen_info[0].output_tools[0]
+    assert output_tool.name == "submit_shell_review"
+    assert "Call this tool exactly once with risk and a brief reason" in output_tool.description
+    assert "does not execute or authorize the command" in output_tool.description
+    assert "Plain text or JSON text is not a valid submission" in output_tool.description
+    assert set(output_tool.parameters_json_schema["required"]) == {"risk", "reason"}
+    assert len(seen_prompts) == 1
+    assert f"calling `{output_tool.name}` exactly once" in seen_prompts[0]
+    assert "including when the command is low risk" in seen_prompts[0]
+    assert "Do not answer with prose, Markdown, or a JSON object" in seen_prompts[0]
+    assert "Submit the assessment even when the command is dangerous" in seen_prompts[0]
     assert seen_info[0].allow_text_output is True  # Provider compatibility, not local text acceptance.
     assert seen_info[0].model_settings == {"openai_store": False, "temperature": 0.5, "tool_choice": "auto"}
     assert settings == {"openai_store": False, "temperature": 0.5}  # Never mutate caller settings.

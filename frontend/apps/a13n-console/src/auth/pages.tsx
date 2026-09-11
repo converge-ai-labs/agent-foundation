@@ -1,3 +1,4 @@
+import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { Button, FormField, Input } from "a13n-ui";
 
 import { Logo, Wordmark } from "a13n-ui";
@@ -254,7 +255,11 @@ export function AuthPage() {
           </Link>
         )}
         {mode === "forgot" && (
-          <Link className={styles.secondary} to="/login">
+          <Link
+            className={`${styles.secondary} inline-flex items-center justify-center gap-1.5`}
+            to="/login"
+          >
+            <ArrowLeftIcon size={14} aria-hidden="true" />{" "}
             {t("Back to sign in")}
           </Link>
         )}

@@ -57,6 +57,15 @@ export function ModelEditor({
       }
       size={"lg"}
       title={t(modelId ? "Edit model" : "Add model")}
+      description={
+        modelId
+          ? t(
+              "Adjust this model\u2019s defaults and availability for your agents.",
+            )
+          : t(
+              "Choose a provider and model, then set the defaults your agents will use.",
+            )
+      }
       closeLabel={t("Close")}
     >
       {open &&

@@ -1,10 +1,11 @@
 """Ollama Provider adapter."""
 
 from collections.abc import Mapping
-from typing import Annotated
+from typing import Annotated, Self
 
 import httpx2
-from pydantic import StringConstraints
+from openai import AsyncOpenAI
+from pydantic import Field, StringConstraints, model_validator
 from pydantic_ai.providers.ollama import OllamaProvider
 
 from .base import (
@@ -19,7 +20,15 @@ from .types import ProviderConfiguration, RuntimeProvider
 
 
 class Config(ProviderConfiguration):
-    base_url: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2048)]
+    base_url: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2048)] | None = Field(
+        default=..., title="Base URL", description="The API endpoint of your Ollama server."
+    )
+
+    @model_validator(mode="after")
+    def require_base_url(self) -> Self:
+        if self.base_url is None:
+            raise ValueError("Ollama requires a base_url")
+        return self
 
 
 def _build_provider(
@@ -27,9 +36,15 @@ def _build_provider(
     http_client: httpx2.AsyncClient,
     _model_api: str,
 ) -> OllamaProvider:
-    native = OllamaProvider(base_url=str(provider.configuration["base_url"]), http_client=http_client)
-    native.client.max_retries = 0
-    return native
+    return OllamaProvider(
+        openai_client=AsyncOpenAI(
+            api_key="ollama",
+            base_url=require_endpoint(provider),
+            http_client=http_client,
+            max_retries=0,
+            default_headers=provider.extra_headers,
+        )
+    )
 
 
 def _request(provider: RuntimeProvider) -> ModelListRequest:

@@ -289,6 +289,11 @@ class AgentCompositionResolver:
             harness_plugins=plugins,
             mcp_servers=mcp,
             tools=agent.tools,
+            tool_proxy=(
+                agent.tool_proxy.selected(mcp_servers=mcp_ids, harness_plugins=plugin_ids)
+                if agent.tool_proxy is not None
+                else None
+            ),
             children=(),
         )
         edges = list(agent.subagents)
@@ -394,6 +399,11 @@ class AgentCompositionResolver:
                 ResolvedMcpRecipe(server_id=item, transport=source.mcp_servers[item].transport) for item in mcp_ids
             ),
             tools=parent.tools if child.tools is None else child.tools,
+            tool_proxy=(
+                parent.tool_proxy.selected(mcp_servers=mcp_ids, harness_plugins=plugin_ids)
+                if parent.tool_proxy is not None
+                else None
+            ),
             children=(),
         )
 

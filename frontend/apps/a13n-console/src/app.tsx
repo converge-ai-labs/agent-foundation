@@ -12,6 +12,7 @@ import {
 import "./app.css";
 import { AuthProvider, useAuth } from "./auth/context";
 import { AuthPage } from "./auth/pages";
+import { MCPSetupCallback } from "./features/mcp/callback";
 import { ConnectorSetupCallback } from "./features/connectors/callback";
 import { AppearanceProvider } from "./layout/appearance";
 import { Shell } from "./layout/shell";
@@ -53,11 +54,6 @@ const WorkspaceSettings = lazy(() =>
     default: module.WorkspaceSettings,
   })),
 );
-const AssetsPage = lazy(() =>
-  import("./features/assets/page").then((module) => ({
-    default: module.AssetsPage,
-  })),
-);
 const SkillsPage = lazy(() =>
   import("./features/skills/page").then((module) => ({
     default: module.SkillsPage,
@@ -73,13 +69,10 @@ const EnvironmentsPage = lazy(() =>
     default: module.EnvironmentsPage,
   })),
 );
-const ConnectorsPage = lazy(() =>
-  import("./features/connectors/page").then((module) => ({
-    default: module.ConnectorsPage,
+const ConnectionsPage = lazy(() =>
+  import("./features/connections/page").then((module) => ({
+    default: module.ConnectionsPage,
   })),
-);
-const MCPPage = lazy(() =>
-  import("./features/mcp/page").then((module) => ({ default: module.MCPPage })),
 );
 const ApplicationAccountsPage = lazy(() =>
   import("./features/application-accounts/page").then((module) => ({
@@ -194,6 +187,10 @@ function AppContent() {
                   path="/connector-setup/callback"
                   element={<ConnectorSetupCallback />}
                 />
+                <Route
+                  path="/mcp-setup/callback"
+                  element={<MCPSetupCallback />}
+                />
                 {[
                   "/login",
                   "/forgot-password",
@@ -240,14 +237,12 @@ function AppContent() {
                       path="application-accounts/:accountId"
                       element={<ApplicationAccountDetail />}
                     />
-                    <Route path="connectors" element={<ConnectorsPage />} />
-                    <Route path="mcp" element={<MCPPage />} />
+                    <Route path="connections" element={<ConnectionsPage />} />
                     <Route path="environments" element={<EnvironmentsPage />} />
                     <Route
                       path="environments/instances"
                       element={<EnvironmentsPage section="instances" />}
                     />
-                    <Route path="assets" element={<AssetsPage />} />
                     <Route path="skills" element={<SkillsPage />} />
                     <Route path="skills/:skillKey" element={<SkillDetail />} />
                     <Route path="models" element={<ModelsPage />} />

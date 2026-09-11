@@ -667,6 +667,21 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
+### `GET /api/v1/connector-providers/{connector_provider_id}/connectors/{connector_key}`
+
+Get Connector.
+
+| Parameter               | Location | Required | Type / schema | Constraints and default |
+| ----------------------- | -------- | -------- | ------------- | ----------------------- |
+| `connector_provider_id` | path     | true     | string        | —                       |
+| `connector_key`         | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: Connector`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ### `GET /api/v1/connector-providers/{connector_provider_id}/connectors/{connector_key}/tools`
 
 Preview Connector Tools.
@@ -705,9 +720,13 @@ Responses:
 
 Discover Connectors.
 
-| Parameter               | Location | Required | Type / schema | Constraints and default |
-| ----------------------- | -------- | -------- | ------------- | ----------------------- |
-| `connector_provider_id` | path     | true     | string        | —                       |
+| Parameter               | Location | Required | Type / schema  | Constraints and default             |
+| ----------------------- | -------- | -------- | -------------- | ----------------------------------- |
+| `connector_provider_id` | path     | true     | string         | —                                   |
+| `query`                 | query    | false    | string         | maxLength=256; default=""           |
+| `cursor`                | query    | false    | string or null | —                                   |
+| `limit`                 | query    | false    | integer        | minimum=1; maximum=200; default=100 |
+| `refresh`               | query    | false    | boolean        | default=false                       |
 
 Responses:
 
@@ -872,6 +891,52 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
+### `GET /api/v1/mcp-connections/{connection_id}/oauth-client`
+
+Get Mcp Oauth Client.
+
+| Parameter       | Location | Required | Type / schema | Constraints and default |
+| --------------- | -------- | -------- | ------------- | ----------------------- |
+| `connection_id` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: MCPOAuthClientConfiguration or null`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `PUT /api/v1/mcp-connections/{connection_id}/oauth-client`
+
+Configure Mcp Oauth Client.
+
+| Parameter       | Location | Required | Type / schema | Constraints and default |
+| --------------- | -------- | -------- | ------------- | ----------------------- |
+| `connection_id` | path     | true     | string        | —                       |
+
+Request body: required.
+
+- `application/json`: `ConfigureMCPOAuthClientRequest`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: MCPConnection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/mcp-connections/{connection_id}/oauth-discovery`
+
+Discover Mcp Oauth.
+
+| Parameter       | Location | Required | Type / schema | Constraints and default |
+| --------------- | -------- | -------- | ------------- | ----------------------- |
+| `connection_id` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: MCPOAuthDiscovery`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ### `POST /api/v1/mcp-connections/{connection_id}/reconnect`
 
 Reconnect Mcp Connection.
@@ -911,29 +976,32 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
-### `GET /api/v1/oauth/mcp/callback`
+### `GET /api/v1/oauth/mcp/client-metadata/{issuer_key}.json`
 
-Mcp Oauth Callback.
+Mcp Client Metadata.
 
-| Parameter | Location | Required | Type / schema | Constraints and default     |
-| --------- | -------- | -------- | ------------- | --------------------------- |
-| `code`    | query    | true     | string        | minLength=1; maxLength=8192 |
-| `state`   | query    | true     | string        | minLength=32; maxLength=512 |
-| `iss`     | query    | true     | string        | minLength=1; maxLength=2048 |
+| Parameter    | Location | Required | Type / schema | Constraints and default  |
+| ------------ | -------- | -------- | ------------- | ------------------------ |
+| `issuer_key` | path     | true     | string        | pattern="^[0-9a-f]{64}$" |
+
+Responses:
+
+- **200** — Successful Response (`application/json: MCPClientMetadata`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/oauth/mcp/complete`
+
+Complete Mcp Oauth.
+
+Request body: required.
+
+- `application/json`: `CompleteMCPOAuthRequest`.
 
 Responses:
 
 - **200** — Successful Response (`application/json: MCPConnection`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `GET /api/v1/oauth/mcp/client-metadata.json`
-
-Mcp Client Metadata.
-
-Responses:
-
-- **200** — Successful Response (`application/json: MCPClientMetadata`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/organizations/{organization}/connector-providers`
@@ -1147,7 +1215,7 @@ Provider Types.
 
 Responses:
 
-- **200** — Successful Response (`application/json: Collection_dict_`).
+- **200** — Successful Response (`application/json: Collection_EnvironmentProviderDefinition_`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/environment-provider-types/{provider_type}`
@@ -1160,7 +1228,7 @@ Get Provider Type.
 
 Responses:
 
-- **200** — Successful Response (`application/json: object`).
+- **200** — Successful Response (`application/json: EnvironmentProviderDefinition`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -3026,14 +3094,15 @@ Responses:
 
 List Models.
 
-| Parameter     | Location | Required | Type / schema   | Constraints and default            |
-| ------------- | -------- | -------- | --------------- | ---------------------------------- |
-| `workspace`   | path     | true     | string          | —                                  |
-| `limit`       | query    | false    | integer         | minimum=1; maximum=100; default=50 |
-| `cursor`      | query    | false    | string or null  | —                                  |
-| `query`       | query    | false    | string or null  | —                                  |
-| `provider_id` | query    | false    | string or null  | —                                  |
-| `enabled`     | query    | false    | boolean or null | —                                  |
+| Parameter     | Location | Required | Type / schema                       | Constraints and default            |
+| ------------- | -------- | -------- | ----------------------------------- | ---------------------------------- |
+| `workspace`   | path     | true     | string                              | —                                  |
+| `limit`       | query    | false    | integer                             | minimum=1; maximum=100; default=50 |
+| `cursor`      | query    | false    | string or null                      | —                                  |
+| `query`       | query    | false    | string or null                      | —                                  |
+| `provider_id` | query    | false    | string or null                      | —                                  |
+| `enabled`     | query    | false    | boolean or null                     | —                                  |
+| `scope`       | query    | false    | "organization", "workspace" or null | —                                  |
 
 Responses:
 
@@ -3558,11 +3627,17 @@ Responses:
 
 List Sessions.
 
-| Parameter   | Location | Required | Type / schema  | Constraints and default            |
-| ----------- | -------- | -------- | -------------- | ---------------------------------- |
-| `workspace` | path     | true     | string         | —                                  |
-| `limit`     | query    | false    | integer        | minimum=1; maximum=200; default=50 |
-| `cursor`    | query    | false    | string or null | —                                  |
+| Parameter        | Location | Required | Type / schema      | Constraints and default            |
+| ---------------- | -------- | -------- | ------------------ | ---------------------------------- |
+| `workspace`      | path     | true     | string             | —                                  |
+| `q`              | query    | false    | string or null     | —                                  |
+| `agent_id`       | query    | false    | string or null     | —                                  |
+| `status`         | query    | false    | array of RunStatus | maxItems=7; default=[]             |
+| `trigger_type`   | query    | false    | array of string    | maxItems=16; default=[]            |
+| `updated_after`  | query    | false    | string or null     | —                                  |
+| `updated_before` | query    | false    | string or null     | —                                  |
+| `limit`          | query    | false    | integer            | minimum=1; maximum=200; default=50 |
+| `cursor`         | query    | false    | string or null     | —                                  |
 
 Responses:
 
@@ -3989,11 +4064,13 @@ Responses:
 
 List Skills.
 
-| Parameter   | Location | Required | Type / schema  | Constraints and default            |
-| ----------- | -------- | -------- | -------------- | ---------------------------------- |
-| `workspace` | path     | true     | string         | —                                  |
-| `limit`     | query    | false    | integer        | minimum=1; maximum=100; default=50 |
-| `cursor`    | query    | false    | string or null | —                                  |
+| Parameter     | Location | Required | Type / schema           | Constraints and default            |
+| ------------- | -------- | -------- | ----------------------- | ---------------------------------- |
+| `workspace`   | path     | true     | string                  | —                                  |
+| `limit`       | query    | false    | integer                 | minimum=1; maximum=100; default=50 |
+| `cursor`      | query    | false    | string or null          | —                                  |
+| `q`           | query    | false    | string or null          | —                                  |
+| `source_kind` | query    | false    | "zip", "github" or null | —                                  |
 
 Responses:
 
@@ -4020,6 +4097,21 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
+### `GET /api/v1/workspaces/{workspace}/skills/{skill_key}`
+
+Get Skill By Key.
+
+| Parameter   | Location | Required | Type / schema | Constraints and default |
+| ----------- | -------- | -------- | ------------- | ----------------------- |
+| `skill_key` | path     | true     | string        | —                       |
+| `workspace` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: Skill`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ## threads
 
 ### `POST /api/v1/workspaces/{workspace}/threads`
@@ -4043,6 +4135,20 @@ Responses:
 
 ## trace-query
 
+### `GET /api/v1/workspaces/{workspace}/trace-query`
+
+Get Trace Query.
+
+| Parameter   | Location | Required | Type / schema | Constraints and default |
+| ----------- | -------- | -------- | ------------- | ----------------------- |
+| `workspace` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: TraceQueryDescriptor`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ### `GET /api/v1/workspaces/{workspace}/traces`
 
 List Traces.
@@ -4059,6 +4165,7 @@ List Traces.
 | `thread_id`      | query    | false    | string or null   | —                                  |
 | `run_id`         | query    | false    | string or null   | —                                  |
 | `run_attempt_id` | query    | false    | string or null   | —                                  |
+| `view`           | query    | false    | TraceView        | default="compact"                  |
 
 Responses:
 
@@ -4078,6 +4185,24 @@ Get Trace.
 
 Responses:
 
-- **200** — Successful Response (`application/json: TraceDetail`).
+- **200** — Successful Response (`application/json: Trace`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/traces/{trace_id}/observations`
+
+List Trace Observations.
+
+| Parameter   | Location | Required | Type / schema  | Constraints and default            |
+| ----------- | -------- | -------- | -------------- | ---------------------------------- |
+| `trace_id`  | path     | true     | string         | minLength=1; maxLength=512         |
+| `workspace` | path     | true     | string         | —                                  |
+| `view`      | query    | false    | TraceView      | default="compact"                  |
+| `limit`     | query    | false    | integer        | minimum=1; maximum=100; default=50 |
+| `cursor`    | query    | false    | string or null | —                                  |
+
+Responses:
+
+- **200** — Successful Response (`application/json: ObservationCollection`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).

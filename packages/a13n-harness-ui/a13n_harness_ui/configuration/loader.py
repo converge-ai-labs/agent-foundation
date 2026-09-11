@@ -42,7 +42,7 @@ _MAX_YAML_NODES = 100_000
 _MAX_YAML_DEPTH = 64
 _STABLE_READ_ATTEMPTS = 3
 # Version normalized snapshots independently of user-owned source byte digests.
-_NORMALIZATION_VERSION = "2"
+_NORMALIZATION_VERSION = "3"
 _YAML_DIRECTORIES = ("models", "extensions", "mcp", "agents", "projects")
 _RESOURCE_TYPES: dict[str, type[Any]] = {
     "models": ModelResource,
@@ -823,6 +823,16 @@ _UniqueSafeLoader.add_constructor(
 
 
 def _validation_error(code: str, message: str, path: Path, exc: ValidationError) -> ConfigurationError:
+    # These authored diagnostics contain source IDs and group/configuration names,
+    # not arbitrary resource payloads or credential validation inputs.
+    from .models import _ToolProxyConfigurationError
+
+    for error in exc.errors(include_input=False, include_url=False):
+        cause = error.get("ctx", {}).get("error")
+        if isinstance(cause, _ToolProxyConfigurationError):
+            code = "tool_proxy_invalid"
+            message = str(cause)
+            break
     return ConfigurationError(
         message,
         code=code,

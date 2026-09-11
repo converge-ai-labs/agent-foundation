@@ -28,7 +28,10 @@ export function SessionList({
   const [search, setSearch] = useSearchParams();
   const filters = readSessionFilters(search);
   return (
-    <Page title={t("Sessions")}>
+    <Page
+      title={t("Sessions")}
+      description={t("Review conversations and runs across your workspace.")}
+    >
       <SessionFilterBar search={search} setSearch={setSearch} />
       <ErrorNotice error={notificationError} retry={reconnect} />
       <SessionResults key={search.toString()} filters={filters} />
@@ -65,6 +68,7 @@ function SessionResults({ filters }: { filters: SessionFilters }) {
           columns={[
             {
               label: t("Session ID"),
+              tone: "muted",
               render: (session) => (
                 <div className={styles.sessionId} title={session.id}>
                   <CopyableId value={session.id} />
@@ -73,9 +77,11 @@ function SessionResults({ filters }: { filters: SessionFilters }) {
             },
             {
               label: t("Request summary"),
+              tone: "primary",
               render: (session) => (
                 <span
                   className={styles.sessionSummary}
+                  data-empty={!session.preview?.input_text || undefined}
                   title={session.preview?.input_text || t("No request text")}
                 >
                   {session.preview?.input_text || t("No request text")}
@@ -109,6 +115,7 @@ function SessionResults({ filters }: { filters: SessionFilters }) {
             },
             {
               label: t("Trigger source"),
+              tone: "muted",
               render: (session) =>
                 session.preview
                   ? t(`trigger.${session.preview.trigger_type}`, {
@@ -118,6 +125,7 @@ function SessionResults({ filters }: { filters: SessionFilters }) {
             },
             {
               label: t("Last updated"),
+              tone: "muted",
               render: (session) => (
                 <Timestamp value={session.updated_at} relative />
               ),

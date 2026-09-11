@@ -12,14 +12,19 @@ function observation(
     name: id,
     started_at: "2026-09-08T00:00:00Z",
     ended_at: null,
-    duration_ms: null,
     status: "unset",
+    level: null,
+    status_message: null,
     model: null,
     usage: null,
     cost_usd: null,
     input: null,
     output: null,
-    metadata: {},
+    attributes: {},
+    resource_attributes: null,
+    scope: null,
+    events: null,
+    links: null,
   };
 }
 describe("trace topology", () => {
@@ -44,6 +49,6 @@ describe("trace topology", () => {
     ]);
     expect(rows.map((row) => row.observation.id)).toEqual(["a", "b", "c"]);
     expect(rows[1]?.depth).toBe(1);
-    expect(rows[0]?.observation.duration_ms).toBeNull();
+    expect(rows[0]?.observation.ended_at).toBeNull();
   });
 });

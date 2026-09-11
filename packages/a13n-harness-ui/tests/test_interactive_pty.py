@@ -1,4 +1,7 @@
-"""Real PTY input/output tests with no account or provider access."""
+"""Real PTY input/output tests with no account or provider access.
+
+Each scenario family owns its process and temporary home, so families can run concurrently.
+"""
 
 from __future__ import annotations
 
@@ -70,6 +73,7 @@ def _stop(process: subprocess.Popen[bytes], master: int) -> None:
         os.close(master)
 
 
+@pytest.mark.xdist_group("pty-setup")
 @pytest.mark.parametrize("command", [[], ["setup"]])
 def test_setup_redraws_one_alternate_screen_and_only_launch_enters_chat(tmp_path: Path, command: list[str]) -> None:
     configuration = tmp_path / ".a13n-harness-ui"
@@ -114,6 +118,7 @@ def test_setup_redraws_one_alternate_screen_and_only_launch_enters_chat(tmp_path
         _stop(process, master)
 
 
+@pytest.mark.xdist_group("pty-cancel")
 def test_cancel_initial_setup_never_opens_chat(tmp_path: Path) -> None:
     process, master = _spawn("from a13n_harness_ui.cli import main; main([])", tmp_path)
     try:
@@ -128,6 +133,7 @@ def test_cancel_initial_setup_never_opens_chat(tmp_path: Path) -> None:
         _stop(process, master)
 
 
+@pytest.mark.xdist_group("pty-update")
 @pytest.mark.parametrize("install", [False, True])
 def test_update_screen_precedes_setup_and_releases_terminal_for_installer(tmp_path: Path, install: bool) -> None:
     script = r"""
@@ -170,10 +176,11 @@ main(["setup"])
         _stop(process, master)
 
 
+@pytest.mark.xdist_group("pty-chat")
 @pytest.mark.parametrize("pasted", ["line1\nline2", "long pasted text\n" * 100])
 def test_chat_paste_enter_steering_mode_switch_and_cancel_use_one_terminal(tmp_path: Path, pasted: str) -> None:
     script = r"""
-import asyncio, json, time
+import asyncio, json
 from contextlib import asynccontextmanager
 from pathlib import Path
 from a13n_harness_ui.cli import CliRequest
@@ -218,11 +225,7 @@ class Backend:
 async def factory(request, directory, status, emit):
     yield Backend(status)
 
-def load():
-    time.sleep(1.2)
-    return factory
-
-asyncio.run(run_terminal(CliRequest(no_update_check=True), runtime_loader=load))
+asyncio.run(run_terminal(CliRequest(no_update_check=True), runtime_loader=lambda: factory))
 """
     process, master = _spawn(script, tmp_path)
     try:

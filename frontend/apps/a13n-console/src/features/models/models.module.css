@@ -38,17 +38,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.flowHeading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-.flowHeading h3 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 500;
-}
 .backButton {
   align-self: flex-start;
   justify-self: start;
@@ -56,25 +45,24 @@
 .connectionSummary {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--a13n-border-soft);
+  gap: 10px;
+  min-width: 0;
 }
 .connectionSummary > div {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  display: grid;
+  gap: 2px;
   min-width: 0;
 }
-.connectionSummary small,
 .connectionSummary span {
   color: var(--a13n-secondary);
-  font-size: 11px;
-  overflow-wrap: anywhere;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .connectionSummary strong {
   font-size: 13px;
   font-weight: 500;
+  overflow-wrap: anywhere;
 }

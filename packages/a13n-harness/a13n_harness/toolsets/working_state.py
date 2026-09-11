@@ -18,7 +18,7 @@ from a13n_harness.errors import DefinitionError
 from a13n_harness.events import TaskChangedPayload, TaskEventProjection, emit_harness_event
 
 from ._instructions import InstructionFunctionToolset, tool_instruction
-from ._results import ToolError, ToolFailure
+from ._results import ToolFailure, tool_failure, validation_failure
 
 _TASK_INSTRUCTION = tool_instruction("task-manager")
 _NOTE_INSTRUCTION = tool_instruction("note")
@@ -149,8 +149,8 @@ class WorkingStateToolset:
                 blocks=tuple(blocks),
                 metadata=dict(metadata or {}),
             )
-        except ValidationError:
-            return {"ok": False, "error": {"code": "task_request_invalid"}}
+        except ValidationError as exc:
+            return validation_failure("task_request_invalid", exc)
         return await self._task_result("create", request)
 
     async def task_get(self, ctx: RunContext[AgentContext], task_id: str) -> TaskToolResult:
@@ -230,8 +230,8 @@ class WorkingStateToolset:
                 reason = "updated"
             await self._emit_task_changes(snapshot, committed, reason=reason, primary_task_id=task_id)
             return {"ok": True, "task": _project_task(task)}
-        except ValidationError:
-            return {"ok": False, "error": {"code": "task_request_invalid"}}
+        except ValidationError as exc:
+            return validation_failure("task_request_invalid", exc)
         except TaskStateError as exc:
             return _task_error(exc)
 
@@ -251,7 +251,9 @@ class WorkingStateToolset:
             notes = self._state.notes
             action: Literal["created", "updated"] = "updated" if key in notes else "created"
             if action == "created" and len(notes) >= _MAX_NOTES:
-                return {"ok": False, "error": {"code": "note_limit_exceeded"}}
+                return tool_failure(
+                    "note_limit_exceeded", "The note limit is reached; update or remove an existing note first."
+                )
             notes[key] = value
             await self._replace_notes(ctx, notes)
         return {"ok": True, "key": key, "action": action}
@@ -279,7 +281,9 @@ class WorkingStateToolset:
         if error is not None:
             return error
         if key not in notes:
-            return {"ok": False, "error": {"code": "note_not_found", "key": key}}
+            result = tool_failure("note_not_found", "The note does not exist; list note keys before reading it.")
+            result["error"]["key"] = key
+            return result
         return {"ok": True, "key": key, "value": notes[key]}
 
     async def _replace_notes(self, ctx: RunContext[AgentContext], notes: Mapping[str, str]) -> None:
@@ -532,20 +536,22 @@ def _project_task(task) -> TaskProjection:
 
 
 def _task_error(exc) -> ToolFailure:
-    details = deepcopy(exc.details)
-    error: ToolError = {
-        "code": exc.code,
-        "retry_hint": exc.retry_hint,
-        "details": details,
-    }
-    return {"ok": False, "error": error}
+    # TaskStateError is a safe Harness failure, unlike raw provider exceptions.
+    return tool_failure(exc.code, str(exc), details=deepcopy(exc.details), retry_hint=exc.retry_hint)
 
 
 def _validate_note_key(key: str) -> ToolFailure | None:
     from a13n_harness.capabilities.working_state import _MAX_NOTE_KEY_LENGTH
 
     if not isinstance(key, str) or not key.strip() or "\x00" in key or len(key) > _MAX_NOTE_KEY_LENGTH:
-        return {"ok": False, "error": {"code": "note_key_invalid"}}
+        return tool_failure(
+            "note_key_invalid",
+            "The note key is invalid.",
+            details={
+                "field": "key",
+                "hint": f"Use a non-blank key without NUL, at most {_MAX_NOTE_KEY_LENGTH} characters.",
+            },
+        )
     return None
 
 
@@ -556,7 +562,11 @@ def _validate_note(key: str, value: str) -> ToolFailure | None:
     if key_error is not None:
         return key_error
     if not isinstance(value, str) or "\x00" in value or len(value) > _MAX_NOTE_VALUE_LENGTH:
-        return {"ok": False, "error": {"code": "note_value_invalid"}}
+        return tool_failure(
+            "note_value_invalid",
+            "The note value is invalid.",
+            details={"field": "value", "hint": f"Use text without NUL, at most {_MAX_NOTE_VALUE_LENGTH} characters."},
+        )
     return None
 
 

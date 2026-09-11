@@ -7,7 +7,7 @@ from typing import Literal, Self, get_args, get_origin
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from a13n_harness_ui.configuration import McpTransport, ModelAuthentication
-from a13n_harness_ui.configuration.models import ModelCharacteristics
+from a13n_harness_ui.configuration.models import AgentToolProxy, ModelCharacteristics
 
 
 class CompositionModel(BaseModel):
@@ -106,6 +106,7 @@ class ResolvedAgentNode(CompositionModel):
     harness_plugins: tuple[ResolvedPluginRecipe, ...] = Field(default=(), max_length=128)
     mcp_servers: tuple[ResolvedMcpRecipe, ...] = Field(default=(), max_length=128)
     tools: tuple[str, ...] | None = Field(default=None, max_length=256)
+    tool_proxy: AgentToolProxy | None = Field(default=None, exclude_if=lambda value: value is None)
     children: tuple[ResolvedSubagent, ...] = Field(default=(), max_length=256)
 
     @model_validator(mode="after")

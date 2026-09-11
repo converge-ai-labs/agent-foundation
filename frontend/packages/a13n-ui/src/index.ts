@@ -33,6 +33,10 @@ export { SettingsRow, SettingsSection } from "./patterns/settings";
 export { DisclosureSection } from "./patterns/disclosure-section";
 export { Logo } from "./brand/logo";
 export { Wordmark } from "./brand/wordmark";
+export { BrandIcon, type BrandIconProps } from "./brand/brand-icon";
+export { brands, resolveBrand, type Brand } from "./brand/brands";
 export { cn } from "./lib/utils";
 export * from "./components/toggle-group";
 export * from "./components/fieldset";
+
+export { ReadOnlyField } from "./patterns/read-only-field";

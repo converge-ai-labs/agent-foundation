@@ -1366,6 +1366,8 @@ async def test_view_records_nested_usage_when_understanding_output_retries_exhau
         "ok": False,
         "error": {
             "code": "media_understanding_response_invalid",
+            "message": "Media understanding could not complete. Check the configured media model and provider.",
+            "details": {},
             "retry_hint": "dependency_change",
         },
     }
@@ -1434,6 +1436,8 @@ async def test_view_reports_unavailable_understanding_as_an_ordinary_tool_result
         "ok": False,
         "error": {
             "code": "media_understanding_unavailable",
+            "message": "Media understanding could not complete. Check the configured media model and provider.",
+            "details": {},
             "retry_hint": "dependency_change",
         },
     }
@@ -1586,12 +1590,16 @@ async def test_exact_edits_are_agent_friendly_and_failed_batch_is_not_published(
 
     assert result.output_or_raise() == "done"
     assert observed[0]["error"]["code"] == "environment_edit_not_found"
-    assert observed[0]["error"]["details"] == {"edit_index": 2}
+    assert observed[0]["error"]["details"] == {
+        "edit_index": 2,
+        "hint": "Read the current target and copy an exact old_string, including whitespace, before retrying the edit.",
+    }
     assert observed[1]["ok"] is True
     assert target.read_text() == "alpha\ngamma\ngamma\n"
 
 
-async def test_grep_returns_requested_context_at_file_boundaries(tmp_path: Path) -> None:
+@pytest.mark.parametrize("file_root", [False, True])
+async def test_grep_returns_requested_context_at_file_boundaries(tmp_path: Path, file_root: bool) -> None:
     (tmp_path / "context.txt").write_bytes(
         b"needle0 top\nbefore middle\nneedle1 middle\nafter middle\nneedle2 bottom\n"
     )
@@ -1601,6 +1609,8 @@ async def test_grep_returns_requested_context_at_file_boundaries(tmp_path: Path)
         {"pattern": "needle1", "context_lines": 1},
         {"pattern": "needle2", "context_lines": 2},
     )
+    if file_root:
+        requests = tuple({**request, "root": str(tmp_path / "context.txt")} for request in requests)
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
         del info
@@ -1632,10 +1642,13 @@ async def test_grep_returns_requested_context_at_file_boundaries(tmp_path: Path)
     )
     result = await executable.run(
         "grep",
-        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+        bindings=RunBindings.embedded(
+            environment=_local_binding(tmp_path, mount_path=str(tmp_path)), capabilities=(_policy(),)
+        ),
     )
 
     assert result.output_or_raise() == "done"
+    assert all(item["ok"] for item in observed), observed
     matches = {match["matching_line"]: match for item in observed for match in item["matches"].values()}
     assert matches["needle0 top"]["context_start_line"] == 1
     assert matches["needle0 top"]["context"].splitlines() == ["needle0 top"]
@@ -2206,7 +2219,12 @@ async def test_model_error_projection_omits_internal_environment_details() -> No
         lambda value: {},
     )
     assert result["ok"] is False
-    assert result["error"]["details"] == {"timeout_seconds": 3, "missing": ["files"]}
+    assert result["error"]["details"] == {
+        "timeout_seconds": 3,
+        "missing": ["files"],
+        "hint": "Check Environment readiness with the Host. Reconcile any previously dispatched work before retrying.",
+    }
+    assert result["error"]["message"] == "The selected Environment is unavailable."
 
 
 async def test_empty_environment_omits_environment_tools() -> None:
@@ -2988,6 +3006,7 @@ def test_file_failure_hints_preserve_specific_diagnostics_without_raw_provider_d
         "ok": False,
         "error": {
             "code": "environment_not_found",
+            "message": "The selected resource was not found or is not visible.",
             "details": {"hint": "Check the selected source.", "reason": "specific_lookup"},
         },
     }

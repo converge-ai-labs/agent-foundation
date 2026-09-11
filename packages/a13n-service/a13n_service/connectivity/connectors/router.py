@@ -19,6 +19,7 @@ from .connections import ConnectorConnectionService
 from .contracts import ConnectorToolPage
 from .domain import (
     CompleteConnectorSetupRequest,
+    Connector,
     ConnectorCollection,
     ConnectorConnection,
     ConnectorConnectionCollection,
@@ -77,6 +78,13 @@ async def list_connector_provider_types(request: Request, actor: Actor) -> Conne
     return await _connector_providers(request).type_definitions(actor=actor)
 
 
+@router.get("/api/v1/connector-providers/{connector_provider_id}/connectors/{connector_key}", response_model=Connector)
+async def get_connector(request: Request, actor: Actor, connector_provider_id: str, connector_key: str) -> Connector:
+    return await _connector_providers(request).discover_connector(
+        actor=actor, connector_provider_id=connector_provider_id, connector_key=connector_key
+    )
+
+
 @router.get(
     "/api/v1/connector-providers/{connector_provider_id}/connectors/{connector_key}/tools",
     response_model=ConnectorToolPage,
@@ -92,9 +100,22 @@ async def preview_connector_tools(
 @router.post(
     "/api/v1/connector-providers/{connector_provider_id}/discover-connectors", response_model=ConnectorCollection
 )
-async def discover_connectors(request: Request, actor: Actor, connector_provider_id: str) -> ConnectorCollection:
+async def discover_connectors(
+    request: Request,
+    actor: Actor,
+    connector_provider_id: str,
+    query: str = Query(default="", max_length=256),
+    cursor: str | None = Query(default=None, max_length=2048),
+    limit: int = Query(default=100, ge=1, le=200),
+    refresh: bool = False,
+) -> ConnectorCollection:
     return await _connector_providers(request).discover_connectors(
-        actor=actor, connector_provider_id=connector_provider_id
+        actor=actor,
+        connector_provider_id=connector_provider_id,
+        query=query,
+        cursor=cursor,
+        limit=limit,
+        refresh=refresh,
     )
 
 

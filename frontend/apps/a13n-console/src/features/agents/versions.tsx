@@ -50,6 +50,7 @@ export function AgentVersions({ agent }: { agent: Schema["Agent"] }) {
         columns={[
           {
             label: t("Version"),
+            tone: "primary",
             render: (item) => (
               <Button
                 variant="ghost"
@@ -63,6 +64,7 @@ export function AgentVersions({ agent }: { agent: Schema["Agent"] }) {
           { label: t("Model"), render: (item) => item.config.model.model_key },
           {
             label: t("Created"),
+            tone: "muted",
             render: (item) => <Timestamp value={item.created_at} />,
           },
           {
@@ -72,6 +74,7 @@ export function AgentVersions({ agent }: { agent: Schema["Agent"] }) {
               can("agent.revision.create") &&
               item.id !== agent.current_revision_id && (
                 <Confirm
+                  triggerVariant="ghost"
                   title={t("Restore version")}
                   description={t(
                     "This creates a new current version using the selected configuration.",

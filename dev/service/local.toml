@@ -43,15 +43,15 @@ master_key_base64 = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 encryption_key_id = "local-public-test-key"
 
 [connectivity]
-# Local protocol fixtures share the scripted model process.
-private_endpoint_cidrs = ["127.0.0.1/32"]
+# The local profile permits private and proxy-routed destinations for development.
+private_endpoint_cidrs = ["0.0.0.0/0", "::/0"]
 public_origin = "http://127.0.0.1:5173"
 http_origins = ["http://127.0.0.1:5173", "http://127.0.0.1:18080"]
 setup_correlation_secret = "local-public-test-correlation-key-not-a-real-secret"
 
 [models]
-# Allow the separate local, deterministic model used by the seeded Agents.
-private_endpoint_cidrs = ["127.0.0.1/32"]
+# The local profile permits private and proxy-routed model endpoints for development.
+private_endpoint_cidrs = ["0.0.0.0/0", "::/0"]
 
 [pricing]
 auto_update = false

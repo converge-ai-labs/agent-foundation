@@ -1030,3 +1030,44 @@ async def test_full_control_shell_inherits_host_path_and_custom_variables(tmp_pa
         assert "inherited-test-value" not in environment.descriptor.model_dump_json()
     finally:
         await environment.close()
+
+
+async def test_proxy_groups_capture_enabled_sources_and_markdown_inheritance(tmp_path: Path) -> None:
+    path = _write_source(tmp_path)
+    agent_path = tmp_path / "agents/assistant.yaml"
+    agent_path.write_text(
+        agent_path.read_text()
+        + """
+tool_proxy:
+  groups:
+    knowledge:
+      description: Search documents and memory.
+      mcp_servers: [mcp-docs]
+      harness_plugins: [plugin-memory]
+  config: {max_results: 5}
+"""
+    )
+    source = await load_harness_ui_configuration(path)
+    resolver = AgentCompositionResolver(_catalog())
+    selection = replace(_selection(), mcp_server_ids=())
+    composition = resolver.resolve_run(source, selection)
+    proxy = composition.root.tool_proxy
+    assert proxy is not None
+    assert proxy.config.max_results == 5
+    assert proxy.groups["knowledge"].mcp_servers == ()
+    assert proxy.groups["knowledge"].harness_plugins == ("plugin-memory",)
+    assert composition.root.children[0].definition.tool_proxy == proxy
+    assert composition.root.children[1].definition.tool_proxy is None
+    assert type(composition).model_validate_json(composition.model_dump_json()) == composition
+    AgentReconstructor(_catalog()).reconstruct(composition, subagent_operator=_UnusedOperator())
+    assert source.agents["agent-assistant"].tool_proxy.groups["knowledge"].mcp_servers == ("mcp-docs",)
+
+
+async def test_legacy_composition_missing_proxy_roundtrips_without_changing_payload(tmp_path: Path) -> None:
+    source = await load_harness_ui_configuration(_write_source(tmp_path))
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    payload = composition.model_dump_json()
+    assert '"tool_proxy"' not in payload
+    restored = type(composition).model_validate_json(payload)
+    assert restored.root.tool_proxy is None
+    assert restored.model_dump_json() == payload

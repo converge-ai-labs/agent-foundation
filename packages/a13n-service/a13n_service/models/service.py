@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable
-from typing import Protocol
+from typing import Literal, Protocol
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -159,6 +159,7 @@ class ModelService:
         query_text: str | None = None,
         provider_id: str | None = None,
         enabled: bool | None = None,
+        owner_scope: Literal["organization", "workspace"] | None = None,
     ) -> ModelCollection:
         if not 1 <= limit <= 100:
             raise ModelError(
@@ -166,7 +167,13 @@ class ModelService:
             )
         if query_text is not None and (not query_text.strip() or len(query_text) > 128):
             raise ModelError("invalid_request", "query search is invalid.", category=ErrorCategory.invalid_request)
-        scope = {
+        if owner_scope == "workspace" and workspace_id is None:
+            raise ModelError(
+                "invalid_request",
+                "workspace scope requires a Workspace collection.",
+                category=ErrorCategory.invalid_request,
+            )
+        cursor_scope = {
             "workspace_id": workspace_id,
             "organization_boundary": actor.boundary_organization_id,
             "principal_type": actor.principal.principal_type.value,
@@ -174,10 +181,11 @@ class ModelService:
             "query": query_text,
             "provider_id": provider_id,
             "enabled": enabled,
+            "owner_scope": owner_scope,
             "resource": "model",
         }
         try:
-            position = decode_model_cursor(cursor, scope=scope) if cursor is not None else None
+            position = decode_model_cursor(cursor, scope=cursor_scope) if cursor is not None else None
         except CursorError as error:
             raise ModelError(
                 "invalid_cursor", "The collection cursor is invalid.", category=ErrorCategory.invalid_request
@@ -190,6 +198,10 @@ class ModelService:
                 ModelRecord.organization_id == workspace.organization_id,
                 visible_workspace(ModelRecord.workspace_id, workspace.workspace_id),
             )
+            if owner_scope == "organization":
+                query = query.where(ModelRecord.workspace_id.is_(None))
+            elif owner_scope == "workspace":
+                query = query.where(ModelRecord.workspace_id == workspace.workspace_id)
             if query_text is not None:
                 escaped = escape_like(query_text.strip())
                 query = query.where(
@@ -220,7 +232,11 @@ class ModelService:
         page = records[:limit]
         next_cursor = None
         if len(records) > limit and page:
-            next_cursor = encode_model_cursor(updated_at=page[-1].updated_at, item_id=page[-1].id, scope=scope)
+            next_cursor = encode_model_cursor(
+                updated_at=page[-1].updated_at,
+                item_id=page[-1].id,
+                scope=cursor_scope,
+            )
         return ModelCollection(items=tuple(record.to_resource() for record in page), next_cursor=next_cursor)
 
     async def update(

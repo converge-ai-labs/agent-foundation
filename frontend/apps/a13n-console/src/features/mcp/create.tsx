@@ -1,18 +1,32 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChoiceField, FormField, Input } from "a13n-ui";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { FormActions, TextAreaField } from "../../shared/form";
+import { FormActions } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
+import type { MCPPreset } from "../connections/presets";
+import { MCPOAuthSetup } from "./oauth-setup";
+import {
+  HeaderFields,
+  serializeHeaders,
+  type HeaderDraft,
+} from "../../shared/header-fields";
+import { MCPCredentialFields } from "./credentials";
 
 export function CreateMCP({
+  preset,
+  endpoint: initialEndpoint = "",
+  onStarted,
   onSuccess,
 }: {
+  preset?: MCPPreset;
+  endpoint?: string;
+  onStarted: () => void;
   onSuccess: (value: Schema["MCPConnection"]) => void;
 }) {
   const client = useClient(),
@@ -20,68 +34,162 @@ export function CreateMCP({
     { workspace } = useWorkspace(),
     { t } = useTranslation(),
     key = useIdempotency();
-  const [name, setName] = useState(""),
-    [endpoint, setEndpoint] = useState(""),
-    [mode, setMode] = useState<Schema["MCPAuthMode"]>("oauth"),
-    [headers, setHeaders] = useState("");
-  const create = useMutation({
-    mutationFn: () => {
-      const body = {
+  const created = useRef<Schema["MCPConnection"]>(undefined);
+  const [name, setName] = useState(preset?.name ?? ""),
+    [endpoint, setEndpoint] = useState(preset?.endpoint ?? initialEndpoint),
+    [mode, setMode] = useState<Schema["MCPAuthMode"]>(preset?.auth ?? "oauth"),
+    [headerRows, setHeaderRows] = useState<HeaderDraft[]>(() =>
+      (preset?.headerNames ?? [""]).map((name) => ({
+        id: crypto.randomUUID(),
         name,
-        endpoint_url: endpoint,
-        auth_mode: mode,
-        static_header_names:
-          mode === "static_headers"
-            ? headers
-                .split("\n")
-                .map((value) => value.trim())
-                .filter(Boolean)
-            : [],
-      };
-      return client.http
-        .POST("/api/v1/workspaces/{workspace}/mcp-connections", {
-          params: {
-            path: { workspace: workspace.id },
-            header: commandHeaders(workspace.id, key.forBody(body)),
+        value: "",
+      })),
+    ),
+    [bearer, setBearer] = useState(""),
+    [started, setStarted] = useState(false),
+    [oauthConnection, setOAuthConnection] = useState<Schema["MCPConnection"]>(),
+    [ownApp, setOwnApp] = useState(preset?.oauthClient === "preregistered");
+  const connect = useMutation({
+    gcTime: 0,
+    mutationFn: async () => {
+      const headers = Object.fromEntries(
+        Object.entries(
+          mode === "static_headers" && !created.current?.credential_configured
+            ? serializeHeaders(headerRows, [])
+            : {},
+        ).filter((entry): entry is [string, string] => entry[1] !== null),
+      );
+      const headerNames = headerRows.map((row) =>
+        row.name.trim().toLowerCase(),
+      );
+      if (mode === "static_headers" && !headerNames.length)
+        throw new Error(t("Add at least one header."));
+      setStarted(true);
+      onStarted();
+      let connection = created.current;
+      if (!connection) {
+        const body = {
+          name,
+          endpoint_url: endpoint,
+          auth_mode: mode,
+          static_header_names: mode === "static_headers" ? headerNames : [],
+        };
+        connection = data(
+          await client.http.POST(
+            "/api/v1/workspaces/{workspace}/mcp-connections",
+            {
+              params: {
+                path: { workspace: workspace.id },
+                header: commandHeaders(workspace.id, key.forBody(body)),
+              },
+              body,
+            },
+          ),
+        );
+        created.current = connection;
+        void cache.invalidateQueries({ queryKey: ["mcp-connections"] });
+      }
+      const path = { connection_id: connection.id };
+      if (mode === "oauth") {
+        setOAuthConnection(connection);
+        return;
+      }
+      if (mode !== "none" && !connection.credential_configured) {
+        const body = {
+          expected_version: connection.version,
+          ...(mode === "bearer" ? { bearer } : { static_headers: headers }),
+        };
+        connection = data(
+          await client.http.POST(
+            "/api/v1/mcp-connections/{connection_id}/credentials",
+            {
+              params: {
+                path,
+                header: commandHeaders(workspace.id, key.forBody(body)),
+              },
+              body,
+            },
+          ),
+        );
+        created.current = connection;
+        setBearer("");
+        setHeaderRows((rows) =>
+          rows.map((row) => ({
+            ...row,
+            value: "",
+            savedName: row.name.trim().toLowerCase(),
+          })),
+        );
+      }
+      const body = { expected_version: connection.version };
+      const result = data(
+        await client.http.POST(
+          "/api/v1/mcp-connections/{connection_id}/reconnect",
+          {
+            params: {
+              path,
+              header: commandHeaders(
+                workspace.id,
+                key.forBody({ reconnect: connection.id, ...body }),
+              ),
+            },
+            body,
           },
-          body,
-        })
-        .then(data);
-    },
-    onSuccess: (result) => {
-      void cache.invalidateQueries({ queryKey: ["mcp-connections"] });
+        ),
+      );
       onSuccess(result);
     },
+    onSettled: () => {
+      void cache.invalidateQueries({ queryKey: ["mcp-connections"] });
+    },
   });
-  return (
+  return oauthConnection ? (
+    <div className={styles.stack}>
+      {preset && <p className={styles.muted}>{t(preset.requirements)}</p>}
+      {preset && (
+        <a href={preset.docs} target="_blank" rel="noopener noreferrer">
+          {t("Setup guide")}
+        </a>
+      )}
+      <MCPOAuthSetup
+        connection={oauthConnection}
+        onConnectionChange={setOAuthConnection}
+        autoStart
+        configureInitially={ownApp}
+      />
+    </div>
+  ) : (
     <form
       className={styles.form}
       onSubmit={(event) => {
         event.preventDefault();
-        create.mutate();
+        connect.mutate();
       }}
     >
-      <FormField className="min-w-0 w-full" label={t("Name")}>
+      <FormField label={t("Connection name")}>
         <Input
-          required={true}
+          required
           value={name}
-          onChange={(event) => setName(event.target.value)}
+          disabled={started}
           maxLength={128}
+          onChange={(event) => setName(event.target.value)}
         />
       </FormField>
-      <FormField className="min-w-0 w-full" label={t("MCP endpoint URL")}>
+      <FormField label={t("MCP endpoint URL")}>
         <Input
-          required={true}
+          required
           type="url"
           value={endpoint}
+          disabled={started}
           onChange={(event) => setEndpoint(event.target.value)}
           placeholder="https://example.com/mcp"
         />
       </FormField>
       <ChoiceField
         placeholder={t("Select authentication")}
+        label={t("Authentication")}
         value={mode}
-        className="min-w-0"
+        disabled={started}
         onValueChange={(value) => {
           if (
             value === "none" ||
@@ -91,25 +199,52 @@ export function CreateMCP({
           )
             setMode(value);
         }}
-        label={t("Authentication")}
         options={(["oauth", "bearer", "static_headers", "none"] as const).map(
           (value) => ({ value, label: t(`auth.${value}`) }),
         )}
       />
-      {mode === "static_headers" && (
-        <TextAreaField
-          label={t("Header names")}
-          hint={t(
-            "One name per line. Supply secret values after creating the connection.",
-          )}
-          value={headers}
-          onChange={setHeaders}
-          required
-          rows={3}
+      {mode === "oauth" && (
+        <ChoiceField
+          label={t("OAuth app")}
+          placeholder={t("Select OAuth app")}
+          value={ownApp ? "own" : "automatic"}
+          disabled={started}
+          options={[
+            { value: "automatic", label: t("Automatic client registration") },
+            { value: "own", label: t("Use your own OAuth app") },
+          ]}
+          onValueChange={(value) => setOwnApp(value === "own")}
         />
       )}
-      <ErrorNotice error={create.error} />
-      <FormActions pending={create.isPending} label={t("Create connection")} />
+      {!created.current?.credential_configured &&
+        (mode === "static_headers" ? (
+          <HeaderFields
+            rows={headerRows}
+            onChange={setHeaderRows}
+            disabled={started}
+            maxRows={16}
+          />
+        ) : (
+          <MCPCredentialFields
+            mode={mode}
+            names={[]}
+            bearer={bearer}
+            onBearer={setBearer}
+            headers={{}}
+            onHeaders={() => {}}
+          />
+        ))}
+      {preset && <p className={styles.muted}>{t(preset.requirements)}</p>}
+      {preset && (
+        <a href={preset.docs} target="_blank" rel="noopener noreferrer">
+          {t("Setup guide")}
+        </a>
+      )}
+      <ErrorNotice error={connect.error} />
+      <FormActions
+        pending={connect.isPending}
+        label={t(created.current ? "Continue connection" : "Connect")}
+      />
     </form>
   );
 }

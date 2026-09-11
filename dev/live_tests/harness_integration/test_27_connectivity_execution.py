@@ -48,7 +48,6 @@ async def connection(journey, kind):
             "type": "composio",
             "configuration": {
                 "endpoint": journey.live.config["peer_url"],
-                "enabled_toolkits": ["live"],
             },
             "credentials": {"api_key": journey.live.config["token"]},
         },

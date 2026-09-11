@@ -48,6 +48,7 @@ from a13n_harness.events import (
     CodeActToolCallStartedPayload,
     emit_harness_event,
 )
+from a13n_harness.tools.tool_proxy import proxy_control, proxy_membership, resolve_proxy_call
 
 from ._instructions import tool_instruction
 
@@ -425,6 +426,14 @@ class CodeActToolset(WrapperToolset[AgentContext]):
         async def dispatch(sandbox_name: str, kwargs: dict[str, Any], ordinal: int) -> Any:
             canonical_name = catalog.sandbox_to_canonical.get(sandbox_name, sandbox_name)
             prepared = catalog.prepared_tools[canonical_name]
+            if proxy_control(prepared.tool_def) == "call":
+                canonical_name, kwargs = resolve_proxy_call(active_tools, kwargs)
+                prepared = active_tools[canonical_name]
+                if not is_codeact_tool_eligible(canonical_name, prepared):
+                    raise RuntimeError(
+                        f"Tool {canonical_name!r} is not enabled for CodeAct. "
+                        "Use an ordinary proxy call outside the runner, or ask the tool owner to enable its CodeAct policy."
+                    )
             current = manager.tools.get(canonical_name) if manager.tools is not None else None
             if current is not prepared:
                 raise RuntimeError(f"CodeAct tool {canonical_name!r} is no longer the prepared catalog entry")
@@ -632,17 +641,26 @@ class CodeActToolset(WrapperToolset[AgentContext]):
         raise ToolFailed(json.dumps(payload, ensure_ascii=False, separators=(",", ":"))) from None
 
 
+def is_codeact_tool_eligible(name: str, tool: ToolsetTool[AgentContext]) -> bool:
+    """Apply the same owner policy and category exclusions to direct and proxy targets."""
+    definition = tool.tool_def
+    return (
+        resolve_codeact_eligibility(name, tool)
+        and definition.kind in {None, "function", "unapproved"}
+        and definition.tool_kind is None
+        and not definition.defer_loading
+        and not definition.unless_native
+        and (definition.metadata or {}).get("a13n.codeact.runner") is not True
+    )
+
+
 def _build_catalog(tools: dict[str, ToolsetTool[AgentContext]]) -> _Catalog:
     definitions: dict[str, ToolDefinition] = {}
     sandbox_to_canonical: dict[str, str] = {}
     prepared_tools: dict[str, ToolsetTool[AgentContext]] = {}
     for canonical_name, tool in tools.items():
         definition = tool.tool_def
-        if not resolve_codeact_eligibility(canonical_name, tool):
-            continue
-        if definition.kind not in {None, "function", "unapproved"}:
-            continue
-        if definition.tool_kind is not None or definition.defer_loading or definition.unless_native:
+        if not is_codeact_tool_eligible(canonical_name, tool) or proxy_membership(definition) is not None:
             continue
         sandbox_name = _sanitize_name(canonical_name)
         if sandbox_name in _RESERVED_TOOL_NAMES:

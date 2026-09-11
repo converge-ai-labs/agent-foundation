@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Connector Providers provide general outbound SaaS capabilities. Service can configure several accounts or endpoints of the same Provider type, discover the Connectors each one offers, and establish independently authorized Connector Connections. Composio, OpenConnector, and other registered adapters remain optional Connectivity components rather than Service core dependencies.
+Connector Providers provide general outbound SaaS capabilities. Service can configure several accounts or endpoints of the same Provider type, discover the Connectors each one offers, and establish independently authorized Connector Connections. Composio and other registered adapters remain optional Connectivity components rather than Service core dependencies.
 
 The external integration service owns third-party account authorization, OAuth callback processing, access and refresh tokens, token rotation, and provider API invocation. Service owns its configured Connector Provider, safe discovered Connector values, Connector Connection projection, assignment and authorization, exact Run selection, and Agent-facing a13n MCP boundary.
 
@@ -52,7 +52,7 @@ Ownership, type, and behavior-defining configuration are immutable. A null `work
 
 ## Connector discovery
 
-A Connector is a transient Provider-scoped catalog value describing one integration offered by a configured Connector Provider:
+A Connector is an advisory Provider-scoped directory value describing one integration offered by a configured Connector Provider:
 
 ```python
 class Connector:
@@ -60,6 +60,8 @@ class Connector:
     key: str
     name: str
     description: str | None
+    logo_url: str | None
+    unavailable_reason: str | None
     setup_schema: JsonObject
     authentication_methods: tuple[str, ...]
 ```
@@ -70,7 +72,7 @@ Installed implementation discovery, Connector discovery, [tool preview before ac
 
 The selected implementation validates and safely projects upstream catalog metadata. `setup_schema` describes only non-secret setup options, such as a supported authentication configuration selector. It never solicits third-party passwords, API keys, cookies, or OAuth tokens. Authentication-method keys retain Provider-specific semantics, and a method is advertised as usable only when the external service offers the required hosted authorization or credential form. Generic JSON Schema form rendering does not replace the authorization ceremony.
 
-Discovery uses bounded pagination, entry counts, schema size, and total bytes under the [discovery safety bounds](04-agent-facing-tools.md#discovery-and-result-bounds). Cache entries are scoped to the exact Provider and credential generation and are advisory only. Setup revalidates current Provider eligibility, selected Connector, and setup options. A discovery failure reports a bounded error without modifying saved connections or treating an incomplete result as a complete catalog.
+Discovery uses bounded pagination, entry counts, schema size, and total bytes under the [discovery safety bounds](04-agent-facing-tools.md#discovery-and-result-bounds). Service persists one complete directory snapshot per exact Provider and credential generation. Search and cursor pagination read that snapshot; cursors bind the Provider, normalized search and snapshot time. An explicit refresh publishes only after every upstream page and metadata check succeeds. Failure leaves the prior snapshot available for ordinary reads. Credential replacement invalidates the snapshot atomically, and a refresh started under an older credential cannot republish it. Snapshot publication does not change the Provider's administrative version. Directory entries have no standalone CRUD resource or enable/disable list, and refreshing them never creates Connections. Tool schemas are not part of this cache. Setup revalidates current Provider eligibility, selected Connector, and setup options. A discovery failure reports a bounded error without modifying saved connections or treating an incomplete result as a complete catalog.
 
 Organization ConnectorProviders are automatically usable from all descendant Workspaces. Each ConnectorConnection still belongs to its consuming Workspace and references a Provider in that Workspace or its parent Organization. External authorization correlation binds the consuming Workspace and exact Provider; using a shared Provider never merges external accounts across Workspaces.
 

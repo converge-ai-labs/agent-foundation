@@ -10,8 +10,9 @@ from typing import Protocol
 
 import httpx2
 from a13n_harness import AgentContext
+from a13n_harness.observation import record_tool_outcome_unknown
 from anyio import to_thread
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, ValidationError
 from pydantic import JsonValue, TypeAdapter
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import MCP
@@ -42,6 +43,7 @@ from .connectors.management import (
 )
 from .connectors.registry import ConnectorProviderRegistry
 from .connectors.tool_discovery import discover_tools, mcp_tool
+from .connectors.tool_errors import rejected_tool_outcome
 from .domain import JsonObject
 from .mcp.management import require_connection as require_mcp_connection
 from .mcp.refresh import OAuthCredentialRefresh
@@ -309,23 +311,43 @@ class ExternalToolRuntime:
         async def call(name: str, arguments: JsonObject) -> JsonValue:
             if name not in by_name or (selection.tools is not None and name not in selection.tools):
                 raise ValueError("tool_not_authorized")
+            request_id = new_object_id("tool")
             try:
                 async with connection() as (connected, before_dispatch):
                     outcome = await connected.execute_tool(
                         tool_key=name,
                         provider_version=by_name[name].provider_version,
                         arguments=arguments,
-                        request_id=new_object_id("tool"),
+                        request_id=request_id,
                         before_dispatch=before_dispatch,
                     )
             except ConnectorProviderError as error:
                 if error.outcome_unknown:
-                    return {"kind": "outcome_unknown"}
+                    record_tool_outcome_unknown()
+                    return ConnectorToolOutcome(kind="outcome_unknown", request_id=request_id).model_dump(mode="json")
+                rejected = rejected_tool_outcome(error, request_id=request_id)
+                if rejected is not None:
+                    return rejected.model_dump(mode="json")
                 raise ValueError("connector_tool_failed") from error
-            output_schema = by_name[name].output_schema
-            if outcome.kind == "succeeded" and output_schema is not None:
-                await to_thread.run_sync(Draft202012Validator(output_schema).validate, outcome.result)
-            return outcome.model_dump(mode="json")
+
+            if outcome.kind == "outcome_unknown":
+                record_tool_outcome_unknown()
+
+            def validated_result() -> JsonObject:
+                result = outcome.model_dump(mode="json")
+                validate_result(result)
+                output_schema = by_name[name].output_schema
+                if outcome.kind == "succeeded" and output_schema is not None:
+                    Draft202012Validator(output_schema).validate(outcome.result)
+                return result
+
+            try:
+                return await to_thread.run_sync(validated_result)
+            except (ValueError, ValidationError):
+                record_tool_outcome_unknown()
+                # Dispatch has finished; invalid evidence cannot establish rollback
+                # or justify repeating an effect. Never expose the rejected payload.
+                return ConnectorToolOutcome(kind="outcome_unknown", request_id=request_id).model_dump(mode="json")
 
         return await local_capability(
             key=source_key("connector", selection.connector_connection_id),

@@ -163,6 +163,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: read
     steps:
       - name: Checkout release tag and history
         uses: actions/checkout@v6

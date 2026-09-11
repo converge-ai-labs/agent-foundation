@@ -122,7 +122,7 @@ function SelectedDetail() {
   return <p>{useLocation().pathname}</p>;
 }
 
-it("submits ID search, combines filters, and opens the matched Thread", async () => {
+it("updates ID search, combines filters, and opens the matched Thread", async () => {
   const urls: URL[] = [];
   const user = userEvent.setup();
   client = createClient({
@@ -168,8 +168,6 @@ it("submits ID search, combines filters, and opens the matched Thread", async ()
   await screen.findByText("sess_one");
   expect(urls[0].searchParams.get("agent_id")).toBe("agt_one");
   await user.type(screen.getByRole("searchbox"), "  thread_one  ");
-  expect(urls).toHaveLength(1);
-  await user.keyboard("{Enter}");
   await waitFor(() =>
     expect(urls.at(-1)?.searchParams.get("q")).toBe("thread_one"),
   );

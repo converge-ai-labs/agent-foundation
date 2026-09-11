@@ -122,7 +122,7 @@ class EndpointPolicy:
             parsed.scheme == "http" and effective_port == 80
         )
         authority = host if default_port else f"{host}:{effective_port}"
-        path = parsed.path.rstrip("/") or ""
+        path = parsed.path
         normalized = urlunsplit((parsed.scheme.lower(), authority, path, parsed.query, ""))
         if (
             self.require_https

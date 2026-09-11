@@ -1,9 +1,9 @@
+import { FormSection, formSectionStyles } from "../../shared/form-section";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
   ChoiceField,
   DisclosureSection,
-  SettingsSection,
   FormField,
   Input,
 } from "a13n-ui";
@@ -26,7 +26,9 @@ export function TemplateRecipe({
   revision,
   close,
   reload,
+  readOnly = false,
 }: {
+  readOnly?: boolean;
   scope: EnvironmentScope;
   template?: Schema["EnvironmentTemplate"];
   revision?: Schema["EnvironmentTemplateRevision"];
@@ -110,18 +112,19 @@ export function TemplateRecipe({
   });
   return (
     <form
-      className={editorStyles.form}
+      className={formSectionStyles.form}
       onSubmit={(event) => {
         event.preventDefault();
-        save.mutate();
+        if (!readOnly) save.mutate();
       }}
     >
       <ErrorNotice error={providers.error ?? types.error} />
       {!basis && (
-        <section className={editorStyles.section}>
-          <div className={styles.twoColumns}>
+        <FormSection aside title={t("General")}>
+          <div className={styles.stack}>
             <FormField className="min-w-0 w-full" label={t("Name")}>
               <Input
+                readOnly={readOnly}
                 required={true}
                 value={name}
                 onChange={(event) => setName(event.target.value)}
@@ -130,18 +133,24 @@ export function TemplateRecipe({
             </FormField>
             <FormField className="min-w-0 w-full" label={t("Description")}>
               <Input
+                readOnly={readOnly}
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
                 maxLength={4096}
               />
             </FormField>
           </div>
-        </section>
+        </FormSection>
       )}
-      <SettingsSection title={t("Runtime")}>
-        <div className={`${styles.stack} py-5`}>
-          <div className={styles.twoColumns}>
+      <FormSection
+        aside
+        title={t("Runtime")}
+        description={t("Provider, permissions, and environment configuration.")}
+      >
+        <div className={styles.stack}>
+          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_150px]">
             <ChoiceField
+              readOnly={readOnly}
               placeholder={t("Select provider")}
               value={providerId}
               className="min-w-0"
@@ -167,6 +176,7 @@ export function TemplateRecipe({
               }
             />
             <ChoiceField
+              readOnly={readOnly}
               placeholder={t("Select access")}
               value={access}
               className="min-w-0"
@@ -187,6 +197,7 @@ export function TemplateRecipe({
             />
           </div>
           <TextAreaField
+            readOnly={readOnly}
             label={t("Environment recipe (JSON)")}
             hint={t(
               "Use the configuration accepted by this environment provider.",
@@ -197,88 +208,103 @@ export function TemplateRecipe({
             rows={5}
           />
         </div>
-      </SettingsSection>
-      <DisclosureSection
-        className={editorStyles.advanced}
-        title={<>{t("Lifecycle and advanced settings")}</>}
-      >
-        <div className={editorStyles.advancedBody}>
-          <div className={styles.twoColumns}>
-            <ChoiceField
-              placeholder={t("Select timing")}
-              value={preparation}
-              className="min-w-0"
-              onValueChange={(value) =>
-                setPreparation(value === "on_use" ? "on_use" : "on_run")
-              }
-              label={t("Prepare environment")}
-              options={[
-                { value: "on_run", label: t("When a run starts") },
-                { value: "on_use", label: t("On first use") },
-              ]}
-            />
-            <FormField
-              className="min-w-0 w-full"
-              label={t("Configuration schema version")}
-            >
-              <Input
-                required={true}
-                value={version}
-                onChange={(event) => setVersion(event.target.value)}
+      </FormSection>
+      <FormSection aside title={t("Lifecycle")}>
+        <DisclosureSection
+          className={editorStyles.advanced}
+          title={t("Advanced settings")}
+        >
+          <div className={editorStyles.advancedBody}>
+            <div className={styles.twoColumns}>
+              <ChoiceField
+                readOnly={readOnly}
+                placeholder={t("Select timing")}
+                value={preparation}
+                className="min-w-0"
+                onValueChange={(value) =>
+                  setPreparation(value === "on_use" ? "on_use" : "on_run")
+                }
+                label={t("Prepare environment")}
+                options={[
+                  { value: "on_run", label: t("When a run starts") },
+                  { value: "on_use", label: t("On first use") },
+                ]}
               />
-            </FormField>
+              <FormField
+                className="min-w-0 w-full"
+                label={t("Configuration schema version")}
+              >
+                <Input
+                  readOnly={readOnly}
+                  required={true}
+                  value={version}
+                  onChange={(event) => setVersion(event.target.value)}
+                />
+              </FormField>
+            </div>
+            <div className={styles.twoColumns}>
+              <FormField
+                className="min-w-0 w-full"
+                label={t("Stop after idle seconds")}
+                description={t("Leave empty to disable automatic stopping.")}
+                disabled={definition?.supports_stop === false}
+              >
+                <Input
+                  readOnly={readOnly}
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={stop}
+                  onChange={(event) => setStop(event.target.value)}
+                />
+              </FormField>
+              <FormField
+                className="min-w-0 w-full"
+                label={t("Delete after idle seconds")}
+                description={t(
+                  "Leave empty to disable automatic deletion. If both are set, deletion must be later than stopping.",
+                )}
+                disabled={definition?.supports_destroy === false}
+              >
+                <Input
+                  readOnly={readOnly}
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={destroy}
+                  onChange={(event) => setDestroy(event.target.value)}
+                />
+              </FormField>
+            </div>
           </div>
-          <div className={styles.twoColumns}>
-            <FormField
-              className="min-w-0 w-full"
-              label={t("Stop after idle seconds")}
-              description={t("Leave empty to disable automatic stopping.")}
-              disabled={definition?.supports_stop === false}
-            >
-              <Input
-                type="number"
-                min={0}
-                step={1}
-                value={stop}
-                onChange={(event) => setStop(event.target.value)}
-              />
-            </FormField>
-            <FormField
-              className="min-w-0 w-full"
-              label={t("Delete after idle seconds")}
-              description={t(
-                "Leave empty to disable automatic deletion. If both are set, deletion must be later than stopping.",
-              )}
-              disabled={definition?.supports_destroy === false}
-            >
-              <Input
-                type="number"
-                min={0}
-                step={1}
-                value={destroy}
-                onChange={(event) => setDestroy(event.target.value)}
-              />
-            </FormField>
-          </div>
-        </div>
-      </DisclosureSection>
+        </DisclosureSection>
+      </FormSection>
+      {basis && !readOnly && (
+        <p className={styles.muted}>
+          {t(
+            "New revisions apply to newly allocated environments. Existing environments keep their original recipe.",
+          )}
+        </p>
+      )}
       <ErrorNotice
         error={save.error}
         retry={reload ? () => void reload() : undefined}
       />
-      <div data-a13n-form-actions className={editorStyles.footer}>
-        <Button
-          variant="outline"
-          disabled={save.isPending}
-          onClick={close}
-          type="button"
-        >
-          {t("Cancel")}
-        </Button>
-        <Button type="submit" variant="default" loading={save.isPending}>
-          {t(basis ? "Publish revision" : "Create template")}
-        </Button>
-      </div>
+      {!readOnly && (
+        <div data-a13n-form-actions className={editorStyles.footer}>
+          <Button
+            variant="outline"
+            disabled={save.isPending}
+            onClick={close}
+            type="button"
+          >
+            {t("Cancel")}
+          </Button>
+          <Button type="submit" variant="default" loading={save.isPending}>
+            {t(basis ? "Publish revision" : "Create template")}
+          </Button>
+        </div>
+      )}
     </form>
   );
 }

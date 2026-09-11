@@ -54,6 +54,6 @@ Agent revisions preserve authored configuration. Run acceptance freezes executio
 - **Native HTTP** is the main resource and execution contract. TypeScript covers it; Python, Go, and Rust currently cover Search Provider management, not general Run APIs.
 - **`a13n-service`** is the process/operator CLI. **`a13n-service-cli`** is a separate remote-client scaffold with help/version only.
 - **AG-UI, A2A, and provider ingress** are separate protocol boundaries, not additional paths on the Native SDK's transport.
-- **Tracing export** does not automatically enable authorized Service trace queries. An installed query adapter and trusted authorizer are required.
+- **Tracing export** does not automatically enable authorized Service trace queries. Configure an installed query adapter; the default Run/IAM authorizer enforces access.
 
 The site follows source `main`. Use package versions and contracts matching your deployed artifact, rather than assuming every published SDK or server release has the same surface.

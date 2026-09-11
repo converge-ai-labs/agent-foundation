@@ -18,7 +18,7 @@ The package root is a closed primary code-first facade. It exports only the valu
 | Input                         | `NativeRunInput`, `RunInputValue`, `SemanticRunInput`, `RunInputFactory`, `RunPreparationContext`, `DeferredToolResume`                                                                                                   |
 | Environment selection         | `Environment`, `EnvironmentMount`, `EnvironmentAccess`                                                                                                                                                                    |
 | Direct plugins                | `AbstractHarnessPlugin`, `PluginOrdering`                                                                                                                                                                                 |
-| Model and recovery            | `infer_model`, `RunModelResolver`, `ModelRecoveryPolicy`                                                                                                                                                                  |
+| Model and recovery            | `infer_model`, `RunModelResolver`, `ModelRecoveryPolicy`, `ToolRecoveryMode`                                                                                                                                              |
 | Observation                   | `HarnessInstrumentation`, `HarnessObservationContext`, `HarnessTraceContent`                                                                                                                                              |
 | State, execution, and results | `HarnessState`, `HarnessRunStream`, `HarnessRunResult`, `SafeFailure`, `AgentStreamEventProtocol`, `HarnessEvent`, `HarnessExtensionEvent`, `HarnessRunResultEvent`, `HarnessStreamEvent`                                 |
 | Errors                        | `HarnessError`, `DefinitionError`, `IdentityError`, `InputError`, `ModelResolutionError`, `PluginError`, `RunCleanupError`, `RunError`, `StateError`                                                                      |
@@ -46,13 +46,15 @@ The package root is a closed primary code-first facade. It exports only the valu
 | `a13n_harness.plugins`               | Complete plugin middleware protocol                                                              |
 | `a13n_harness.pricing`               | Bundled/current pricing catalogs and model-cost Capability family                                |
 | `a13n_harness.state`                 | Advanced context and Capability state values                                                     |
-| `a13n_harness.tools`                 | Managed tool invocation and event helpers                                                        |
+| `a13n_harness.tools`                 | Tool recovery declarations, managed tool invocation, and event helpers                           |
 | `a13n_harness.toolsets`              | First-party reusable Toolsets, including the standard async subagent dispatcher                  |
 | `a13n_harness.usage`                 | Usage attribution, ledger, and `intersect_usage_limits`                                          |
 
 The Model authentication feature exports `CodexRequestModel`, `CodexLoginFlow`, `CodexLoginResult`, and the Codex device flow alongside Grok credential/source values, OAuth and refresh primitives, bounded errors, and `build_grok_model()`. Native Codex credential, source, provider, and ordinary browser-flow APIs are imported directly from `pydantic_ai.providers.openai_codex`; there are no compatibility aliases or parallel refresh APIs. Its lifecycle and Host boundary belong to [Model Authentication](16a-model-authentication.md).
 
 A value is not private merely because it is absent from the root facade. Its owning module and that module's documented exports are the canonical import route. Removing duplicate root re-exports keeps discovery bounded and prevents unrelated feature families from becoming one coupled compatibility surface. The public Mem0 integration is imported as `from a13n_harness.capabilities import Mem0Capability, Mem0Scope`; its run replacement and Toolset implementation remain package-private. The public async-subagent boundary is imported from `a13n_harness.capabilities`: `SubagentCapability`, `SubagentOperator`, `SubagentOperatorContext`, `SubagentToolCallContext`, `SubagentDelegationPlan`, and the standard request/result/view models. `AsyncSubagentToolset` and the standard Environment Shell Toolset are available from `a13n_harness.toolsets`; the private inline executor and Run process controller are not public operator implementations.
+
+Grouped discovery is imported as `ToolProxyCapability`, `ToolProxyConfig`, `ToolProxyGroup`, `ToolProxyPlan`, and `ToolProxySelection` from `a13n_harness.capabilities`. `ToolProxyCapability(groups=..., config=...)` installs concrete sources; each group descriptor supplies a native Toolset or Capability and a description. Alternatively, `AgentDefinition.tool_proxy` accepts an immutable build plan whose selections reference existing concrete Capabilities and exact Harness plugin instance IDs. Both use the same composition semantics. There is no separately installed public grouping wrapper. These are code-first composition APIs; they do not add a built-in declarative `AgentSpec` registration. Their behavior belongs to [Tool Execution](07-tool-execution.md#grouped-toolproxy-discovery).
 
 ## Build API
 
@@ -65,6 +67,7 @@ class AgentDefinition[OutputT]:
     model: Model | None = None
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
     plugins: tuple[AbstractHarnessPlugin, ...] = ()
+    tool_proxy: ToolProxyPlan | None = None
     subagents: tuple[SubagentDefinition, ...] = ()
     model_recovery: ModelRecoveryPolicy = ModelRecoveryPolicy()
 
@@ -107,6 +110,7 @@ class HarnessBuilder:
         model: Model | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         plugins: Sequence[AbstractHarnessPlugin] = (),
+        tool_proxy: ToolProxyPlan | None = None,
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
         pricing_catalog: PricingCatalog | None = None,
@@ -123,6 +127,7 @@ class HarnessBuilder:
         model: Model | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         plugins: Sequence[AbstractHarnessPlugin] = (),
+        tool_proxy: ToolProxyPlan | None = None,
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
         pricing_catalog: PricingCatalog | None = None,
@@ -192,7 +197,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         environment_run_extensions: Sequence[EnvironmentRunExtension] = (),
         previous_state: HarnessState | None = None,
-        execute_pending_tools: bool = False,
+        tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -209,7 +214,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         environment_run_extensions: Sequence[EnvironmentRunExtension] = (),
         previous_state: HarnessState | None = None,
-        execute_pending_tools: bool = False,
+        tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -217,7 +222,9 @@ class ExecutableAgent[OutputT]:
 
 ```
 
-`execute_pending_tools` defaults to closing unanswered restored tool calls with unknown results; explicit opt-in retains native execution of pending calls as defined by [Restored Pending Tool Calls](10-snapshot-and-resume.md#restored-pending-tool-calls).
+`ToolRecoveryMode`, exported from `a13n_harness`, is `Literal["declared", "never", "always"]`. `tool_recovery` selects replay or unknown-result closure as defined by [Restored Pending Tool Calls](10-snapshot-and-resume.md#restored-pending-tool-calls). It replaces `execute_pending_tools`; migrate `False` to `"never"`, `True` to `"always"`, and `"auto"` to `"declared"`. The default is declaration-based recovery.
+
+`a13n_harness.tools.recovery_retryable(function_or_tool)` returns a native `Tool` carrying the recovery-retryable declaration. It supports decorator and function-call syntax. Existing tools are copied with their settings and other metadata preserved; the helper does not mutate its argument or wrap the execution function. `RECOVERY_RETRY_SAFE_METADATA_KEY` remains available for native tool metadata integrations.
 
 An immediate input and `input_factory` are mutually exclusive. Omitting both passes no new user input, which permits continuation from imported messages. `deferred_resume` is a separate Harness correlation envelope around native Pydantic requests and results rather than user content. It requires a compatible prior state and current tool surface; after preflight, only its native results are consumed by the first `ModelAttempt`. A supplied `RunUsage` remains the one accumulator shared across all internal `ModelAttempt` values; otherwise the Harness creates a fresh value. Native `UsageLimits` are passed to every attempt and remain monotonic through the shared accumulator.
 

@@ -164,6 +164,10 @@ Automatic preparation/rebuild is permitted before dispatch. A command or mutatio
 
 Credentials remain process-local and Provider state cannot grant authority. EIP implementations authenticate fresh sessions and validate identity/method compatibility before operations. Direct Local follows embedding OS authority and does not claim sandbox isolation. Blocking native/SDK operations stay off the event loop and use bounded timeouts. Public errors omit credentials, private target details and raw provider exceptions.
 
+Provider-neutral operation failures expose one safe projection containing `code`, a code-owned bounded `message`, an object-valued `details`, and an optional `retry_hint`. Exception descriptions remain local diagnostics and are not the public message. Providers identify correctable input failures with a public `field`, stable `reason`, and corrective `hint` where known. The projection bounds these strings and admits only explicitly public numeric/count fields, missing-operation names, and typed dispatch/retry evidence; arbitrary details, native paths, selectors, credentials, receipts, and raw provider text are omitted. A failure without specific diagnostics still receives safe code-level guidance. This operation projection is distinct from Provider lifecycle error categories and certainty.
+
+EIP adaptation preserves known input diagnostics beyond pattern errors, typed dispatch stage, provider retry semantics, and bounded effect counts without forwarding daemon exception text or native identities. `unknown_outcome` remains `environment_unknown_outcome` and requires reconciliation; it never degrades into an ordinary provider failure or permission to start a fresh mutation. A provider's `same_request` hint describes protocol operation-ID replay, not permission for a model to issue a new operation ID.
+
 ## Compatibility and Invariants
 
 Configuration and `EnvironmentState.state_version` evolve independently. Unsupported versions fail explicitly. Providers never reinterpret incompatible state as permission to create a different target.

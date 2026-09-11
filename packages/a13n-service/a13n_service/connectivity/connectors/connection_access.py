@@ -120,6 +120,12 @@ async def replay_connection_command(
 
 
 def external_error(error: ConnectorProviderError) -> ConnectorError:
+    if error.code == "shared_setup_outcome_unknown":
+        return ConnectorError(
+            "shared_setup_outcome_unknown",
+            "OAuth configuration creation is unresolved. Check the provider dashboard, then retry with an existing configuration.",
+            category=ErrorCategory.conflict,
+        )
     if error.retryable or error.outcome_unknown:
         return ConnectorError(
             "connector_unavailable", "ConnectorProvider is unavailable.", category=ErrorCategory.unavailable

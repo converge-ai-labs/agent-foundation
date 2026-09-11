@@ -32,7 +32,7 @@ def test_hook_cursor_rejects_another_query() -> None:
         decode_hook_cursor(LEGACY_CURSOR, scope={**SCOPE, "filter": "changed"})
 
 
-@pytest.mark.parametrize("cursor", ["", "!invalid!", "a" * 2049, "ew"])
+@pytest.mark.parametrize("cursor", ["", "!invalid!", pytest.param("a" * 2049, id="oversized-cursor"), "ew"])
 def test_hook_cursor_rejects_invalid_envelopes(cursor: str) -> None:
     with pytest.raises(HookCursorError, match="invalid cursor"):
         decode_hook_cursor(cursor, scope=SCOPE)

@@ -1,4 +1,11 @@
-import { Button, FormField, ModalFrame, Textarea } from "a13n-ui";
+import {
+  Button,
+  type ButtonProps,
+  FormField,
+  ModalFrame,
+  ReadOnlyField,
+  Textarea,
+} from "a13n-ui";
 
 import { useState, type ReactElement, type ReactNode } from "react";
 
@@ -16,6 +23,7 @@ export function TextAreaField({
   required,
   code = false,
   hideLabel = false,
+  readOnly = false,
   error,
 }: {
   label: string;
@@ -26,8 +34,19 @@ export function TextAreaField({
   required?: boolean;
   code?: boolean;
   hideLabel?: boolean;
+  readOnly?: boolean;
   error?: string;
 }) {
+  if (readOnly)
+    return (
+      <ReadOnlyField label={label} description={hint} hideLabel={hideLabel}>
+        {code ? (
+          <pre className={styles.codeValue}>{value || "—"}</pre>
+        ) : (
+          value || "—"
+        )}
+      </ReadOnlyField>
+    );
   return (
     <FormField
       label={label}
@@ -53,6 +72,8 @@ export function Confirm({
   trigger,
   triggerElement,
   danger = false,
+  triggerVariant,
+  retry,
   children,
 }: {
   title: string;
@@ -62,6 +83,8 @@ export function Confirm({
   trigger?: ReactNode;
   triggerElement?: ReactElement;
   danger?: boolean;
+  triggerVariant?: ButtonProps["variant"];
+  retry?: () => void;
   children?: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -86,7 +109,14 @@ export function Confirm({
       trigger={
         triggerElement ?? (
           <Button
-            variant={danger ? "destructive" : "outline"}
+            variant={triggerVariant ?? (danger ? "destructive" : "outline")}
+            className={
+              triggerVariant === "ghost"
+                ? danger
+                  ? "font-normal text-destructive-foreground"
+                  : "font-normal text-muted-foreground"
+                : undefined
+            }
             size="sm"
             type="button"
           >
@@ -123,7 +153,7 @@ export function Confirm({
       {(children || mutation.error) && (
         <>
           {children}
-          <ErrorNotice error={mutation.error} />
+          <ErrorNotice error={mutation.error} retry={retry} />
         </>
       )}
     </ModalFrame>
@@ -140,8 +170,10 @@ export function FormActions({
   pending,
   label,
   onCancel,
+  disabled = false,
 }: {
   pending: boolean;
+  disabled?: boolean;
   label?: string;
   onCancel?: () => void;
 }) {
@@ -158,7 +190,12 @@ export function FormActions({
           {t("Cancel")}
         </Button>
       )}
-      <Button type="submit" variant="default" loading={pending}>
+      <Button
+        type="submit"
+        variant="default"
+        loading={pending}
+        disabled={disabled}
+      >
         {label ?? t("Save changes")}
       </Button>
     </footer>

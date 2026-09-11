@@ -332,6 +332,9 @@ class ObservabilityRuntime:
         attempt_token = _current_attempt_trace.set(attempt)
         try:
             yield attempt
+        except asyncio.CancelledError:
+            # Local cancellation is not a durable Attempt decision or an execution error.
+            raise
         except BaseException:
             attempt.mark_local_error()
             raise

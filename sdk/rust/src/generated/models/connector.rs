@@ -30,11 +30,27 @@ pub struct Connector {
     #[serde(rename = "key")]
     pub key: String,
 
+    #[serde(
+        rename = "logo_url",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub logo_url: Option<Option<String>>,
+
     #[serde(rename = "name")]
     pub name: String,
 
     #[serde(rename = "setup_schema")]
     pub setup_schema: std::collections::HashMap<String, serde_json::Value>,
+
+    #[serde(
+        rename = "unavailable_reason",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub unavailable_reason: Option<Option<String>>,
 }
 
 impl Connector {
@@ -50,8 +66,10 @@ impl Connector {
             connector_provider_id,
             description: None,
             key,
+            logo_url: None,
             name,
             setup_schema,
+            unavailable_reason: None,
         }
     }
 }

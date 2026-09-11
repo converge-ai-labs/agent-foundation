@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from copy import copy
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, overload, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_ai.tools import Tool, ToolFuncEither
@@ -13,6 +14,7 @@ from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 
 HARNESS_TOOL_METADATA_KEY = "a13n.harness.tool"
+RECOVERY_RETRY_SAFE_METADATA_KEY = "a13n.harness.recovery_retry_safe"
 MAX_TOOL_ID_LENGTH = 256
 MAX_CREDENTIAL_AUDIENCES = 16
 MAX_OUTPUT_BYTES = 512 * 1024 * 1024
@@ -24,6 +26,25 @@ type OutputOverflow = Literal["fail", "truncate", "spill"]
 
 _VALID_EFFECTS = frozenset({"read", "write", "delete", "execute", "external_communication"})
 _VALID_IDEMPOTENCY = frozenset({"none", "read_only", "provider_key"})
+
+
+@overload
+def recovery_retryable[DepsT](tool: Tool[DepsT]) -> Tool[DepsT]: ...
+
+
+@overload
+def recovery_retryable[DepsT](tool: ToolFuncEither[DepsT, ...]) -> Tool[DepsT]: ...
+
+
+def recovery_retryable[DepsT](tool: Tool[DepsT] | ToolFuncEither[DepsT, ...]) -> Tool[DepsT]:
+    """Declare that a tool may run again after an unknown outcome, without wrapping execution.
+
+    Use as ``@recovery_retryable`` or ``recovery_retryable(function_or_tool)``.
+    Existing native Tool settings and metadata are preserved on a detached copy.
+    """
+    marked = copy(tool) if isinstance(tool, Tool) else Tool(tool)
+    marked.metadata = {**(marked.metadata or {}), RECOVERY_RETRY_SAFE_METADATA_KEY: True}
+    return marked
 
 
 class CanonicalResource(BaseModel):

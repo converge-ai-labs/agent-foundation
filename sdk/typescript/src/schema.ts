@@ -416,6 +416,23 @@ export interface paths {
     patch: operations["patch_connector_providers_connector_provider_id"];
     trace?: never;
   };
+  "/api/v1/connector-providers/{connector_provider_id}/connectors/{connector_key}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Connector */
+    get: operations["get_connector_providers_connector_provider_id_connectors_connector_key"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/connector-providers/{connector_provider_id}/connectors/{connector_key}/tools": {
     parameters: {
       query?: never;
@@ -898,6 +915,41 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/mcp-connections/{connection_id}/oauth-client": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Mcp Oauth Client */
+    get: operations["get_mcp_connections_connection_id_oauth_client"];
+    /** Configure Mcp Oauth Client */
+    put: operations["put_mcp_connections_connection_id_oauth_client"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/mcp-connections/{connection_id}/oauth-discovery": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Discover Mcp Oauth */
+    post: operations["post_mcp_connections_connection_id_oauth_discovery"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/mcp-connections/{connection_id}/reconnect": {
     parameters: {
       query?: never;
@@ -949,15 +1001,15 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/oauth/mcp/callback": {
+  "/api/v1/oauth/mcp/client-metadata/{issuer_key}.json": {
     parameters: {
       query?: never;
       header?: never;
       path?: never;
       cookie?: never;
     };
-    /** Mcp Oauth Callback */
-    get: operations["get_oauth_mcp_callback"];
+    /** Mcp Client Metadata */
+    get: operations["get_oauth_mcp_client_metadata_issuer_key_json"];
     put?: never;
     post?: never;
     delete?: never;
@@ -966,17 +1018,17 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/oauth/mcp/client-metadata.json": {
+  "/api/v1/oauth/mcp/complete": {
     parameters: {
       query?: never;
       header?: never;
       path?: never;
       cookie?: never;
     };
-    /** Mcp Client Metadata */
-    get: operations["get_oauth_mcp_client_metadata_json"];
+    get?: never;
     put?: never;
-    post?: never;
+    /** Complete Mcp Oauth */
+    post: operations["post_oauth_mcp_complete"];
     delete?: never;
     options?: never;
     head?: never;
@@ -3011,6 +3063,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/workspaces/{workspace}/trace-query": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Trace Query */
+    get: operations["get_workspaces_workspace_trace_query"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/workspaces/{workspace}/traces": {
     parameters: {
       query?: never;
@@ -3037,6 +3106,23 @@ export interface paths {
     };
     /** Get Trace */
     get: operations["get_workspaces_workspace_traces_trace_id"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/traces/{trace_id}/observations": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Trace Observations */
+    get: operations["get_workspaces_workspace_traces_trace_id_observations"];
     put?: never;
     post?: never;
     delete?: never;
@@ -3883,6 +3969,13 @@ export interface components {
        */
       token: string;
     };
+    /** CompleteMCPOAuthRequest */
+    CompleteMCPOAuthRequest: {
+      /** Receipt */
+      receipt: string;
+      /** State */
+      state: string;
+    };
     /** CompletePasswordResetRequest */
     CompletePasswordResetRequest: {
       /**
@@ -3906,6 +3999,12 @@ export interface components {
       /** Call Id */
       call_id: string;
       result: components["schemas"]["JsonValue"];
+    };
+    /** ConfigureMCPOAuthClientRequest */
+    ConfigureMCPOAuthClientRequest: {
+      client: components["schemas"]["MCPOAuthClientInput"] | null;
+      /** Expected Version */
+      expected_version: number;
     };
     /** ConnectionCleanupReceipt */
     ConnectionCleanupReceipt: {
@@ -3932,19 +4031,25 @@ export interface components {
       description?: string | null;
       /** Key */
       key: string;
+      /** Logo Url */
+      logo_url?: string | null;
       /** Name */
       name: string;
       /** Setup Schema */
       setup_schema: {
         [key: string]: components["schemas"]["JsonValue"];
       };
+      /** Unavailable Reason */
+      unavailable_reason?: string | null;
     };
     /** ConnectorCollection */
     ConnectorCollection: {
       /** Items */
       items: components["schemas"]["Connector"][];
       /** Next Cursor */
-      next_cursor?: null;
+      next_cursor?: string | null;
+      /** Refreshed At */
+      refreshed_at?: string | null;
     };
     /** ConnectorConnection */
     ConnectorConnection: {
@@ -4176,6 +4281,12 @@ export interface components {
       /** Expected Thread Version */
       expected_thread_version: number;
     };
+    /** Content */
+    Content: {
+      /** Media Type */
+      media_type: string | null;
+      value: components["schemas"]["JsonValue"];
+    };
     /**
      * Context
      * @description Additional context for the agent.
@@ -4332,6 +4443,10 @@ export interface components {
        * @default true
        */
       enabled?: boolean;
+      /** Extra Headers */
+      extra_headers?: {
+        [key: string]: string | null;
+      };
       /** Name */
       name: string;
       /** Type */
@@ -5134,6 +5249,17 @@ export interface components {
       /** Skills */
       skills?: components["schemas"]["SkillSelection"][] | null;
     };
+    /** InstrumentationScope */
+    InstrumentationScope: {
+      /** Attributes */
+      attributes: {
+        [key: string]: components["schemas"]["JsonValue"];
+      } | null;
+      /** Name */
+      name: string | null;
+      /** Version */
+      version: string | null;
+    };
     /** InterruptReceipt */
     InterruptReceipt: {
       /**
@@ -5469,6 +5595,47 @@ export interface components {
       /** Tools */
       tools?: string[] | null;
     };
+    /** MCPOAuthClientConfiguration */
+    MCPOAuthClientConfiguration: {
+      /** Client Id */
+      client_id: string;
+      /** Issuer Url */
+      issuer_url: string;
+      /**
+       * Token Endpoint Auth Method
+       * @enum {string}
+       */
+      token_endpoint_auth_method:
+        "none" | "client_secret_basic" | "client_secret_post";
+    };
+    /** MCPOAuthClientInput */
+    MCPOAuthClientInput: {
+      /** Client Id */
+      client_id: string;
+      /** Client Secret */
+      client_secret?: string | null;
+      /** Issuer Url */
+      issuer_url: string;
+      /**
+       * Token Endpoint Auth Method
+       * @enum {string}
+       */
+      token_endpoint_auth_method:
+        "none" | "client_secret_basic" | "client_secret_post";
+    };
+    /** MCPOAuthDiscovery */
+    MCPOAuthDiscovery: {
+      /** Authorization Response Iss Parameter Supported */
+      authorization_response_iss_parameter_supported: boolean;
+      /** Issuer Url */
+      issuer_url: string;
+      /** Redirect Uri */
+      redirect_uri: string;
+      /** Token Endpoint Auth Methods Supported */
+      token_endpoint_auth_methods_supported: (
+        "none" | "client_secret_basic" | "client_secret_post"
+      )[];
+    };
     /** MCPTool */
     MCPTool: {
       /** Annotations */
@@ -5619,6 +5786,13 @@ export interface components {
         };
       };
     };
+    /** ModelIdentity */
+    ModelIdentity: {
+      /** Requested */
+      requested: string | null;
+      /** Response */
+      response: string | null;
+    };
     /** ModelLimits */
     ModelLimits: {
       /** Context Window Tokens */
@@ -5675,6 +5849,11 @@ export interface components {
       credential_configured: boolean;
       /** Enabled */
       enabled: boolean;
+      /**
+       * Header Names
+       * @default []
+       */
+      header_names?: string[];
       /** Id */
       id: string;
       /** Name */
@@ -5760,45 +5939,81 @@ export interface components {
     };
     /** Observation */
     Observation: {
+      /** Attributes */
+      attributes: {
+        [key: string]: components["schemas"]["JsonValue"];
+      } | null;
       /** Cost Usd */
       cost_usd: string | null;
-      /** Duration Ms */
-      duration_ms: number | null;
       /** Ended At */
       ended_at: string | null;
+      /** Events */
+      events: components["schemas"]["ObservationEvent"][] | null;
       /** Id */
       id: string;
-      input: components["schemas"]["JsonValue"] | null;
-      /** Metadata */
-      metadata: {
-        [key: string]: components["schemas"]["JsonValue"];
-      };
-      /** Model */
-      model: string | null;
+      input: components["schemas"]["Content"] | null;
+      /** Level */
+      level: string | null;
+      /** Links */
+      links: components["schemas"]["ObservationLink"][] | null;
+      model: components["schemas"]["ModelIdentity"] | null;
       /** Name */
       name: string;
-      output: components["schemas"]["JsonValue"] | null;
+      output: components["schemas"]["Content"] | null;
       /** Parent Id */
       parent_id: string | null;
+      /** Resource Attributes */
+      resource_attributes: {
+        [key: string]: components["schemas"]["JsonValue"];
+      } | null;
+      scope: components["schemas"]["InstrumentationScope"] | null;
       /**
        * Started At
        * Format: date-time
        */
       started_at: string;
-      /**
-       * Status
-       * @enum {string}
-       */
-      status: "unset" | "ok" | "error";
-      /**
-       * Type
-       * @enum {string}
-       */
-      type: "span" | "generation" | "event" | "unknown";
+      /** Status */
+      status: ("unset" | "ok" | "error") | null;
+      /** Status Message */
+      status_message: string | null;
+      /** Type */
+      type: string;
       /** Usage */
       usage: {
         [key: string]: number;
       } | null;
+    };
+    /** ObservationCollection */
+    ObservationCollection: {
+      /** Items */
+      items: components["schemas"]["Observation"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** ObservationEvent */
+    ObservationEvent: {
+      /** Attributes */
+      attributes: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+      /** Name */
+      name: string;
+      /**
+       * Occurred At
+       * Format: date-time
+       */
+      occurred_at: string;
+    };
+    /** ObservationLink */
+    ObservationLink: {
+      /** Attributes */
+      attributes: {
+        [key: string]: components["schemas"]["JsonValue"];
+      } | null;
+      /** Observation Id */
+      observation_id: string;
+      /** Trace Id */
+      trace_id: string;
     };
     /** Organization */
     Organization: {
@@ -7572,66 +7787,51 @@ export interface components {
     } & {
       [key: string]: unknown;
     };
+    /** Trace */
+    Trace: {
+      correlation: components["schemas"]["TraceCorrelation"];
+      /** Id */
+      id: string;
+      /** Provider */
+      provider: string;
+      root: components["schemas"]["Observation"];
+      /** Source Url */
+      source_url: string | null;
+    };
     /** TraceCollection */
     TraceCollection: {
       /** Items */
-      items: components["schemas"]["TraceSummary"][];
+      items: components["schemas"]["Trace"][];
       /** Next Cursor */
       next_cursor: string | null;
     };
-    /** TraceDetail */
-    TraceDetail: {
-      /** Observations */
-      observations: components["schemas"]["Observation"][];
-      trace: components["schemas"]["TraceSummary"];
-    };
-    /** TraceSummary */
-    TraceSummary: {
-      /** Duration Ms */
-      duration_ms: number | null;
-      /** Ended At */
-      ended_at: string | null;
-      /** Id */
-      id: string;
-      input: components["schemas"]["JsonValue"] | null;
-      /** Models */
-      models: string[];
-      /** Name */
-      name: string;
-      /** Observation Count */
-      observation_count: number | null;
-      output: components["schemas"]["JsonValue"] | null;
+    /** TraceCorrelation */
+    TraceCorrelation: {
+      /** Agent Id */
+      agent_id: string;
+      /** Organization Id */
+      organization_id: string;
       /** Run Attempt Id */
       run_attempt_id: string;
-      /** Run Attempt Number */
-      run_attempt_number: number;
-      /** Run Attempt Outcome */
-      run_attempt_outcome:
-        ("succeeded" | "yielded" | "failed" | "cancelled") | null;
       /** Run Id */
       run_id: string;
       /** Session Id */
       session_id: string;
-      /** Source Url */
-      source_url: string | null;
-      /**
-       * Started At
-       * Format: date-time
-       */
-      started_at: string;
       /** Thread Id */
       thread_id: string;
-      /** Total Cost Usd */
-      total_cost_usd: string | null;
-      /**
-       * Trace Status
-       * @enum {string}
-       */
-      trace_status: "unset" | "ok" | "error";
-      /** Usage */
-      usage: {
-        [key: string]: number;
-      } | null;
+      /** Workspace Id */
+      workspace_id: string;
+    };
+    /** TraceQueryDescriptor */
+    TraceQueryDescriptor: {
+      /** Enabled */
+      enabled: boolean;
+      /** History From */
+      history_from: string | null;
+      /** Provider */
+      provider: string;
+      /** Search In */
+      search_in: components["schemas"]["SearchIn"][];
     };
     /**
      * TraceView
@@ -7724,6 +7924,10 @@ export interface components {
       credential?: string | null;
       /** Enabled */
       enabled?: boolean | null;
+      /** Extra Headers */
+      extra_headers?: {
+        [key: string]: string | null;
+      };
       /** Name */
       name?: string | null;
     };
@@ -9570,6 +9774,51 @@ export interface operations {
       };
     };
   };
+  get_connector_providers_connector_provider_id_connectors_connector_key: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        connector_provider_id: string;
+        connector_key: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Connector"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
   get_connector_providers_connector_provider_id_connectors_connector_key_tools: {
     parameters: {
       query?: never;
@@ -9667,7 +9916,12 @@ export interface operations {
   };
   post_connector_providers_connector_provider_id_discover_connectors: {
     parameters: {
-      query?: never;
+      query?: {
+        query?: string;
+        cursor?: string | null;
+        limit?: number;
+        refresh?: boolean;
+      };
       header?: never;
       path: {
         connector_provider_id: string;
@@ -11152,6 +11406,143 @@ export interface operations {
       };
     };
   };
+  get_mcp_connections_connection_id_oauth_client: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json":
+            components["schemas"]["MCPOAuthClientConfiguration"] | null;
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  put_mcp_connections_connection_id_oauth_client: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ConfigureMCPOAuthClientRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MCPConnection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_mcp_connections_connection_id_oauth_discovery: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MCPOAuthDiscovery"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
   post_mcp_connections_connection_id_reconnect: {
     parameters: {
       query?: never;
@@ -11285,15 +11676,13 @@ export interface operations {
       };
     };
   };
-  get_oauth_mcp_callback: {
+  get_oauth_mcp_client_metadata_issuer_key_json: {
     parameters: {
-      query: {
-        code: string;
-        state: string;
-        iss: string;
-      };
+      query?: never;
       header?: never;
-      path?: never;
+      path: {
+        issuer_key: string;
+      };
       cookie?: never;
     };
     requestBody?: never;
@@ -11305,7 +11694,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["MCPConnection"];
+          "application/json": components["schemas"]["MCPClientMetadata"];
         };
       };
       /** @description Invalid request. */
@@ -11331,14 +11720,18 @@ export interface operations {
       };
     };
   };
-  get_oauth_mcp_client_metadata_json: {
+  post_oauth_mcp_complete: {
     parameters: {
       query?: never;
       header?: never;
       path?: never;
       cookie?: never;
     };
-    requestBody?: never;
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CompleteMCPOAuthRequest"];
+      };
+    };
     responses: {
       /** @description Successful Response */
       200: {
@@ -11347,7 +11740,17 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["MCPClientMetadata"];
+          "application/json": components["schemas"]["MCPConnection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       /** @description Service error. */
@@ -18202,6 +18605,7 @@ export interface operations {
         query?: string | null;
         provider_id?: string | null;
         enabled?: boolean | null;
+        scope?: ("organization" | "workspace") | null;
       };
       header?: never;
       path: {
@@ -19503,6 +19907,50 @@ export interface operations {
       };
     };
   };
+  get_workspaces_workspace_trace_query: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TraceQueryDescriptor"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
   get_workspaces_workspace_traces: {
     parameters: {
       query?: {
@@ -19515,6 +19963,7 @@ export interface operations {
         thread_id?: string | null;
         run_id?: string | null;
         run_attempt_id?: string | null;
+        view?: components["schemas"]["TraceView"];
       };
       header?: never;
       path: {
@@ -19578,7 +20027,56 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["TraceDetail"];
+          "application/json": components["schemas"]["Trace"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_workspaces_workspace_traces_trace_id_observations: {
+    parameters: {
+      query?: {
+        view?: components["schemas"]["TraceView"];
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        trace_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ObservationCollection"];
         };
       };
       /** @description Invalid request. */

@@ -135,9 +135,11 @@ def _no_redirect_client(
     headers: dict[str, str] | None = None,
     timeout: httpx.Timeout | None = None,
     auth: httpx.Auth | None = None,
+    *,
+    follow_redirects: bool = False,
 ) -> httpx.AsyncClient:
-    """Reject redirects so configured secret headers can never cross origins."""
-
+    """Accept the transport factory contract while retaining Host redirect policy."""
+    del follow_redirects
     return httpx.AsyncClient(
         headers=headers,
         timeout=timeout,

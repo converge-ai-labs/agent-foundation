@@ -1,3 +1,4 @@
+import { MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { useState, type ReactNode } from "react";
 
 import {
@@ -13,12 +14,23 @@ import {
   ComboboxTrigger,
   ComboboxValue,
 } from "../components/combobox";
-import { SelectButton } from "../components/select";
+import { Badge } from "../components/badge";
+import {
+  Select,
+  SelectButton,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectGroup,
+  SelectGroupLabel,
+  SelectItem,
+} from "../components/select";
 
 export interface SearchOption {
   value: string;
   label: string;
   description?: string;
+  badge?: string;
   icon?: ReactNode;
   keywords?: readonly string[];
   disabled?: boolean;
@@ -37,6 +49,8 @@ export function SearchPicker({
   value,
   onValueChange,
   disabled,
+  onSearchChange,
+  footer,
   id,
   "aria-describedby": describedBy,
 }: {
@@ -47,6 +61,8 @@ export function SearchPicker({
   value?: string;
   onValueChange: (value: string) => void;
   disabled?: boolean;
+  onSearchChange?: (value: string) => void;
+  footer?: ReactNode;
   id?: string;
   "aria-describedby"?: string;
 }) {
@@ -59,6 +75,54 @@ export function SearchPicker({
     items
       .flatMap((group) => group.items)
       .find((option) => option.value === value) ?? null;
+  const options = items.flatMap((group) => group.items);
+  if (!onSearchChange && options.length <= 8) {
+    return (
+      <Select
+        items={options}
+        value={value ?? null}
+        onValueChange={(next) => {
+          if (next !== null) onValueChange(next);
+        }}
+        disabled={disabled}
+      >
+        <SelectTrigger
+          id={id}
+          aria-label={label}
+          aria-describedby={describedBy}
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            {selected?.icon}
+            <SelectValue placeholder={placeholder} />
+          </span>
+        </SelectTrigger>
+        <SelectPopup aria-label={label} className="w-(--anchor-width)">
+          {groups.map((group) => (
+            <SelectGroup key={group.label}>
+              {groups.length > 1 && (
+                <SelectGroupLabel>{group.label}</SelectGroupLabel>
+              )}
+              {group.options.map((option) => (
+                <SelectItem
+                  key={option.value}
+                  value={option.value}
+                  disabled={option.disabled}
+                >
+                  <OptionContent item={option} />
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          ))}
+          {options.length === 0 && (
+            <p className="px-3 py-2 text-sm text-muted-foreground">
+              {emptyMessage}
+            </p>
+          )}
+          {footer && <div className="p-2">{footer}</div>}
+        </SelectPopup>
+      </Select>
+    );
+  }
   return (
     <Combobox
       autoHighlight
@@ -69,15 +133,27 @@ export function SearchPicker({
       }}
       disabled={disabled}
       inputValue={query}
-      onInputValueChange={setQuery}
+      onInputValueChange={(next) => {
+        setQuery(next);
+        onSearchChange?.(next);
+      }}
       onOpenChange={(open) => {
-        if (!open) setQuery("");
+        if (!open) {
+          setQuery("");
+          onSearchChange?.("");
+        }
       }}
       itemToStringLabel={(item) => item.label}
       itemToStringValue={(item) => item.value}
       isItemEqualToValue={(item, selected) => item.value === selected.value}
       filter={(item, search) =>
-        [item.label, item.description, item.group, ...(item.keywords ?? [])]
+        [
+          item.label,
+          item.badge,
+          item.description,
+          item.group,
+          ...(item.keywords ?? []),
+        ]
           .filter(Boolean)
           .join(" ")
           .toLocaleLowerCase()
@@ -90,19 +166,25 @@ export function SearchPicker({
         aria-describedby={describedBy}
         render={<SelectButton />}
       >
-        <span className="flex min-w-0 items-center gap-2">
+        <span className="flex w-full min-w-0 items-center gap-2">
           {selected?.icon}
-          <ComboboxValue placeholder={placeholder} />
+          <span className="w-0 flex-1 truncate">
+            <ComboboxValue placeholder={placeholder} />
+          </span>
         </span>
       </ComboboxTrigger>
-      <ComboboxPopup aria-label={label}>
-        <div className="border-b p-2">
+      <ComboboxPopup aria-label={label} className="w-(--anchor-width)">
+        <div className="px-1 py-1">
           <ComboboxInput
+            className="w-full"
             aria-label={label}
             placeholder={placeholder}
             showTrigger={false}
+            unstyled
+            startAddon={<MagnifyingGlassIcon />}
           />
         </div>
+        <div aria-hidden className="mx-3 border-b border-border/60" />
         <ComboboxEmpty>{emptyMessage}</ComboboxEmpty>
         <ComboboxList>
           {(group: { value: string; items: GroupedOption[] }) => (
@@ -116,25 +198,46 @@ export function SearchPicker({
                     key={item.value}
                     value={item}
                     disabled={item.disabled}
+                    aria-label={[item.label, item.badge, item.description]
+                      .filter(Boolean)
+                      .join(" ")}
                   >
-                    <span className="flex min-w-0 items-center gap-2">
-                      {item.icon}
-                      <span className="min-w-0">
-                        <span className="block">{item.label}</span>
-                        {item.description && (
-                          <span className="block text-xs text-muted-foreground">
-                            {item.description}
-                          </span>
-                        )}
-                      </span>
-                    </span>
+                    <OptionContent item={item} />
                   </ComboboxItem>
                 )}
               </ComboboxCollection>
             </ComboboxGroup>
           )}
         </ComboboxList>
+        {footer && <div className="p-2">{footer}</div>}
       </ComboboxPopup>
     </Combobox>
+  );
+}
+
+function OptionContent({ item }: { item: SearchOption }) {
+  return (
+    <span className="flex w-full min-w-0 items-center gap-3">
+      {item.icon}
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="max-w-full break-words">{item.label}</span>
+          {item.badge && (
+            <Badge
+              variant="secondary"
+              size="sm"
+              className="max-w-full whitespace-normal break-words"
+            >
+              {item.badge}
+            </Badge>
+          )}
+        </span>
+        {item.description && (
+          <span className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+            {item.description}
+          </span>
+        )}
+      </span>
+    </span>
   );
 }

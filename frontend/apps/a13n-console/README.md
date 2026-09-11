@@ -26,7 +26,7 @@ The development server listens on `http://127.0.0.1:5173` and proxies `/api` HTT
 
 - Workspace Agents with configuration, immutable versions, and lifecycle controls.
 - Sessions with threads, runs, retained and live output, attachments, branching, waiting feedback, steering, interruption, and queued messages.
-- Models and providers, Skills and versions, Assets, and Environment providers, templates, and instances.
+- Models and providers, Skills and versions, and Environment providers, templates, and instances.
 - Application accounts and targets, Connectors, and remote MCP connections and tool discovery.
 - Run attempt details and Traces, including an explicit unavailable state when no trace query backend is configured.
 - Workspace, organization, and personal settings, membership, invitations, API keys, service accounts, sessions, security activity, and profile images.

@@ -57,6 +57,7 @@ class CliRequest:
     web_port: int = 8765
     web_api_key: str | None = field(default=None, repr=False)
     dangerously_bypass_permission: bool = False
+    share_computer: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,9 +176,20 @@ def cli(
     is_flag=True,
     help="Disable Web authentication only; does not change Agent permissions.",
 )
+@click.option(
+    "--share-computer/--no-share-computer",
+    default=True,
+    show_default=True,
+    help="Share native Host Files as the server OS account, independent of Agent permissions.",
+)
 @click.pass_context
 def webui_command(
-    ctx: click.Context, host: str, port: int, api_keys: tuple[str, ...], dangerously_bypass_permission: bool
+    ctx: click.Context,
+    host: str,
+    port: int,
+    api_keys: tuple[str, ...],
+    dangerously_bypass_permission: bool,
+    share_computer: bool,
 ) -> None:
     """Run one foreground WebUI server with bundled browser assets."""
     if len(set(api_keys)) > 1:
@@ -191,6 +203,7 @@ def webui_command(
             web_port=port,
             web_api_key=api_key,
             dangerously_bypass_permission=dangerously_bypass_permission,
+            share_computer=share_computer,
         )
     )
 

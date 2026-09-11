@@ -14,14 +14,14 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TraceCollection {
     #[serde(rename = "items")]
-    pub items: Vec<models::TraceSummary>,
+    pub items: Vec<models::Trace>,
 
     #[serde(rename = "next_cursor", deserialize_with = "Option::deserialize")]
     pub next_cursor: Option<String>,
 }
 
 impl TraceCollection {
-    pub fn new(items: Vec<models::TraceSummary>, next_cursor: Option<String>) -> TraceCollection {
+    pub fn new(items: Vec<models::Trace>, next_cursor: Option<String>) -> TraceCollection {
         TraceCollection { items, next_cursor }
     }
 }

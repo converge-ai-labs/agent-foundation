@@ -9,7 +9,6 @@ import httpx2
 from ..infrastructure.client import ACTIVE
 from ..infrastructure.management_support import ManagementJourney
 from ..infrastructure.round_two_lab import open_lab
-from .provider_config import OpenConnectorSettings
 
 logger = logging.getLogger(__name__)
 
@@ -48,22 +47,13 @@ async def provision_provider(journey, section, settings):
         )
         return await journey.post(journey.base + "/environments", {"template_id": template["id"]})
     if section == "connector":
-        if isinstance(settings, OpenConnectorSettings):
-            configuration = {"enabled_services": settings.services}
-            credentials = {
-                "project_api_key": settings.project_api_key.get_secret_value(),
-                "catalog_api_key": settings.catalog_api_key.get_secret_value(),
-            }
-        else:
-            configuration = {"enabled_toolkits": settings.toolkits}
-            credentials = {"api_key": settings.api_key.get_secret_value()}
         return await journey.post(
             journey.base + "/connector-providers",
             {
                 "name": "Configured live Connector",
                 "type": settings.provider,
-                "configuration": configuration,
-                "credentials": credentials,
+                "configuration": {},
+                "credentials": {"api_key": settings.api_key.get_secret_value()},
             },
         )
     if section != "model":
@@ -74,9 +64,7 @@ async def provision_provider(journey, section, settings):
             "name": "Configured live Model",
             "type": settings.provider,
             "credential": settings.api_key.get_secret_value(),
-            "configuration": {"base_url": settings.base_url, "auth_mode": "bearer"}
-            if settings.provider == "openai_compatible"
-            else {},
+            "configuration": {"base_url": settings.base_url, "auth_mode": "bearer"} if settings.base_url else {},
         },
     )
     return await journey.post(

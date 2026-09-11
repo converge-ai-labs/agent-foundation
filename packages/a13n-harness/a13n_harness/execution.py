@@ -98,6 +98,12 @@ from a13n_harness.capabilities.steering import (
     SteeringCapability,
 )
 from a13n_harness.capabilities.subagents import SUBAGENT_CAPABILITY_ID, SubagentCapability
+from a13n_harness.capabilities.tool_proxy import (
+    TOOL_PROXY_CAPABILITY_ID,
+    ToolProxyPlan,
+    _ToolProxyGroupCapability,
+    _ToolProxySurfaceCapability,
+)
 from a13n_harness.capabilities.web import (
     WEB_CAPABILITY_ID,
     WEB_RUN_CAPABILITY_ID,
@@ -217,8 +223,10 @@ from a13n_harness.pricing import (
 from a13n_harness.recovery import (
     InterruptedResponseTracker,
     ModelRecoveryPolicy,
+    ToolRecoveryMode,
     is_recoverable_model_failure,
     normalize_interrupted_history,
+    prepare_tool_recovery,
 )
 from a13n_harness.result import HarnessRunResult, SafeFailure
 from a13n_harness.spec import AgentSpec as HarnessAgentSpec
@@ -482,6 +490,7 @@ class AgentDefinition[OutputT]:
     model: Model | None = None
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
     plugins: tuple[AbstractHarnessPlugin, ...] = ()
+    tool_proxy: ToolProxyPlan | None = None
     subagents: tuple[SubagentDefinition, ...] = ()
     model_recovery: ModelRecoveryPolicy = field(default_factory=ModelRecoveryPolicy)
 
@@ -519,6 +528,8 @@ class AgentDefinition[OutputT]:
         object.__setattr__(self, "agent", self.agent.model_copy(deep=True))
         object.__setattr__(self, "capabilities", tuple(self.capabilities))
         object.__setattr__(self, "plugins", tuple(self.plugins))
+        if self.tool_proxy is not None and not isinstance(self.tool_proxy, ToolProxyPlan):
+            raise TypeError("tool_proxy must be ToolProxyPlan or None")
         subagents = tuple(self.subagents)
         if not all(isinstance(child, SubagentDefinition) for child in subagents):
             raise DefinitionError(
@@ -764,6 +775,7 @@ class HarnessBuilder:
         model: Model | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         plugins: Sequence[AbstractHarnessPlugin] = (),
+        tool_proxy: ToolProxyPlan | None = None,
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
         pricing_catalog: PricingCatalog | None = None,
@@ -780,6 +792,7 @@ class HarnessBuilder:
         model: Model | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         plugins: Sequence[AbstractHarnessPlugin] = (),
+        tool_proxy: ToolProxyPlan | None = None,
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
         pricing_catalog: PricingCatalog | None = None,
@@ -795,6 +808,7 @@ class HarnessBuilder:
         model: Model | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         plugins: Sequence[AbstractHarnessPlugin] = (),
+        tool_proxy: ToolProxyPlan | None = None,
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
         pricing_catalog: PricingCatalog | None = None,
@@ -812,6 +826,7 @@ class HarnessBuilder:
                 or model is not None
                 or capabilities
                 or plugins
+                or tool_proxy is not None
                 or subagents
                 or model_recovery is not None
             ):
@@ -832,6 +847,7 @@ class HarnessBuilder:
             model=model,
             capabilities=tuple(capabilities),
             plugins=tuple(plugins),
+            tool_proxy=tool_proxy,
             subagents=tuple(subagents),
             model_recovery=model_recovery if model_recovery is not None else ModelRecoveryPolicy(),
         )
@@ -864,11 +880,16 @@ class HarnessBuilder:
         )
         subagents = SubagentCollection({child.declaration.name: child for child in built_children})
         configured_plugins = self._create_configured_plugins()
-        plugins, plugin_capabilities = bind_agent_plugins((*definition.plugins, *configured_plugins))
+        plugins, contributions = bind_agent_plugins((*definition.plugins, *configured_plugins))
+        plugin_capabilities = tuple(capability for sources in contributions.values() for capability in sources)
         _validate_capability_source(plugin_capabilities, source="plugin")
+        _validate_capability_source(definition.capabilities, source="definition")
+        selected_capabilities = (*definition.capabilities, *plugin_capabilities)
+        if definition.tool_proxy is not None:
+            selected_capabilities = definition.tool_proxy._compose(selected_capabilities, contributions)
         authored_capabilities = _resolve_model_characteristics_capabilities(
             definition.agent,
-            (*definition.capabilities, *plugin_capabilities),
+            selected_capabilities,
         )
         model_characteristics = (
             definition.agent.model_characteristics if isinstance(definition.agent, HarnessAgentSpec) else None
@@ -1045,7 +1066,7 @@ class ExecutableAgent[OutputT]:
         default_environment: None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
-        execute_pending_tools: bool = False,
+        tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -1062,7 +1083,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
-        execute_pending_tools: bool = False,
+        tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -1079,7 +1100,7 @@ class ExecutableAgent[OutputT]:
         default_environment: None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
-        execute_pending_tools: bool = False,
+        tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -1095,7 +1116,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
-        execute_pending_tools: bool = False,
+        tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -1109,7 +1130,7 @@ class ExecutableAgent[OutputT]:
             default_environment=default_environment,
             bindings=bindings,
             previous_state=previous_state,
-            execute_pending_tools=execute_pending_tools,
+            tool_recovery=tool_recovery,
             deferred_resume=deferred_resume,
             usage=usage,
             usage_limits=usage_limits,
@@ -1130,7 +1151,7 @@ class ExecutableAgent[OutputT]:
         default_environment: None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
-        execute_pending_tools: bool = False,
+        tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -1147,7 +1168,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
-        execute_pending_tools: bool = False,
+        tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -1164,7 +1185,7 @@ class ExecutableAgent[OutputT]:
         default_environment: None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
-        execute_pending_tools: bool = False,
+        tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -1180,7 +1201,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
-        execute_pending_tools: bool = False,
+        tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -1194,7 +1215,7 @@ class ExecutableAgent[OutputT]:
             default_environment=default_environment,
             bindings=bindings,
             previous_state=previous_state,
-            execute_pending_tools=execute_pending_tools,
+            tool_recovery=tool_recovery,
             deferred_resume=deferred_resume,
             usage=usage,
             usage_limits=usage_limits,
@@ -1210,11 +1231,13 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
-        execute_pending_tools: bool = False,
+        tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
     ) -> HarnessRunStream[OutputT]:
+        if tool_recovery not in {"declared", "never", "always"}:
+            raise ValueError("tool_recovery must be 'declared', 'never', or 'always'")
         if input is not None and input_factory is not None:
             raise RunError(
                 "input and input_factory are mutually exclusive.",
@@ -1246,7 +1269,7 @@ class ExecutableAgent[OutputT]:
             bindings=resolved_bindings,
             environment_binding=environment_binding,
             previous_state=previous_state,
-            execute_pending_tools=execute_pending_tools,
+            tool_recovery=tool_recovery,
             deferred_resume=normalized_resume,
             run_reserved_capability_ids=run_reserved_ids,
             skill_selection_names=skill_selection_names,
@@ -1267,7 +1290,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         bindings: RunBindings,
         environment_binding: EnvironmentRuntime,
         previous_state: HarnessState | None,
-        execute_pending_tools: bool,
+        tool_recovery: ToolRecoveryMode,
         deferred_resume: DeferredToolResume | None,
         run_reserved_capability_ids: frozenset[str],
         skill_selection_names: frozenset[str] | None,
@@ -1284,7 +1307,11 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         )
         self.thread_id = self._previous_state.thread_id
         self.run_id = f"run-{uuid4().hex}"
-        self._execute_pending_tools = execute_pending_tools
+        self._tool_recovery = (
+            prepare_tool_recovery(self._previous_state.message_history, tool_recovery)
+            if deferred_resume is None
+            else None
+        )
         self._deferred_resume = deferred_resume
         self._run_reserved_capability_ids = run_reserved_capability_ids
         self._skill_selection_names = skill_selection_names
@@ -1457,6 +1484,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                     events=self._emitter,
                     usage_attribution=usage_attribution,
                     deferred_resume=self._deferred_resume,
+                    _tool_recovery=self._tool_recovery,
                     metadata=self._bindings.metadata,
                     _steering=SteeringBridge(
                         context_state,
@@ -2231,9 +2259,15 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         policy = self._executable.definition.model_recovery
         max_attempts = policy.max_attempts if policy.enabled else 1
         attempt_index = 0
-        current_history, _ = normalize_interrupted_history(
-            self._previous_state.message_history,
-            close_pending_tools=not self._execute_pending_tools and self._deferred_resume is None,
+        current_history = (
+            self._tool_recovery.messages if self._tool_recovery is not None else self._previous_state.message_history
+        )
+        deferred_results = (
+            self._deferred_resume.results
+            if self._deferred_resume is not None
+            else self._tool_recovery.results
+            if self._tool_recovery is not None
+            else None
         )
         current_history = _reconcile_system_prompt(
             current_history,
@@ -2250,9 +2284,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             manager = self._executable._agent.run_stream_events(
                 current_input.value,
                 message_history=current_history,
-                deferred_tool_results=(
-                    self._deferred_resume.results if attempt_index == 0 and self._deferred_resume is not None else None
-                ),
+                deferred_tool_results=(deferred_results if attempt_index == 0 else None),
                 run_id=f"model-attempt-{uuid4().hex}",
                 conversation_id=self.thread_id,
                 deps=self.context,
@@ -2877,6 +2909,7 @@ def _validate_built_capability_tree(
         CLIENT_TOOLS_CAPABILITY_ID,
         CLIENT_TOOLS_RUN_CAPABILITY_ID,
         CODEACT_CAPABILITY_ID,
+        TOOL_PROXY_CAPABILITY_ID,
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
         SHELL_REVIEW_CAPABILITY_ID,
         FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID,
@@ -3023,6 +3056,7 @@ def _validate_built_capability_tree(
             in (
                 ClientToolsCapability,
                 CodeActCapability,
+                _ToolProxySurfaceCapability,
                 DynamicEnvironmentCapability,
                 ShellReviewCapability,
                 RuntimeContextCapability,
@@ -3060,11 +3094,17 @@ def _validate_built_capability_tree(
     )
     if surface_index is not None:
         for capability in leaves[:surface_index]:
-            if isinstance(capability, ToolExecutionBoundaryCapability | CodeActCapability):
+            # Membership adds no global wrapper; its original nodes are visited
+            # separately below and retain the same surface-order validation.
+            if type(capability) is _ToolProxyGroupCapability:
+                continue
+            if isinstance(
+                capability, ToolExecutionBoundaryCapability | CodeActCapability | _ToolProxySurfaceCapability
+            ):
                 continue
             if type(capability).get_wrapper_toolset is not AbstractCapability.get_wrapper_toolset:
                 raise DefinitionError(
-                    "Only CodeAct and the tool execution boundary may wrap the mandatory tool surface.",
+                    "Only ToolProxy, CodeAct, and the tool execution boundary may wrap the mandatory tool surface.",
                     code="tool_surface_order_invalid",
                     details={"capability_type": type(capability).__name__},
                 )
@@ -3211,6 +3251,7 @@ def _validate_capability_source(
         CLIENT_TOOLS_CAPABILITY_ID,
         CLIENT_TOOLS_RUN_CAPABILITY_ID,
         CODEACT_CAPABILITY_ID,
+        TOOL_PROXY_CAPABILITY_ID,
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
         SHELL_REVIEW_CAPABILITY_ID,
         FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID,
@@ -3241,30 +3282,35 @@ def _validate_capability_source(
                 details={"source": source},
             )
         allowed = (
-            source == "definition"
-            and (
-                isinstance(capability, AbstractModelCostCapability)
-                or type(capability)
-                in (
-                    ClientToolsCapability,
-                    CodeActCapability,
-                    DynamicEnvironmentCapability,
-                    ShellReviewCapability,
-                    RuntimeContextCapability,
-                    WorkspaceOutlineCapability,
-                    FileContextCapability,
-                    HandoffCapability,
-                    CompactionCapability,
-                    UserInteractionCapability,
-                    SkillsCapability,
-                    MediaCapability,
-                    DocumentsCapability,
-                    WebCapability,
-                    WorkingStateCapability,
-                    SubagentCapability,
+            (
+                source == "definition"
+                and (
+                    isinstance(capability, AbstractModelCostCapability)
+                    or type(capability)
+                    in (
+                        ClientToolsCapability,
+                        CodeActCapability,
+                        _ToolProxySurfaceCapability,
+                        DynamicEnvironmentCapability,
+                        ShellReviewCapability,
+                        RuntimeContextCapability,
+                        WorkspaceOutlineCapability,
+                        FileContextCapability,
+                        HandoffCapability,
+                        CompactionCapability,
+                        UserInteractionCapability,
+                        SkillsCapability,
+                        MediaCapability,
+                        DocumentsCapability,
+                        WebCapability,
+                        WorkingStateCapability,
+                        SubagentCapability,
+                    )
                 )
             )
-        ) or (source == "run" and type(capability) in run_types)
+            or (source == "plugin" and type(capability) is _ToolProxySurfaceCapability)
+            or (source == "run" and type(capability) in run_types)
+        )
         reserved_type = isinstance(
             capability,
             ToolExecutionBoundaryCapability
@@ -3278,6 +3324,7 @@ def _validate_capability_source(
             | ClientToolsCapability
             | ClientToolsRunCapability
             | CodeActCapability
+            | _ToolProxySurfaceCapability
             | DynamicEnvironmentCapability
             | ShellReviewCapability
             | RuntimeContextCapability

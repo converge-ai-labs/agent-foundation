@@ -33,13 +33,14 @@ async def test_default_process_accepts_bootstrap_and_authenticates_product_api(t
             ws = (await client.get(f"/api/v1/organizations/{org}/workspaces")).json()["items"][0]["id"]
             key = await client.post(f"/api/v1/workspaces/{ws}/personal-api-keys", json={"name": "application"})
             assert key.status_code == 201, key.text
-            callbacks = [
-                "/api/v1/oauth/mcp/callback?code=code&state=" + "s" * 32 + "&iss=https://issuer.example",
-            ]
-            for callback in callbacks:
-                denied = await client.get(callback, headers={"X-A13N-CSRF-Token": ""})
-                assert denied.status_code == 403, denied.text
-                assert denied.json()["error"]["code"] == "csrf_rejected"
+            denied = await client.post(
+                "/api/v1/oauth/mcp/complete",
+                headers={"X-A13N-CSRF-Token": ""},
+                json={"receipt": "private-receipt" * 3, "state": "s" * 32},
+            )
+            assert denied.status_code == 403, denied.text
+            assert denied.json()["error"]["code"] == "csrf_rejected"
+            assert "private-receipt" not in denied.text
             completion = await client.post(
                 "/api/v1/connector-setup/complete",
                 headers={"X-A13N-CSRF-Token": ""},

@@ -731,7 +731,7 @@ async def test_session_overrides_capture_native_context_and_resume(
 
 
 @pytest.mark.anyio
-async def test_model_selection_is_session_only_and_preserves_agent(
+async def test_model_selection_is_remembered_for_project_and_preserves_agent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import a13n_harness.model_auth as runtime
@@ -758,7 +758,7 @@ async def test_model_selection_is_session_only_and_preserves_agent(
         choices = await backend.choices("model")
         assert {item.value for item in choices} == {"default", "model-codex", "model-alternate"}
         await backend.thinking("low")
-        assert (await backend.models("model-alternate")).endswith(" · session only")
+        assert (await backend.models("model-alternate")).endswith(" · remembered for this project")
         assert backend.overrides.model_id == "model-alternate"
         assert backend.overrides.thinking is None
         assert (await app.get_thread(thread_id)).thread.configuration.agent_source == original.agent_source
@@ -782,8 +782,14 @@ async def test_model_selection_is_session_only_and_preserves_agent(
         assert (await app.thread_usage(thread_id=thread_id)).root.model_requests == 2
         fresh = SessionBackend(app, CliRequest(thread_id=thread_id), tmp_path, Status())
         await fresh.initialize()
-        assert fresh.overrides.model_id is None
+        assert fresh.overrides.model_id == "model-alternate"
         assert fresh.status.requests == 2
+        from a13n_harness_ui.cli_runtime import _run_one_shot
+
+        monkeypatch.chdir(tmp_path)
+        assert await _run_one_shot(app, CliRequest(command="run", thread_id=thread_id, prompt="Automated")) == 0
+        assert (await app.context_usage(thread_id)).model_id == "model-codex"
+        assert (await app.cwd_model_preference(tmp_path))[1] == "model-alternate"
         await backend.models("default")
         assert backend.overrides.model_id is None
         assert backend.status.agent == fresh.status.agent
@@ -1855,3 +1861,168 @@ async def test_resume_usage_read_failure_keeps_current_selection(
         assert backend.resumed_transcript is None
         assert (await app.get_thread(target)).thread.configuration == before
         assert (await app.current_configuration()).projects == projects
+
+
+@pytest.mark.anyio
+async def test_project_model_memory_survives_restart_without_creating_resources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import yaml
+
+    path = await _seed(tmp_path, monkeypatch)
+    model = yaml.safe_load((path.parent / "models/codex.yaml").read_text())
+    model.update(id="model-alternate", name="Alternate")
+    (path.parent / "models/alternate.yaml").write_text(yaml.safe_dump(model))
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    directory = tmp_path / "new-project"
+    directory.mkdir()
+    before = {item: item.read_bytes() for item in path.parent.rglob("*.yaml")}
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        backend = SessionBackend(app, CliRequest(), directory, Status())
+        await backend.initialize()
+        await backend.models("model-alternate")
+        await backend.thinking("low")
+        await backend.fast("on")
+        assert backend.thread_id is None
+        assert await app.cwd_project_ids(directory) == ()
+        assert {item: item.read_bytes() for item in path.parent.rglob("*.yaml")} == before
+
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        fresh = SessionBackend(app, CliRequest(), directory, Status())
+        await fresh.initialize()
+        assert fresh.overrides.model_id == "model-alternate"
+        assert fresh.overrides.thinking is None
+        assert fresh.overrides.service_tier is None
+        assert await app.cwd_project_ids(directory) == ()
+        # Neither explicit launch selection nor automation consumes or erases memory.
+        for request in (CliRequest(agent_id="agent-codex"), CliRequest(command="run")):
+            explicit = SessionBackend(app, request, directory, Status())
+            await explicit.initialize()
+            assert explicit.overrides.model_id is None
+        other = SessionBackend(app, CliRequest(), tmp_path, Status())
+        await other.initialize()
+        assert other.overrides.model_id is None
+        scope, remembered = await app.cwd_model_preference(directory)
+        assert remembered == "model-alternate"
+        thread_id = await fresh.ensure_session()
+        assert (await app.get_thread(thread_id)).thread.configuration.project_id == scope
+        # Clearing is durable, not merely a one-window override.
+        assert "preference cleared" in await fresh.models("default")
+        reset = SessionBackend(app, CliRequest(thread_id=thread_id), directory, Status())
+        await reset.initialize()
+        assert reset.overrides.model_id is None
+        assert await app.cwd_model_preference(directory) == (scope, None)
+
+
+@pytest.mark.anyio
+async def test_project_model_memory_resume_uses_launch_project_and_only_explicit_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = await _seed(tmp_path, monkeypatch)
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    directory = tmp_path / "other-project"
+    directory.mkdir()
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        first = SessionBackend(app, CliRequest(), tmp_path, Status())
+        await first.initialize()
+        thread_id = await first.ensure_session()
+        await first.models("model-codex")
+        second = SessionBackend(app, CliRequest(), tmp_path, Status())
+        await second.initialize()
+        assert second.overrides.model_id == "model-codex"
+        await second.models("default")
+        # An already open terminal retains its selection but must not write it back.
+        await first.new()
+        await first.resume(thread_id)
+        assert first.overrides.model_id == "model-codex"
+        fresh = SessionBackend(app, CliRequest(thread_id=thread_id), tmp_path, Status())
+        await fresh.initialize()
+        assert fresh.overrides.model_id is None
+        other = SessionBackend(app, CliRequest(), directory, Status())
+        await other.initialize()
+        await other.models("model-codex")
+        moved = SessionBackend(app, CliRequest(thread_id=thread_id), directory, Status())
+        await moved.initialize()
+        assert moved.overrides.model_id == "model-codex"
+        assert (await app.get_thread(thread_id)).thread.configuration.project_id in await app.cwd_project_ids(directory)
+        assert (await app.cwd_model_preference(tmp_path))[1] is None
+
+
+@pytest.mark.anyio
+async def test_missing_project_model_warns_and_failed_selection_preserves_memory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from unittest.mock import AsyncMock
+
+    import yaml
+
+    path = await _seed(tmp_path, monkeypatch)
+    model_path = path.parent / "models/alternate.yaml"
+    model = yaml.safe_load((path.parent / "models/codex.yaml").read_text())
+    model.update(id="model-alternate", name="Alternate")
+    model_path.write_text(yaml.safe_dump(model))
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        await backend.initialize()
+        await backend.models("model-alternate")
+        before = backend.overrides
+        with monkeypatch.context() as patch:
+            patch.setattr(app, "remember_project_model", AsyncMock(side_effect=OSError("write failed")))
+            with pytest.raises(OSError, match="write failed"):
+                await backend.models("default")
+        assert backend.overrides == before
+        assert (await app.cwd_model_preference(tmp_path))[1] == "model-alternate"
+    model_path.unlink()
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        await backend.initialize()
+        assert backend.overrides.model_id is None
+        assert len(backend.status.notices) == 1
+        assert "model-alternate" in backend.status.notices[0]
+        await backend.refresh()
+        await backend.new()
+        assert len(backend.status.notices) == 1
+        # A fallback is not a new user preference and cannot overwrite another window.
+        assert (await app.cwd_model_preference(tmp_path))[1] == "model-alternate"
+
+
+@pytest.mark.anyio
+async def test_model_memory_disambiguates_projects_on_resume(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import yaml
+    from a13n_harness_ui.surfaces import NewThreadDefaults
+
+    path = await _seed(tmp_path, monkeypatch)
+    projects = path.parent / "projects"
+    projects.mkdir(exist_ok=True)
+    for name in ("a", "b"):
+        (projects / f"{name}.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1",
+                    "kind": "project",
+                    "id": f"project-{name}",
+                    "name": name,
+                    "roots": [{"path": str(tmp_path)}],
+                }
+            )
+        )
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
+    ) as app:
+        a = await app.create_thread(defaults=NewThreadDefaults(project_id="project-a"))
+        b = await app.create_thread(defaults=NewThreadDefaults(project_id="project-b"))
+        await app.remember_project_model(project_id="project-a", model_id="model-codex")
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        await backend.initialize()
+        assert backend.overrides.model_id is None
+        with pytest.raises(ValueError, match="Multiple Projects"):
+            await backend.models("model-codex")
+        await backend.resume(a.thread_id)
+        assert backend.overrides.model_id == "model-codex"
+        await backend.resume(b.thread_id)
+        assert backend.overrides.model_id is None
+        await backend.models("model-codex")
+        await backend.models("default")
+        assert await app.cwd_model_preference(tmp_path, project_id="project-a") == ("project-a", "model-codex")
+        assert await app.cwd_model_preference(tmp_path, project_id="project-b") == ("project-b", None)

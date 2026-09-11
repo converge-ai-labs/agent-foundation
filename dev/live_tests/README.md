@@ -24,16 +24,16 @@ Tests are grouped by their primary feature, independently of their execution opt
 | `environment/`          | Environment selection, access, files, providers, lifecycle and shared Worker use |      22 |             366 |
 | `control/`              | Run commands, waiting, inbox, queue, branches and acceptance races               |      25 |             217 |
 | `run_recovery/`         | Worker ownership, persistence, budgets, dependency failures and drain            |       9 |             657 |
-| `harness_integration/`  | Service configuration and resources reaching real Harness execution              |      11 |              29 |
+| `harness_integration/`  | Service configuration and resources reaching real Harness execution              |      12 |              30 |
 | `model/`                | Frozen Model settings and current Provider settings between requests             |       1 |               3 |
 | `protocol/`             | Native and Hosted streams, reconnect and recovery projection                     |       3 |              13 |
 | `iam/`                  | Workspace isolation, current authority and revocation                            |       3 |              10 |
-| `providers/`            | Optional real search, model, environment and Connector accounts                  |       1 |              15 |
+| `providers/`            | Optional real search, model, environment and Connector accounts                  |       1 |              14 |
 | `observability/`        | Cross-layer evidence and telemetry failure isolation                             |       1 |               2 |
 | `performance/`          | Concurrent PG/S3 calls and bounded Service operations                            |       2 |               2 |
-| `infrastructure_tests/` | Offline tests of fixtures, configuration, parsers and cleanup                    |      18 |             311 |
+| `infrastructure_tests/` | Offline tests of fixtures, configuration, parsers and cleanup                    |      19 |             310 |
 
-Counts are a collection snapshot: 96 modules and 1,625 parameterized cases, including inherited lifecycle cases and cases skipped unless explicitly enabled. A category does not enable infrastructure: the existing `--live*` fixture gates still apply. Mixed modules remain intact: `test_26_output_and_client_tools.py` and `test_32_multiworker_resources.py` live under `harness_integration/`, while `providers/test_31_real_providers.py` retains its real-account matrix.
+Counts are a collection snapshot: 98 modules and 1,624 parameterized cases, including inherited lifecycle cases and cases skipped unless explicitly enabled. A category does not enable infrastructure: the existing `--live*` fixture gates still apply. Mixed modules remain intact: `test_26_output_and_client_tools.py` and `test_32_multiworker_resources.py` live under `harness_integration/`, while `providers/test_31_real_providers.py` retains its real-account matrix.
 
 Subpackages inherit the root `conftest.py`. Feature-owned helpers live beside their tests; shared lab infrastructure lives in `infrastructure/`. The isolated launcher recursively selects the same first-round filenames and keeps their filename order.
 
@@ -97,7 +97,7 @@ Use the primary responsibility of a helper to choose its location:
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `control/`             | `approval_plugin.py`, `async_children_model.py`, `control_children.py`, `control_fault_host.py`, `control_support.py`, `contention_support.py`, `fixture_inbox.py`, `fork_fault_host.py`, `fork_support.py`, `queue_fault_host.py`                                                                                              |
 | `environment/`         | `docker_lifecycle_host.py`, `e2b_host.py`, `e2b_support.py`, `environment_backends.py`, `environment_host.py`, `environment_worker_host.py`, `environment_workers.py`, `file_backends.py`, `file_contract.py`, `file_resource_worker.py`, `lifecycle_cases.py`, `lifecycle_host.py`, `lifecycle_support.py`, `service_cases.py` |
-| `harness_integration/` | `fixture_connectivity.py`, `long_session_host.py`, `long_session_model.py`, `management_model.py`                                                                                                                                                                                                                               |
+| `harness_integration/` | `fixture_connectivity.py`, `long_session_host.py`, `long_session_model.py`, `management_model.py`, `plugin_image.py`, `plugin_package/`, `plugin_worker.Dockerfile`                                                                                                                                                             |
 | `iam/`                 | `native_iam.py`, `run_fault_identity.py`                                                                                                                                                                                                                                                                                        |
 | `infrastructure/`      | `client.py`, `config.py`, `fixture_model.py`, `fixture_peer.py`, `host.py`, `local_storage.py`, `management_packages.py`, `management_support.py`, `round_two_lab.py`, `round_two_model.py`, `round_two_resources.py`, `run_faults.py`, `tcp_proxy.py`                                                                          |
 | `observability/`       | `fixture_telemetry.py`                                                                                                                                                                                                                                                                                                          |
@@ -120,6 +120,24 @@ The explicit live-test Worker host builds one immutable factory catalog from `co
 
 Agent configuration selects `live.approval` or `live.resilience` using `instance_name`, `plugin_key`, and `config`. Control stores the authored selection; the Worker validates and normalizes it before execution. A missing factory or invalid configuration fails the Run before model or tool effects. See the [installed plugin contract](../../spec/a13n-service/36-installed-harness-plugins.md).
 
+### Packaged plugin image journey
+
+Case 19, [`harness_integration/test_19_plugin_image.py`](harness_integration/test_19_plugin_image.py), covers the build-to-execution path separately from the explicit factory fixtures:
+
+1. Build the current checkout with the production Service Dockerfile, then build the standalone `harness_integration/plugin_package` into a wheel.
+2. Install that wheel into a derived Worker image at build time. The package declares its `live.packaged` factory through `a13n_harness.plugins`; it imports no live-test helpers and is never installed in the host/Control environment.
+3. Start the image with its inherited production entrypoint and command, selecting the factory through `A13N_SERVICE_PLUGIN_KEYS`. No explicit catalog, source mount, or Worker monkeypatch is supplied.
+4. Create an Agent through Control HTTP and execute the plugin's capability tool and Harness result middleware. Independently read the file effects, the model's actual tool result, and the persisted Attempt. Check the configured label's hash, wheel metadata, installed module path, non-root UID, Harness Run ID, and Worker build identity.
+5. Change the plugin configuration through an Agent Revision and verify the changed effect; remove the binding and verify both the tool and middleware disappear. Invalid configuration and an installed-but-unselected factory must fail before any model call or effect.
+
+```sh
+make live-test-plugin-image
+```
+
+This explicit `--live-plugin-image` opt-in builds images and owns disposable PostgreSQL, Redis, object storage, Control, and Worker resources. It requires a local Docker daemon and build access to the base images and Python build dependencies. Linux uses host networking; Docker Desktop uses `host.docker.internal` and a loopback-published Worker probe port. It does not require Docker Desktop host networking to be enabled. On Docker Desktop, Control disables save-time DNS resolution for the container-only hostname; the Worker retains normal request-time DNS and endpoint allowlist checks. Only a fixture-owned effects directory is mounted into the Worker. Containers and uniquely tagged images are removed on exit; build logs and wheels remain under `.state/plugin-images/`, while private service logs and execution evidence remain under `.state/management/`.
+
+The model is the deterministic HTTP fixture and returns observed tool results. This case covers installation, startup discovery, Agent binding, configuration, capability execution, and result middleware; it does not cover registry publication, rolling upgrades, cross-version state migration, dependency conflicts, or concurrent plugin instance isolation. Existing case 18 and recovery tests retain their narrower, faster coverage. Without this opt-in, the image journey skips before building or contacting services.
+
 ## Optional real Provider configuration
 
 Create `dev/live_tests/providers.local.toml` from the committed blank example:
@@ -133,27 +151,23 @@ The local file is gitignored. Every section is optional and independent. A missi
 
 If a trusted local proxy resolves a configured model hostname to a private or reserved address, explicitly set `LIVE_TEST_MODEL_PRIVATE_ENDPOINT_DOMAINS` to a JSON array of those operator-approved domains, such as `["openrouter.ai"]`. This uses the normal Service endpoint allowlist only in disposable lab processes; the default is empty and HTTPS validation remains enabled. Real Provider journeys allow 90 seconds per Control HTTP request for cloud catalog discovery; local deterministic journeys retain their shorter timeout.
 
-| Parameter                   | Meaning when enabled                                                     | Empty/default behavior                                                                                             |
-| --------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| `environment.type`          | `a13n.e2b`, the native E2B Environment implementation                    | No additional cloud Environment test; existing direct-local and explicit Docker cases keep their current providers |
-| `environment.api_key`       | E2B account API key; required with `type`                                | No credentials required by the existing local cases                                                                |
-| `environment.template`      | Optional E2B template ID or alias                                        | `base` when E2B is enabled                                                                                         |
-| `connector.provider`        | `composio` or `openconnector`                                            | No additional external Connector test; case 27 keeps its local TLS Composio fixture and local MCP server           |
-| `connector.api_key`         | Composio project API key; required with `provider`                       | Existing connectivity fixtures use a generated lab-only credential                                                 |
-| `connector.toolkits`        | Optional nonempty list of Composio toolkit keys to discover              | `["github"]` when Composio is enabled; leave the example line commented when the section is disabled               |
-| `connector.project_api_key` | OOMOL Project API key; required for `openconnector`                      | No default; create under Console → Projects → your project → API Keys                                              |
-| `connector.catalog_api_key` | OOMOL personal API key for catalog reads; required for `openconnector`   | No default; create at <https://console.oomol.com/api-key>                                                          |
-| `connector.services`        | Optional nonempty list of OpenConnector service keys                     | `["slack"]` when OpenConnector is enabled                                                                          |
-| `model.provider`            | `openrouter` or `openai_compatible`                                      | No additional external Model test; existing cases keep their scripted local model                                  |
-| `model.api_key`             | Model provider API key; required with `provider`                         | Existing scripted model uses a generated lab-only credential                                                       |
-| `model.model`               | Upstream model ID supporting Chat Completions; required for `configured` | Fixed OpenRouter matrix cases ignore this field and use their own model IDs                                        |
-| `model.base_url`            | Required HTTPS API base URL for `openai_compatible`                      | Leave blank for `openrouter`, which uses the service's built-in endpoint                                           |
-| `search.provider`           | `exa`                                                                    | No external search journey; requires no Model or Connector API key                                                 |
-| `search.api_key`            | Exa API key with Search access                                           | No implicit key lookup; fill together with `search.provider`                                                       |
-| `brave_search.provider`     | `brave`                                                                  | No additional Brave search journey; independent of the Exa section                                                 |
-| `brave_search.api_key`      | Brave API key with Web Search access                                     | Fill together with `brave_search.provider`; never reuse the Exa key                                                |
+| Parameter               | Meaning when enabled                                                     | Empty/default behavior                                                                                             |
+| ----------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `environment.type`      | `a13n.e2b`, the native E2B Environment implementation                    | No additional cloud Environment test; existing direct-local and explicit Docker cases keep their current providers |
+| `environment.api_key`   | E2B account API key; required with `type`                                | No credentials required by the existing local cases                                                                |
+| `environment.template`  | Optional E2B template ID or alias                                        | `base` when E2B is enabled                                                                                         |
+| `connector.provider`    | `composio`                                                               | No additional external Connector test; case 27 keeps its local TLS Composio fixture and local MCP server           |
+| `connector.api_key`     | Composio project API key; required with `provider`                       | Existing connectivity fixtures use a generated lab-only credential                                                 |
+| `model.provider`        | `openrouter` or `openai`                                                 | No additional external Model test; existing cases keep their scripted local model                                  |
+| `model.api_key`         | Model provider API key; required with `provider`                         | Existing scripted model uses a generated lab-only credential                                                       |
+| `model.model`           | Upstream model ID supporting Chat Completions; required for `configured` | Fixed OpenRouter matrix cases ignore this field and use their own model IDs                                        |
+| `model.base_url`        | Required HTTPS API base URL for `openai`                                 | Leave blank for `openrouter`, which uses the service's built-in endpoint                                           |
+| `search.provider`       | `exa`                                                                    | No external search journey; requires no Model or Connector API key                                                 |
+| `search.api_key`        | Exa API key with Search access                                           | No implicit key lookup; fill together with `search.provider`                                                       |
+| `brave_search.provider` | `brave`                                                                  | No additional Brave search journey; independent of the Exa section                                                 |
+| `brave_search.api_key`  | Brave API key with Web Search access                                     | Fill together with `brave_search.provider`; never reuse the Exa key                                                |
 
-OpenRouter uses the native `openrouter` Provider and `openrouter.chat_completions` API. Its endpoint is `https://openrouter.ai/api/v1`, as described in the [OpenRouter quickstart](https://openrouter.ai/docs/quickstart). A custom compatible endpoint uses `openai_compatible` and `openai.chat_completions`; URLs must not contain credentials, query strings or fragments.
+OpenRouter uses the native `openrouter` Provider and `openrouter.chat_completions` API. Its endpoint is `https://openrouter.ai/api/v1`, as described in the [OpenRouter quickstart](https://openrouter.ai/docs/quickstart). A custom compatible endpoint uses `openai` and `openai.chat_completions`; URLs must not contain credentials, query strings or fragments.
 
 ```sh
 # Run the noninteractive Provider journeys (blank sections skip):
@@ -219,41 +233,9 @@ The Environment journey executes a real Shell write and file read in E2B, using 
 | `openrouter-gemini` | `google/gemini-2.5-flash-lite` |
 | `openrouter-claude` | `anthropic/claude-haiku-4.5`   |
 
-These cases reuse the configured OpenRouter credential, each in its own lab, without changing the local TOML. They ignore `model.model` and apply their fixed model IDs before configuration validation, so that field can be omitted or left blank when selecting only the matrix. Provider, credential and endpoint validation still applies. The `configured` case still requires `model.model`; select only the fixed cases with `LIVE_TEST_ARGS='-k "configured_model and openrouter"'` when it is absent. They skip for `openai_compatible`; the configured model case continues to cover that provider. Logs identify the upstream model, Run ID and output length without printing credentials or model output. External usage can consume credits.
+These cases reuse the configured OpenRouter credential, each in its own lab, without changing the local TOML. They ignore `model.model` and apply their fixed model IDs before configuration validation, so that field can be omitted or left blank when selecting only the matrix. Provider, credential and endpoint validation still applies. The `configured` case still requires `model.model`; select only the fixed cases with `LIVE_TEST_ARGS='-k "configured_model and openrouter"'` when it is absent. They skip for `openai`; the configured model case continues to cover that provider. Logs identify the upstream model, Run ID and output length without printing credentials or model output. External usage can consume credits.
 
 On success, failure, partial provisioning or normal cancellation, cleanup interrupts owned Runs and deletes owned remote Environments while the Worker is still running. Cleanup failures fail the test and identify the Environment ID. E2B sandboxes also have a five-minute timeout as a bound if the test process is forcibly killed. The lab then removes its containers and database, deleting all Provider rows, encrypted keys, templates, models and Agents created there. It never deletes or rotates existing account credentials or touches an existing installation's data. The local TOML remains available for later runs; ignored private process logs and test evidence remain under `.state/management/<random-id>/`.
-
-### OpenConnector and interactive Slack authorization
-
-The built-in `openconnector` adapter uses OOMOL's hosted Project API at `https://connector.oomol.com`; no OpenConnector deployment is needed. In [OOMOL Console](https://console.oomol.com), create a test Project and a Slack Provider config using OAuth2 and **System Client**. Create a Project API key in that Project and obtain a personal API key from the separate [API Keys page](https://console.oomol.com/api-key). `catalog_api_key` is our local field name for that personal key, not a separate OOMOL key type. See the [OOMOL SaaS setup guide](https://oomol.com/en/docs/connector-saas/).
-
-Use the following `[connector]` section in a private TOML file. Omit the Composio `api_key` and `toolkits` fields when selecting OpenConnector:
-
-```toml
-[connector]
-provider = "openconnector"
-project_api_key = "<OOMOL Project API key>"
-catalog_api_key = "<OOMOL personal API key>"
-services = ["slack"]
-```
-
-For example, save it as `dev/live_tests/.state/openconnector.toml` with mode `0600` to preserve an existing Composio configuration. Then run:
-
-```sh
-# Noninteractive: verify catalog credentials and discover configured services.
-LIVE_TEST_PROVIDERS_CONFIG=dev/live_tests/.state/openconnector.toml \
-  make live-test-providers LIVE_TEST_ARGS='-k configured_connector'
-
-# Interactive: authorize a new Slack account binding and execute a read-only tool.
-LIVE_TEST_PROVIDERS_CONFIG=dev/live_tests/.state/openconnector.toml \
-  make live-test-providers LIVE_TEST_ARGS='--live-slack -k openconnector_slack'
-```
-
-The interactive journey creates a fresh Workspace ConnectorConnection through Control. Its log identifies a mode-`0600` `slack-authorization.json` file inside the private lab directory. Open its `redirect_url` in a browser and authorize the test Slack workspace within ten minutes. Control polls OOMOL and verifies the exact account before publishing readiness; this flow needs no public Service callback origin. The temporary authorization file is removed when waiting ends. Review the actual Slack consent screen: OOMOL's System Client can request read and write permissions even though this test executes only a read-only action. Use a dedicated test workspace with permission to install the app.
-
-The scripted model then calls only `slack.list_channels` with `limit=1`, through a real Agent Run and Worker. Assertions check readiness, tool selection, a successful provider outcome, and the returned channel schema. Logs report connection/Run IDs and the channel count, without printing keys or channel contents. A completed Run with a failed or unknown tool outcome does not pass. The catalog-only check proves only `catalog_read`; the Project key is exercised by this OAuth/execution journey.
-
-Each interactive run uses a fresh isolated Workspace and therefore requires a new authorization. Ordinary live-test targets never start Slack OAuth without `--live-slack`. OOMOL's published Project API has no account-revoke operation: local lab teardown does not remove remote test accounts. Manage those in the test Project's **Connected accounts** page after testing.
 
 ## Disposable local setup
 
@@ -448,7 +430,7 @@ The new admission barriers run after input preparation but before the final tran
 
 ## Management integration: Service configuration to Harness execution
 
-This round adds 45 live variants in 13 independently selectable files. Cases 19, 28, 29 and 30 are intentionally excluded. All management resources are created through public HTTP APIs, and each enabled test uses its own isolated lab with the same automatic RustFS setup and optional loopback S3 override as round two.
+This round adds 45 live variants in 13 independently selectable files. Cases 28, 29 and 30 are intentionally excluded. Case 19 has its own [packaged plugin image opt-in](#packaged-plugin-image-journey). All management resources are created through public HTTP APIs, and each enabled test uses its own isolated lab with the same automatic RustFS setup and optional loopback S3 override as round two.
 
 | File                                                     | Acceptance evidence                                                                                                                                                                                                                                          |
 | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

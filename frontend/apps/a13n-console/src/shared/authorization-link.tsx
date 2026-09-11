@@ -13,20 +13,7 @@ export function AuthorizationLink({
   sameTab?: boolean;
 }) {
   const { t } = useTranslation();
-  let href: string | undefined;
-  if (url) {
-    try {
-      const parsed = new URL(url);
-      if (
-        ["https:", "http:"].includes(parsed.protocol) &&
-        !parsed.username &&
-        !parsed.password
-      )
-        href = parsed.href;
-    } catch {
-      /* Invalid external navigation remains unavailable. */
-    }
-  }
+  const href = authorizationHref(url);
   return (
     <div className={styles.stack} role="status">
       {href ? (
@@ -50,4 +37,22 @@ export function AuthorizationLink({
       </small>
     </div>
   );
+}
+
+export function authorizationHref(url?: string | null): string | undefined {
+  let href: string | undefined;
+  if (url) {
+    try {
+      const parsed = new URL(url);
+      if (
+        ["https:", "http:"].includes(parsed.protocol) &&
+        !parsed.username &&
+        !parsed.password
+      )
+        href = parsed.href;
+    } catch {
+      /* Invalid external navigation remains unavailable. */
+    }
+  }
+  return href;
 }

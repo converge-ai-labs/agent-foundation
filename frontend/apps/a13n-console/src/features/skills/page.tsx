@@ -1,3 +1,4 @@
+import { CopyableResourceKey, Identifier } from "../../shared/copy";
 import {
   Badge,
   FormField,
@@ -36,6 +37,7 @@ import { ImportSkill } from "./import";
 import { Revisions } from "./revisions";
 import { SkillFiles } from "./files";
 import { RenameSkill, SkillActions } from "./identity";
+import { ResourceReference } from "../../shared/resource-reference";
 
 export function SkillsPage() {
   const { workspace, can } = useWorkspace(),
@@ -75,11 +77,11 @@ export function SkillsPage() {
         )
       }
     >
-      <div className="mb-6 flex flex-wrap items-center gap-3">
+      <div className={styles.filters}>
         <FormField
           label={t("Search skills")}
           hideLabel
-          className="min-w-48 flex-1"
+          className="min-w-0 w-full"
         >
           <Input
             type="search"
@@ -112,16 +114,23 @@ export function SkillsPage() {
         <>
           <div className={cards.grid}>
             {query.data.items.map((item) => (
-              <Link
+              <article
                 key={item.id}
-                to={encodeURIComponent(item.key)}
                 className={`${cards.card} ${skillStyles.card}`}
               >
                 <header>
-                  <h2>{item.name}</h2>
+                  <h2>
+                    <Link
+                      to={encodeURIComponent(item.key)}
+                      className={skillStyles.cardLink}
+                    >
+                      {item.name}
+                    </Link>
+                  </h2>
+                  <ResourceReference id={item.id} resourceKey={item.key} />
                   <Badge variant="secondary">v{item.version}</Badge>
                 </header>
-                <code>{item.key}</code>
+                <CopyableResourceKey value={item.key} />
                 <footer>
                   <span>
                     {item.source_kind === "github" ? "GitHub" : t("ZIP upload")}
@@ -131,7 +140,7 @@ export function SkillsPage() {
                     <Timestamp value={item.updated_at} />
                   </span>
                 </footer>
-              </Link>
+              </article>
             ))}
           </div>
           <Pagination page={page} next={query.data?.next_cursor} />
@@ -182,8 +191,12 @@ export function SkillDetail() {
   return (
     <Page
       title={skill.name}
-      titleAction={can("skill.update") && <RenameSkill resource={query.data} />}
-      description={skill.key}
+      titleAction={
+        <>
+          <ResourceReference id={skill.id} resourceKey={skill.key} />
+          {can("skill.update") && <RenameSkill resource={query.data} />}
+        </>
+      }
       back={`../skills`}
       actions={
         <>
@@ -267,6 +280,7 @@ function References({ skill }: { skill: Schema["Skill"] }) {
             columns={[
               {
                 label: t("Agent"),
+                tone: "primary",
                 render: (item) => (
                   <Link to={`${basePath}/agents/${item.agent_key}`}>
                     {item.agent_name}
@@ -275,7 +289,8 @@ function References({ skill }: { skill: Schema["Skill"] }) {
               },
               {
                 label: t("Revision"),
-                render: (item) => <code>{item.agent_revision_id}</code>,
+                tone: "muted",
+                render: (item) => <Identifier value={item.agent_revision_id} />,
               },
             ]}
           />

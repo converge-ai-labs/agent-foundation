@@ -1,4 +1,9 @@
+import { ResourceModalTitle } from "../../shared/resource-modal-title";
 import { ResourceEditorButton } from "../../shared/resource-editor-button";
+import {
+  useResourceEditorState,
+  type ResourceEditorControl,
+} from "../../shared/resource-modal";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   FormField,
@@ -16,7 +21,7 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { data, representation, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
-import { FormActions, JsonView, TextAreaField } from "../../shared/form";
+import { FormActions, TextAreaField } from "../../shared/form";
 import styles from "../../shared/shared.module.css";
 import { type EnvironmentScope } from "./api";
 import { TemplateRecipe } from "./template-recipe";
@@ -25,15 +30,22 @@ export function TemplateEditor({
   scope,
   templateId,
   editable = true,
-}: {
+  controlledOpen,
+  onClose,
+  finalFocus,
+}: ResourceEditorControl & {
   scope: EnvironmentScope;
   templateId?: string;
   editable?: boolean;
 }) {
   const client = useClient(),
     { t } = useTranslation(),
-    [open, setOpen] = useState(false),
-    [generation, setGeneration] = useState(0);
+    [generation, setGeneration] = useState(0),
+    { open, setOpen, modalProps } = useResourceEditorState({
+      controlledOpen,
+      onClose,
+      finalFocus,
+    });
   const query = useQuery({
     queryKey: ["environment-templates", scope.kind, scope.id, templateId],
     enabled: open && !!templateId,
@@ -51,25 +63,35 @@ export function TemplateEditor({
   }
   return (
     <ModalFrame
-      onOpenChange={setOpen}
+      {...modalProps}
       trigger={
-        <ResourceEditorButton
-          editing={!!templateId}
-          createLabel="Create template"
-          editLabel="Details"
-        />
+        controlledOpen === undefined ? (
+          <ResourceEditorButton
+            editing={!!templateId}
+            createLabel="Create template"
+            editLabel="Details"
+          />
+        ) : undefined
       }
       size={"lg"}
-      title={t(
-        templateId ? "Environment template" : "Create environment template",
-      )}
-      description={t(
-        templateId
-          ? "New revisions apply to newly allocated environments. Existing environments keep their original recipe."
-          : "Choose a provider and define the environment recipe.",
-      )}
+      title={
+        templateId && query.data ? (
+          <ResourceModalTitle
+            name={query.data.value.name}
+            id={query.data.value.id}
+          />
+        ) : (
+          t(templateId ? "Environment template" : "Create environment template")
+        )
+      }
+      description={
+        templateId && query.data
+          ? t("Environment template · Version {{version}}", {
+              version: query.data.value.version,
+            })
+          : t("Choose a provider and define the environment recipe.")
+      }
       closeLabel={t("Close")}
-      open={open}
     >
       {open &&
         (templateId && query.isPending ? (
@@ -80,20 +102,33 @@ export function TemplateEditor({
           <TemplateRecipe scope={scope} close={() => setOpen(false)} />
         ) : (
           query.data && (
-            <Tabs key={generation} defaultValue="recipe">
-              <TabsList aria-label={t("Environment template")}>
-                <TabsTab value={"settings"}>{t("Settings")}</TabsTab>
-              </TabsList>
-              <TabsPanel value={"settings"}>
-                {
-                  <TemplateSettings
-                    initial={query.data}
+            <div className={styles.stack}>
+              <Tabs key={generation} defaultValue="recipe">
+                <TabsList aria-label={t("Environment template")}>
+                  <TabsTab value="recipe">{t("Recipe")}</TabsTab>
+                  <TabsTab value={"settings"}>{t("Settings")}</TabsTab>
+                </TabsList>
+                <TabsPanel value="recipe">
+                  <CurrentRecipe
+                    template={query.data.value}
+                    scope={scope}
+                    editable={editable}
                     close={() => setOpen(false)}
                     reload={reload}
                   />
-                }
-              </TabsPanel>
-            </Tabs>
+                </TabsPanel>
+                <TabsPanel value={"settings"}>
+                  {
+                    <TemplateSettings
+                      initial={query.data}
+                      editable={editable}
+                      close={() => setOpen(false)}
+                      reload={reload}
+                    />
+                  }
+                </TabsPanel>
+              </Tabs>
+            </div>
           )
         ))}
     </ModalFrame>
@@ -129,27 +164,27 @@ export function CurrentRecipe({
   ) : query.error ? (
     <ErrorNotice error={query.error} />
   ) : (
-    query.data &&
-    (editable ? (
+    query.data && (
       <TemplateRecipe
         scope={scope}
         template={template}
         revision={query.data}
         close={close}
         reload={reload}
+        readOnly={!editable}
       />
-    ) : (
-      <JsonView value={query.data} />
-    ))
+    )
   );
 }
 
 export function TemplateSettings({
   initial,
+  editable = true,
   close,
   reload,
 }: {
   initial: ReturnType<typeof representation<Schema["EnvironmentTemplate"]>>;
+  editable?: boolean;
   close: () => void;
   reload: () => Promise<void>;
 }) {
@@ -181,7 +216,7 @@ export function TemplateSettings({
       className={styles.form}
       onSubmit={(event) => {
         event.preventDefault();
-        save.mutate();
+        if (editable) save.mutate();
       }}
     >
       <FormField className="min-w-0 w-full" label={t("Name")}>
@@ -190,19 +225,25 @@ export function TemplateSettings({
           value={name}
           onChange={(event) => setName(event.target.value)}
           maxLength={128}
+          readOnly={!editable}
         />
       </FormField>
       <TextAreaField
         label={t("Description")}
         value={description}
         onChange={setDescription}
+        readOnly={!editable}
       />
       <Label className="flex items-center gap-2">
-        <Switch checked={archived} onCheckedChange={setArchived} />
+        <Switch
+          checked={archived}
+          disabled={!editable}
+          onCheckedChange={setArchived}
+        />
         {t("Archived")}
       </Label>
       <ErrorNotice error={save.error} retry={() => void reload()} />
-      <FormActions pending={save.isPending} />
+      {editable && <FormActions pending={save.isPending} />}
     </form>
   );
 }

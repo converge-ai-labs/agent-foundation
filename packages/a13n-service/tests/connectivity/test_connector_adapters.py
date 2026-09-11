@@ -7,9 +7,6 @@ import pytest
 from a13n_service.connectivity.connectors.contracts import ConnectionBinding, ConnectorProviderError, SetupContext
 from a13n_service.connectivity.connectors.http import ConnectorHttpClient
 from a13n_service.connectivity.connectors.providers.composio import ComposioProvider
-from a13n_service.connectivity.connectors.providers.composio.configuration import (
-    ComposioConfiguration,
-)
 from a13n_service.connectivity.connectors.providers.configuration import ApiKeyCredentials
 from jsonschema import Draft202012Validator
 from pydantic import ValidationError
@@ -36,7 +33,6 @@ def _context(*, callback: bool = False) -> SetupContext:
 def _composio(http_client: httpx2.AsyncClient) -> ComposioProvider:
     return ComposioProvider(
         ConnectorHttpClient(http_client, _AllowEndpoint(), response_max_bytes=1024 * 1024),
-        ComposioConfiguration(enabled_toolkits=("github",)),
         ApiKeyCredentials(api_key="secret"),
     )
 
@@ -74,7 +70,17 @@ async def test_composio_verified_callback_safe_projection_and_pinned_tool_versio
                 },
             )
         if path.endswith("/toolkits/github"):
-            return httpx2.Response(200, json={"slug": "github", "meta": {"version": "20260903_01"}})
+            return httpx2.Response(
+                200,
+                json={
+                    "slug": "github",
+                    "name": "GitHub",
+                    "meta": {"version": "20260903_01"},
+                    "auth_config_details": [
+                        {"mode": "OAUTH2", "fields": {"connected_account_initiation": {"required": [], "optional": []}}}
+                    ],
+                },
+            )
         if path.endswith("/tools/GITHUB_CREATE"):
             assert request.url.params["version"] == "20260903_01"
             return httpx2.Response(
@@ -244,6 +250,16 @@ async def test_same_type_accounts_have_independent_directories_and_bindings() ->
 
     def respond(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
+        if request.url.path.endswith("/toolkits/github"):
+            return httpx2.Response(
+                200,
+                json={
+                    "slug": "github",
+                    "name": "GitHub",
+                    "meta": {"version": "20260903_01"},
+                    "auth_config_details": [{"mode": "OAUTH2", "fields": {"connected_account_initiation": {}}}],
+                },
+            )
         if request.url.path.endswith("/toolkits"):
             return httpx2.Response(
                 200,
@@ -287,14 +303,14 @@ async def test_same_type_accounts_have_independent_directories_and_bindings() ->
         definition = registry.require("composio")
         assert requests == []
         assert definition.definition().credential_schema["properties"]["api_key"]["writeOnly"] is True
-        first = definition.configure({"enabled_toolkits": ["github", "slack"]}, {"api_key": "first"})
-        second = definition.configure({"enabled_toolkits": ["github"]}, {"api_key": "second"})
+        first = definition.configure({}, {"api_key": "first"})
+        second = definition.configure({}, {"api_key": "second"})
         first_items = await first.discover_connectors()
         second_items = await second.discover_connectors()
         validate_connectors(first_items)
         assert first_items[0].setup_schema != second_items[0].setup_schema
         assert first_items[1].authentication_methods == ()
-        assert len(second_items) == 1
+        assert len(second_items) == 2
         assert "must not leak" not in repr(first_items)
         with pytest.raises(ConnectorProviderError, match="invalid_setup_options"):
             await second.start_setup(
@@ -354,25 +370,25 @@ def test_discovery_rejects_unsafe_setup_schemas(schema) -> None:
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("make_provider", [_composio])
-async def test_malformed_setup_response_retains_unknown_outcome(make_provider, monkeypatch) -> None:
+async def test_malformed_setup_response_retains_unknown_outcome(monkeypatch) -> None:
     from a13n_service.connectivity.connectors.contracts import DiscoveredConnector
+    from a13n_service.connectivity.connectors.providers.composio.catalog import ComposioCatalog
 
-    async def directory():
-        return (
-            DiscoveredConnector(
-                key="github", name="GitHub", setup_schema={"type": "object"}, authentication_methods=("oauth2",)
-            ),
+    async def connector(self, key):
+        return DiscoveredConnector(
+            key=key, name="GitHub", setup_schema={"type": "object"}, authentication_methods=("OAUTH2",)
         )
 
+    async def resolve(self, *args):
+        return "ac"
+
+    monkeypatch.setattr(ComposioCatalog, "connector", connector)
+    monkeypatch.setattr(ComposioCatalog, "resolve_auth_config", resolve)
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(lambda _: httpx2.Response(200, json={}))) as http:
-        provider = make_provider(http)
-        monkeypatch.setattr(provider, "discover_connectors", directory)
-        setup = {"auth_config_id": "ac"}
-        if make_provider is _composio:
-            setup["toolkit_version"] = "20260903_01"
         with pytest.raises(ConnectorProviderError) as raised:
-            await provider.start_setup(setup=setup, context=_context(callback=True))
+            await _composio(http).start_setup(
+                setup={"auth_config_id": "ac", "toolkit_version": "20260903_01"}, context=_context(callback=True)
+            )
         assert raised.value.outcome_unknown
 
 
@@ -430,7 +446,17 @@ async def test_composio_details_are_bounded_parallel_and_keep_catalog_order():
         nonlocal active, peak
         path = request.url.path
         if path.endswith("/toolkits/github"):
-            return httpx2.Response(200, json={"slug": "github", "meta": {"version": "20260903_01"}})
+            return httpx2.Response(
+                200,
+                json={
+                    "slug": "github",
+                    "name": "GitHub",
+                    "meta": {"version": "20260903_01"},
+                    "auth_config_details": [
+                        {"mode": "OAUTH2", "fields": {"connected_account_initiation": {"required": [], "optional": []}}}
+                    ],
+                },
+            )
         if path.endswith("/tools"):
             return httpx2.Response(200, json={"items": [{"slug": name} for name in names]})
         key = path.rsplit("/", 1)[1]
@@ -478,7 +504,17 @@ async def test_composio_directory_definitions_avoid_redundant_detail_requests():
     def respond(request):
         path = request.url.path
         if path.endswith("/toolkits/github"):
-            return httpx2.Response(200, json={"slug": "github", "meta": {"version": "20260903_01"}})
+            return httpx2.Response(
+                200,
+                json={
+                    "slug": "github",
+                    "name": "GitHub",
+                    "meta": {"version": "20260903_01"},
+                    "auth_config_details": [
+                        {"mode": "OAUTH2", "fields": {"connected_account_initiation": {"required": [], "optional": []}}}
+                    ],
+                },
+            )
         if path.endswith("/tools"):
             assert request.url.params["toolkit_versions[github]"] == "20260903_01"
             if request.url.params.get("cursor") == "next":
@@ -506,7 +542,17 @@ async def test_composio_directory_definitions_avoid_redundant_detail_requests():
 async def test_composio_complete_directory_definition_rejects_identity_changes(changed):
     def respond(request):
         if request.url.path.endswith("/toolkits/github"):
-            return httpx2.Response(200, json={"slug": "github", "meta": {"version": "20260903_01"}})
+            return httpx2.Response(
+                200,
+                json={
+                    "slug": "github",
+                    "name": "GitHub",
+                    "meta": {"version": "20260903_01"},
+                    "auth_config_details": [
+                        {"mode": "OAUTH2", "fields": {"connected_account_initiation": {"required": [], "optional": []}}}
+                    ],
+                },
+            )
         assert request.url.path.endswith("/tools"), "Invalid complete definitions must not fall back to detail requests"
         return httpx2.Response(
             200,

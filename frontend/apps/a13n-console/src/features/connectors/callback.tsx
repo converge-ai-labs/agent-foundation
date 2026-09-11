@@ -47,8 +47,12 @@ export function ConnectorSetupCallback() {
       .then(data)
       .then((result) => {
         const target = new URL(result.return_path, window.location.origin);
-        if (target.origin !== window.location.origin)
+        if (
+          target.origin !== window.location.origin ||
+          target.pathname !== context.return_path
+        )
           throw new Error(t("Invalid authorization return path."));
+        target.searchParams.set("connection", context.connection_id);
         clearAuthorization();
         window.location.replace(target.href);
       })
@@ -67,7 +71,13 @@ export function ConnectorSetupCallback() {
               "Check the connection status before starting another authorization.",
             )}
           </p>
-          <Link to={context ? context.return_path : "/login"}>
+          <Link
+            to={
+              context
+                ? `${context.return_path}?connection=${encodeURIComponent(context.connection_id)}`
+                : "/login"
+            }
+          >
             {t("Continue")}
           </Link>
         </>

@@ -60,8 +60,28 @@ roots:
 | `name`           | Required           | Human-facing name                             |
 | `position`       | `0`                | Catalog ordering                              |
 | `roots`          | Required           | 1–64 ordered unique `{path: ...}` directories |
+| `defaults`       | `{}`               | Optional creation combination; see below      |
 
 Paths must be absolute after `~` expansion and must exist. The first is the default working directory and terminal entry point. Changing a root list changes later captures, not an active Run. Project roots organize work and Environment mounts; they do not confine Full Control's host authority.
+
+### Defaults for new conversations
+
+A Project can select one default combination using existing resource IDs:
+
+```yaml
+defaults:
+  agent: agent-reviewer
+  environment_profile: environment-native
+  harness_plugins: []
+  environment_run_extensions: []
+  mcp_servers: []
+```
+
+Place this `defaults` mapping alongside `roots` in the Project file, and replace `agent-reviewer` with a configured Agent ID. All five fields are optional. Omission or null continues fallback; an empty list selects none. A supplied list replaces the lower-priority list rather than merging with it. Model and Capability settings still belong to the chosen Agent.
+
+New conversations resolve explicit selections first, then Project defaults, then the selected Agent's Plugin/MCP defaults, then root YAML defaults. An omitted Environment ultimately selects `environment-native`. An explicit projectless conversation skips Project defaults. Creation previews and the terminal's pre-conversation Skill catalog use these same choices.
+
+Changing these defaults does not update existing conversations. Use the [HTTP configuration workflow](http-api.md#configure-projects-and-threads) to preview and explicitly apply only the Project's configured axes to a saved Thread. Other Thread choices remain unchanged; stale previews fail instead of silently applying changed defaults. No browser configuration editor is provided yet.
 
 ## Custom Environment profiles
 

@@ -100,8 +100,19 @@ class FakeConnectorProvider:
             )
         ).inspect()
 
+    async def discover_connector(self, connector_key: str) -> DiscoveredConnector:
+        for connector in await self.discover_connectors():
+            if connector.key == connector_key:
+                return connector
+        raise ConnectorProviderError("connector_setup_unavailable")
+
     async def start_setup(
-        self, *, setup: JsonObject, context: SetupContext, resume_ref: str | None = None
+        self,
+        *,
+        setup: JsonObject,
+        context: SetupContext,
+        resume_ref: str | None = None,
+        before_shared_setup: BeforeDispatch | None = None,
     ) -> SetupStarted:
         self.backend.started += 1
         return SetupStarted(
@@ -187,3 +198,8 @@ def fake_registry(backend: FakeConnectorBackend) -> ConnectorProviderRegistry:
 
 async def allow_dispatch() -> None:
     """Adapter-only tests supply explicit trusted dispatch authority."""
+
+
+class AllowEndpoint:
+    async def validate(self, value: str, *, resolve_dns: bool = False) -> str:
+        return value

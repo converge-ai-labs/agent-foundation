@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
@@ -187,6 +187,7 @@ async def list_models(
     query: Annotated[str | None, Query(max_length=128)] = None,
     provider_id: Annotated[str | None, Query(max_length=72)] = None,
     enabled: bool | None = None,
+    scope: Literal["organization", "workspace"] | None = None,
 ) -> ModelCollection:
     return await _model_service(request).list(
         actor=actor,
@@ -196,6 +197,7 @@ async def list_models(
         query_text=query,
         provider_id=provider_id,
         enabled=enabled,
+        owner_scope=scope,
     )
 
 

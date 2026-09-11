@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal, Self
@@ -48,6 +49,9 @@ class Section(BaseModel):
 
 
 class ObservabilityQuerySettings(Section):
+    logfire_base_url: str | None = Field(default=None, min_length=1, max_length=2048)
+    logfire_read_token: SecretStr | None = Field(default=None, min_length=1, max_length=4096, repr=False)
+    logfire_history_from: datetime | None = None
     provider: str = Field(default="none", pattern=r"^[a-z][a-z0-9_]*$", max_length=64)
     langfuse_base_url: str | None = Field(default=None, min_length=1, max_length=2048)
     langfuse_public_key: SecretStr | None = Field(

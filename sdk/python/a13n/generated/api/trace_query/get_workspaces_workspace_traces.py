@@ -9,6 +9,7 @@ from ...client import AuthenticatedClient, Client
 from ...models.error_response import ErrorResponse
 from ...models.search_in import SearchIn
 from ...models.trace_collection import TraceCollection
+from ...models.trace_view import TraceView
 from ...types import UNSET, Response, Unset
 
 
@@ -24,6 +25,7 @@ def build_request(
     thread_id: str | Unset | None = UNSET,
     run_id: str | Unset | None = UNSET,
     run_attempt_id: str | Unset | None = UNSET,
+    view: TraceView | Unset = UNSET,
 ) -> dict[str, Any]:
 
     params: dict[str, Any] = {}
@@ -92,6 +94,12 @@ def build_request(
         json_run_attempt_id = run_attempt_id
     params["run_attempt_id"] = json_run_attempt_id
 
+    json_view: str | Unset = UNSET
+    if not isinstance(view, Unset):
+        json_view = view.value
+
+    params["view"] = json_view
+
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
     _kwargs: dict[str, Any] = {
@@ -147,6 +155,7 @@ def sync_detailed(
     thread_id: str | Unset | None = UNSET,
     run_id: str | Unset | None = UNSET,
     run_attempt_id: str | Unset | None = UNSET,
+    view: TraceView | Unset = UNSET,
 ) -> Response[ErrorResponse | TraceCollection]:
     """List Traces
 
@@ -161,6 +170,7 @@ def sync_detailed(
         thread_id (None | str | Unset):
         run_id (None | str | Unset):
         run_attempt_id (None | str | Unset):
+        view (TraceView | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -181,6 +191,7 @@ def sync_detailed(
         thread_id=thread_id,
         run_id=run_id,
         run_attempt_id=run_attempt_id,
+        view=view,
     )
 
     response = client.get_httpx_client().request(
@@ -203,6 +214,7 @@ def sync(
     thread_id: str | Unset | None = UNSET,
     run_id: str | Unset | None = UNSET,
     run_attempt_id: str | Unset | None = UNSET,
+    view: TraceView | Unset = UNSET,
 ) -> ErrorResponse | TraceCollection | None:
     """List Traces
 
@@ -217,6 +229,7 @@ def sync(
         thread_id (None | str | Unset):
         run_id (None | str | Unset):
         run_attempt_id (None | str | Unset):
+        view (TraceView | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -238,6 +251,7 @@ def sync(
         thread_id=thread_id,
         run_id=run_id,
         run_attempt_id=run_attempt_id,
+        view=view,
     ).parsed
 
 
@@ -254,6 +268,7 @@ async def asyncio_detailed(
     thread_id: str | Unset | None = UNSET,
     run_id: str | Unset | None = UNSET,
     run_attempt_id: str | Unset | None = UNSET,
+    view: TraceView | Unset = UNSET,
 ) -> Response[ErrorResponse | TraceCollection]:
     """List Traces
 
@@ -268,6 +283,7 @@ async def asyncio_detailed(
         thread_id (None | str | Unset):
         run_id (None | str | Unset):
         run_attempt_id (None | str | Unset):
+        view (TraceView | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -288,6 +304,7 @@ async def asyncio_detailed(
         thread_id=thread_id,
         run_id=run_id,
         run_attempt_id=run_attempt_id,
+        view=view,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -308,6 +325,7 @@ async def asyncio(
     thread_id: str | Unset | None = UNSET,
     run_id: str | Unset | None = UNSET,
     run_attempt_id: str | Unset | None = UNSET,
+    view: TraceView | Unset = UNSET,
 ) -> ErrorResponse | TraceCollection | None:
     """List Traces
 
@@ -322,6 +340,7 @@ async def asyncio(
         thread_id (None | str | Unset):
         run_id (None | str | Unset):
         run_attempt_id (None | str | Unset):
+        view (TraceView | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -344,5 +363,6 @@ async def asyncio(
             thread_id=thread_id,
             run_id=run_id,
             run_attempt_id=run_attempt_id,
+            view=view,
         )
     ).parsed

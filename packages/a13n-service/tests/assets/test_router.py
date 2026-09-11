@@ -13,6 +13,7 @@ from a13n_service.app import Components, create_app
 from a13n_service.assets.cleanup import AssetCleanupReconciler
 from a13n_service.assets.models import AssetRecord
 from a13n_service.assets.objects import AssetObjectStore, asset_content_key, asset_object_metadata
+from a13n_service.assets.provenance import project_assets
 from a13n_service.assets.staging import AssetStaging
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord, OutboxRecord
 from a13n_service.iam import AuthenticatedActor
@@ -242,6 +243,46 @@ async def test_asset_http_lifecycle_idempotency_and_cleanup(api: Api) -> None:
     key = asset_content_key(organization_id=ORG_ID, workspace_id=WORKSPACE_ID, asset_id=created["id"])
     with pytest.raises(ObjectNotFound):
         await api.app.state.runtime.shared.storage.objects.stat(key)
+
+
+@pytest.mark.anyio
+async def test_run_asset_projection_accepts_organization_bound_session(api: Api) -> None:
+    actor = AuthenticatedActor(
+        principal=PrincipalRef(principal_type="user", principal_id=BUILDER_ID),
+        auth_method="session",
+        credential_id="ses_1234567890abcdef",
+        boundary_workspace_id=None,
+        boundary_organization_id=ORG_ID,
+        request_id="req_organization_session",
+    )
+    record = AssetRecord(
+        id="ast_organization123456",
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
+        filename="run-output.txt",
+        media_type="text/plain",
+        size_bytes=4,
+        content_sha256="a" * 64,
+        source_kind="run_output",
+        source_principal_type=None,
+        source_principal_id=None,
+        source_run_attempt_id="ratt_missing1234567890",
+        source_invocation_id="invocation",
+        created_at=NOW,
+        deleted_at=None,
+    )
+
+    sessions = api.app.state.runtime.shared.storage.sessions
+    async with transaction(sessions) as session:
+        projected = await project_assets(
+            session,
+            actor=actor,
+            workspace_id=WORKSPACE_ID,
+            records=(record,),
+        )
+
+    assert projected[0].source.kind == "run_output"
+    assert projected[0].source.run_id is None
 
 
 @pytest.mark.anyio

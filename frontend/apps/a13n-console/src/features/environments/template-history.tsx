@@ -1,3 +1,4 @@
+import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, DisclosureSection } from "a13n-ui";
 import { useState } from "react";
@@ -47,6 +48,7 @@ export function TemplateHistory({
           onClick={() => setRestore(undefined)}
           type="button"
         >
+          <ArrowLeftIcon size={14} aria-hidden="true" />{" "}
           {t("Back to revisions")}
         </Button>
         <TemplateRecipe
@@ -68,9 +70,14 @@ export function TemplateHistory({
             <ResourceTable
               items={query.data.items}
               columns={[
-                { label: t("Version"), render: (item) => `v${item.version}` },
+                {
+                  label: t("Version"),
+                  tone: "primary",
+                  render: (item) => `v${item.version}`,
+                },
                 {
                   label: t("Created"),
+                  tone: "muted",
                   render: (item) => <Timestamp value={item.created_at} />,
                 },
                 {
@@ -89,7 +96,7 @@ export function TemplateHistory({
                     item.id !== template.current_revision_id && (
                       <Button
                         size="sm"
-                        variant="outline"
+                        variant="ghost"
                         onClick={() => setRestore(item)}
                         type="button"
                       >

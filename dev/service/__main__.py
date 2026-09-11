@@ -56,7 +56,7 @@ def setup(environment: Environment, langfuse: Langfuse, config: Path) -> None:
     if langfuse.enabled:
         print(f"Langfuse: {langfuse.base_url} (media: http://127.0.0.1:{langfuse.port + 1})")
         print(f"Public local Langfuse account: {USER_EMAIL} / {USER_PASSWORD}")
-        print("Inspect traces in Langfuse; Console trace queries still require the Service TraceAccessAuthorizer.")
+        print("Inspect traces in Langfuse or query authorized Run traces through Console.")
     print("Infrastructure and schema ready; Service and Console have not been started.")
     print("Run make dev (Service + Console) or make service-dev (Service only).")
     if not (environment.state / "seed.json").exists():

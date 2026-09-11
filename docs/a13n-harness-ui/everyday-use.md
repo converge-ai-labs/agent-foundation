@@ -27,7 +27,9 @@
 
 `/agent` selects an Agent's instructions, tools, shell-review policy, and default model for the next turn, while preserving conversation history and execution permissions. Create another Agent with `a13n-harness-ui add agent`.
 
-`/model` opens a separate picker of configured Model resources. `/model <model-id>` temporarily overrides only the model without switching Agent or saving configuration. It applies to subsequent turns throughout this TUI session, including after `/new`, `/resume`, or `/agent`; restarting the TUI does not restore the override. `/model default` returns to the selected Agent's model. Selecting a Model or Agent clears temporary reasoning and service-tier settings. Both selection commands are unavailable during active work.
+`/model` opens a separate picker of configured Model resources. `/model <model-id>` changes only the model and remembers your choice for this Project, without switching Agent or rewriting YAML. It survives `/new`, `/resume`, `/agent`, and terminal restarts. Restoring an old conversation uses the launch Project's preference, not its historical model. `/model default` clears the Project preference and returns to the selected Agent's model. Selecting a Model or Agent clears temporary reasoning and service-tier settings; these settings are not part of the remembered preference. Both selection commands are unavailable during active work.
+
+Each Project remembers its own choice in the local data root, even if you select before sending the first prompt. Other open terminals keep their current model; the last explicit selection determines what a later terminal loads. If the remembered Model has been removed, startup explains the fallback to the Agent's configured model. Connection or authentication failures do not switch models. An explicit launch `--agent` skips remembered selection, and headless `run` and API callers do not inherit terminal preferences.
 
 ### Find a saved conversation
 

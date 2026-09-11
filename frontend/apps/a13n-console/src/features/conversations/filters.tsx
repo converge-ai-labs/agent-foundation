@@ -11,7 +11,7 @@ import {
   PopoverTrigger,
   SearchPicker,
 } from "a13n-ui";
-import { CaretDownIcon, MagnifyingGlassIcon } from "@phosphor-icons/react";
+import { CaretDownIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import type { SetURLSearchParams } from "react-router";
@@ -115,42 +115,23 @@ export function SessionFilterBar({
   return (
     <>
       <div className="mb-5 flex flex-wrap items-center gap-2">
-        <form
-          className="flex min-w-64 flex-1 items-center gap-1"
-          onSubmit={(event) => {
-            event.preventDefault();
-            update({ q: [query.trim()] });
-          }}
+        <FormField
+          label={t("Search sessions")}
+          hideLabel
+          className="w-full min-w-0 sm:w-80"
         >
-          <FormField
-            label={t("Search sessions")}
-            hideLabel
-            className="min-w-0 flex-1"
-          >
-            <Input
-              type="search"
-              maxLength={72}
-              placeholder={t("Session ID or Thread ID…")}
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                if (!event.target.value) update({ q: [] });
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && event.nativeEvent.isComposing)
-                  event.preventDefault();
-              }}
-            />
-          </FormField>
-          <Button
-            type="submit"
-            variant="outline"
-            size="icon"
-            aria-label={t("Search")}
-          >
-            <MagnifyingGlassIcon />
-          </Button>
-        </form>
+          <Input
+            type="search"
+            maxLength={72}
+            placeholder={t("Session ID or Thread ID…")}
+            value={query}
+            onChange={(event) => {
+              const value = event.target.value;
+              setQuery(value);
+              update({ q: value.trim() ? [value.trim()] : [] });
+            }}
+          />
+        </FormField>
         <div className="w-44">
           <SearchPicker
             label={t("Recent agent")}
@@ -227,10 +208,8 @@ function MultiFilter({
   return (
     <Menu>
       <MenuTrigger render={<Button variant="outline" />}>
-        {label}
-        {values.length > 0 && (
-          <span className="text-muted-foreground">{values.length}</span>
-        )}
+        <span className="text-muted-foreground">{label}</span>
+        {values.length > 0 && <span>{values.length}</span>}
         <CaretDownIcon />
       </MenuTrigger>
       <MenuPopup align="start" aria-label={label}>

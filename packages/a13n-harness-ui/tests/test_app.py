@@ -1143,6 +1143,15 @@ async def test_checkpoint_save_failure_preserves_prior_selection(tmp_path: Path,
         assert retained.continuation_id == prior
         assert retained.thread.excerpt.first_input == "first"
         assert retained.thread.excerpt.latest_input == "first"
+        async with app.watch_thread(root_thread_id=thread.thread_id) as watch:
+            assert watch.root_stream is not None
+            assert watch.root_stream.summary.base_continuation_id == prior
+            assert watch.root_stream.summary.event_count > 0
+        monkeypatch.setattr(app._store.objects, "publish_model", publish)
+        third = await app.submit_thread(thread_id=thread.thread_id, prompt="third")
+        assert (await app.wait_root_operation(third.receipt_id)).status is RootOperationStatus.completed
+        async with app.watch_thread(root_thread_id=thread.thread_id) as watch:
+            assert watch.root_stream is None
 
 
 async def test_focused_watch_cuts_over_before_snapshot_and_summary_stream_invalidates(tmp_path: Path) -> None:
@@ -1653,3 +1662,33 @@ async def test_conflicting_checkpoint_cannot_overwrite_excerpts(tmp_path: Path, 
         assert retained is not None
         assert retained.excerpt == current.excerpt
         assert retained.activity_at == current.activity_at
+
+
+@pytest.mark.parametrize("query", ["detail", "task_page"])
+async def test_focused_watch_resets_when_new_run_saves_during_bootstrap(tmp_path: Path, monkeypatch, query) -> None:
+    from a13n_harness_ui.errors import LivePresentationError
+
+    async with open_harness_ui_app(
+        _settings(tmp_path / "state"), configuration_path=_write_configuration(tmp_path)
+    ) as app:
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        thread = await app.create_thread()
+        service = app._projections if query == "detail" else app._terminal_projections
+        original = service.detail if query == "detail" else service.task_page
+
+        async def complete_before_query(thread_id, **kwargs):
+            # No observer existed at cutover. A complete Run now appears in both
+            # the selected history and the subscriber's queued live events.
+            receipt = await app.submit_thread(thread_id=thread_id, prompt="during bootstrap")
+            await app.wait_root_operation(receipt.receipt_id)
+            return await original(thread_id=thread_id, **kwargs)
+
+        monkeypatch.setattr(service, query, complete_before_query)
+        with pytest.raises(LivePresentationError) as changed:
+            async with app.watch_thread(root_thread_id=thread.thread_id):
+                pytest.fail("incompatible bootstrap must not be delivered")
+        assert changed.value.code == "live_snapshot_changed"
+        monkeypatch.setattr(service, query, original)
+        async with app.watch_thread(root_thread_id=thread.thread_id) as watch:
+            assert watch.snapshot.thread.continuation_id is not None
+            assert watch.root_stream is None

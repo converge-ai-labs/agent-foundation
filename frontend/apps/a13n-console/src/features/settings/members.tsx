@@ -119,6 +119,7 @@ export function Members({ scope }: { scope: MembershipScope }) {
             columns={[
               {
                 label: t("Member"),
+                tone: "primary",
                 render: (item) => {
                   const user = members.data?.find(
                     (user) => user.id === item.principal_id,
@@ -153,6 +154,7 @@ export function Members({ scope }: { scope: MembershipScope }) {
                       readVersion={readVersion}
                     />
                     <Confirm
+                      triggerVariant="ghost"
                       title={t("Remove member")}
                       description={t(
                         "This removes the selected role. Other explicit grants may still allow access.",
@@ -250,7 +252,7 @@ function ChangeRole({
       }
       size={"md"}
       title={t("Change role")}
-      description={t("Role changes apply immediately.")}
+      description={t("The new role takes effect when you save.")}
       closeLabel={t("Close")}
       open={open}
     >
@@ -350,7 +352,7 @@ function AddMember({
         <FormField label={t("Member")}>
           <SearchPicker
             label={t("Member")}
-            placeholder={t("Find a member…")}
+            placeholder={t("Choose a member…")}
             emptyMessage={t("No members found")}
             value={userId}
             groups={[

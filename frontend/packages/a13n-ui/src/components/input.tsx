@@ -1,6 +1,7 @@
 "use client";
 
 import { Input as InputPrimitive } from "@base-ui/react/input";
+import { MagnifyingGlassIcon } from "@phosphor-icons/react";
 import type * as React from "react";
 import { cn } from "../lib/utils";
 
@@ -26,6 +27,7 @@ export function Input({
     size === "sm" &&
       "h-7.5 px-[calc(--spacing(2.5)-1px)] leading-7.5 sm:h-6.5 sm:leading-6.5",
     size === "lg" && "h-9.5 leading-9.5 sm:h-8.5 sm:leading-8.5",
+    props.type === "search" && !unstyled && "ps-8",
     props.type === "search" &&
       "[&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none [&::-webkit-search-results-button]:appearance-none [&::-webkit-search-results-decoration]:appearance-none",
     props.type === "number" &&
@@ -46,6 +48,12 @@ export function Input({
       data-size={size}
       data-slot="input-control"
     >
+      {props.type === "search" && !unstyled && (
+        <MagnifyingGlassIcon
+          aria-hidden="true"
+          className="pointer-events-none absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+        />
+      )}
       {nativeInput ? (
         <input
           className={inputClassName}

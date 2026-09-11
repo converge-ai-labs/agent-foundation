@@ -116,7 +116,7 @@ class NativeProviderOperations:
         for _ in range(_MAX_DISCOVERY_PAGES):
             try:
                 async with self._http_client.stream(
-                    "GET", request.url, headers=request.headers, params=params, timeout=10
+                    "GET", request.url, headers={**provider.extra_headers, **request.headers}, params=params, timeout=10
                 ) as response:
                     response.raise_for_status()
                     body = bytearray()

@@ -14,6 +14,11 @@
   --a13n-selected: var(--accent);
   --a13n-accent-soft: var(--accent);
   --a13n-text: var(--foreground);
+  --a13n-text-supporting: color-mix(
+    in srgb,
+    var(--foreground) 80%,
+    var(--background)
+  );
   --a13n-secondary: var(--muted-foreground);
   --a13n-muted: var(--muted-foreground);
   --a13n-border: var(--border);

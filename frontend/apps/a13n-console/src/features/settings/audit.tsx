@@ -64,6 +64,7 @@ export function Audit({ scope }: { scope: ProfileTarget }) {
           columns={[
             {
               label: t("Action"),
+              tone: "primary",
               render: (item) => (
                 <>
                   {item.action}
@@ -97,6 +98,7 @@ export function Audit({ scope }: { scope: ProfileTarget }) {
             },
             {
               label: t("Time"),
+              tone: "muted",
               render: (item) => <Timestamp value={item.occurred_at} />,
             },
           ]}

@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.credentials import CredentialSnapshot
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
 from a13n_service.iam.resource_scope import visible_workspace
@@ -21,7 +22,7 @@ from a13n_service.storage import is_unique_conflict, transaction
 from a13n_service.temporal import Clock, utc_now
 
 from .connection_test import test_connection
-from .credentials import ProviderCredentialError, validate_provider_credential
+from .credentials import ProviderCredentialError, ProviderSecrets, validate_provider_credential
 from .cursors import CursorError, decode_model_cursor, encode_model_cursor
 from .descriptions import describe_model
 from .domain import (
@@ -34,6 +35,7 @@ from .domain import (
     UpdateModelProviderRequest,
     new_model_provider_id,
 )
+from .headers import apply_header_updates
 from .models import ModelProviderRecord
 from .provider_adapters.base import ProviderOperationError
 from .providers import (
@@ -104,8 +106,17 @@ class ModelProviderService:
         request: CreateModelProviderRequest,
     ) -> ModelProvider:
         credential = request.credential.get_secret_value() if request.credential is not None else None
+        secrets = ProviderSecrets(
+            credential=credential,
+            extra_headers={
+                name: value.get_secret_value() for name, value in request.extra_headers.items() if value is not None
+            },
+        )
         validated = await self._validate(
-            request.type, request.configuration, credential_configured=credential is not None
+            request.type,
+            request.configuration,
+            credential_configured=credential is not None,
+            header_names=tuple(secrets.extra_headers),
         )
         self._validate_credential(request.type, credential)
         now = self._clock()
@@ -134,7 +145,7 @@ class ModelProviderService:
                     created_at=now,
                     updated_at=now,
                 )
-                record.replace_credential(credential, self._protector)
+                record.replace_secrets(secrets, self._protector)
                 session.add(record)
                 session.add(
                     audit_record(
@@ -174,18 +185,28 @@ class ModelProviderService:
             ) from error
 
     async def get(self, *, actor: AuthenticatedActor, workspace_id: str | None, provider_id: str) -> ModelProvider:
+        resource, _ = await self._load(actor=actor, workspace_id=workspace_id, provider_id=provider_id)
+        return resource
+
+    async def _load(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        workspace_id: str | None,
+        provider_id: str,
+        action: WorkspaceAction = WorkspaceAction.models_read,
+    ) -> tuple[ModelProvider, CredentialSnapshot | None]:
         async with transaction(self._sessions) as session:
-            workspace = await authorize_models(
-                session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.models_read
+            workspace = await authorize_models(session, actor=actor, workspace_id=workspace_id, action=action)
+            record = await require_provider(
+                session,
+                organization_id=workspace.organization_id,
+                workspace_id=workspace.workspace_id,
+                provider_id=provider_id,
+                # Mutation snapshots verify ownership before any credential decryption.
+                lock=action is WorkspaceAction.models_manage,
             )
-            return (
-                await require_provider(
-                    session,
-                    organization_id=workspace.organization_id,
-                    workspace_id=workspace.workspace_id,
-                    provider_id=provider_id,
-                )
-            ).to_resource()
+            return record.to_resource(), record.credential_snapshot() if record.ciphertext is not None else None
 
     async def list(
         self,
@@ -273,7 +294,9 @@ class ModelProviderService:
         if_match: str,
         request: UpdateModelProviderRequest,
     ) -> ModelProvider:
-        current = await self.get(actor=actor, workspace_id=workspace_id, provider_id=provider_id)
+        current, encrypted = await self._load(
+            actor=actor, workspace_id=workspace_id, provider_id=provider_id, action=WorkspaceAction.models_manage
+        )
         require_etag(current.id, current.updated_at, if_match)
         credential = request.credential.get_secret_value() if request.credential is not None else None
         if "credential" in request.model_fields_set:
@@ -282,7 +305,40 @@ class ModelProviderService:
             credential is not None if "credential" in request.model_fields_set else current.credential_configured
         )
         configuration = request.configuration if request.configuration is not None else current.configuration
-        validated = await self._validate(current.type, configuration, credential_configured=credential_configured)
+        header_names = apply_header_updates(
+            dict.fromkeys(current.header_names, True),
+            {name: True if value is not None else None for name, value in request.extra_headers.items()},
+        )
+        validated = await self._validate(
+            current.type,
+            configuration,
+            credential_configured=credential_configured,
+            header_names=tuple(header_names),
+        )
+        secrets: ProviderSecrets | None = None
+        if "credential" in request.model_fields_set or request.extra_headers:
+            try:
+                previous = (
+                    ProviderSecrets.model_validate_json(encrypted.decrypt(self._protector))
+                    if encrypted
+                    else ProviderSecrets()
+                )
+                secrets = ProviderSecrets(
+                    credential=credential if "credential" in request.model_fields_set else previous.credential,
+                    extra_headers=apply_header_updates(
+                        previous.extra_headers,
+                        {
+                            name: value.get_secret_value() if value is not None else None
+                            for name, value in request.extra_headers.items()
+                        },
+                    ),
+                )
+            except (ValueError, SecretProtectionError) as error:
+                raise ModelError(
+                    "invalid_provider_credential",
+                    "The Provider credentials are unavailable.",
+                    category=ErrorCategory.invalid_request,
+                ) from error
         async with transaction(self._sessions) as session:
             workspace = await authorize_models(
                 session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.models_manage
@@ -300,9 +356,9 @@ class ModelProviderService:
                 record.name = request.name
                 record.normalized_name = request.name.casefold()
             record.configuration = validated.configuration
-            if "credential" in request.model_fields_set:
+            if secrets is not None:
                 try:
-                    record.replace_credential(credential, self._protector)
+                    record.replace_secrets(secrets, self._protector)
                 except SecretProtectionError as error:
                     raise ModelError(
                         "invalid_provider_credential", str(error), category=ErrorCategory.invalid_request
@@ -487,12 +543,26 @@ class ModelProviderService:
             ).to_resource()
 
     async def _validate(
-        self, provider_type: str, configuration: dict[str, object], *, credential_configured: bool
+        self,
+        provider_type: str,
+        configuration: dict[str, object],
+        *,
+        credential_configured: bool,
+        header_names: tuple[str, ...] = (),
     ) -> ValidatedProviderConfiguration:
         try:
             validated = self._registry.validate_provider(
-                provider_type, configuration, credential_configured=credential_configured
+                provider_type,
+                configuration,
+                credential_configured=credential_configured,
+                header_names=header_names,
             )
+            for field in self._registry.integration(provider_type).additional_endpoint_fields:
+                override = validated.configuration.get(field)
+                if isinstance(override, str):
+                    validated.configuration[field] = await self._endpoint_policy.validate(
+                        override, resolve_dns=self._resolve_dns_on_save
+                    )
             if validated.endpoint is None:
                 return validated
             endpoint = await self._endpoint_policy.validate(

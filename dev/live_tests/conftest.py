@@ -12,8 +12,8 @@ def pytest_addoption(parser):
     parser.addoption("--live", action="store_true", help="Run real local Foundation HTTP journeys")
     parser.addoption("--live-round-two", action="store_true", help="Run isolated process and dependency fault journeys")
     parser.addoption("--live-management", action="store_true", help="Run isolated Service/Harness management journeys")
+    parser.addoption("--live-plugin-image", action="store_true", help="Build and run a custom plugin Worker image")
     parser.addoption("--live-providers", action="store_true", help="Run configured real-provider integration journeys")
-    parser.addoption("--live-slack", action="store_true", help="Authorize OpenConnector Slack and run a read-only tool")
     parser.addoption("--live-environments", action="store_true", help="Run the five-backend Environment matrix")
     parser.addoption("--live-performance", action="store_true", help="Measure bounded PG, S3 and Service operations")
     parser.addoption("--performance-profile", help="TOML concurrency matrix and per-operation latency budgets")
@@ -135,25 +135,20 @@ async def multiworker(management):
 @pytest.fixture
 async def configured_provider(request):
     selection, upstream_model = request.param if isinstance(request.param, tuple) else (request.param, None)
-    slack = selection == "slack"
-    if slack and not request.config.getoption("--live-slack"):
-        pytest.skip("Opt in with --live-slack; this journey requires interactive Slack OAuth")
-    if not slack and not any(
+    if not any(
         request.config.getoption(option)
         for option in ("--live", "--live-round-two", "--live-management", "--live-providers")
     ):
         pytest.skip("Opt in with a live-test target; private Provider configuration is not read by offline checks")
-    from .providers.provider_config import OpenConnectorSettings, load_provider_settings
+    from .providers.provider_config import load_provider_settings
 
-    section = "connector" if slack else selection
+    section = selection
     configuration = (
         load_provider_settings(upstream_model=upstream_model)
         if upstream_model is not None
         else load_provider_settings()
     )
     settings = getattr(configuration, section)
-    if slack and (not isinstance(settings, OpenConnectorSettings) or "slack" not in settings.services):
-        pytest.fail("--live-slack requires an openconnector configuration with slack in services")
     if settings is None:
         pytest.skip(f"Optional {section} Provider is not configured; existing defaults are unchanged")
     if upstream_model is not None:

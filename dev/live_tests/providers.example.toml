@@ -6,20 +6,14 @@ api_key = ""
 template = "" # Optional; defaults to base when enabled.
 
 [connector]
-provider = "" # composio or openconnector
+provider = "" # composio
 api_key = ""
-# Optional when enabled; defaults to ["github"].
-# toolkits = ["github"]
-# For openconnector, leave api_key/toolkits unset and supply both OOMOL keys:
-# project_api_key = ""
-# catalog_api_key = ""
-# services = ["slack"]
 
 [model]
-provider = "" # openrouter or openai_compatible
+provider = "" # openrouter or openai
 api_key = ""
 model = "" # Required for the configured case; ignored by the fixed OpenRouter matrix.
-base_url = "" # Required only for openai_compatible; leave blank for openrouter.
+base_url = "" # Optional custom endpoint; leave blank for the provider default.
 
 [search]
 provider = "" # exa

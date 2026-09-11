@@ -802,6 +802,7 @@ pub async fn get_workspaces_workspace_models(
     query: Option<&str>,
     provider_id: Option<&str>,
     enabled: Option<bool>,
+    scope: Option<&str>,
 ) -> Result<Response<models::ModelCollection>, Error<GetWorkspacesWorkspaceModelsError>> {
     // add a prefix to parameters to efficiently prevent name collisions
     let p_path_workspace = workspace;
@@ -810,6 +811,7 @@ pub async fn get_workspaces_workspace_models(
     let p_query_query = query;
     let p_query_provider_id = provider_id;
     let p_query_enabled = enabled;
+    let p_query_scope = scope;
 
     let uri_str = format!(
         "{}/api/v1/workspaces/{workspace}/models",
@@ -832,6 +834,9 @@ pub async fn get_workspaces_workspace_models(
     }
     if let Some(ref param_value) = p_query_enabled {
         req_builder = req_builder.query(&[("enabled", &param_value.to_string())]);
+    }
+    if let Some(ref param_value) = p_query_scope {
+        req_builder = req_builder.query(&[("scope", &param_value.to_string())]);
     }
     if let Some(ref user_agent) = configuration.user_agent {
         req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
