@@ -106,6 +106,35 @@ This opts into Pydantic AI's native pending-tool execution and can repeat an ext
 
 Structured approvals and external results supplied through `deferred_resume` retain their existing behavior without opting in. Provider-suspended model responses also continue through their native path. This option does not provide exactly-once execution or block a later model decision from requesting a new call.
 
+### Selective Recovery
+
+Use `execute_pending_tools="auto"` to re-execute only explicitly marked tools when the checkpoint ends in a complete model response with unanswered calls. Unmarked calls receive the same unknown-result returns as the default mode. Omit new input so native continuation processes the saved response before asking the model for another decision.
+
+Mark tools through native Pydantic AI metadata. `SetToolMetadata` can select individual tool names or tools contributed by a Capability:
+
+```python
+from a13n_harness.tools import RECOVERY_RETRY_SAFE_METADATA_KEY
+from pydantic_ai.capabilities import SetToolMetadata
+
+retryable_search = SetToolMetadata(
+    tools=lambda ctx, tool: tool.capability_id == "acme.search",
+    **{RECOVERY_RETRY_SAFE_METADATA_KEY: True},
+)
+# Include retryable_search alongside the search Capability when building the agent.
+
+result = await executable.run(
+    bindings=fresh_bindings(),
+    previous_state=checkpoint,
+    execute_pending_tools="auto",
+)
+```
+
+The constant names the `a13n.harness.recovery_retry_safe` metadata key. Only the boolean `True` opts in. For a Capability containing both reads and writes, select the intended tool names instead of marking the whole Capability. Metadata is read from the freshly assembled tool definition, not trusted from stored messages.
+
+The declaration means that re-execution is acceptable even when the earlier outcome is unknown. It is independent of ordinary provider retries and `HarnessToolMetadata.idempotency`; a provider key alone does not establish that a restored call will reuse the same upstream operation. Marked calls still undergo normal argument validation, approvals, and current invocation policy. Newly generated calls are unaffected.
+
+Automatic execution is limited to the response-only checkpoint boundary. If the history already contains a trailing request with some tool results, or is marked interrupted, missing results are conservatively filled as unknown and recorded results are retained. Structured deferred continuation and provider suspension keep their existing paths. `False` remains the default, and `True` retains its previous native-continuation behavior.
+
 ## Structured Suspension
 
 Native deferred tools and approvals end a root logical run with `status="suspended"`. The result includes:

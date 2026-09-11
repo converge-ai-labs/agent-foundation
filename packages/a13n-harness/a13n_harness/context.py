@@ -286,6 +286,7 @@ class AgentContext:
     deferred_resume: DeferredToolResume | None
     metadata: Mapping[str, JsonValue]
     _steering: SteeringBridge = field(repr=False, compare=False)
+    _pending_tool_recovery: set[str] = field(default_factory=set, repr=False, compare=False)
     model_context: ModelContextMiddleware | None = None
     _inherited_model_cost: AbstractModelCostCapability | None = field(
         default=None,

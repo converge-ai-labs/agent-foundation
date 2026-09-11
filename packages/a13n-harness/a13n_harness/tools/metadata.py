@@ -13,6 +13,7 @@ from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 
 HARNESS_TOOL_METADATA_KEY = "a13n.harness.tool"
+RECOVERY_RETRY_SAFE_METADATA_KEY = "a13n.harness.recovery_retry_safe"
 MAX_TOOL_ID_LENGTH = 256
 MAX_CREDENTIAL_AUDIENCES = 16
 MAX_OUTPUT_BYTES = 512 * 1024 * 1024

@@ -11,6 +11,7 @@ from a13n_harness.tools.deferred import DeferredToolResume
 from a13n_harness.tools.invocation import ManagedToolProviderError, current_invocation_scope
 from a13n_harness.tools.metadata import (
     HARNESS_TOOL_METADATA_KEY,
+    RECOVERY_RETRY_SAFE_METADATA_KEY,
     CanonicalResource,
     HarnessTool,
     HarnessToolMetadata,
@@ -34,6 +35,7 @@ from a13n_harness.tools.policy import (
 
 __all__ = [
     "HARNESS_TOOL_METADATA_KEY",
+    "RECOVERY_RETRY_SAFE_METADATA_KEY",
     "ApprovalVerifier",
     "CanonicalResource",
     "ClientToolDefinition",

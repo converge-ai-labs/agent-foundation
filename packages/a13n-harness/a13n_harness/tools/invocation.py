@@ -17,9 +17,11 @@ from uuid import uuid4
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai import RunContext, TextContent, ToolReturn
-from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
+from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, RawToolArgs
 from pydantic_ai.exceptions import ApprovalRequired, ToolFailed
-from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults, ToolDenied
+from pydantic_ai.messages import ToolCallPart
+from pydantic_ai.models import ModelRequestContext
+from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults, ToolDefinition, ToolDenied
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
 
 from a13n_harness._json import (
@@ -44,6 +46,7 @@ from a13n_harness.context import AgentContext
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.errors import DefinitionError
 from a13n_harness.events import HarnessExtensionEvent
+from a13n_harness.recovery import INTERRUPTED_TOOL_RESULT
 from a13n_harness.tools._output import (
     FINAL_TOOL_OUTPUT_HARD_CHARS,
     is_acknowledged_tool_output,
@@ -52,6 +55,7 @@ from a13n_harness.tools.approval import RESOURCE_APPROVAL_KEY, approval_facts, v
 from a13n_harness.tools.deferred import managed_approval_tool_id
 from a13n_harness.tools.metadata import (
     HARNESS_TOOL_METADATA_KEY,
+    RECOVERY_RETRY_SAFE_METADATA_KEY,
     CanonicalResource,
     HarnessToolMetadata,
     ToolOutputPolicy,
@@ -160,6 +164,28 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
 
     def get_wrapper_toolset(self, toolset: AbstractToolset[AgentContext]) -> AbstractToolset[AgentContext]:
         return ToolExecutionBoundaryToolset(toolset)
+
+    async def before_model_request(
+        self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
+    ) -> ModelRequestContext:
+        # Recovery applies only before the model makes its next decision.
+        ctx.deps._pending_tool_recovery.clear()
+        return request_context
+
+    async def before_tool_validate(
+        self,
+        ctx: RunContext[AgentContext],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: RawToolArgs,
+    ) -> RawToolArgs:
+        pending = ctx.deps._pending_tool_recovery
+        if call.tool_call_id in pending:
+            pending.remove(call.tool_call_id)
+            if (tool_def.metadata or {}).get(RECOVERY_RETRY_SAFE_METADATA_KEY) is not True:
+                raise ToolFailed(INTERRUPTED_TOOL_RESULT)
+        return args
 
     async def handle_deferred_tool_calls(
         self,
