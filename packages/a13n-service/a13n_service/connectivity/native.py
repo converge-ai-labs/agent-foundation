@@ -49,6 +49,7 @@ async def native_capability(
                 organization_id=scope.organization_id,
                 workspace_id=scope.workspace_id,
                 account_id=context.account_id,
+                snapshot=scope.authorization.snapshot,
             )
             if account.provider_key != context.provider_key:
                 raise ValueError("native_source_unavailable")

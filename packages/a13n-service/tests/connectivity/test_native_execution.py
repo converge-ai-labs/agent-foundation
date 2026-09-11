@@ -24,7 +24,9 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.fixture
-async def native_runtime(connectivity_sessions, credential_protector, monkeypatch, external_runtime_factory):
+async def native_runtime(
+    connectivity_sessions, credential_protector, monkeypatch, external_runtime_factory, execution_authorization
+):
     async with transaction(connectivity_sessions) as session:
         account = await session.get(AccountRecord, ACCOUNT_ID)
         account.provider_key = "slack"
@@ -38,7 +40,14 @@ async def native_runtime(connectivity_sessions, credential_protector, monkeypatc
             allowed_actions=("slack.send_message",),
             target_scope={"channel_ids": ["C1"]},
         )
-    scope = AttemptToolScope(actor(), ORG_ID, WORKSPACE_ID, FrozenRunConnectivity((), ()), (context,))
+    scope = AttemptToolScope(
+        replace(actor(), auth_method="internal"),
+        ORG_ID,
+        WORKSPACE_ID,
+        FrozenRunConnectivity((), ()),
+        (context,),
+        authorization=await execution_authorization(),
+    )
     current = [scope]
 
     async def read_scope(_attempt, *, accepted=None):
@@ -132,8 +141,19 @@ async def test_default_call_reauthorizes_before_dispatch(native_runtime, connect
                         ),
                     ),
                 )
+        if revocation == "iam":
+            from a13n_service.iam.attempts import AttemptAuthorizationError
+
+            await harness().run("send", bindings=RunBindings.embedded(capabilities=capabilities))
+            assert len(requests) == 1
+            requests.clear()
+            for _ in range(10):
+                await current[0].authorization.admit_model_request()
+            with pytest.raises(AttemptAuthorizationError, match="attempt_authorization_denied"):
+                await current[0].authorization.admit_model_request()
         with pytest.raises(
-            Exception, match=r"native_source_unavailable|not found|permission_denied|external_tool_scope_changed"
+            Exception,
+            match=r"native_source_unavailable|not found|permission_denied|external_tool_scope_changed|attempt_authorization_denied",
         ):
             await harness().run("send", bindings=RunBindings.embedded(capabilities=capabilities))
     assert requests == []
@@ -171,7 +191,7 @@ async def test_protected_context_rejects_unknown_duplicate_or_incompatible_scope
 
 
 async def test_lark_attempt_reuses_token_and_rotation_replaces_scope(
-    connectivity_sessions, credential_protector, monkeypatch, external_runtime_factory
+    connectivity_sessions, credential_protector, monkeypatch, external_runtime_factory, execution_authorization
 ):
     async with transaction(connectivity_sessions) as session:
         account = await session.get(AccountRecord, ACCOUNT_ID)
@@ -193,7 +213,14 @@ async def test_lark_attempt_reuses_token_and_rotation_replaces_scope(
             allowed_actions=("lark.send_message",),
             target_scope={"chat_ids": ["chat"]},
         )
-    scope = AttemptToolScope(actor(), ORG_ID, WORKSPACE_ID, FrozenRunConnectivity((), ()), (context,))
+    scope = AttemptToolScope(
+        replace(actor(), auth_method="internal"),
+        ORG_ID,
+        WORKSPACE_ID,
+        FrozenRunConnectivity((), ()),
+        (context,),
+        authorization=await execution_authorization(),
+    )
     tokens, calls = [], []
 
     def send(request):

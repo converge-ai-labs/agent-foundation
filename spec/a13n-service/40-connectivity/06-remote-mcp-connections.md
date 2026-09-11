@@ -150,7 +150,7 @@ class MCPConnectionToolSelection:
 
 This selection is the authority for the exact MCPConnection, tool scope, and deferred-loading policy. `tools` retains the all-tools or explicit-name semantics of [Agent selection](../28-agent-management.md#agentconfig), not a frozen discovered list. Identity-defining connection fields are immutable; a mutable management CAS version is not a Run compatibility input. The [common runtime contract](04-agent-facing-tools.md#discovery-and-recovery) owns discovery, filtering, invocation guards, namespacing, and reconstruction without external schema snapshots.
 
-The Run stores no OAuth scope string or token snapshot. Each remote operation revalidates current authority and resolves eligible authentication for the bound endpoint. The client uses supported authentication hooks for refresh; resolving headers once at logical-run creation cannot by itself satisfy per-call revocation and credential-refresh requirements. Remote server and model-provider execution are distinct: these clients run inside Service, and credentials are never forwarded to the model provider to let it execute MCP calls.
+The Run stores no OAuth scope string or token snapshot. Each remote operation checks the [Attempt IAM snapshot](../33-identity-and-access-management.md#attempt-iam-snapshot), accepted tool scope, current Attempt and connection eligibility, and resolves eligible authentication for the bound endpoint. The client uses supported authentication hooks for refresh; resolving headers once at logical-run creation cannot by itself satisfy per-call upstream credential revocation and refresh requirements. Remote server and model-provider execution are distinct: these clients run inside Service, and credentials are never forwarded to the model provider to let it execute MCP calls.
 
 ## Failure Semantics
 
@@ -173,7 +173,7 @@ Service validates negotiated MCP protocol compatibility through its supported up
 1. One MCPConnection combines one Streamable HTTP endpoint and one authorization identity; Service defines no separate MCPServer resource.
 2. a13n Service never launches user-configured MCP processes.
 3. Service implements one standards-based MCP OAuth client using a Client ID Metadata Document when supported and DCR otherwise, without provider-specific branches.
-4. Workspace MCPConnections require current execution Principal and Workspace authority; external actors cannot confer authority.
+4. Workspace MCPConnections require execution Principal and Workspace permissions from the Attempt IAM snapshot, current resource eligibility, and live Attempt authority; external actors cannot confer authority.
 5. OAuth, bearer, and bounded static-header credentials are MCPConnection-owned encrypted bundles and never model-visible data.
 6. Discovery and authenticated clients are isolated by MCPConnection identity; accepted Runs retain source selections, not immutable tool catalogs.
 

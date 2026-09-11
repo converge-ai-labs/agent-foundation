@@ -30,7 +30,7 @@ from tests.observability.test_runtime import runtime as observation_runtime
 from .conftest import NOW
 from .test_attempt_execution import _accept_root, _worker
 from .test_environment_runtime import recipe
-from .worker_helpers import worker_runtime
+from .worker_helpers import prepare_permissions, worker_runtime
 
 pytestmark = pytest.mark.anyio
 
@@ -265,7 +265,9 @@ async def test_lazy_environment_span_times_actual_first_use(interaction_sessions
     provider = observation.tracer_provider
     try:
         with observation.run_attempt(correlation()):
-            environment = await prepare_run_environment(lifecycle, _authority(claim))
+            environment = await prepare_run_environment(
+                lifecycle, await prepare_permissions(interaction_sessions, run, _authority(claim))
+            )
             assert environment is not None
             try:
                 await environment.enter(

@@ -134,6 +134,7 @@ class EnvironmentLifecycle:
             if provider.configuration.get("host_id", socket.gethostname()) != socket.gethostname():
                 raise ValueError("Environment backend belongs to another host")
             if run is not None:
+                assert attempt is not None
                 await authorize_persisted_agent_principal_actions(
                     session,
                     principal=run.to_resource().authority_principal,
@@ -141,6 +142,7 @@ class EnvironmentLifecycle:
                     workspace_id=row.workspace_id,
                     agent_id=run.agent_id,
                     actions=frozenset({WorkspaceAction.environment_use, WorkspaceAction.agent_invoke}),
+                    snapshot=attempt.authorization.snapshot,
                 )
                 if not provider.enabled:
                     raise ValueError("Environment Provider is disabled")
@@ -197,26 +199,6 @@ class EnvironmentLifecycle:
                 previous_status,
                 attempt.run_id if attempt else None,
                 attempt.run_attempt_id if attempt else None,
-            )
-
-    async def validate_use(self, attempt: AttemptContext, environment_id: str) -> None:
-        from a13n_service.interactions.attempts import lock_attempt_authority
-
-        async with transaction(self.sessions) as session:
-            run, _, _ = await lock_attempt_authority(session, attempt, assume_utc(self.clock()))
-            row = await session.get(EnvironmentRecord, environment_id)
-            if row is None or run.environment_id != environment_id:
-                raise ValueError("Environment is not the Run selection")
-            provider = await session.get(EnvironmentProviderRecord, row.provider_id)
-            if provider is None or not provider.enabled:
-                raise ValueError("Environment Provider is disabled")
-            await authorize_persisted_agent_principal_actions(
-                session,
-                principal=run.to_resource().authority_principal,
-                organization_id=row.organization_id,
-                workspace_id=row.workspace_id,
-                agent_id=run.agent_id,
-                actions=frozenset({WorkspaceAction.environment_use, WorkspaceAction.agent_invoke}),
             )
 
     async def validate_operation(self, operation: LifecycleOperation) -> None:

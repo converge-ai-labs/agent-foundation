@@ -120,6 +120,8 @@ UI Tests runs the Linux suite with two file-grouped workers on pull requests and
 
 a13n-envd CI runs protocol verification and the native daemon platform matrix in parallel after path classification. The `a13n-envd checks` job requires every selected protocol, client, and daemon check to succeed; unselected checks may be skipped.
 
+[Live Tests CI](.github/workflows/ci-live-tests.yml) separately runs selected Service/Harness correctness, control/recovery faults and local/Docker/envd Environment journeys on relevant pull requests and `main`. Its `Live tests` check requires the offline support job and every shard of all seven suites to pass. Each journey job owns its containers and processes and runs without pytest-xdist or external provider accounts. Use `make live-test-ci suite=<name>` to reproduce a selection, and `make live-test-ci-environment-build` to prepare native Environment inputs. The [live-test guide](dev/live_tests/README.md#ci-correctness-suites) owns suite contents, opt-ins, exclusions and expected capability skips.
+
 Select directories, files, or pytest node IDs with `PYTHON_TEST_DIRS`. Paths in the same package run in one pytest process; packages run separately in first-selected order, stopping on failure. Without a selection, all workspace suites run. Use `PYTHON_TEST_WORKERS` to override concurrency, including `0` for a small serial reproduction:
 
 ```bash

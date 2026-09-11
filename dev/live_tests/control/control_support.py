@@ -9,6 +9,7 @@ from uuid import uuid4
 from ..infrastructure.client import agent_input
 from ..infrastructure.management_support import client_tool
 from ..run_recovery.run_fault_support import RunFaultJourney
+from .contention_support import measured_call
 
 logger = logging.getLogger(__name__)
 
@@ -116,9 +117,14 @@ class ControlJourney(RunFaultJourney):
         return await self.live.finish(consumed["consumed_run_id"])
 
     @asynccontextmanager
-    async def post_in_flight(self, path, body, *, key=None):
+    async def post_in_flight(self, path, body, *, key=None, metric_operation=None, expected_statuses=()):
         task = asyncio.create_task(
-            self.live.http.post(path, json=body, headers={"Idempotency-Key": key or uuid4().hex})
+            measured_call(
+                metric_operation,
+                "Interrupt HTTP writer competing with worker queue handoff",
+                lambda: self.live.http.post(path, json=body, headers={"Idempotency-Key": key or uuid4().hex}),
+                expected_statuses=expected_statuses,
+            )
         )
         try:
             yield task
@@ -126,11 +132,22 @@ class ControlJourney(RunFaultJourney):
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
 
-    async def race(self, commands, *, point="control.state_published", **match):
+    async def race(
+        self, commands, *, point="control.state_published", metric_operation=None, expected_statuses=(409,), **match
+    ):
         barrier = self.arm("race-" + uuid4().hex, point, role="control", times=len(commands), **match)
         tasks = [
-            asyncio.create_task(self.live.http.post(path, json=body, headers={"Idempotency-Key": key}))
-            for path, body, key in commands
+            asyncio.create_task(
+                measured_call(
+                    metric_operation,
+                    f"Concurrent admission HTTP writer {index + 1}/{len(commands)}",
+                    lambda path=path, body=body, key=key: self.live.http.post(
+                        path, json=body, headers={"Idempotency-Key": key}
+                    ),
+                    expected_statuses=expected_statuses,
+                )
+            )
+            for index, (path, body, key) in enumerate(commands)
         ]
         try:
             hits = [await self.reached(barrier, hit=index) for index in range(1, len(tasks) + 1)]

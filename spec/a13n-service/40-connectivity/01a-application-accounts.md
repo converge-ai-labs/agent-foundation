@@ -67,7 +67,7 @@ Account use and target authority are distinct. Binding an Account requires curre
 
 The [Agent-facing tools contract](04-agent-facing-tools.md#default-native-tool-contexts) owns protected contexts, runtime composition, and continuation behavior. An Account may contribute proactive actions and a narrower inbound reply surface to the same Run; each retains its own scope. Credentials resolve at execution time. Tool arguments cannot choose another Account, credential, provider tenant, or API origin.
 
-Workspace Admin manages Accounts and credentials. Viewer has safe metadata read access; Runner, Builder, and Admin use Accounts only through authorized Run contexts. Binding and dispatch check current Workspace authority and resource eligibility; an external sender is never a Service Principal.
+Workspace Admin manages Accounts and credentials. Viewer has safe metadata read access; Runner, Builder, and Admin use Accounts only through authorized Run contexts. Trusted entry binding checks current Workspace authority; dispatch evaluates permissions against the [Attempt IAM snapshot](../33-identity-and-access-management.md#attempt-iam-snapshot) and checks current resource eligibility and Attempt fencing. An external sender is never a Service Principal.
 
 ## Built-in Proactive Scopes
 

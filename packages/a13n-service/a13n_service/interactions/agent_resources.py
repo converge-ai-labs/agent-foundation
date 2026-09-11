@@ -57,6 +57,7 @@ async def validate_agent_resources(
                 workspace_id=workspace_id,
                 agent_id=agent_id,
                 actions=frozenset({WorkspaceAction.agent_invoke}),
+                snapshot=current_context().authorization.snapshot,
             )
     await external_tools.validate(current_context)
     configurations = {run.agent_revision_id: config}

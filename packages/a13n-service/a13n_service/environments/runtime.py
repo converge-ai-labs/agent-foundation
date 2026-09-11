@@ -19,6 +19,7 @@ from a13n_harness.observation import record_span_metadata
 from a13n_logging import get_logger
 from anyio import fail_after
 
+from a13n_service.iam.authorization import WorkspaceAction, authorize_persisted_agent_principal_actions
 from a13n_service.interactions.models import RunRecord
 from a13n_service.observability import observe_phase, observe_phase_result
 from a13n_service.storage import short_session
@@ -171,8 +172,13 @@ class RunEnvironment(Environment):
     async def _ensure_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
         if self._delegate is None:
             raise RuntimeError("Environment was not prepared")
-        await self._coordinator.validate_use(self._attempt, self.environment_id)
+        self._validate_use()
         await self._delegate.check_ready(operations)
+        self._validate_use()
+
+    def _validate_use(self) -> None:
+        self._attempt.lease.require_current(self._coordinator.clock())
+        self._attempt.authorization.require_environment(self.environment_id)
 
     def dump_state(self) -> EnvironmentState | None:
         return self._delegate.dump_state() if self._delegate else super().dump_state()
@@ -208,6 +214,15 @@ async def validate_run_environment(
         row = await session.get(EnvironmentRecord, run.environment_id)
         if row is None:
             raise ValueError("Environment is unavailable")
+        await authorize_persisted_agent_principal_actions(
+            session,
+            principal=run.to_resource().authority_principal,
+            organization_id=row.organization_id,
+            workspace_id=row.workspace_id,
+            agent_id=run.agent_id,
+            actions=frozenset({WorkspaceAction.environment_use, WorkspaceAction.agent_invoke}),
+            snapshot=attempt.authorization.snapshot,
+        )
         provider = await session.get(EnvironmentProviderRecord, row.provider_id)
         if provider is None or not provider.enabled:
             raise ValueError("Environment Provider is unavailable")

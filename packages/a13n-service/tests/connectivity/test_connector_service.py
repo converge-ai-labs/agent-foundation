@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from datetime import timedelta
 
 import pytest
@@ -534,6 +535,7 @@ async def test_worker_connector_uses_verified_binding_and_preserves_unknown_writ
     credential_protector,
     monkeypatch,
     external_runtime_factory,
+    execution_authorization,
 ):
     from a13n_service.connectivity.connectors.contracts import ConnectorToolOutcome
     from a13n_service.connectivity.execution import AttemptToolScope
@@ -584,7 +586,14 @@ async def test_worker_connector_uses_verified_binding_and_preserves_unknown_writ
             connector_connection_id=connection.id, connector_provider_id=provider.id, tools=("issues.create",)
         ),
         guard,
-        AttemptToolScope(actor(), ORG_ID, WORKSPACE_ID, FrozenRunConnectivity((), ()), ()),
+        AttemptToolScope(
+            replace(actor(), auth_method="internal"),
+            ORG_ID,
+            WORKSPACE_ID,
+            FrozenRunConnectivity((), ()),
+            (),
+            authorization=await execution_authorization(),
+        ),
     )
     result = await Agent(TestModel(), capabilities=[capability]).run("create issue")
     assert "outcome_unknown" in result.output

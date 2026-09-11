@@ -1,15 +1,10 @@
-"""Opt-in built-in compaction and read-only checkpoint measurements."""
-
-from time import perf_counter
+"""Opt-in built-in compaction and read-only checkpoint evidence."""
 
 from a13n_service.interactions.models import RunRecord, SessionRecord
-from a13n_service.interactions.objects import RunStateStore, run_state_key
-from a13n_service.interactions.state import RunCheckpoint
+from a13n_service.interactions.objects import RunStateStore
 from a13n_service.request_runtime import get_process_runtime
 from a13n_service.storage import short_session
-from a13n_service.storage.codec import decode_canonical_model
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import TypeAdapter
 from pydantic_ai.messages import ModelMessagesTypeAdapter
 from sqlalchemy import select
 
@@ -22,26 +17,24 @@ def install_compaction():
     from a13n_service.agents.reconstruction import AgentReconstructor
     from a13n_service.interactions import worker_preparation
 
-    class BenchmarkReconstructor(AgentReconstructor):
+    class CompactionReconstructor(AgentReconstructor):
         def _provided_capabilities(self, node):
             return (*super()._provided_capabilities(node), CompactionCapability())
 
-    worker_preparation.AgentReconstructor = BenchmarkReconstructor
+    worker_preparation.AgentReconstructor = CompactionReconstructor
 
 
 def measurements_router(config, authenticate):
-    router = APIRouter(prefix="/__live__/performance")
+    router = APIRouter(prefix="/__live__/session")
     authentication = Depends(authenticate)
-    adapter = TypeAdapter(RunCheckpoint)
 
     @router.get("/runs/{run_id}")
-    async def measurements(run_id: str, request: Request, measure: bool = True, actor=authentication):
+    async def measurements(run_id: str, request: Request, actor=authentication):
         if actor.workspace_id != config["workspace_id"]:
             raise HTTPException(403, "Measurements belong to the primary test Workspace")
         runtime = get_process_runtime(request)
         assert runtime is not None
         storage = runtime.shared.storage
-        started = perf_counter()
         async with short_session(storage.sessions) as database:
             row = await database.scalar(
                 select(RunRecord)
@@ -55,25 +48,8 @@ def measurements_router(config, authenticate):
             if row is None:
                 raise HTTPException(404, "Test Run not found")
             run = row.to_resource()
-        timings = {"pg_run_read": (perf_counter() - started) * 1000}
-        if not measure:
-            stored = await RunStateStore(storage.objects).read_run(run)
-            return checkpoint_evidence(stored.envelope, len(stored.body), attempts_started=run.attempts_started)
-        started = perf_counter()
-        async with storage.objects.open(run_state_key(run.organization_id, run_id)) as reader:
-            body = b"".join([chunk async for chunk in reader])
-        timings["s3_read_bytes"] = (perf_counter() - started) * 1000
-        started = perf_counter()
-        decoded = decode_canonical_model(body, adapter)
-        timings["state_decode"] = (perf_counter() - started) * 1000
-        started = perf_counter()
-        verified = await RunStateStore(storage.objects).read_run(run)
-        timings["s3_read_validate"] = (perf_counter() - started) * 1000
-        assert verified.envelope == decoded
-        return {
-            "timings_ms": timings,
-            **checkpoint_evidence(decoded, len(body), attempts_started=run.attempts_started),
-        }
+        stored = await RunStateStore(storage.objects).read_run(run)
+        return checkpoint_evidence(stored.envelope, len(stored.body), attempts_started=run.attempts_started)
 
     return router
 

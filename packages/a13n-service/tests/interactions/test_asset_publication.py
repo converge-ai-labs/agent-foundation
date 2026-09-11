@@ -38,6 +38,7 @@ from tests.lifecycle_support import test_lifecycle_writer
 from .conftest import AGENT_ID, AGENT_REVISION_ID, NOW, ORGANIZATION_ID, USER_ID, WORKSPACE_ID
 from .test_attempt_execution import _accept_root, _authority, _worker
 from .test_harness_runtime import _environment
+from .worker_helpers import prepare_permissions
 
 pytestmark = pytest.mark.anyio
 
@@ -106,6 +107,7 @@ async def _fixture(sessions, objects, tmp_path):
     )
     assert isinstance(claim, ClaimedAttempt)
     authority = _authority(claim)
+    await prepare_permissions(sessions, run, authority)
     execution = AttemptExecutionService(sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer())
     preparation = await execution.commit_preparation_success(authority)
     await execution.enter_harness(authority, preparation=preparation, harness_run_id="asset-harness")
@@ -430,8 +432,15 @@ async def test_stream_failure_never_commits_and_revocation_is_audited(publicatio
         yield b"%PDF-1.7" if failure == "media" else b"first"
         if failure == "revoked":
             async with transaction(publication.sessions) as session:
-                user = await session.get(UserRecord, USER_ID)
-                user.status = "disabled"
+                from a13n_service.iam.models import RoleBindingRecord
+
+                from .test_attempt_authorization import direct_runner
+
+                session.add(direct_runner())
+                binding = await session.get(RoleBindingRecord, "rb_publish_workspace")
+                binding.role_key = "viewer"
+            for _ in range(11):
+                await publication.authority.authorization.admit_model_request()
         yield b"x" * 65 if failure == "oversize" else b"tail"
 
     monkeypatch.setattr("a13n_service.assets.runtime._file_contents", contents)

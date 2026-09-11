@@ -1,6 +1,7 @@
 """Exercise setup ownership and final dispatch authorization across external I/O."""
 
 import asyncio
+from dataclasses import replace
 from datetime import timedelta
 
 import httpx2
@@ -334,7 +335,7 @@ async def test_malformed_polling_result_fails_only_its_setup(managed_project, co
 @pytest.mark.parametrize("phase", ["/profile", "/v1/actions"])
 @pytest.mark.parametrize("change", ["connection", "provider", "credential", "attempt"])
 async def test_authority_change_during_preflight_blocks_action(
-    managed_project, connectivity_sessions, external_runtime_factory, phase, change
+    managed_project, connectivity_sessions, external_runtime_factory, phase, change, execution_authorization
 ):
     connections, connection, reconciler, registry, state, requests, _ = managed_project
     await launch(connections, connection)
@@ -355,7 +356,14 @@ async def test_authority_change_during_preflight_blocks_action(
             tools=("github.get_user",),
         ),
         guard,
-        AttemptToolScope(actor(), ORG_ID, WORKSPACE_ID, FrozenRunConnectivity((), ()), ()),
+        AttemptToolScope(
+            replace(actor(), auth_method="internal"),
+            ORG_ID,
+            WORKSPACE_ID,
+            FrozenRunConnectivity((), ()),
+            (),
+            authorization=await execution_authorization(),
+        ),
     )
 
     async def invalidate(request, response):

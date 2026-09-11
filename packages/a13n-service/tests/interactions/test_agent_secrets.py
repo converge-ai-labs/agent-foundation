@@ -9,6 +9,7 @@ from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOu
 from a13n_service.agents.domain import SecretRequirement
 from a13n_service.digests import digest_request
 from a13n_service.iam import AuthorizationError
+from a13n_service.iam.attempts import AttemptAuthorizationError
 from a13n_service.iam.models import UserRecord
 from a13n_service.interactions.attempts import AttemptAuthorityError
 from a13n_service.interactions.input import AgentInput
@@ -281,7 +282,13 @@ async def test_secret_use_rechecks_current_owner_authority_and_node_declaration(
             row = await database.get(RunRecord, run.id)
             row.current_run_attempt_id = None
     context = SimpleNamespace(instance=SimpleNamespace(parent_agent_instance_id=None))
-    with pytest.raises((AgentSecretError, AuthorizationError, AttemptAuthorityError)):
+    if failure == "revoked":
+        await bound.acquire("storage", None, context=context)
+        for _ in range(10):
+            await attempt.authorization.admit_model_request()
+        with pytest.raises(AttemptAuthorizationError, match="attempt_authorization_denied"):
+            await attempt.authorization.admit_model_request()
+    with pytest.raises((AgentSecretError, AuthorizationError, AttemptAuthorityError, AttemptAuthorizationError)):
         await bound.acquire("undeclared" if failure == "undeclared" else "storage", None, context=context)
 
 

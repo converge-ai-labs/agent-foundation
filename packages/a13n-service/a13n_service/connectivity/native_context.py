@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapte
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, WorkspaceAction, authorize_workspace
+from a13n_service.iam.authorization import PrincipalPermissions
 
 from .accounts.models import AccountRecord
 from .accounts.queries import require_account
@@ -85,9 +86,14 @@ async def authorized_account(
     organization_id: str,
     workspace_id: str,
     account_id: str,
+    snapshot: PrincipalPermissions | None = None,
 ) -> AccountRecord:
     await authorize_workspace(
-        session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.application_account_use
+        session,
+        actor=actor,
+        workspace_id=workspace_id,
+        action=WorkspaceAction.application_account_use,
+        snapshot=snapshot,
     )
     account = await require_account(session, account_id)
     if account.organization_id != organization_id or account.workspace_id != workspace_id or account.status != "active":

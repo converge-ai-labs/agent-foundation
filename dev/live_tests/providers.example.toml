@@ -28,3 +28,21 @@ api_key = ""
 [brave_search]
 provider = "" # brave
 api_key = "" # Brave API key with Web Search access.
+
+# Optional real S3 single-request benchmark: make live-test-s3
+# Blank [s3] skips; partial settings fail. Other sections are independent.
+[s3]
+# Use an existing dedicated, unversioned test bucket. Enabled and suspended
+# versioning are rejected before writing. Required permissions: GetBucketVersioning,
+# ListBucket (for missing-key 404), and Get/Put/DeleteObject on bounded-operations/*.
+# No bucket creation or bucket-wide listing/deletion occurs. Cleanup uses exact
+# random keys allocated by this execution, including uncertain PUT responses.
+# dedicated_test_bucket = true
+endpoint_url = "" # Example: https://s3.us-east-1.amazonaws.com
+region = "" # Example: us-east-1
+bucket = ""
+access_key = ""
+secret_key = ""
+session_token = ""
+# Samples, concurrency, payload bytes and budgets belong in --performance-profile;
+# see performance/operations.example.toml. Never put credentials in that profile.

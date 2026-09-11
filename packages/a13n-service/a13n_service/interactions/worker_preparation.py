@@ -26,6 +26,7 @@ from pydantic_ai import ToolDenied
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.agents.execution_graph import inline_child_executions
 from a13n_service.agents.plugin_preparation import prepare_agent_plugins
 from a13n_service.agents.reconstruction import AgentDefinitionReconstructionContext, AgentReconstructor
 from a13n_service.assets.runtime import AssetRuntime
@@ -49,6 +50,7 @@ from .attempts import AttemptContext
 from .control_domain import WaitingRunContinueInput, WaitingRunFeedback
 from .control_models import ThreadInboxRecord
 from .domain import Run, RunInputKind
+from .harness_control import InlineRunControlCapability
 from .harness_results import AttemptCommitter
 from .harness_runtime import (
     HarnessCollaborators,
@@ -117,6 +119,17 @@ class WorkerAttemptPreparer:
     async def validate_dependencies(self, context: AttemptContext) -> None:
         """Validate resources against the final claimed checkpoint."""
         config = self._control.current_state.envelope.effective_agent_config
+        await context.authorization.initialize(
+            self._sessions,
+            principal=self._run.authority_principal,
+            organization_id=self._run.organization_id,
+            workspace_id=self._workspace_id,
+            root_agent_id=self._run.agent_id,
+            agent_ids=frozenset(edge.child_agent_id for edge, _ in inline_child_executions(config).values()),
+            run_id=context.run_id,
+            run_attempt_id=context.run_attempt_id,
+            environment_id=self._run.environment_id,
+        )
         if self._search is not None:
             await self._search.validate(
                 run=self._run,
@@ -198,6 +211,8 @@ class WorkerAttemptPreparer:
 
         def capabilities(context: AgentDefinitionReconstructionContext):
             selected = resources.for_definition(context)
+            if not context.is_root:
+                selected = (InlineRunControlCapability(self._control, agent_id=context.agent_id), *selected)
             protocol_context = self._control.current_state.envelope.protocol_context
             if context.is_root and protocol_context is not None:
                 selected = (*selected, ProtocolContextCapability(protocol_context))

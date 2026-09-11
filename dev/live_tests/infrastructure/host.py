@@ -79,7 +79,11 @@ def authenticated_control(config: dict):
     authenticate = bearer_authenticator(config)
     app = create_app(settings, components=Components(request_authenticator=authenticate))
     app.include_router(
-        fixture_router(Path(config["workspace_root"]), authenticate, long_session=config.get("long_session"))
+        fixture_router(
+            Path(config["workspace_root"]),
+            authenticate,
+            long_session=config.get("long_session"),
+        )
     )
     app.include_router(inbox_router(config, authenticate))
     return settings, app
@@ -95,7 +99,7 @@ def local_app(config: dict, role: str):
 
         install(config, role)
     if "long_session" in config and role == "worker":
-        from ..performance.long_session_host import install_compaction
+        from ..harness_integration.long_session_host import install_compaction
 
         install_compaction()
     settings = settings_for(config, role)
@@ -162,7 +166,7 @@ def local_app(config: dict, role: str):
             app.include_router(evidence_router(config, authenticate))
             app.include_router(secret_router(config, authenticate))
         if "long_session" in config:
-            from ..performance.long_session_host import measurements_router
+            from ..harness_integration.long_session_host import measurements_router
 
             app.include_router(measurements_router(config, authenticate))
         if config.get("e2b_lifecycle") or config.get("docker_lifecycle") or config.get("environment_workers"):
@@ -170,7 +174,11 @@ def local_app(config: dict, role: str):
 
             app.include_router(lifecycle_router(config, authenticate))
         app.include_router(
-            fixture_router(Path(config["workspace_root"]), authenticate, long_session=config.get("long_session"))
+            fixture_router(
+                Path(config["workspace_root"]),
+                authenticate,
+                long_session=config.get("long_session"),
+            )
         )
         app.include_router(inbox_router(config, authenticate))
         from ..harness_integration.fixture_connectivity import connectivity_router

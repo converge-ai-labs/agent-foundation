@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import load_only
 
+from a13n_service.iam.attempts import AttemptAuthorization
 from a13n_service.lifecycle import new_mutation_id
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
@@ -34,6 +35,26 @@ class AttemptMutationError(RuntimeError):
     """The requested mutation is incompatible with the current Attempt lifecycle."""
 
 
+@dataclass(slots=True)
+class AttemptLease:
+    """Local observation of a committed claim/renewal, shared by Attempt consumers."""
+
+    expires_at: datetime
+    _invalidated: bool = field(default=False, init=False)
+
+    def require_current(self, now: datetime) -> None:
+        if self._invalidated or assume_utc(self.expires_at) <= assume_utc(now):
+            self.invalidate()
+            raise AttemptAuthorityError("Attempt lease expired or local execution authority was lost")
+
+    def confirm_renewal(self, expires_at: datetime) -> None:
+        if not self._invalidated:
+            self.expires_at = max(assume_utc(self.expires_at), assume_utc(expires_at))
+
+    def invalidate(self) -> None:
+        self._invalidated = True
+
+
 @dataclass(frozen=True, slots=True)
 class AttemptContext:
     """Claim-derived process-local correlation, authority, and fixed execution policy."""
@@ -51,6 +72,8 @@ class AttemptContext:
     renewal_timeout: timedelta
     reconciliation_timeout: timedelta
     cleanup_timeout: timedelta
+    lease: AttemptLease = field(repr=False, compare=False)
+    authorization: AttemptAuthorization = field(default_factory=AttemptAuthorization, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if self.attempt_number < 1:

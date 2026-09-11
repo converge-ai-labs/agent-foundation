@@ -31,11 +31,12 @@ from tests.lifecycle_support import test_lifecycle_writer
 
 from .conftest import AGENT_ID, NOW, WORKSPACE_ID
 from .test_attempt_execution import _accept_root, _authority, _worker
+from .worker_helpers import prepare_permissions
 
 pytestmark = pytest.mark.anyio
 
 
-async def recipe(sessions, path, preparation):
+async def recipe(sessions, path, preparation, *, shell=False):
     await seed_hook_actor_access(sessions)
     protector = SecretProtector.from_base64(encoded_key=base64.b64encode(b"e" * 32).decode(), encryption_key_id="test")
     catalog = build_environment_provider_catalog(builtin_keys=("a13n.direct-local",))
@@ -52,7 +53,10 @@ async def recipe(sessions, path, preparation):
         request=CreateTemplateRequest(
             name="Workspace",
             provider_id=provider.id,
-            configuration={"root": {"path": str(path)}},
+            configuration={
+                "root": {"path": str(path)},
+                **({"shell_profiles": [{"profile_id": "default", "executable": "/bin/sh"}]} if shell else {}),
+            },
             preparation=preparation,
             retention={"idle": {"stop_after": None, "delete_after": None}},
         ),
@@ -83,7 +87,9 @@ async def test_run_automatically_allocates_and_prepares_at_configured_boundary(
         interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
     ).claim(run.id, _worker())
     assert isinstance(claim, ClaimedAttempt)
-    environment = await prepare_run_environment(lifecycle, _authority(claim))
+    environment = await prepare_run_environment(
+        lifecycle, await prepare_permissions(interaction_sessions, run, _authority(claim))
+    )
     assert environment is not None
     async with short_session(interaction_sessions) as session:
         stored = await session.get(RunRecord, run.id)
@@ -174,7 +180,9 @@ async def test_lazy_unused_environment_closes_without_preparation(
     claim = await AttemptScheduler(
         interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
     ).claim(run.id, _worker())
-    environment = await prepare_run_environment(lifecycle, _authority(claim))
+    environment = await prepare_run_environment(
+        lifecycle, await prepare_permissions(interaction_sessions, run, _authority(claim))
+    )
     await environment.enter(thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent-1", mount_id="workspace")
     assert environment.dump_state() is None
     await environment.close()
@@ -196,7 +204,9 @@ async def test_reconnect_preserves_backing_generation_after_cleanup_failure(
     claim = await AttemptScheduler(
         interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
     ).claim(run.id, _worker())
-    environment = await prepare_run_environment(lifecycle, _authority(claim))
+    environment = await prepare_run_environment(
+        lifecycle, await prepare_permissions(interaction_sessions, run, _authority(claim))
+    )
     await environment.enter(thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent-1", mount_id="workspace")
     original = environment.descriptor.backing_identity
     real_close = DirectLocalEnvironment._close
@@ -261,7 +271,9 @@ async def test_close_during_readiness_never_recovers_or_leaks_connection(
     claim = await AttemptScheduler(
         interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
     ).claim(run.id, _worker())
-    environment = await prepare_run_environment(lifecycle, _authority(claim))
+    environment = await prepare_run_environment(
+        lifecycle, await prepare_permissions(interaction_sessions, run, _authority(claim))
+    )
     await environment.enter(thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent-1", mount_id="workspace")
     started, release = asyncio.Event(), asyncio.Event()
 
@@ -292,7 +304,9 @@ async def test_concurrent_lazy_use_prepares_once(interaction_sessions, interacti
     claim = await AttemptScheduler(
         interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
     ).claim(run.id, _worker())
-    environment = await prepare_run_environment(lifecycle, _authority(claim))
+    environment = await prepare_run_environment(
+        lifecycle, await prepare_permissions(interaction_sessions, run, _authority(claim))
+    )
     await environment.enter(thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent-1", mount_id="workspace")
     entered, release = asyncio.Event(), asyncio.Event()
     execute = lifecycle.execute
@@ -326,7 +340,9 @@ async def test_cancelled_delegate_entry_closes_acquired_connection(
     claim = await AttemptScheduler(
         interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
     ).claim(run.id, _worker())
-    environment = await prepare_run_environment(lifecycle, _authority(claim))
+    environment = await prepare_run_environment(
+        lifecycle, await prepare_permissions(interaction_sessions, run, _authority(claim))
+    )
     close = AsyncMock()
     monkeypatch.setattr(DirectLocalEnvironment, "enter", AsyncMock(side_effect=asyncio.CancelledError))
     monkeypatch.setattr(DirectLocalEnvironment, "_close", close)
@@ -401,7 +417,7 @@ async def test_postgresql_environment_lease_fences_competing_workers(
     claim = await AttemptScheduler(
         postgres_interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
     ).claim(run.id, _worker())
-    attempt = _authority(claim)
+    attempt = await prepare_permissions(postgres_interaction_sessions, run, _authority(claim))
     async with short_session(postgres_interaction_sessions) as session:
         environment_id = (await session.get(RunRecord, run.id)).environment_id
     results = await asyncio.gather(
@@ -525,7 +541,9 @@ async def test_registered_external_environment_uses_connection_configuration(
     claim = await AttemptScheduler(
         interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
     ).claim(run.id, _worker())
-    environment = await prepare_run_environment(lifecycle, _authority(claim))
+    environment = await prepare_run_environment(
+        lifecycle, await prepare_permissions(interaction_sessions, run, _authority(claim))
+    )
     await environment.enter(thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent-1", mount_id="workspace")
     await environment.ensure_ready(frozenset({"files"}))
     await environment.close()
@@ -551,3 +569,159 @@ async def test_missing_managed_recipe_never_falls_back_to_external_configuration
         )
         with pytest.raises(ValueError, match="Managed Environment recipe"):
             await load_configuration(session, row)
+
+
+async def test_environment_operations_use_no_database_queries_or_commits(
+    relational_interaction_sessions, interaction_object_store, tmp_path
+):
+    from a13n_harness import AgentIdentityRef, AgentInstanceContext
+    from a13n_harness.environment.advanced import create_environment_runtime
+    from a13n_harness.environment.commands import CommandRequest, ShellCommand
+    from a13n_harness.environment.retention import EnvironmentOutputPolicy
+    from sqlalchemy import event
+
+    sessions = relational_interaction_sessions
+    _, _, lifecycle = await recipe(sessions, tmp_path, "on_run", shell=True)
+    _, run, _ = await _accept_root(sessions, interaction_object_store)
+    claim = await AttemptScheduler(sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer()).claim(
+        run.id, _worker()
+    )
+    context = await prepare_permissions(sessions, run, _authority(claim))
+    environment = await prepare_run_environment(lifecycle, context)
+    runtime = create_environment_runtime(mounts={"workspace": environment}, default_mount="workspace")
+    statements, commits = [], []
+    async with short_session(sessions) as session:
+        engine = session.bind.sync_engine
+
+    def record(_connection, _cursor, statement, _parameters, _context, _many):
+        statements.append(statement.lower())
+
+    def committed(_connection):
+        commits.append(True)
+
+    event.listen(engine, "before_cursor_execute", record)
+    event.listen(engine, "commit", committed)
+    try:
+        async with runtime.bind(
+            thread_id=run.thread_id,
+            run_id=run.id,
+            instance=AgentInstanceContext(
+                identity=AgentIdentityRef(issuer="test", subject="agent"), agent_instance_id="agent-1"
+            ),
+            host_refs={},
+        ) as bound:
+            for _ in range(5):
+                await bound.files.write_text("cached.txt", "cached authority", mode="overwrite")
+                assert (await bound.files.stat("cached.txt")).size > 0
+            result = await bound.shell.exec_captured(
+                CommandRequest(
+                    command=ShellCommand(profile_id="default", script="printf cached-lease"),
+                    output_policy=EnvironmentOutputPolicy(
+                        max_inline_bytes=1024, max_output_bytes=1024, overflow="truncate"
+                    ),
+                )
+            )
+            assert result.status.exit_code == 0
+            assert result.output.stdout.inline == b"cached-lease"
+            assert statements == []
+            for _ in range(11):
+                await context.authorization.admit_model_request()
+            assert sum("from environment_providers" in statement for statement in statements) == 1
+            assert sum("from workspaces" in statement for statement in statements) == 1
+            assert not any(
+                "from environments" in statement or "run_attempts" in statement or "from runs" in statement
+                for statement in statements
+            )
+        assert commits == []
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+        event.remove(engine, "commit", committed)
+
+
+@pytest.mark.parametrize("resource", ["provider", "workspace"])
+async def test_environment_eligibility_changes_at_shared_iam_refresh(
+    relational_interaction_sessions, interaction_object_store, tmp_path, resource
+):
+    from a13n_service.environments.models import EnvironmentProviderRecord
+    from a13n_service.iam import AuthorizationError
+    from a13n_service.iam.attempts import AttemptAuthorizationError
+    from a13n_service.iam.models import WorkspaceRecord
+
+    sessions = relational_interaction_sessions
+    _, _, lifecycle = await recipe(sessions, tmp_path, "on_run")
+    _, run, _ = await _accept_root(sessions, interaction_object_store)
+    claim = await AttemptScheduler(sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer()).claim(
+        run.id, _worker()
+    )
+    context = await prepare_permissions(sessions, run, _authority(claim))
+    environment = await prepare_run_environment(lifecycle, context)
+    await environment.enter(thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent-1", mount_id="workspace")
+    try:
+        with pytest.raises(AuthorizationError, match="environment_not_found"):
+            context.authorization.require_environment("env_another717171")
+        async with transaction(sessions) as session:
+            if resource == "provider":
+                provider_id = (await session.get(EnvironmentRecord, environment.environment_id)).provider_id
+                (await session.get(EnvironmentProviderRecord, provider_id)).enabled = False
+            else:
+                (await session.get(WorkspaceRecord, WORKSPACE_ID)).deleted_at = NOW
+        for _ in range(10):
+            await context.authorization.admit_model_request()
+            await environment.ensure_ready(frozenset({"files"}))
+        if resource == "workspace":
+            with pytest.raises(AttemptAuthorizationError, match="attempt_authorization_denied"):
+                await context.authorization.admit_model_request()
+            with pytest.raises(AttemptAuthorizationError, match="attempt_authorization_denied"):
+                await environment.ensure_ready(frozenset({"files"}))
+        else:
+            await context.authorization.admit_model_request()
+            with pytest.raises(AuthorizationError, match="environment_provider_unavailable"):
+                await environment.ensure_ready(frozenset({"files"}))
+            async with transaction(sessions) as session:
+                (await session.get(EnvironmentProviderRecord, provider_id)).enabled = True
+            for _ in range(9):
+                await context.authorization.admit_model_request()
+            with pytest.raises(AuthorizationError, match="environment_provider_unavailable"):
+                await environment.ensure_ready(frozenset({"files"}))
+            await context.authorization.admit_model_request()
+            await environment.ensure_ready(frozenset({"files"}))
+    finally:
+        await environment.close()
+
+
+@pytest.mark.parametrize("loss", ["expired", "invalidated", "expires_during_readiness"])
+async def test_environment_rejects_lost_local_lease_before_dispatch(
+    interaction_sessions, interaction_object_store, tmp_path, monkeypatch, loss
+):
+    from a13n_service.interactions.attempts import AttemptAuthorityError
+
+    sessions = interaction_sessions
+    _, _, lifecycle = await recipe(sessions, tmp_path, "on_run")
+    _, run, _ = await _accept_root(sessions, interaction_object_store)
+    claim = await AttemptScheduler(sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer()).claim(
+        run.id, _worker()
+    )
+    context = await prepare_permissions(sessions, run, _authority(claim))
+    environment = await prepare_run_environment(lifecycle, context)
+    await environment.enter(thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent-1", mount_id="workspace")
+    try:
+        if loss == "invalidated":
+            context.lease.invalidate()
+        elif loss == "expired":
+            lifecycle.clock = lambda: context.lease.expires_at
+        else:
+            original = environment._delegate.check_ready
+
+            async def expire_after_readiness(operations):
+                await original(operations)
+                lifecycle.clock = lambda: context.lease.expires_at
+
+            monkeypatch.setattr(environment._delegate, "check_ready", expire_after_readiness)
+        with pytest.raises(AttemptAuthorityError):
+            await environment.ensure_ready(frozenset({"files"}))
+        # A delayed renewal must not revive an already invalidated local lease.
+        context.lease.confirm_renewal(NOW + timedelta(hours=1))
+        with pytest.raises(AttemptAuthorityError):
+            context.lease.require_current(NOW)
+    finally:
+        await environment.close()

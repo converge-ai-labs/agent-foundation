@@ -1,6 +1,7 @@
 """Exercise the real upstream client, capability and transport hooks together."""
 
 import json
+from dataclasses import replace
 from unittest.mock import AsyncMock, Mock
 
 import httpx2
@@ -55,17 +56,24 @@ async def remote_runtime(connectivity_sessions, credential_protector, external_r
 
 @pytest.mark.parametrize("child", [False, True])
 async def test_recovery_admission_checks_current_connections_without_opening_clients(
-    remote_runtime, connectivity_sessions, monkeypatch, child
+    remote_runtime, connectivity_sessions, monkeypatch, child, execution_authorization
 ):
     runtime, server = remote_runtime
     selection = MCPConnectionToolSelection(mcp_connection_id=MCP_CONNECTION_ID, tools=("search",))
     selected = FrozenRunConnectivity((), (selection,))
-    scope = AttemptToolScope(actor(), ORG_ID, WORKSPACE_ID, FrozenRunConnectivity((), ()) if child else selected, ())
+    scope = AttemptToolScope(
+        replace(actor(), auth_method="internal"),
+        ORG_ID,
+        WORKSPACE_ID,
+        FrozenRunConnectivity((), ()) if child else selected,
+        (),
+        authorization=await execution_authorization(),
+    )
     read_scope = AsyncMock(return_value=scope)
     monkeypatch.setattr(runtime, "_scope_in_session", read_scope)
     open_clients = Mock(side_effect=AssertionError("Recovery validation must not open tool clients"))
     monkeypatch.setattr(runtime, "_capabilities", open_clients)
-    context = Mock()
+    context = Mock(authorization=scope.authorization)
     arguments = {"child_agent_id": "agt_child", "selections": selected} if child else {}
 
     await runtime.validate(lambda: context, **arguments)
@@ -80,7 +88,9 @@ async def test_recovery_admission_checks_current_connections_without_opening_cli
     assert server.calls == []
 
 
-async def test_selected_remote_tool_uses_call_guard_and_revocation_stops_dispatch(remote_runtime):
+async def test_selected_remote_tool_uses_call_guard_and_revocation_stops_dispatch(
+    remote_runtime, execution_authorization
+):
     runtime, server = remote_runtime
     revoked = False
     guards = 0
@@ -93,7 +103,16 @@ async def test_selected_remote_tool_uses_call_guard_and_revocation_stops_dispatc
 
     selection = MCPConnectionToolSelection(mcp_connection_id=MCP_CONNECTION_ID, tools=("search",))
     async with runtime._mcp(
-        selection, guard, AttemptToolScope(actor(), ORG_ID, WORKSPACE_ID, FrozenRunConnectivity((), (selection,)), ())
+        selection,
+        guard,
+        AttemptToolScope(
+            replace(actor(), auth_method="internal"),
+            ORG_ID,
+            WORKSPACE_ID,
+            FrozenRunConnectivity((), (selection,)),
+            (),
+            authorization=await execution_authorization(),
+        ),
     ) as capability:
         assert capability is not None
         agent = Agent(TestModel(), capabilities=[capability], deps_type=AgentContext)
@@ -106,7 +125,9 @@ async def test_selected_remote_tool_uses_call_guard_and_revocation_stops_dispatc
     assert guards >= 5
 
 
-async def test_replacement_discovers_changed_tool_and_missing_explicit_name_fails(remote_runtime):
+async def test_replacement_discovers_changed_tool_and_missing_explicit_name_fails(
+    remote_runtime, execution_authorization
+):
     runtime, server = remote_runtime
 
     async def guard(session=None):
@@ -114,7 +135,16 @@ async def test_replacement_discovers_changed_tool_and_missing_explicit_name_fail
 
     selection = MCPConnectionToolSelection(mcp_connection_id=MCP_CONNECTION_ID, tools=("search",))
     async with runtime._mcp(
-        selection, guard, AttemptToolScope(actor(), ORG_ID, WORKSPACE_ID, FrozenRunConnectivity((), (selection,)), ())
+        selection,
+        guard,
+        AttemptToolScope(
+            replace(actor(), auth_method="internal"),
+            ORG_ID,
+            WORKSPACE_ID,
+            FrozenRunConnectivity((), (selection,)),
+            (),
+            authorization=await execution_authorization(),
+        ),
     ) as capability:
         identity = capability.id
     server.tool_name = "changed"
@@ -122,13 +152,27 @@ async def test_replacement_discovers_changed_tool_and_missing_explicit_name_fail
         async with runtime._mcp(
             selection,
             guard,
-            AttemptToolScope(actor(), ORG_ID, WORKSPACE_ID, FrozenRunConnectivity((), (selection,)), ()),
+            AttemptToolScope(
+                replace(actor(), auth_method="internal"),
+                ORG_ID,
+                WORKSPACE_ID,
+                FrozenRunConnectivity((), (selection,)),
+                (),
+                authorization=await execution_authorization(),
+            ),
         ):
             pytest.fail("missing tool must fail before model execution")
     async with runtime._mcp(
         selection.model_copy(update={"tools": None}),
         guard,
-        AttemptToolScope(actor(), ORG_ID, WORKSPACE_ID, FrozenRunConnectivity((), (selection,)), ()),
+        AttemptToolScope(
+            replace(actor(), auth_method="internal"),
+            ORG_ID,
+            WORKSPACE_ID,
+            FrozenRunConnectivity((), (selection,)),
+            (),
+            authorization=await execution_authorization(),
+        ),
     ) as capability:
         assert capability.id == identity
         await Agent(TestModel(), capabilities=[capability]).run("use the current tool")
@@ -168,7 +212,7 @@ async def test_remote_redirect_is_rejected_without_forwarding_credentials():
 
 @pytest.mark.parametrize("changed_field", ["version", "credential_generation"])
 async def test_replacement_during_authorization_blocks_stale_headers(
-    remote_runtime, connectivity_sessions, monkeypatch, changed_field
+    remote_runtime, connectivity_sessions, monkeypatch, changed_field, execution_authorization
 ):
     runtime, server = remote_runtime
     original = runtime._oauth_refresh.current
@@ -190,7 +234,14 @@ async def test_replacement_during_authorization_blocks_stale_headers(
         async with runtime._mcp(
             selection,
             guard,
-            AttemptToolScope(actor(), ORG_ID, WORKSPACE_ID, FrozenRunConnectivity((), (selection,)), ()),
+            AttemptToolScope(
+                replace(actor(), auth_method="internal"),
+                ORG_ID,
+                WORKSPACE_ID,
+                FrozenRunConnectivity((), (selection,)),
+                (),
+                authorization=await execution_authorization(),
+            ),
         ):
             pytest.fail("stale headers cannot initialize a client")
     assert not server.requests

@@ -173,6 +173,7 @@ class SearchRuntime:
                         workspace_id=workspace_id,
                         agent_id=selected_agent,
                         action=WorkspaceAction.agent_invoke,
+                        snapshot=current_context().authorization.snapshot,
                     )
                     agent = await session.get(AgentRecord, selected_agent)
                     if (

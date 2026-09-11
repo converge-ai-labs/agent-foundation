@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam import AuthenticatedActor, WorkspaceAction, authorize_agent
+from a13n_service.iam.attempts import AttemptAuthorization
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.iam.resource_scope import ResourceScope
 from a13n_service.ids import new_object_id
@@ -63,6 +64,7 @@ class AttemptToolScope:
     workspace_id: str
     selections: FrozenRunConnectivity
     native_tool_contexts: tuple[NativeToolContext, ...] = field(repr=False)
+    authorization: AttemptAuthorization = field(repr=False)
     protected_inputs: tuple[object, ...] = field(default=(), repr=False)
 
 
@@ -126,6 +128,7 @@ class ExternalToolRuntime:
             workspace_id=conversation.workspace_id,
             agent_id=run.agent_id,
             action=WorkspaceAction.agent_invoke,
+            snapshot=context.authorization.snapshot,
         )
         if child_agent_id is not None:
             await authorize_agent(
@@ -134,6 +137,7 @@ class ExternalToolRuntime:
                 workspace_id=conversation.workspace_id,
                 agent_id=child_agent_id,
                 action=WorkspaceAction.agent_invoke,
+                snapshot=context.authorization.snapshot,
             )
         protected_inputs = (
             run.connector_connection_selections_json,
@@ -158,6 +162,7 @@ class ExternalToolRuntime:
                 _MCPS.validate_python(run.mcp_connection_selections_json),
             ),
             parse_native_contexts(run.native_tool_contexts_json),
+            context.authorization,
             deepcopy(protected_inputs),
         )
 
@@ -179,6 +184,7 @@ class ExternalToolRuntime:
                     organization_id=scope.organization_id,
                     workspace_id=scope.workspace_id,
                     selection=selection,
+                    snapshot=current_context().authorization.snapshot,
                 )
 
     @asynccontextmanager
@@ -263,6 +269,7 @@ class ExternalToolRuntime:
                     organization_id=scope.organization_id,
                     workspace_id=scope.workspace_id,
                     selection=selection,
+                    snapshot=scope.authorization.snapshot,
                 )
                 record = await require_connection(session, selection.connector_connection_id)
                 provider = await require_connector_provider(
@@ -345,6 +352,7 @@ class ExternalToolRuntime:
                     organization_id=scope.organization_id,
                     workspace_id=scope.workspace_id,
                     selection=selection,
+                    snapshot=scope.authorization.snapshot,
                 )
                 record = await require_mcp_connection(session, selection.mcp_connection_id)
                 if record.endpoint_url != endpoint:
@@ -358,6 +366,7 @@ class ExternalToolRuntime:
                     organization_id=scope.organization_id,
                     workspace_id=scope.workspace_id,
                     selection=selection,
+                    snapshot=scope.authorization.snapshot,
                 )
                 record = await require_mcp_connection(session, selection.mcp_connection_id)
                 if record.version != current.version or record.credential_generation != current.credential_generation:

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.connectivity.connectors.models import ConnectorConnectionRecord, ConnectorProviderRecord
 from a13n_service.connectivity.mcp.models import MCPConnectionRecord
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_workspace
+from a13n_service.iam.authorization import PrincipalPermissions
 from a13n_service.iam.resource_scope import visible_workspace
 from a13n_service.storage import short_session
 
@@ -89,6 +90,7 @@ class ConnectivitySelectionResolver:
         organization_id: str,
         workspace_id: str,
         selection: ConnectorConnectionRunSelection | MCPConnectionToolSelection,
+        snapshot: PrincipalPermissions | None = None,
     ) -> None:
         expected = (
             FrozenRunConnectivity((selection,), ())
@@ -102,6 +104,7 @@ class ConnectivitySelectionResolver:
             workspace_id=workspace_id,
             connector_tools=expected.connector_connection_selections,
             mcp_tools=expected.mcp_connection_selections,
+            snapshot=snapshot,
         )
         if current != expected:
             raise ConnectivitySelectionError("connection_changed", path="connectivity")
@@ -116,6 +119,7 @@ class ConnectivitySelectionResolver:
         connector_tools: tuple[ConnectorConnectionToolSelection, ...],
         mcp_tools: tuple[MCPConnectionToolSelection, ...],
         lock: bool = False,
+        snapshot: PrincipalPermissions | None = None,
     ) -> FrozenRunConnectivity:
         for path, identifiers, action in (
             (
@@ -129,7 +133,9 @@ class ConnectivitySelectionResolver:
                 raise ConnectivitySelectionError("connection_selected_more_than_once", path=path)
             if identifiers:
                 try:
-                    await authorize_workspace(session, actor=actor, workspace_id=workspace_id, action=action)
+                    await authorize_workspace(
+                        session, actor=actor, workspace_id=workspace_id, action=action, snapshot=snapshot
+                    )
                 except AuthorizationError as error:
                     raise ConnectivitySelectionError("connection_not_eligible", path=path) from error
         connectors: list[ConnectorConnectionRunSelection] = []

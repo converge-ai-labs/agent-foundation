@@ -149,6 +149,7 @@ class WorkerAttempts:
                 self._resources.model_endpoint_policy,
                 run,
                 workspace_id,
+                context.authorization,
             )
 
             async_results = AsyncSubagentResultMaterializer(sessions, self._replay)

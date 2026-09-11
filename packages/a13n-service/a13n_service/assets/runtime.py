@@ -193,9 +193,14 @@ class AssetRuntime:
                 workspace_id=selection.workspace_id,
                 agent_id=agent_id,
                 action=WorkspaceAction.agent_invoke,
+                snapshot=authority.authorization.snapshot,
             )
         await authorize_workspace(
-            session, actor=actor, workspace_id=selection.workspace_id, action=WorkspaceAction.asset_create
+            session,
+            actor=actor,
+            workspace_id=selection.workspace_id,
+            action=WorkspaceAction.asset_create,
+            snapshot=authority.authorization.snapshot,
         )
         return actor
 

@@ -22,6 +22,7 @@ from tests.lifecycle_support import test_lifecycle_writer
 from .conftest import AGENT_ID, NOW, WORKSPACE_ID
 from .test_attempt_execution import _accept_root, _authority, _worker
 from .test_environment_runtime import recipe
+from .worker_helpers import prepare_permissions
 
 pytestmark = pytest.mark.anyio
 
@@ -92,7 +93,9 @@ async def test_host_publishes_recovery_before_exposing_the_new_backing(
         interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
     ).claim(run.id, _worker())
     assert isinstance(claim, ClaimedAttempt)
-    env = await prepare_run_environment(lifecycle, _authority(claim))
+    env = await prepare_run_environment(
+        lifecycle, await prepare_permissions(interaction_sessions, run, _authority(claim))
+    )
     await env.enter(thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent", mount_id="workspace")
     await env.ensure_ready(frozenset({"files"}))
     old_processes = env.operations.processes

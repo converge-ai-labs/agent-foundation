@@ -17,6 +17,7 @@ from a13n_service.assets.errors import AssetError
 from a13n_service.assets.objects import AssetObjectStore
 from a13n_service.assets.queries import require_active_asset
 from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_service.iam.attempts import AttemptAuthorization
 from a13n_service.iam.authorization import WorkspaceAction, authorize_persisted_workspace_principal_action
 from a13n_service.storage import short_session
 from a13n_service.subagents.result_delivery import AsyncSubagentResultMaterializer
@@ -48,6 +49,7 @@ class WorkerInputSources:
         endpoint_policy: EndpointPolicy,
         run: Run,
         workspace_id: str,
+        authorization: AttemptAuthorization,
     ) -> None:
         self._sessions = sessions
         self._assets = assets
@@ -55,6 +57,7 @@ class WorkerInputSources:
         self._endpoint_policy = endpoint_policy
         self._run = run
         self._workspace_id = workspace_id
+        self._authorization = authorization
         self.environment: BoundEnvironment | None = None
 
     async def open(self, source: BinaryContentSource, *, max_bytes: int) -> AcquiredBinary:
@@ -86,6 +89,7 @@ class WorkerInputSources:
                 organization_id=self._run.organization_id,
                 workspace_id=self._workspace_id,
                 action=WorkspaceAction.asset_use,
+                snapshot=self._authorization.snapshot,
             )
             try:
                 asset = await require_active_asset(

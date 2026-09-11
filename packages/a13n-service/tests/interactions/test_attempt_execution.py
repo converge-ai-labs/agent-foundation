@@ -13,6 +13,7 @@ from a13n_service.interactions.attempts import (
     AttemptAuthorityError,
     AttemptContext,
     AttemptExecutionService,
+    AttemptLease,
     AttemptPreparationAccepted,
     AttemptPreparationRejected,
 )
@@ -753,6 +754,7 @@ def _authority(
         worker_id=claim.attempt.worker_id,
         worker_build_id=claim.attempt.worker_build_id,
         lease_duration=lease_duration,
+        lease=AttemptLease(lease_expires_at),
         renewal_interval=lease_duration / 3,
         renewal_timeout=lease_duration / 6,
         reconciliation_timeout=timedelta(seconds=5),
@@ -875,7 +877,11 @@ async def test_external_tool_scope_rechecks_durable_attempt_and_principal(
         run.id, _worker()
     )
     assert isinstance(claim, ClaimedAttempt)
-    context = _authority(claim)
+    from a13n_service.iam.attempts import AttemptAuthorizationError
+
+    from .worker_helpers import prepare_permissions
+
+    context = await prepare_permissions(interaction_sessions, run, _authority(claim))
     monkeypatch.setattr(execution, "utc_now", lambda: NOW)
     policy = EndpointPolicy()
     runtime = ExternalToolRuntime(
@@ -911,6 +917,12 @@ async def test_external_tool_scope_rechecks_durable_attempt_and_principal(
             expected_thread_version=thread.version,
             failure=SafeFailure(code="cancelled", message="Cancelled by user."),
         )
+    if revocation == "iam_revoked":
+        assert await runtime._scope(context) == scope
+        for _ in range(10):
+            await context.authorization.admit_model_request()
+        with pytest.raises(AttemptAuthorizationError, match="attempt_authorization_denied"):
+            await context.authorization.admit_model_request()
     if revocation == "heartbeat":
         renewed = await AttemptExecutionService(
             interaction_sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer()
@@ -918,7 +930,7 @@ async def test_external_tool_scope_rechecks_durable_attempt_and_principal(
         assert renewed.attempt_version == claim.attempt.version + 1
         assert await runtime._scope(context) == scope
     else:
-        with pytest.raises((AttemptAuthorityError, AuthorizationError)):
+        with pytest.raises((AttemptAuthorityError, AuthorizationError, AttemptAuthorizationError)):
             await runtime._scope(context)
 
 

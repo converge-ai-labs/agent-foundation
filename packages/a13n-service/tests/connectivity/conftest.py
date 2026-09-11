@@ -31,6 +31,7 @@ from a13n_service.connectivity.ingress.provider import (
 from a13n_service.database.metadata import service_metadata
 from a13n_service.digests import digest_request
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
+from a13n_service.iam.attempts import AttemptAuthorization
 from a13n_service.iam.models import (
     OrganizationRecord,
     RoleBindingRecord,
@@ -213,6 +214,25 @@ def actor() -> AuthenticatedActor:
         boundary_workspace_id=WORKSPACE_ID,
         request_id="req-connectivity-test",
     )
+
+
+@pytest.fixture
+def execution_authorization(connectivity_sessions):
+    async def create(*, principal=None):
+        authorization = AttemptAuthorization()
+        await authorization.initialize(
+            connectivity_sessions,
+            principal=actor().principal if principal is None else principal,
+            organization_id=ORG_ID,
+            workspace_id=WORKSPACE_ID,
+            root_agent_id=AGENT_ID,
+            agent_ids=frozenset(),
+            run_id="run_connectivitytest",
+            run_attempt_id="ratt_connectivitytest",
+        )
+        return authorization
+
+    return create
 
 
 def adapter_registry() -> AdapterRegistry[IngressAdapter]:

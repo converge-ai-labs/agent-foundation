@@ -26,6 +26,7 @@ from .conftest import AGENT_ID, NOW, WORKSPACE_ID
 from .test_attempt_execution import _accept_root, _authority, _completed_state, _waiting_state, _worker
 from .test_environment_capacity import sibling_run
 from .test_environment_runtime import recipe
+from .worker_helpers import prepare_permissions
 
 pytestmark = pytest.mark.anyio
 
@@ -92,7 +93,9 @@ async def test_last_user_outcome_starts_idle_clock_and_automatic_cleanup(
         clock=lambda: NOW + timedelta(seconds=1),
         lifecycle=test_lifecycle_writer(),
     ).claim(run.id, _worker())
-    environment = await prepare_run_environment(lifecycle, _authority(claim))
+    environment = await prepare_run_environment(
+        lifecycle, await prepare_permissions(interaction_sessions, run, _authority(claim))
+    )
     await environment.close()
     ended_at = NOW + timedelta(seconds=3)
     execution = AttemptExecutionService(interaction_sessions, clock=lambda: ended_at, lifecycle=test_lifecycle_writer())
@@ -155,7 +158,9 @@ async def test_failed_outcome_transaction_preserves_active_use(
     claim = await AttemptScheduler(
         interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
     ).claim(run.id, _worker())
-    environment = await prepare_run_environment(lifecycle, _authority(claim))
+    environment = await prepare_run_environment(
+        lifecycle, await prepare_permissions(interaction_sessions, run, _authority(claim))
+    )
     await environment.close()
 
     async def fail_commit(session):
@@ -192,10 +197,14 @@ async def test_shared_use_and_retry_backoff_do_not_start_idle_cleanup(
         lifecycle=test_lifecycle_writer(),
     )
     first_claim = await scheduler.claim(first.id, _worker())
-    first_env = await prepare_run_environment(lifecycle, _authority(first_claim))
+    first_env = await prepare_run_environment(
+        lifecycle, await prepare_permissions(interaction_sessions, first, _authority(first_claim))
+    )
     second = await sibling_run(interaction_sessions, first, first_env.environment_id)
     second_claim = await scheduler.claim(second.id, _worker())
-    second_env = await prepare_run_environment(lifecycle, _authority(second_claim))
+    second_env = await prepare_run_environment(
+        lifecycle, await prepare_permissions(interaction_sessions, second, _authority(second_claim))
+    )
     await first_env.close()
     await second_env.close()
     await cancel(interaction_sessions, interaction_object_store, first, NOW + timedelta(seconds=3))

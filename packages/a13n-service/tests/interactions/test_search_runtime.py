@@ -27,6 +27,7 @@ from .conftest import NOW, USER_ID, WORKSPACE_ID
 from .test_attempt_execution import _accept_root, _authority, _worker
 from .test_environment_runtime import recipe
 from .test_harness_runtime import _environment
+from .worker_helpers import prepare_permissions
 
 pytestmark = pytest.mark.anyio
 
@@ -46,6 +47,7 @@ async def fixture(
     )
     assert isinstance(claim, ClaimedAttempt)
     attempt = _authority(claim)
+    await prepare_permissions(interaction_sessions, run, attempt)
     execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer())
     preparation = await execution.commit_preparation_success(attempt)
     await execution.enter_harness(attempt, preparation=preparation, harness_run_id="search-test")
@@ -175,6 +177,25 @@ async def test_revocation_during_response_prevents_disclosure(
         interaction_sessions, interaction_object_store, handler, tmp_path
     )
     account_id, run_id = account.id, run.agent_id
+    if revoke == "principal":
+        from a13n_service.iam.attempts import AttemptAuthorizationError
+
+        assert (await run_search(selection, binding, environment)).output_or_raise() == "done"
+        for _ in range(10):
+            await attempt.authorization.admit_model_request()
+        with pytest.raises(AttemptAuthorizationError, match="attempt_authorization_denied"):
+            await attempt.authorization.admit_model_request()
+        from tests.agents.conftest import agent_config
+        from tests.agents.test_reconstruction import _effective
+
+        with pytest.raises(AttemptAuthorizationError):
+            await _runtime.validate(
+                run=run,
+                workspace_id=WORKSPACE_ID,
+                config=_effective(agent_config()).model_copy(update={"search": selection}),
+                current_context=lambda: attempt,
+            )
+        return
     with pytest.raises(RunError) as revoked:
         await run_search(selection, binding, environment)
     assert revoked.value.code == "search_provider_unavailable"

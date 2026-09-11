@@ -120,7 +120,9 @@ async def test_completed_recovery_rechecks_input_after_runtime_preparation(
             pass
 
         async def validate_dependencies(self, context):
-            pass
+            from .worker_helpers import prepare_permissions
+
+            await prepare_permissions(sessions, parent, context)
 
         @asynccontextmanager
         async def open_runtime(self, context):

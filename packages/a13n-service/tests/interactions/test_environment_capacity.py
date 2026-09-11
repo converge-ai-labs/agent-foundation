@@ -23,6 +23,7 @@ from .conftest import NOW, WORKSPACE_ID
 from .test_acceptance import _accepted_run
 from .test_attempt_execution import _accept_root, _authority, _worker
 from .test_environment_runtime import recipe
+from .worker_helpers import prepare_permissions
 
 pytestmark = pytest.mark.anyio
 
@@ -83,7 +84,10 @@ async def test_postgresql_last_slot_admits_only_one_concurrent_run(
     second = await sibling_run(sessions, first, other.id)
     scheduler = AttemptScheduler(sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer())
     claims = [await scheduler.claim(run.id, _worker()) for run in (first, second)]
-    environments = [await prepare_run_environment(lifecycle, _authority(claim)) for claim in claims]
+    environments = [
+        await prepare_run_environment(lifecycle, await prepare_permissions(sessions, run, _authority(claim)))
+        for run, claim in zip((first, second), claims, strict=True)
+    ]
     results = await asyncio.gather(*(env.prepare() for env in environments), return_exceptions=True)
     assert sum(result is None for result in results) == 1
     error = next(result for result in results if isinstance(result, EnvironmentError))
@@ -106,11 +110,15 @@ async def test_shared_run_reuses_active_slot_and_stopped_target_counts_until_del
     _, first, _ = await _accept_root(sessions, interaction_object_store)
     scheduler = AttemptScheduler(sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer())
     first_claim = await scheduler.claim(first.id, _worker())
-    first_env = await prepare_run_environment(lifecycle, _authority(first_claim))
+    first_env = await prepare_run_environment(
+        lifecycle, await prepare_permissions(sessions, first, _authority(first_claim))
+    )
     await first_env.prepare()
     sibling = await sibling_run(sessions, first, first_env.environment_id)
     sibling_claim = await scheduler.claim(sibling.id, _worker())
-    sibling_env = await prepare_run_environment(lifecycle, _authority(sibling_claim))
+    sibling_env = await prepare_run_environment(
+        lifecycle, await prepare_permissions(sessions, sibling, _authority(sibling_claim))
+    )
     await sibling_env.prepare()
     await first_env.close()
     await sibling_env.close()
@@ -128,7 +136,9 @@ async def test_shared_run_reuses_active_slot_and_stopped_target_counts_until_del
     )
     async with transaction(sessions) as session:
         (await session.get(RunRecord, first.id)).environment_id = other.id
-    next_env = await prepare_run_environment(lifecycle, _authority(first_claim))
+    next_env = await prepare_run_environment(
+        lifecycle, await prepare_permissions(sessions, first, _authority(first_claim))
+    )
     construct = AsyncMock(wraps=lifecycle.construct)
     monkeypatch.setattr(lifecycle, "construct", construct)
     with pytest.raises(EnvironmentError) as error:

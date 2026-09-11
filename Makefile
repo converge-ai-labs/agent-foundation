@@ -136,12 +136,35 @@ live-test: sync ## Run opt-in local HTTP journeys (LIVE_TEST_ARGS="-k basic" sel
 live-test-local: sync ## Run first-round HTTP journeys with owned Docker dependencies and service processes
 	@uv run --locked python -m dev.live_tests.isolated $(LIVE_TEST_ARGS)
 
+.PHONY: live-test-ci live-test-ci-environment-build
+live-test-ci: sync ## Run a reviewed account-free CI suite (suite=core|functional|control|fork-queue|run-faults|environment-native|environment-service)
+	@uv run --locked python -m dev.live_tests.ci $(suite) $(LIVE_TEST_ARGS)
+
+live-test-ci-environment-build: image-sandbox ## Build the native daemon and fixture images for the CI Environment matrices
+	@cargo build --locked --package a13n-envd
+	@docker build -f dev/live_tests/environment/file_resources.Dockerfile --build-arg SANDBOX_IMAGE="$(SANDBOX_IMAGE)" --target worker -t a13n-file-resources:local .
+	@docker build -f dev/live_tests/environment/file_resources.Dockerfile --build-arg SANDBOX_IMAGE="$(SANDBOX_IMAGE)" --target docker-sandbox -t a13n-file-resources:docker .
+
 live-test-round-two: sync ## Run isolated HTTP fault/recovery journeys with Docker dependencies
 	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests --live-round-two -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)
 
 .PHONY: live-test-performance
-live-test-performance: sync ## Measure long-session latency with disposable PG, Redis and S3
-	@uv run --locked python -m pytest dev/live_tests/performance/test_36_long_session.py --live-performance -v --tb=short -o log_cli=true -o log_cli_level=INFO --log-disable=httpx2 $(LIVE_TEST_ARGS)
+live-test-performance: sync ## Measure concurrent PG/S3 calls and bounded Service operations
+	@uv run --locked python -m pytest dev/live_tests/performance/test_operations.py --live-performance -n 0 -v --tb=short -o log_cli=true -o log_cli_level=INFO --log-disable=httpx2 $(LIVE_TEST_ARGS)
+
+.PHONY: live-test-session live-test-contention live-test-s3
+live-test-session: sync ## Verify real sequential history and built-in compaction without latency gates
+	@uv run --locked python -m pytest dev/live_tests/harness_integration/test_36_long_session.py --live-long-session -v --tb=short -o log_cli=true -o log_cli_level=INFO --log-disable=httpx2 $(LIVE_TEST_ARGS)
+
+live-test-contention: sync ## Exercise multiwriter Run, Attempt, inbox and queue races
+	@uv run --locked python -m pytest dev/live_tests/control/test_57_admission_contention.py dev/live_tests/control/test_58_inbox_contention.py dev/live_tests/control/test_59_queue_contention.py dev/live_tests/control/test_61_attempt_control_contention.py dev/live_tests/run_recovery/test_60_attempt_contention.py --live-round-two -v --tb=short -o log_cli=true -o log_cli_level=INFO --log-disable=httpx2 $(LIVE_TEST_ARGS)
+
+live-test-s3: sync ## Measure single S3 requests (skips without private Provider [s3] settings)
+	@uv run --locked python -m pytest dev/live_tests/performance/test_s3_benchmark.py --live-performance -n 0 -v --tb=short -o log_cli=true -o log_cli_level=INFO --log-disable=httpx2 $(LIVE_TEST_ARGS)
+
+.PHONY: live-test-report
+live-test-report: ## Render selected performance artifacts as one scenario-based table
+	@uv run --locked python -m dev.live_tests.performance.scenario_report $(REPORT_ARGS)
 
 live-test-management: sync ## Run isolated Service/Harness management journeys with Docker dependencies
 	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests --live-management -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)
@@ -153,7 +176,7 @@ live-test-providers: sync ## Run optional configured real Providers in disposabl
 live-test-check: sync ## Validate live-test support without contacting services
 	@uv run --locked ruff check --no-fix dev/live_tests
 	@uv run --locked ruff format --check dev/live_tests
-	@uv run --locked mdformat --check dev/live_tests/README.md
+	@uv run --locked mdformat --check dev/live_tests/README.md dev/live_tests/performance/REPORTING.md
 	@uv run --locked python -m pytest dev/live_tests -q
 
 dev-down: ## Stop local Service and Langfuse infrastructure, preserving all data

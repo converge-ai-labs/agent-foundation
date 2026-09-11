@@ -15,32 +15,32 @@ def pytest_addoption(parser):
     parser.addoption("--live-providers", action="store_true", help="Run configured real-provider integration journeys")
     parser.addoption("--live-slack", action="store_true", help="Authorize OpenConnector Slack and run a read-only tool")
     parser.addoption("--live-environments", action="store_true", help="Run the five-backend Environment matrix")
-    parser.addoption("--live-performance", action="store_true", help="Run disposable long-session latency measurements")
+    parser.addoption("--live-performance", action="store_true", help="Measure bounded PG, S3 and Service operations")
+    parser.addoption("--performance-profile", help="TOML concurrency matrix and per-operation latency budgets")
+    parser.addoption("--live-long-session", action="store_true", help="Verify real sequential history and compaction")
     parser.addoption(
         "--session-message-bytes", type=int, default=1024, help="ASCII padding bytes per real input/output"
     )
     parser.addoption("--session-runs", default="1,1000,10000", help="Checkpoints along one real sequential Run chain")
-    parser.addoption("--session-samples", type=int, default=5, help="Measured repetitions per operation, after warmup")
 
 
 @pytest.fixture
 async def long_session(request):
-    if not request.config.getoption("--live-performance"):
-        pytest.skip("Opt in with make live-test-performance; no benchmark infrastructure starts by default")
+    if not request.config.getoption("--live-long-session"):
+        pytest.skip("Opt in with make live-test-session; no compaction infrastructure starts by default")
     message_bytes = request.config.getoption("--session-message-bytes")
-    samples = request.config.getoption("--session-samples")
     try:
         runs = sorted(set(int(value) for value in request.config.getoption("--session-runs").split(",")))
         assert runs and all(1 <= value <= 100000 for value in runs)
     except (ValueError, AssertionError) as error:
         raise pytest.UsageError("--session-runs requires integers between 1 and 100000") from error
-    if not 1 <= message_bytes <= 2048 or not 1 <= samples <= 1000:
-        raise pytest.UsageError("Require message bytes 1..2048, samples 1..1000")
+    if not 1 <= message_bytes <= 2048:
+        raise pytest.UsageError("Require message bytes 1..2048")
     from .infrastructure.round_two_lab import open_lab
 
     async with open_lab(long_session={"message_bytes": message_bytes, "context_window": 32768}) as lab:
         lab.client.http.timeout = httpx2.Timeout(120)
-        yield lab, runs, samples
+        yield lab, runs
 
 
 @pytest.fixture

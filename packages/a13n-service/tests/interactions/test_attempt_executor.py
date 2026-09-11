@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import timedelta
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from a13n_harness import (
@@ -19,11 +19,13 @@ from a13n_harness import (
     SafeFailure,
 )
 from a13n_harness.errors import RunError
+from a13n_service.iam.attempts import AttemptAuthorization
 from a13n_service.interactions.attempt_executor import ControlWatcher, LeaseMonitor, RunAttemptExecutor
 from a13n_service.interactions.attempts import (
     AttemptAuthorityError,
     AttemptContext,
     AttemptExecutionService,
+    AttemptLease,
     AttemptMutationReceipt,
     AttemptPreparationAccepted,
     AttemptPreparationRejected,
@@ -303,10 +305,12 @@ def _context(thread_id: str, *, renewal_interval: timedelta = timedelta(millisec
         worker_id="worker-1",
         worker_build_id="build-1",
         lease_duration=timedelta(seconds=30),
+        lease=AttemptLease(NOW + timedelta(seconds=30)),
         renewal_interval=renewal_interval,
         renewal_timeout=timedelta(seconds=5),
         reconciliation_timeout=timedelta(seconds=5),
         cleanup_timeout=timedelta(seconds=5),
+        authorization=Mock(spec=AttemptAuthorization),
     )
 
 
@@ -492,6 +496,8 @@ async def test_lease_monitor_fences_control_and_cancels_scope_on_authority_loss(
 
     assert driver.cancellations == 1
     assert cancellations == ["scope"]
+    with pytest.raises(AttemptAuthorityError):
+        context.lease.require_current(NOW)
     with pytest.raises(RunError) as error:
         await control.reconcile()
     assert error.value.code == "service_control_fenced"

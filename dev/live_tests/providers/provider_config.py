@@ -77,16 +77,24 @@ class ProviderSettings(Settings):
     brave_search: BraveSearchSettings | None = None
 
 
+def provider_config_path(path: Path | None = None) -> Path:
+    override = os.environ.get("LIVE_TEST_PROVIDERS_CONFIG")
+    return path or (Path(override).expanduser() if override else DEFAULT_PATH)
+
+
 def load_provider_settings(path: Path | None = None, *, upstream_model: str | None = None) -> ProviderSettings:
     """Missing default/all-empty sections disable integration; explicit bad paths fail."""
     override = os.environ.get("LIVE_TEST_PROVIDERS_CONFIG")
-    selected = path or (Path(override).expanduser() if override else DEFAULT_PATH)
+    selected = provider_config_path(path)
     if not selected.exists() and path is None and not override:
         return ProviderSettings()
     try:
         raw = tomllib.loads(selected.read_text())
         normalized = {}
         for section, values in raw.items():
+            if section == "s3":
+                # The independently opted-in state benchmark owns this section.
+                continue
             if isinstance(values, dict):
                 values = {
                     key: value.strip() if isinstance(value, str) else value

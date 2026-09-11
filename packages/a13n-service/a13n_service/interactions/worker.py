@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.ids import new_object_id
 from a13n_service.storage import is_database_unavailable, short_session
 
-from .attempts import AttemptContext
+from .attempts import AttemptContext, AttemptLease
 from .domain import RunAttemptYieldReason, RunStatus
 from .models import RunRecord
 from .run_control import RunAttemptControl
@@ -229,4 +229,5 @@ class WorkerExecutionLoop:
             renewal_timeout=self._lease / 6,
             reconciliation_timeout=self._lease / 6,
             cleanup_timeout=self._cleanup,
+            lease=AttemptLease(attempt.lease_expires_at),
         )

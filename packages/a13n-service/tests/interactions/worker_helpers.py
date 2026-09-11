@@ -19,6 +19,30 @@ from fakeredis.aioredis import FakeRedis
 from tests.lifecycle_support import test_lifecycle_writer
 
 
+async def prepare_permissions(sessions, run, context, *, agent_ids=frozenset()):
+    from a13n_service.interactions.models import RunRecord
+    from a13n_service.storage import short_session
+
+    from .conftest import WORKSPACE_ID
+
+    # Acceptance fixtures can return the input Run before Environment selection.
+    # Production preparation receives the final persisted Run from the claim.
+    async with short_session(sessions) as session:
+        run = (await session.get(RunRecord, run.id)).to_resource()
+    await context.authorization.initialize(
+        sessions,
+        principal=run.authority_principal,
+        organization_id=run.organization_id,
+        workspace_id=WORKSPACE_ID,
+        root_agent_id=run.agent_id,
+        agent_ids=agent_ids,
+        run_id=context.run_id,
+        run_attempt_id=context.run_attempt_id,
+        environment_id=run.environment_id,
+    )
+    return context
+
+
 async def accepted_running_attempt(sessions, objects):
     from a13n_service.interactions.attempts import AttemptExecutionService
     from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
@@ -36,6 +60,7 @@ async def accepted_running_attempt(sessions, objects):
     assert isinstance(claim, ClaimedAttempt)
     execution = AttemptExecutionService(sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer())
     context = _authority(claim)
+    await prepare_permissions(sessions, run, context)
     preparation = await execution.commit_preparation_success(context)
     await execution.enter_harness(context, preparation=preparation, harness_run_id="integration-test")
     return run, context

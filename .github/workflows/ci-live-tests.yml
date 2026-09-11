@@ -1,0 +1,187 @@
+name: Live Tests CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - ".github/workflows/ci-live-tests.yml"
+      - ".dockerignore"
+      - "Makefile"
+      - "conftest.py"
+      - "dev/live_tests/**"
+      - "packages/a13n-service/**"
+      - "packages/a13n-harness/**"
+      - "packages/a13n-environment/**"
+      - "packages/a13n-envd-client/**"
+      - "packages/a13n-stream-protocol/**"
+      - "packages/a13n-logging/**"
+      - "crates/a13n-envd/**"
+      - "proto/a13n-envd/**"
+      - "deploy/containers/sandbox/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "pyproject.toml"
+      - "uv.lock"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/ci-live-tests.yml"
+      - ".dockerignore"
+      - "Makefile"
+      - "conftest.py"
+      - "dev/live_tests/**"
+      - "packages/a13n-service/**"
+      - "packages/a13n-harness/**"
+      - "packages/a13n-environment/**"
+      - "packages/a13n-envd-client/**"
+      - "packages/a13n-stream-protocol/**"
+      - "packages/a13n-logging/**"
+      - "crates/a13n-envd/**"
+      - "proto/a13n-envd/**"
+      - "deploy/containers/sandbox/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "pyproject.toml"
+      - "uv.lock"
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  support:
+    name: Live test support
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Check fixtures and CI selection without live infrastructure
+        run: make live-test-check
+
+  journeys:
+    name: Live tests (${{ matrix.suite }} ${{ matrix.shard }}/${{ matrix.shards }})
+    needs: support
+    runs-on: ubuntu-24.04-8core
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        include:
+          - {suite: core, shard: 1, shards: 1}
+          - {suite: functional, shard: 1, shards: 2}
+          - {suite: functional, shard: 2, shards: 2}
+          - {suite: control, shard: 1, shards: 3}
+          - {suite: control, shard: 2, shards: 3}
+          - {suite: control, shard: 3, shards: 3}
+          - {suite: fork-queue, shard: 1, shards: 3}
+          - {suite: fork-queue, shard: 2, shards: 3}
+          - {suite: fork-queue, shard: 3, shards: 3}
+          - {suite: run-faults, shard: 1, shards: 3}
+          - {suite: run-faults, shard: 2, shards: 3}
+          - {suite: run-faults, shard: 3, shards: 3}
+          - {suite: environment-native, shard: 1, shards: 1}
+          - {suite: environment-service, shard: 1, shards: 2}
+          - {suite: environment-service, shard: 2, shards: 2}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Set up Rust for Environment matrices
+        if: startsWith(matrix.suite, 'environment-')
+        uses: dtolnay/rust-toolchain@1.96.0
+
+      - name: Cache Cargo
+        if: startsWith(matrix.suite, 'environment-')
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+          shared-key: live-environments
+
+      - name: Install native isolation support
+        if: startsWith(matrix.suite, 'environment-')
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes bubblewrap
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - name: Build native daemon and local sandbox images
+        if: startsWith(matrix.suite, 'environment-')
+        run: make live-test-ci-environment-build
+
+      - name: Run isolated journeys
+        timeout-minutes: 45
+        env:
+          SUITE: ${{ matrix.suite }}
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ matrix.shards }}
+          REPORT: ${{ runner.temp }}/live-results/${{ matrix.suite }}-${{ matrix.shard }}.xml
+          PYTEST_TEMP: ${{ runner.temp }}/live-pytest/${{ matrix.suite }}-${{ matrix.shard }}
+        # Each job runs serially: fault labs own their containers, ports and process groups.
+        run: make live-test-ci suite="$SUITE" LIVE_TEST_ARGS="--shard=$SHARD/$SHARDS --junitxml=$REPORT --basetemp=$PYTEST_TEMP"
+
+      - name: Retain test reports and diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-tests-${{ matrix.suite }}-${{ matrix.shard }}
+          retention-days: 7
+          include-hidden-files: true
+          if-no-files-found: warn
+          # Explicit log globs exclude private config JSON, credentials and TLS keys.
+          path: |
+            ${{ runner.temp }}/live-results/*.xml
+            ${{ runner.temp }}/live-pytest/**/*.log
+            dev/live_tests/.state/**/*.log
+
+  validation:
+    name: Live tests
+    needs: [support, journeys]
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every selected suite to pass
+        env:
+          SUPPORT_RESULT: ${{ needs.support.result }}
+          JOURNEYS_RESULT: ${{ needs.journeys.result }}
+        run: |
+          test "$SUPPORT_RESULT" = success
+          test "$JOURNEYS_RESULT" = success

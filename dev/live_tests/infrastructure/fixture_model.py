@@ -124,7 +124,7 @@ def fixture_router(root: Path, authenticate, *, long_session=None) -> APIRouter:
         async with await anyio.open_file(path / "model_requests", "a") as output:
             await output.write("request\n")
         if long_session is not None:
-            from ..performance.long_session_model import completion
+            from ..harness_integration.long_session_model import completion
 
             return await completion(case, path, body, long_session)
         tool_messages = [message for message in body["messages"] if message.get("role") == "tool"]

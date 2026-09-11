@@ -14,6 +14,7 @@ class TCPProxy:
         self.connections = 0
         self.writers = set()
         self.tasks = set()
+        self.delay_ms = 0
 
     @asynccontextmanager
     async def listen(self):
@@ -37,6 +38,7 @@ class TCPProxy:
 
     def restore(self):
         self.blocked = False
+        self.delay_ms = 0
 
     def _connected(self, reader, writer):
         task = asyncio.create_task(self._relay(reader, writer))
@@ -82,8 +84,9 @@ class TCPProxy:
     async def _open_upstream(self):
         return await asyncio.open_connection(self.host, self.port)
 
-    @staticmethod
-    async def _copy(reader, writer):
+    async def _copy(self, reader, writer):
         while data := await reader.read(65536):
+            if self.delay_ms:
+                await asyncio.sleep(self.delay_ms / 1000)
             writer.write(data)
             await writer.drain()

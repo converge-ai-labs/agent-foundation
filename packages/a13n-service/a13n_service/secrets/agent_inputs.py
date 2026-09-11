@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.agents.domain import EffectiveAgentConfig, SecretRequirement
 from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, PrincipalType, WorkspaceAction, authorize_workspace
+from a13n_service.iam.authorization import PrincipalPermissions
 
 from .domain import AgentSecretBinding, InvokingUserSecretCredential, WorkspaceSecretCredential
 from .models import SecretRecord
@@ -73,6 +74,7 @@ async def require_secret(
     actor: AuthenticatedActor,
     binding: AgentSecretBinding,
     accepting: bool,
+    snapshot: PrincipalPermissions | None = None,
 ) -> SecretRecord:
     """Authorize selection separately from execution; never decrypt during acceptance."""
     credential = binding.credential
@@ -84,6 +86,7 @@ async def require_secret(
             action=WorkspaceAction.secrets_bind
             if accepting and isinstance(credential, WorkspaceSecretCredential)
             else WorkspaceAction.secrets_read,
+            snapshot=snapshot,
         )
     except AuthorizationError as error:
         raise secret_unavailable() from error

@@ -16,6 +16,7 @@ from opentelemetry.trace import Span
 
 from a13n_service.agents.plugin_preparation import PluginSelectionError
 from a13n_service.agents.reconstruction import AgentDefinitionReconstructionError
+from a13n_service.iam.attempts import AttemptAuthorizationError
 from a13n_service.observability import observe_phase, observe_phase_result
 from a13n_service.run_stream.domain import PublicationUnavailable
 from a13n_service.skills.runtime import SkillRuntimeError
@@ -204,7 +205,7 @@ class RunAttemptExecutor[OutputT]:
                             "exception_chain": exception_details(error),
                         },
                     )
-                    if isinstance(error, SkillRuntimeError):
+                    if isinstance(error, (SkillRuntimeError, AttemptAuthorizationError)):
                         code = error.code
                     elif isinstance(error, (PluginSelectionError, AgentDefinitionReconstructionError)):
                         code = error.reason
