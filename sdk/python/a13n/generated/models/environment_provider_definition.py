@@ -5,12 +5,17 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 
+from ..types import UNSET, Unset
+
 if TYPE_CHECKING:
     from ..models.environment_provider_definition_configuration_schema import (
         EnvironmentProviderDefinitionConfigurationSchema,
     )
     from ..models.environment_provider_definition_credential_schema_type_0 import (
         EnvironmentProviderDefinitionCredentialSchemaType0,
+    )
+    from ..models.environment_provider_definition_template_configuration_schemas import (
+        EnvironmentProviderDefinitionTemplateConfigurationSchemas,
     )
 
 
@@ -29,7 +34,9 @@ class EnvironmentProviderDefinition:
         supports_destroy (bool):
         supports_managed (bool):
         supports_stop (bool):
+        template_configuration_schemas (EnvironmentProviderDefinitionTemplateConfigurationSchemas):
         type_ (str):
+        deployment_managed (bool | Unset):
     """
 
     configuration_schema: EnvironmentProviderDefinitionConfigurationSchema
@@ -40,7 +47,9 @@ class EnvironmentProviderDefinition:
     supports_destroy: bool
     supports_managed: bool
     supports_stop: bool
+    template_configuration_schemas: EnvironmentProviderDefinitionTemplateConfigurationSchemas
     type_: str
+    deployment_managed: bool | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.environment_provider_definition_credential_schema_type_0 import (
@@ -67,7 +76,11 @@ class EnvironmentProviderDefinition:
 
         supports_stop = self.supports_stop
 
+        template_configuration_schemas = self.template_configuration_schemas.to_dict()
+
         type_ = self.type_
+
+        deployment_managed = self.deployment_managed
 
         field_dict: dict[str, Any] = {}
 
@@ -81,9 +94,12 @@ class EnvironmentProviderDefinition:
                 "supports_destroy": supports_destroy,
                 "supports_managed": supports_managed,
                 "supports_stop": supports_stop,
+                "template_configuration_schemas": template_configuration_schemas,
                 "type": type_,
             }
         )
+        if deployment_managed is not UNSET:
+            field_dict["deployment_managed"] = deployment_managed
 
         return field_dict
 
@@ -94,6 +110,9 @@ class EnvironmentProviderDefinition:
         )
         from ..models.environment_provider_definition_credential_schema_type_0 import (
             EnvironmentProviderDefinitionCredentialSchemaType0,
+        )
+        from ..models.environment_provider_definition_template_configuration_schemas import (
+            EnvironmentProviderDefinitionTemplateConfigurationSchemas,
         )
 
         d = dict(src_dict)
@@ -126,7 +145,13 @@ class EnvironmentProviderDefinition:
 
         supports_stop = d.pop("supports_stop")
 
+        template_configuration_schemas = EnvironmentProviderDefinitionTemplateConfigurationSchemas.from_dict(
+            d.pop("template_configuration_schemas")
+        )
+
         type_ = d.pop("type")
+
+        deployment_managed = d.pop("deployment_managed", UNSET)
 
         environment_provider_definition = cls(
             configuration_schema=configuration_schema,
@@ -137,7 +162,9 @@ class EnvironmentProviderDefinition:
             supports_destroy=supports_destroy,
             supports_managed=supports_managed,
             supports_stop=supports_stop,
+            template_configuration_schemas=template_configuration_schemas,
             type_=type_,
+            deployment_managed=deployment_managed,
         )
 
         return environment_provider_definition

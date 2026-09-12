@@ -95,7 +95,9 @@ Use the Makefile as the stable development interface:
 | `make sdk-check`              | Lint and type-check the standalone SDKs                            |
 | `make a13n-service-cli-check` | Format-check and lint the standalone a13n Service CLI              |
 | `make frontend-sync`          | Install the locked frontend workspace dependencies                 |
-| `make frontend-check-all`     | Check and build all frontend applications                          |
+| `make frontend-check`         | Check frontend formatting, types, and generated contracts          |
+| `make frontend-test`          | Run frontend unit and interaction tests                            |
+| `make frontend-check-all`     | Check, test, and build all frontend applications                   |
 | `make build`                  | Build all workspace packages, applications, and standalone SDKs    |
 | `make images`                 | Build the a13n-service and sandbox images                          |
 | `make image-check`            | Build and smoke-check both container images                        |
@@ -104,9 +106,9 @@ Use the Makefile as the stable development interface:
 
 This section owns validation policy; agent guides and skills refer here rather than adding separate gates. Select checks from changes since the last successful validation and their dependency impact. Without prior results, cover the complete intended change. For merge or rebase updates, include incoming changes and interactions between both branches, not just textual conflicts.
 
-The SDK pre-commit hook regenerates on potential Service contract changes and leaves changed files unstaged for review. Commit `sdk/openapi.json` and generated outputs together. `make sdk-generated-check` regenerates in temporary directories and fails on stale or removed output; CI runs it independently of the language checks. See [Native SDK generation](sdk/codegen/README.md) for pinned tools and owned outputs.
+The SDK pre-commit hook regenerates on potential Service contract changes and leaves changed files unstaged for review. Package test files do not trigger SDK generation. Commit `sdk/openapi.json` and generated outputs together. `make sdk-generated-check` regenerates in temporary directories and fails on stale or removed output; CI runs it independently of the language checks. See [Native SDK generation](sdk/codegen/README.md) for pinned tools and owned outputs.
 
-Start with the fastest relevant Make targets and add meaningful tests for behavior changes. Use `make check` for repository-wide fast validation. Run `make check-all` before handoff when the affected scope is broad, such as changes spanning multiple component boundaries or shared build tooling, or cannot be bounded confidently. Complete applicable [migration checks](#database-changes), [image checks](DEVELOPMENT.md#container-image), and `make docs-build` for changes to `docs/`, navigation, or site configuration. Instruction-only changes need formatting, link checks, and structural validation of changed skills; they do not require unrelated application suites.
+Start with the fastest relevant Make targets and add meaningful tests for behavior changes. Run the affected component suites and include their consumers when a shared contract changes. A change spanning several components requires their relevant checks, not unrelated repository suites. Use `make check` for repository-wide static validation; it does not run tests or application builds. Use `make check-all` to reproduce the complete repository gate, or when validation/build changes affect all components. Ordinary implementation and commit/PR handoff do not require a local full-repository run; CI retains the complete applicable component gates. Complete applicable [migration checks](#database-changes), [image checks](DEVELOPMENT.md#container-image), and `make docs-build` for changes to `docs/`, navigation, or site configuration. Instruction-only changes need formatting, link checks, and structural validation of changed skills; they do not require unrelated application suites.
 
 Reuse successful results whose relevant source, dependency, configuration, and environment inputs remain unchanged. A commit or PR update alone does not invalidate them. After a fix, rerun affected checks; expand only for new changes, failures, or unresolved risk. Do not repeat covered checks merely to run both `make check` and `make check-all`. Report exact commands and outcomes, including failures and unavailable checks; a partial gate is not a passing full gate. Required CI checks remain unchanged.
 
@@ -128,6 +130,13 @@ Select directories, files, or pytest node IDs with `PYTHON_TEST_DIRS`. Paths in 
 
 ```bash
 make test PYTHON_TEST_DIRS='packages/a13n-service/tests/storage/test_sql.py packages/a13n-service/tests/storage/test_s3_object_store.py' PYTHON_TEST_WORKERS=2
+```
+
+For frontend work, `check` performs static checks, `test` runs tests, and `build` produces assets. Run the complete frontend gate once when all three are needed; builds do not repeat type checking. Use the existing package filter and test-file arguments for focused validation:
+
+```bash
+pnpm --dir frontend --filter a13n-console run check
+pnpm --dir frontend --filter a13n-console test src/features/skills/import.test.tsx
 ```
 
 ## PR Labels

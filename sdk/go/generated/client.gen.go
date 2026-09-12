@@ -770,6 +770,24 @@ func (e EnvironmentCommandStatus) Valid() bool {
 	}
 }
 
+// Defines values for EnvironmentProviderConfigurationSource.
+const (
+	EnvironmentProviderConfigurationSourceDeployment EnvironmentProviderConfigurationSource = "deployment"
+	EnvironmentProviderConfigurationSourceUser       EnvironmentProviderConfigurationSource = "user"
+)
+
+// Valid indicates whether the value is a known member of the EnvironmentProviderConfigurationSource enum.
+func (e EnvironmentProviderConfigurationSource) Valid() bool {
+	switch e {
+	case EnvironmentProviderConfigurationSourceDeployment:
+		return true
+	case EnvironmentProviderConfigurationSourceUser:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for EnvironmentStatus.
 const (
 	EnvironmentStatusDeleted     EnvironmentStatus = "deleted"
@@ -1181,6 +1199,45 @@ func (e MCPConnectionStatusReason) Valid() bool {
 	}
 }
 
+// Defines values for MCPOAuthClientConfigurationGrantType.
+const (
+	MCPOAuthClientConfigurationGrantTypeAuthorizationCode MCPOAuthClientConfigurationGrantType = "authorization_code"
+	MCPOAuthClientConfigurationGrantTypeClientCredentials MCPOAuthClientConfigurationGrantType = "client_credentials"
+)
+
+// Valid indicates whether the value is a known member of the MCPOAuthClientConfigurationGrantType enum.
+func (e MCPOAuthClientConfigurationGrantType) Valid() bool {
+	switch e {
+	case MCPOAuthClientConfigurationGrantTypeAuthorizationCode:
+		return true
+	case MCPOAuthClientConfigurationGrantTypeClientCredentials:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MCPOAuthClientConfigurationSource.
+const (
+	MCPOAuthClientConfigurationSourceDynamic          MCPOAuthClientConfigurationSource = "dynamic"
+	MCPOAuthClientConfigurationSourceMetadataDocument MCPOAuthClientConfigurationSource = "metadata_document"
+	MCPOAuthClientConfigurationSourcePreRegistered    MCPOAuthClientConfigurationSource = "pre_registered"
+)
+
+// Valid indicates whether the value is a known member of the MCPOAuthClientConfigurationSource enum.
+func (e MCPOAuthClientConfigurationSource) Valid() bool {
+	switch e {
+	case MCPOAuthClientConfigurationSourceDynamic:
+		return true
+	case MCPOAuthClientConfigurationSourceMetadataDocument:
+		return true
+	case MCPOAuthClientConfigurationSourcePreRegistered:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for MCPOAuthClientConfigurationTokenEndpointAuthMethod.
 const (
 	MCPOAuthClientConfigurationTokenEndpointAuthMethodClientSecretBasic MCPOAuthClientConfigurationTokenEndpointAuthMethod = "client_secret_basic"
@@ -1202,6 +1259,24 @@ func (e MCPOAuthClientConfigurationTokenEndpointAuthMethod) Valid() bool {
 	}
 }
 
+// Defines values for MCPOAuthClientInputGrantType.
+const (
+	MCPOAuthClientInputGrantTypeAuthorizationCode MCPOAuthClientInputGrantType = "authorization_code"
+	MCPOAuthClientInputGrantTypeClientCredentials MCPOAuthClientInputGrantType = "client_credentials"
+)
+
+// Valid indicates whether the value is a known member of the MCPOAuthClientInputGrantType enum.
+func (e MCPOAuthClientInputGrantType) Valid() bool {
+	switch e {
+	case MCPOAuthClientInputGrantTypeAuthorizationCode:
+		return true
+	case MCPOAuthClientInputGrantTypeClientCredentials:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for MCPOAuthClientInputTokenEndpointAuthMethod.
 const (
 	MCPOAuthClientInputTokenEndpointAuthMethodClientSecretBasic MCPOAuthClientInputTokenEndpointAuthMethod = "client_secret_basic"
@@ -1217,6 +1292,45 @@ func (e MCPOAuthClientInputTokenEndpointAuthMethod) Valid() bool {
 	case MCPOAuthClientInputTokenEndpointAuthMethodClientSecretPost:
 		return true
 	case MCPOAuthClientInputTokenEndpointAuthMethodNone:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MCPOAuthDiscoveryClientRegistration.
+const (
+	MCPOAuthDiscoveryClientRegistrationDynamic          MCPOAuthDiscoveryClientRegistration = "dynamic"
+	MCPOAuthDiscoveryClientRegistrationManual           MCPOAuthDiscoveryClientRegistration = "manual"
+	MCPOAuthDiscoveryClientRegistrationMetadataDocument MCPOAuthDiscoveryClientRegistration = "metadata_document"
+)
+
+// Valid indicates whether the value is a known member of the MCPOAuthDiscoveryClientRegistration enum.
+func (e MCPOAuthDiscoveryClientRegistration) Valid() bool {
+	switch e {
+	case MCPOAuthDiscoveryClientRegistrationDynamic:
+		return true
+	case MCPOAuthDiscoveryClientRegistrationManual:
+		return true
+	case MCPOAuthDiscoveryClientRegistrationMetadataDocument:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MCPOAuthDiscoveryGrantTypesSupported.
+const (
+	MCPOAuthDiscoveryGrantTypesSupportedAuthorizationCode MCPOAuthDiscoveryGrantTypesSupported = "authorization_code"
+	MCPOAuthDiscoveryGrantTypesSupportedClientCredentials MCPOAuthDiscoveryGrantTypesSupported = "client_credentials"
+)
+
+// Valid indicates whether the value is a known member of the MCPOAuthDiscoveryGrantTypesSupported enum.
+func (e MCPOAuthDiscoveryGrantTypesSupported) Valid() bool {
+	switch e {
+	case MCPOAuthDiscoveryGrantTypesSupportedAuthorizationCode:
+		return true
+	case MCPOAuthDiscoveryGrantTypesSupportedClientCredentials:
 		return true
 	default:
 		return false
@@ -3193,6 +3307,13 @@ type CreateMCPConnectionRequest struct {
 	StaticHeaderNames *[]string   `json:"static_header_names,omitempty"`
 }
 
+// CreateManagedEnvironmentRequest defines model for CreateManagedEnvironmentRequest.
+type CreateManagedEnvironmentRequest struct {
+	Name       nullable.Nullable[string] `json:"name,omitempty"`
+	TemplateId string                    `json:"template_id"`
+	Version    nullable.Nullable[int]    `json:"version,omitempty"`
+}
+
 // CreateModelProviderRequest defines model for CreateModelProviderRequest.
 type CreateModelProviderRequest struct {
 	Configuration *map[string]interface{}   `json:"configuration,omitempty"`
@@ -3395,6 +3516,7 @@ type Environment struct {
 	CreatedAt          time.Time                     `json:"created_at"`
 	Generation         int                           `json:"generation"`
 	Id                 string                        `json:"id"`
+	Name               string                        `json:"name"`
 	OrganizationId     string                        `json:"organization_id"`
 	Ownership          EnvironmentOwnership          `json:"ownership"`
 	ProviderId         string                        `json:"provider_id"`
@@ -3432,29 +3554,35 @@ type EnvironmentCommandStatus string
 
 // EnvironmentProvider defines model for EnvironmentProvider.
 type EnvironmentProvider struct {
-	Configuration        map[string]JsonValue      `json:"configuration"`
-	CreatedAt            time.Time                 `json:"created_at"`
-	CredentialConfigured bool                      `json:"credential_configured"`
-	Enabled              bool                      `json:"enabled"`
-	Id                   string                    `json:"id"`
-	Name                 string                    `json:"name"`
-	OrganizationId       string                    `json:"organization_id"`
-	Type                 string                    `json:"type"`
-	UpdatedAt            time.Time                 `json:"updated_at"`
-	WorkspaceId          nullable.Nullable[string] `json:"workspace_id"`
+	Configuration        map[string]JsonValue                    `json:"configuration"`
+	ConfigurationSource  *EnvironmentProviderConfigurationSource `json:"configuration_source,omitempty"`
+	CreatedAt            time.Time                               `json:"created_at"`
+	CredentialConfigured bool                                    `json:"credential_configured"`
+	Enabled              bool                                    `json:"enabled"`
+	Id                   string                                  `json:"id"`
+	Name                 string                                  `json:"name"`
+	OrganizationId       string                                  `json:"organization_id"`
+	Type                 string                                  `json:"type"`
+	UpdatedAt            time.Time                               `json:"updated_at"`
+	WorkspaceId          nullable.Nullable[string]               `json:"workspace_id"`
 }
+
+// EnvironmentProviderConfigurationSource defines model for EnvironmentProvider.ConfigurationSource.
+type EnvironmentProviderConfigurationSource string
 
 // EnvironmentProviderDefinition defines model for EnvironmentProviderDefinition.
 type EnvironmentProviderDefinition struct {
-	ConfigurationSchema   map[string]JsonValue                    `json:"configuration_schema"`
-	ConfigurationVersions []string                                `json:"configuration_versions"`
-	CredentialSchema      nullable.Nullable[map[string]JsonValue] `json:"credential_schema"`
-	DisplayName           string                                  `json:"display_name"`
-	RequiresKeepalive     bool                                    `json:"requires_keepalive"`
-	SupportsDestroy       bool                                    `json:"supports_destroy"`
-	SupportsManaged       bool                                    `json:"supports_managed"`
-	SupportsStop          bool                                    `json:"supports_stop"`
-	Type                  string                                  `json:"type"`
+	ConfigurationSchema          map[string]JsonValue                    `json:"configuration_schema"`
+	ConfigurationVersions        []string                                `json:"configuration_versions"`
+	CredentialSchema             nullable.Nullable[map[string]JsonValue] `json:"credential_schema"`
+	DeploymentManaged            *bool                                   `json:"deployment_managed,omitempty"`
+	DisplayName                  string                                  `json:"display_name"`
+	RequiresKeepalive            bool                                    `json:"requires_keepalive"`
+	SupportsDestroy              bool                                    `json:"supports_destroy"`
+	SupportsManaged              bool                                    `json:"supports_managed"`
+	SupportsStop                 bool                                    `json:"supports_stop"`
+	TemplateConfigurationSchemas map[string]map[string]JsonValue         `json:"template_configuration_schemas"`
+	Type                         string                                  `json:"type"`
 }
 
 // EnvironmentSelection defines model for EnvironmentSelection.
@@ -3935,9 +4063,17 @@ type MCPConnectionToolSelection struct {
 // MCPOAuthClientConfiguration defines model for MCPOAuthClientConfiguration.
 type MCPOAuthClientConfiguration struct {
 	ClientId                string                                             `json:"client_id"`
+	GrantType               MCPOAuthClientConfigurationGrantType               `json:"grant_type"`
 	IssuerUrl               string                                             `json:"issuer_url"`
+	Source                  MCPOAuthClientConfigurationSource                  `json:"source"`
 	TokenEndpointAuthMethod MCPOAuthClientConfigurationTokenEndpointAuthMethod `json:"token_endpoint_auth_method"`
 }
+
+// MCPOAuthClientConfigurationGrantType defines model for MCPOAuthClientConfiguration.GrantType.
+type MCPOAuthClientConfigurationGrantType string
+
+// MCPOAuthClientConfigurationSource defines model for MCPOAuthClientConfiguration.Source.
+type MCPOAuthClientConfigurationSource string
 
 // MCPOAuthClientConfigurationTokenEndpointAuthMethod defines model for MCPOAuthClientConfiguration.TokenEndpointAuthMethod.
 type MCPOAuthClientConfigurationTokenEndpointAuthMethod string
@@ -3946,9 +4082,13 @@ type MCPOAuthClientConfigurationTokenEndpointAuthMethod string
 type MCPOAuthClientInput struct {
 	ClientId                string                                     `json:"client_id"`
 	ClientSecret            nullable.Nullable[string]                  `json:"client_secret,omitempty"`
+	GrantType               *MCPOAuthClientInputGrantType              `json:"grant_type,omitempty"`
 	IssuerUrl               string                                     `json:"issuer_url"`
 	TokenEndpointAuthMethod MCPOAuthClientInputTokenEndpointAuthMethod `json:"token_endpoint_auth_method"`
 }
+
+// MCPOAuthClientInputGrantType defines model for MCPOAuthClientInput.GrantType.
+type MCPOAuthClientInputGrantType string
 
 // MCPOAuthClientInputTokenEndpointAuthMethod defines model for MCPOAuthClientInput.TokenEndpointAuthMethod.
 type MCPOAuthClientInputTokenEndpointAuthMethod string
@@ -3956,10 +4096,18 @@ type MCPOAuthClientInputTokenEndpointAuthMethod string
 // MCPOAuthDiscovery defines model for MCPOAuthDiscovery.
 type MCPOAuthDiscovery struct {
 	AuthorizationResponseIssParameterSupported bool                                                 `json:"authorization_response_iss_parameter_supported"`
+	ClientRegistration                         MCPOAuthDiscoveryClientRegistration                  `json:"client_registration"`
+	GrantTypesSupported                        []MCPOAuthDiscoveryGrantTypesSupported               `json:"grant_types_supported"`
 	IssuerUrl                                  string                                               `json:"issuer_url"`
-	RedirectUri                                string                                               `json:"redirect_uri"`
+	RedirectUri                                nullable.Nullable[string]                            `json:"redirect_uri"`
 	TokenEndpointAuthMethodsSupported          []MCPOAuthDiscoveryTokenEndpointAuthMethodsSupported `json:"token_endpoint_auth_methods_supported"`
 }
+
+// MCPOAuthDiscoveryClientRegistration defines model for MCPOAuthDiscovery.ClientRegistration.
+type MCPOAuthDiscoveryClientRegistration string
+
+// MCPOAuthDiscoveryGrantTypesSupported defines model for MCPOAuthDiscovery.GrantTypesSupported.
+type MCPOAuthDiscoveryGrantTypesSupported string
 
 // MCPOAuthDiscoveryTokenEndpointAuthMethodsSupported defines model for MCPOAuthDiscovery.TokenEndpointAuthMethodsSupported.
 type MCPOAuthDiscoveryTokenEndpointAuthMethodsSupported string
@@ -4437,6 +4585,7 @@ type RegisterEnvironmentRequest struct {
 	Access                     *EnvironmentAccess                  `json:"access,omitempty"`
 	Configuration              map[string]JsonValue                `json:"configuration"`
 	ConfigurationSchemaVersion *string                             `json:"configuration_schema_version,omitempty"`
+	Name                       nullable.Nullable[string]           `json:"name,omitempty"`
 	ProviderId                 string                              `json:"provider_id"`
 	State                      nullable.Nullable[EnvironmentState] `json:"state,omitempty"`
 }
@@ -5416,6 +5565,11 @@ type UpdateConnectorProviderRequest struct {
 	Status          nullable.Nullable[ConnectorProviderStatus] `json:"status,omitempty"`
 }
 
+// UpdateEnvironmentRequest defines model for UpdateEnvironmentRequest.
+type UpdateEnvironmentRequest struct {
+	Name string `json:"name"`
+}
+
 // UpdateHookSubscriptionRequest defines model for UpdateHookSubscriptionRequest.
 type UpdateHookSubscriptionRequest struct {
 	HookNames []string                  `json:"hook_names"`
@@ -5842,6 +5996,11 @@ type GetEnvironmentTemplatesTemplateIdRevisionsParams struct {
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// PatchEnvironmentsEnvironmentIdParams defines parameters for PatchEnvironmentsEnvironmentId.
+type PatchEnvironmentsEnvironmentIdParams struct {
+	IfMatch string `json:"If-Match"`
+}
+
 // PostEnvironmentsEnvironmentIdDeleteParams defines parameters for PostEnvironmentsEnvironmentIdDelete.
 type PostEnvironmentsEnvironmentIdDeleteParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
@@ -5871,6 +6030,11 @@ type PutHookSubscriptionsSubscriptionIdParams struct {
 type DeleteMcpConnectionsConnectionIdParams struct {
 	ExpectedVersion int    `form:"expected_version" json:"expected_version"`
 	IdempotencyKey  string `json:"Idempotency-Key"`
+}
+
+// PostMcpConnectionsConnectionIdAuthenticateParams defines parameters for PostMcpConnectionsConnectionIdAuthenticate.
+type PostMcpConnectionsConnectionIdAuthenticateParams struct {
+	IdempotencyKey string `json:"Idempotency-Key"`
 }
 
 // PostMcpConnectionsConnectionIdAuthorizeParams defines parameters for PostMcpConnectionsConnectionIdAuthorize.
@@ -6612,6 +6776,9 @@ type PatchEnvironmentTemplatesTemplateIdJSONRequestBody = UpdateTemplateRequest
 // PostEnvironmentTemplatesTemplateIdRevisionsJSONRequestBody defines body for PostEnvironmentTemplatesTemplateIdRevisions for application/json ContentType.
 type PostEnvironmentTemplatesTemplateIdRevisionsJSONRequestBody = CreateTemplateRevisionRequest
 
+// PatchEnvironmentsEnvironmentIdJSONRequestBody defines body for PatchEnvironmentsEnvironmentId for application/json ContentType.
+type PatchEnvironmentsEnvironmentIdJSONRequestBody = UpdateEnvironmentRequest
+
 // PatchHookSubscriptionsSubscriptionIdJSONRequestBody defines body for PatchHookSubscriptionsSubscriptionId for application/json ContentType.
 type PatchHookSubscriptionsSubscriptionIdJSONRequestBody = UpdateHookSubscriptionStateRequest
 
@@ -6629,6 +6796,9 @@ type PostInvitationsInvitationIdRevokeJSONRequestBody = ExpectedVersion
 
 // PatchMcpConnectionsConnectionIdJSONRequestBody defines body for PatchMcpConnectionsConnectionId for application/json ContentType.
 type PatchMcpConnectionsConnectionIdJSONRequestBody = UpdateMCPConnectionRequest
+
+// PostMcpConnectionsConnectionIdAuthenticateJSONRequestBody defines body for PostMcpConnectionsConnectionIdAuthenticate for application/json ContentType.
+type PostMcpConnectionsConnectionIdAuthenticateJSONRequestBody = MCPConnectionCommandRequest
 
 // PostMcpConnectionsConnectionIdAuthorizeJSONRequestBody defines body for PostMcpConnectionsConnectionIdAuthorize for application/json ContentType.
 type PostMcpConnectionsConnectionIdAuthorizeJSONRequestBody = MCPConnectionCommandRequest
@@ -11295,22 +11465,22 @@ func (t *WaitingRunFeedbackRequest_Resolutions_Item) UnmarshalJSON(b []byte) err
 	return err
 }
 
-// AsNewEnvironmentSelection returns the union data inside the PostWorkspacesWorkspaceEnvironmentsJSONBody as a NewEnvironmentSelection
-func (t PostWorkspacesWorkspaceEnvironmentsJSONBody) AsNewEnvironmentSelection() (NewEnvironmentSelection, error) {
-	var body NewEnvironmentSelection
+// AsCreateManagedEnvironmentRequest returns the union data inside the PostWorkspacesWorkspaceEnvironmentsJSONBody as a CreateManagedEnvironmentRequest
+func (t PostWorkspacesWorkspaceEnvironmentsJSONBody) AsCreateManagedEnvironmentRequest() (CreateManagedEnvironmentRequest, error) {
+	var body CreateManagedEnvironmentRequest
 	err := json.Unmarshal(t.union, &body)
 	return body, err
 }
 
-// FromNewEnvironmentSelection overwrites any union data inside the PostWorkspacesWorkspaceEnvironmentsJSONBody as the provided NewEnvironmentSelection
-func (t *PostWorkspacesWorkspaceEnvironmentsJSONBody) FromNewEnvironmentSelection(v NewEnvironmentSelection) error {
+// FromCreateManagedEnvironmentRequest overwrites any union data inside the PostWorkspacesWorkspaceEnvironmentsJSONBody as the provided CreateManagedEnvironmentRequest
+func (t *PostWorkspacesWorkspaceEnvironmentsJSONBody) FromCreateManagedEnvironmentRequest(v CreateManagedEnvironmentRequest) error {
 	b, err := json.Marshal(v)
 	t.union = b
 	return err
 }
 
-// MergeNewEnvironmentSelection performs a merge with any union data inside the PostWorkspacesWorkspaceEnvironmentsJSONBody, using the provided NewEnvironmentSelection
-func (t *PostWorkspacesWorkspaceEnvironmentsJSONBody) MergeNewEnvironmentSelection(v NewEnvironmentSelection) error {
+// MergeCreateManagedEnvironmentRequest performs a merge with any union data inside the PostWorkspacesWorkspaceEnvironmentsJSONBody, using the provided CreateManagedEnvironmentRequest
+func (t *PostWorkspacesWorkspaceEnvironmentsJSONBody) MergeCreateManagedEnvironmentRequest(v CreateManagedEnvironmentRequest) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -11884,6 +12054,20 @@ type ClientInterface interface {
 	// Corresponds with POST /api/v1/environment-templates/{template_id}/revisions (the `PostEnvironmentTemplatesTemplateIdRevisions` operationId).
 	PostEnvironmentTemplatesTemplateIdRevisions(ctx context.Context, templateId string, body PostEnvironmentTemplatesTemplateIdRevisionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// PatchEnvironmentsEnvironmentIdWithBody Update Environment
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PATCH /api/v1/environments/{environment_id} (the `PatchEnvironmentsEnvironmentId` operationId).
+	PatchEnvironmentsEnvironmentIdWithBody(ctx context.Context, environmentId string, params *PatchEnvironmentsEnvironmentIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PatchEnvironmentsEnvironmentId Update Environment
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PATCH /api/v1/environments/{environment_id} (the `PatchEnvironmentsEnvironmentId` operationId).
+	PatchEnvironmentsEnvironmentId(ctx context.Context, environmentId string, params *PatchEnvironmentsEnvironmentIdParams, body PatchEnvironmentsEnvironmentIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// PostEnvironmentsEnvironmentIdDelete Delete Environment
 	//
 	// Corresponds with POST /api/v1/environments/{environment_id}/delete (the `PostEnvironmentsEnvironmentIdDelete` operationId).
@@ -12007,6 +12191,20 @@ type ClientInterface interface {
 	//
 	// Corresponds with PATCH /api/v1/mcp-connections/{connection_id} (the `PatchMcpConnectionsConnectionId` operationId).
 	PatchMcpConnectionsConnectionId(ctx context.Context, connectionId string, body PatchMcpConnectionsConnectionIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostMcpConnectionsConnectionIdAuthenticateWithBody Authenticate Mcp Connection
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/mcp-connections/{connection_id}/authenticate (the `PostMcpConnectionsConnectionIdAuthenticate` operationId).
+	PostMcpConnectionsConnectionIdAuthenticateWithBody(ctx context.Context, connectionId string, params *PostMcpConnectionsConnectionIdAuthenticateParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostMcpConnectionsConnectionIdAuthenticate Authenticate Mcp Connection
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/mcp-connections/{connection_id}/authenticate (the `PostMcpConnectionsConnectionIdAuthenticate` operationId).
+	PostMcpConnectionsConnectionIdAuthenticate(ctx context.Context, connectionId string, params *PostMcpConnectionsConnectionIdAuthenticateParams, body PostMcpConnectionsConnectionIdAuthenticateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostMcpConnectionsConnectionIdAuthorizeWithBody Authorize Mcp Connection
 	//
@@ -14805,6 +15003,40 @@ func (c *Client) PostEnvironmentTemplatesTemplateIdRevisions(ctx context.Context
 	return c.Client.Do(req)
 }
 
+// PatchEnvironmentsEnvironmentIdWithBody Update Environment
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PATCH /api/v1/environments/{environment_id} (the `PatchEnvironmentsEnvironmentId` operationId).
+func (c *Client) PatchEnvironmentsEnvironmentIdWithBody(ctx context.Context, environmentId string, params *PatchEnvironmentsEnvironmentIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchEnvironmentsEnvironmentIdRequestWithBody(c.Server, environmentId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PatchEnvironmentsEnvironmentId Update Environment
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PATCH /api/v1/environments/{environment_id} (the `PatchEnvironmentsEnvironmentId` operationId).
+func (c *Client) PatchEnvironmentsEnvironmentId(ctx context.Context, environmentId string, params *PatchEnvironmentsEnvironmentIdParams, body PatchEnvironmentsEnvironmentIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchEnvironmentsEnvironmentIdRequest(c.Server, environmentId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // PostEnvironmentsEnvironmentIdDelete Delete Environment
 //
 // Corresponds with POST /api/v1/environments/{environment_id}/delete (the `PostEnvironmentsEnvironmentIdDelete` operationId).
@@ -15119,6 +15351,40 @@ func (c *Client) PatchMcpConnectionsConnectionIdWithBody(ctx context.Context, co
 // Corresponds with PATCH /api/v1/mcp-connections/{connection_id} (the `PatchMcpConnectionsConnectionId` operationId).
 func (c *Client) PatchMcpConnectionsConnectionId(ctx context.Context, connectionId string, body PatchMcpConnectionsConnectionIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPatchMcpConnectionsConnectionIdRequest(c.Server, connectionId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostMcpConnectionsConnectionIdAuthenticateWithBody Authenticate Mcp Connection
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/mcp-connections/{connection_id}/authenticate (the `PostMcpConnectionsConnectionIdAuthenticate` operationId).
+func (c *Client) PostMcpConnectionsConnectionIdAuthenticateWithBody(ctx context.Context, connectionId string, params *PostMcpConnectionsConnectionIdAuthenticateParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostMcpConnectionsConnectionIdAuthenticateRequestWithBody(c.Server, connectionId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostMcpConnectionsConnectionIdAuthenticate Authenticate Mcp Connection
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/mcp-connections/{connection_id}/authenticate (the `PostMcpConnectionsConnectionIdAuthenticate` operationId).
+func (c *Client) PostMcpConnectionsConnectionIdAuthenticate(ctx context.Context, connectionId string, params *PostMcpConnectionsConnectionIdAuthenticateParams, body PostMcpConnectionsConnectionIdAuthenticateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostMcpConnectionsConnectionIdAuthenticateRequest(c.Server, connectionId, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -21750,6 +22016,66 @@ func NewPostEnvironmentTemplatesTemplateIdRevisionsRequestWithBody(server string
 	return req, nil
 }
 
+// NewPatchEnvironmentsEnvironmentIdRequest calls the generic PatchEnvironmentsEnvironmentId builder with application/json body
+func NewPatchEnvironmentsEnvironmentIdRequest(server string, environmentId string, params *PatchEnvironmentsEnvironmentIdParams, body PatchEnvironmentsEnvironmentIdJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPatchEnvironmentsEnvironmentIdRequestWithBody(server, environmentId, params, "application/json", bodyReader)
+}
+
+// NewPatchEnvironmentsEnvironmentIdRequestWithBody constructs an http.Request for the PatchEnvironmentsEnvironmentId method, with any body, and a specified content type
+func NewPatchEnvironmentsEnvironmentIdRequestWithBody(server string, environmentId string, params *PatchEnvironmentsEnvironmentIdParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "environment_id", environmentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/environments/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "If-Match", params.IfMatch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("If-Match", headerParam0)
+
+	}
+
+	return req, nil
+}
+
 // NewPostEnvironmentsEnvironmentIdDeleteRequest constructs an http.Request for the PostEnvironmentsEnvironmentIdDelete method
 func NewPostEnvironmentsEnvironmentIdDeleteRequest(server string, environmentId string, params *PostEnvironmentsEnvironmentIdDeleteParams) (*http.Request, error) {
 	var err error
@@ -22408,6 +22734,66 @@ func NewPatchMcpConnectionsConnectionIdRequestWithBody(server string, connection
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPostMcpConnectionsConnectionIdAuthenticateRequest calls the generic PostMcpConnectionsConnectionIdAuthenticate builder with application/json body
+func NewPostMcpConnectionsConnectionIdAuthenticateRequest(server string, connectionId string, params *PostMcpConnectionsConnectionIdAuthenticateParams, body PostMcpConnectionsConnectionIdAuthenticateJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostMcpConnectionsConnectionIdAuthenticateRequestWithBody(server, connectionId, params, "application/json", bodyReader)
+}
+
+// NewPostMcpConnectionsConnectionIdAuthenticateRequestWithBody constructs an http.Request for the PostMcpConnectionsConnectionIdAuthenticate method, with any body, and a specified content type
+func NewPostMcpConnectionsConnectionIdAuthenticateRequestWithBody(server string, connectionId string, params *PostMcpConnectionsConnectionIdAuthenticateParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "connection_id", connectionId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/mcp-connections/%s/authenticate", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
 
 	return req, nil
 }
@@ -33857,6 +34243,20 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /api/v1/environment-templates/{template_id}/revisions (the `PostEnvironmentTemplatesTemplateIdRevisions` operationId).
 	PostEnvironmentTemplatesTemplateIdRevisionsWithResponse(ctx context.Context, templateId string, body PostEnvironmentTemplatesTemplateIdRevisionsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostEnvironmentTemplatesTemplateIdRevisionsResponse, error)
 
+	// PatchEnvironmentsEnvironmentIdWithBodyWithResponse Update Environment
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /api/v1/environments/{environment_id} (the `PatchEnvironmentsEnvironmentId` operationId).
+	PatchEnvironmentsEnvironmentIdWithBodyWithResponse(ctx context.Context, environmentId string, params *PatchEnvironmentsEnvironmentIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchEnvironmentsEnvironmentIdResponse, error)
+
+	// PatchEnvironmentsEnvironmentIdWithResponse Update Environment
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /api/v1/environments/{environment_id} (the `PatchEnvironmentsEnvironmentId` operationId).
+	PatchEnvironmentsEnvironmentIdWithResponse(ctx context.Context, environmentId string, params *PatchEnvironmentsEnvironmentIdParams, body PatchEnvironmentsEnvironmentIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchEnvironmentsEnvironmentIdResponse, error)
+
 	// PostEnvironmentsEnvironmentIdDeleteWithResponse Delete Environment
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -33996,6 +34396,20 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with PATCH /api/v1/mcp-connections/{connection_id} (the `PatchMcpConnectionsConnectionId` operationId).
 	PatchMcpConnectionsConnectionIdWithResponse(ctx context.Context, connectionId string, body PatchMcpConnectionsConnectionIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchMcpConnectionsConnectionIdResponse, error)
+
+	// PostMcpConnectionsConnectionIdAuthenticateWithBodyWithResponse Authenticate Mcp Connection
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/mcp-connections/{connection_id}/authenticate (the `PostMcpConnectionsConnectionIdAuthenticate` operationId).
+	PostMcpConnectionsConnectionIdAuthenticateWithBodyWithResponse(ctx context.Context, connectionId string, params *PostMcpConnectionsConnectionIdAuthenticateParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostMcpConnectionsConnectionIdAuthenticateResponse, error)
+
+	// PostMcpConnectionsConnectionIdAuthenticateWithResponse Authenticate Mcp Connection
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/mcp-connections/{connection_id}/authenticate (the `PostMcpConnectionsConnectionIdAuthenticate` operationId).
+	PostMcpConnectionsConnectionIdAuthenticateWithResponse(ctx context.Context, connectionId string, params *PostMcpConnectionsConnectionIdAuthenticateParams, body PostMcpConnectionsConnectionIdAuthenticateJSONRequestBody, reqEditors ...RequestEditorFn) (*PostMcpConnectionsConnectionIdAuthenticateResponse, error)
 
 	// PostMcpConnectionsConnectionIdAuthorizeWithBodyWithResponse Authorize Mcp Connection
 	//
@@ -39627,6 +40041,83 @@ func (r PostEnvironmentTemplatesTemplateIdRevisionsResponse) ContentType() strin
 	return ""
 }
 
+// PatchEnvironmentsEnvironmentIdResponse200Headers the declared response headers of an HTTP 200 response for PatchEnvironmentsEnvironmentId
+type PatchEnvironmentsEnvironmentIdResponse200Headers struct {
+	XRequestID *string
+}
+
+// PatchEnvironmentsEnvironmentIdResponse400Headers the declared response headers of an HTTP 400 response for PatchEnvironmentsEnvironmentId
+type PatchEnvironmentsEnvironmentIdResponse400Headers struct {
+	XRequestID *string
+}
+
+// PatchEnvironmentsEnvironmentIdResponseDefaultHeaders the declared response headers of an HTTP default response for PatchEnvironmentsEnvironmentId
+type PatchEnvironmentsEnvironmentIdResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PatchEnvironmentsEnvironmentIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Environment
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PatchEnvironmentsEnvironmentIdResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PatchEnvironmentsEnvironmentIdResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PatchEnvironmentsEnvironmentIdResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PatchEnvironmentsEnvironmentIdResponse) GetJSON200() *Environment {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PatchEnvironmentsEnvironmentIdResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PatchEnvironmentsEnvironmentIdResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PatchEnvironmentsEnvironmentIdResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PatchEnvironmentsEnvironmentIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PatchEnvironmentsEnvironmentIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PatchEnvironmentsEnvironmentIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // PostEnvironmentsEnvironmentIdDeleteResponse202Headers the declared response headers of an HTTP 202 response for PostEnvironmentsEnvironmentIdDelete
 type PostEnvironmentsEnvironmentIdDeleteResponse202Headers struct {
 	XRequestID *string
@@ -40685,6 +41176,83 @@ func (r PatchMcpConnectionsConnectionIdResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r PatchMcpConnectionsConnectionIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PostMcpConnectionsConnectionIdAuthenticateResponse200Headers the declared response headers of an HTTP 200 response for PostMcpConnectionsConnectionIdAuthenticate
+type PostMcpConnectionsConnectionIdAuthenticateResponse200Headers struct {
+	XRequestID *string
+}
+
+// PostMcpConnectionsConnectionIdAuthenticateResponse400Headers the declared response headers of an HTTP 400 response for PostMcpConnectionsConnectionIdAuthenticate
+type PostMcpConnectionsConnectionIdAuthenticateResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostMcpConnectionsConnectionIdAuthenticateResponseDefaultHeaders the declared response headers of an HTTP default response for PostMcpConnectionsConnectionIdAuthenticate
+type PostMcpConnectionsConnectionIdAuthenticateResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostMcpConnectionsConnectionIdAuthenticateResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MCPConnection
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PostMcpConnectionsConnectionIdAuthenticateResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostMcpConnectionsConnectionIdAuthenticateResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostMcpConnectionsConnectionIdAuthenticateResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostMcpConnectionsConnectionIdAuthenticateResponse) GetJSON200() *MCPConnection {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostMcpConnectionsConnectionIdAuthenticateResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostMcpConnectionsConnectionIdAuthenticateResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostMcpConnectionsConnectionIdAuthenticateResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostMcpConnectionsConnectionIdAuthenticateResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostMcpConnectionsConnectionIdAuthenticateResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostMcpConnectionsConnectionIdAuthenticateResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -55905,6 +56473,32 @@ func (c *ClientWithResponses) PostEnvironmentTemplatesTemplateIdRevisionsWithRes
 	return ParsePostEnvironmentTemplatesTemplateIdRevisionsResponse(rsp)
 }
 
+// PatchEnvironmentsEnvironmentIdWithBodyWithResponse Update Environment
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /api/v1/environments/{environment_id} (the `PatchEnvironmentsEnvironmentId` operationId).
+func (c *ClientWithResponses) PatchEnvironmentsEnvironmentIdWithBodyWithResponse(ctx context.Context, environmentId string, params *PatchEnvironmentsEnvironmentIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchEnvironmentsEnvironmentIdResponse, error) {
+	rsp, err := c.PatchEnvironmentsEnvironmentIdWithBody(ctx, environmentId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchEnvironmentsEnvironmentIdResponse(rsp)
+}
+
+// PatchEnvironmentsEnvironmentIdWithResponse Update Environment
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /api/v1/environments/{environment_id} (the `PatchEnvironmentsEnvironmentId` operationId).
+func (c *ClientWithResponses) PatchEnvironmentsEnvironmentIdWithResponse(ctx context.Context, environmentId string, params *PatchEnvironmentsEnvironmentIdParams, body PatchEnvironmentsEnvironmentIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchEnvironmentsEnvironmentIdResponse, error) {
+	rsp, err := c.PatchEnvironmentsEnvironmentId(ctx, environmentId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchEnvironmentsEnvironmentIdResponse(rsp)
+}
+
 // PostEnvironmentsEnvironmentIdDeleteWithResponse Delete Environment
 //
 // Returns a wrapper object for the known response body format(s).
@@ -56163,6 +56757,32 @@ func (c *ClientWithResponses) PatchMcpConnectionsConnectionIdWithResponse(ctx co
 		return nil, err
 	}
 	return ParsePatchMcpConnectionsConnectionIdResponse(rsp)
+}
+
+// PostMcpConnectionsConnectionIdAuthenticateWithBodyWithResponse Authenticate Mcp Connection
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/mcp-connections/{connection_id}/authenticate (the `PostMcpConnectionsConnectionIdAuthenticate` operationId).
+func (c *ClientWithResponses) PostMcpConnectionsConnectionIdAuthenticateWithBodyWithResponse(ctx context.Context, connectionId string, params *PostMcpConnectionsConnectionIdAuthenticateParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostMcpConnectionsConnectionIdAuthenticateResponse, error) {
+	rsp, err := c.PostMcpConnectionsConnectionIdAuthenticateWithBody(ctx, connectionId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostMcpConnectionsConnectionIdAuthenticateResponse(rsp)
+}
+
+// PostMcpConnectionsConnectionIdAuthenticateWithResponse Authenticate Mcp Connection
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/mcp-connections/{connection_id}/authenticate (the `PostMcpConnectionsConnectionIdAuthenticate` operationId).
+func (c *ClientWithResponses) PostMcpConnectionsConnectionIdAuthenticateWithResponse(ctx context.Context, connectionId string, params *PostMcpConnectionsConnectionIdAuthenticateParams, body PostMcpConnectionsConnectionIdAuthenticateJSONRequestBody, reqEditors ...RequestEditorFn) (*PostMcpConnectionsConnectionIdAuthenticateResponse, error) {
+	rsp, err := c.PostMcpConnectionsConnectionIdAuthenticate(ctx, connectionId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostMcpConnectionsConnectionIdAuthenticateResponse(rsp)
 }
 
 // PostMcpConnectionsConnectionIdAuthorizeWithBodyWithResponse Authorize Mcp Connection
@@ -63516,6 +64136,86 @@ func ParsePostEnvironmentTemplatesTemplateIdRevisionsResponse(rsp *http.Response
 	return response, nil
 }
 
+// ParsePatchEnvironmentsEnvironmentIdResponse parses an HTTP response from a PatchEnvironmentsEnvironmentIdWithResponse call
+func ParsePatchEnvironmentsEnvironmentIdResponse(rsp *http.Response) (*PatchEnvironmentsEnvironmentIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PatchEnvironmentsEnvironmentIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Environment
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PatchEnvironmentsEnvironmentIdResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PatchEnvironmentsEnvironmentIdResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PatchEnvironmentsEnvironmentIdResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
 // ParsePostEnvironmentsEnvironmentIdDeleteResponse parses an HTTP response from a PostEnvironmentsEnvironmentIdDeleteWithResponse call
 func ParsePostEnvironmentsEnvironmentIdDeleteResponse(rsp *http.Response) (*PostEnvironmentsEnvironmentIdDeleteResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -64608,6 +65308,86 @@ func ParsePatchMcpConnectionsConnectionIdResponse(rsp *http.Response) (*PatchMcp
 		response.Headers400 = &headers
 	case true:
 		var headers PatchMcpConnectionsConnectionIdResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostMcpConnectionsConnectionIdAuthenticateResponse parses an HTTP response from a PostMcpConnectionsConnectionIdAuthenticateWithResponse call
+func ParsePostMcpConnectionsConnectionIdAuthenticateResponse(rsp *http.Response) (*PostMcpConnectionsConnectionIdAuthenticateResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostMcpConnectionsConnectionIdAuthenticateResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MCPConnection
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PostMcpConnectionsConnectionIdAuthenticateResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostMcpConnectionsConnectionIdAuthenticateResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostMcpConnectionsConnectionIdAuthenticateResponseDefaultHeaders
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {

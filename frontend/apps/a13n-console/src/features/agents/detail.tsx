@@ -44,6 +44,7 @@ export function AgentDetail() {
     cache = useQueryClient(),
     idempotency = useIdempotency();
   const [generation, setGeneration] = useState(0);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const query = useQuery({
     queryKey: ["agent", workspace.id, agentKey],
     enabled: isResourceKey(agentKey),
@@ -127,6 +128,8 @@ export function AgentDetail() {
       identityAction={
         can("agent.update") && (
           <ModalFrame
+            open={detailsOpen}
+            onOpenChange={setDetailsOpen}
             trigger={
               <Button
                 variant="ghost"
@@ -144,6 +147,7 @@ export function AgentDetail() {
             <AgentDetails
               key={`${agent.id}:${agent.key}:${generation}`}
               resource={query.data}
+              close={() => setDetailsOpen(false)}
               onImageSaved={async () => {
                 await query.refetch();
               }}
@@ -196,7 +200,7 @@ export function AgentDetail() {
                 {t("Version history")}
               </Button>
             }
-            size={"md"}
+            size="lg"
             title={t("Version history")}
             description={t("Review and restore saved configurations.")}
             closeLabel={t("Close")}

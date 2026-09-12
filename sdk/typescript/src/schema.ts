@@ -706,6 +706,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/environments/{environment_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update Environment */
+    patch: operations["patch_environments_environment_id"];
+    trace?: never;
+  };
   "/api/v1/environments/{environment_id}/delete": {
     parameters: {
       query?: never;
@@ -862,6 +879,23 @@ export interface paths {
     head?: never;
     /** Update Mcp Connection */
     patch: operations["patch_mcp_connections_connection_id"];
+    trace?: never;
+  };
+  "/api/v1/mcp-connections/{connection_id}/authenticate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Authenticate Mcp Connection */
+    post: operations["post_mcp_connections_connection_id_authenticate"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
     trace?: never;
   };
   "/api/v1/mcp-connections/{connection_id}/authorize": {
@@ -4430,6 +4464,15 @@ export interface components {
        */
       static_header_names?: string[];
     };
+    /** CreateManagedEnvironmentRequest */
+    CreateManagedEnvironmentRequest: {
+      /** Name */
+      name?: string | null;
+      /** Template Id */
+      template_id: string;
+      /** Version */
+      version?: number | null;
+    };
     /** CreateModelProviderRequest */
     CreateModelProviderRequest: {
       /** Configuration */
@@ -4738,6 +4781,8 @@ export interface components {
       generation: number;
       /** Id */
       id: string;
+      /** Name */
+      name: string;
       /** Organization Id */
       organization_id: string;
       /**
@@ -4799,6 +4844,12 @@ export interface components {
         [key: string]: components["schemas"]["JsonValue"];
       };
       /**
+       * Configuration Source
+       * @default user
+       * @enum {string}
+       */
+      configuration_source?: "user" | "deployment";
+      /**
        * Created At
        * Format: date-time
        */
@@ -4835,6 +4886,11 @@ export interface components {
       credential_schema: {
         [key: string]: components["schemas"]["JsonValue"];
       } | null;
+      /**
+       * Deployment Managed
+       * @default false
+       */
+      deployment_managed?: boolean;
       /** Display Name */
       display_name: string;
       /** Requires Keepalive */
@@ -4845,6 +4901,12 @@ export interface components {
       supports_managed: boolean;
       /** Supports Stop */
       supports_stop: boolean;
+      /** Template Configuration Schemas */
+      template_configuration_schemas: {
+        [key: string]: {
+          [key: string]: components["schemas"]["JsonValue"];
+        };
+      };
       /** Type */
       type: string;
     };
@@ -5599,8 +5661,18 @@ export interface components {
     MCPOAuthClientConfiguration: {
       /** Client Id */
       client_id: string;
+      /**
+       * Grant Type
+       * @enum {string}
+       */
+      grant_type: "authorization_code" | "client_credentials";
       /** Issuer Url */
       issuer_url: string;
+      /**
+       * Source
+       * @enum {string}
+       */
+      source: "pre_registered" | "dynamic" | "metadata_document";
       /**
        * Token Endpoint Auth Method
        * @enum {string}
@@ -5614,6 +5686,12 @@ export interface components {
       client_id: string;
       /** Client Secret */
       client_secret?: string | null;
+      /**
+       * Grant Type
+       * @default authorization_code
+       * @enum {string}
+       */
+      grant_type?: "authorization_code" | "client_credentials";
       /** Issuer Url */
       issuer_url: string;
       /**
@@ -5627,10 +5705,17 @@ export interface components {
     MCPOAuthDiscovery: {
       /** Authorization Response Iss Parameter Supported */
       authorization_response_iss_parameter_supported: boolean;
+      /**
+       * Client Registration
+       * @enum {string}
+       */
+      client_registration: "metadata_document" | "dynamic" | "manual";
+      /** Grant Types Supported */
+      grant_types_supported: ("authorization_code" | "client_credentials")[];
       /** Issuer Url */
       issuer_url: string;
       /** Redirect Uri */
-      redirect_uri: string;
+      redirect_uri: string | null;
       /** Token Endpoint Auth Methods Supported */
       token_endpoint_auth_methods_supported: (
         "none" | "client_secret_basic" | "client_secret_post"
@@ -6387,6 +6472,8 @@ export interface components {
        * @default 1
        */
       configuration_schema_version?: string;
+      /** Name */
+      name?: string | null;
       /** Provider Id */
       provider_id: string;
       state?: components["schemas"]["EnvironmentState"] | null;
@@ -7889,6 +7976,11 @@ export interface components {
       /** Name */
       name?: string | null;
       status?: components["schemas"]["ConnectorProviderStatus"] | null;
+    };
+    /** UpdateEnvironmentRequest */
+    UpdateEnvironmentRequest: {
+      /** Name */
+      name: string;
     };
     /** UpdateHookSubscriptionRequest */
     UpdateHookSubscriptionRequest: {
@@ -10607,6 +10699,56 @@ export interface operations {
       };
     };
   };
+  patch_environments_environment_id: {
+    parameters: {
+      query?: never;
+      header: {
+        "If-Match": string;
+      };
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateEnvironmentRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Environment"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
   post_environments_environment_id_delete: {
     parameters: {
       query?: never;
@@ -11222,6 +11364,56 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": components["schemas"]["UpdateMCPConnectionRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MCPConnection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_mcp_connections_connection_id_authenticate: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+      };
+      path: {
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MCPConnectionCommandRequest"];
       };
     };
     responses: {
@@ -17704,7 +17896,7 @@ export interface operations {
     requestBody: {
       content: {
         "application/json":
-          | components["schemas"]["NewEnvironmentSelection"]
+          | components["schemas"]["CreateManagedEnvironmentRequest"]
           | components["schemas"]["RegisterEnvironmentRequest"];
       };
     };

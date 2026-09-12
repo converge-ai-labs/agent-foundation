@@ -9,7 +9,7 @@ from a13n_service.settings import Settings
 
 from .seed_assets import asset_examples
 from .seed_client import Client
-from .seed_environments import local_workspace
+from .seed_environments import local_provider, local_workspace
 
 FIXTURES = Path(__file__).with_name("fixtures")
 AGENT_NAMES = (
@@ -97,12 +97,7 @@ async def resources(client: Client, base: str, model_url: str, settings: Setting
         },
     )
     scenarios["model_disabled"] = disabled["id"]
-    provider = await client.request(
-        "POST",
-        base + "/environment-providers",
-        expected=201,
-        json={"type": "a13n.direct-local", "name": "Local development files", "configuration": {}},
-    )
+    provider = await local_provider(client, base)
     root = settings.filesystem.root / "workspace"
     workspace = await local_workspace(client, base, provider["id"], root, "Local review workspace")
     publication_path = root / "published-review.md"

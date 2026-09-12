@@ -10,7 +10,8 @@
     "format:check": "prettier --check .",
     "check": "pnpm run format:check && pnpm -r run check",
     "build": "pnpm -r run build",
-    "clean": "pnpm -r run clean"
+    "clean": "pnpm -r run clean",
+    "test": "pnpm -r run test"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

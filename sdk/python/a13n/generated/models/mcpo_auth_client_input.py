@@ -5,6 +5,7 @@ from typing import Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 
+from ..models.mcpo_auth_client_input_grant_type import MCPOAuthClientInputGrantType
 from ..models.mcpo_auth_client_input_token_endpoint_auth_method import MCPOAuthClientInputTokenEndpointAuthMethod
 from ..types import UNSET, Unset
 
@@ -19,12 +20,14 @@ class MCPOAuthClientInput:
         issuer_url (str):
         token_endpoint_auth_method (MCPOAuthClientInputTokenEndpointAuthMethod):
         client_secret (None | str | Unset):
+        grant_type (MCPOAuthClientInputGrantType | Unset):
     """
 
     client_id: str
     issuer_url: str
     token_endpoint_auth_method: MCPOAuthClientInputTokenEndpointAuthMethod
     client_secret: str | Unset | None = UNSET
+    grant_type: MCPOAuthClientInputGrantType | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         client_id = self.client_id
@@ -39,6 +42,10 @@ class MCPOAuthClientInput:
         else:
             client_secret = self.client_secret
 
+        grant_type: str | Unset = UNSET
+        if not isinstance(self.grant_type, Unset):
+            grant_type = self.grant_type.value
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -50,6 +57,8 @@ class MCPOAuthClientInput:
         )
         if client_secret is not UNSET:
             field_dict["client_secret"] = client_secret
+        if grant_type is not UNSET:
+            field_dict["grant_type"] = grant_type
 
         return field_dict
 
@@ -71,11 +80,19 @@ class MCPOAuthClientInput:
 
         client_secret = _parse_client_secret(d.pop("client_secret", UNSET))
 
+        _grant_type = d.pop("grant_type", UNSET)
+        grant_type: MCPOAuthClientInputGrantType | Unset
+        if isinstance(_grant_type, Unset):
+            grant_type = UNSET
+        else:
+            grant_type = MCPOAuthClientInputGrantType(_grant_type)
+
         mcpo_auth_client_input = cls(
             client_id=client_id,
             issuer_url=issuer_url,
             token_endpoint_auth_method=token_endpoint_auth_method,
             client_secret=client_secret,
+            grant_type=grant_type,
         )
 
         return mcpo_auth_client_input

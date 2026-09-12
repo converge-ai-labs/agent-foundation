@@ -123,6 +123,7 @@ from .create_connector_provider_request_credentials import CreateConnectorProvid
 from .create_hook_subscription_request import CreateHookSubscriptionRequest
 from .create_invitation_request import CreateInvitationRequest
 from .create_key_request import CreateKeyRequest
+from .create_managed_environment_request import CreateManagedEnvironmentRequest
 from .create_mcp_connection_request import CreateMCPConnectionRequest
 from .create_model_provider_request import CreateModelProviderRequest
 from .create_model_provider_request_configuration import CreateModelProviderRequestConfiguration
@@ -165,9 +166,16 @@ from .environment_command_status import EnvironmentCommandStatus
 from .environment_ownership import EnvironmentOwnership
 from .environment_provider import EnvironmentProvider
 from .environment_provider_configuration import EnvironmentProviderConfiguration
+from .environment_provider_configuration_source import EnvironmentProviderConfigurationSource
 from .environment_provider_definition import EnvironmentProviderDefinition
 from .environment_provider_definition_configuration_schema import EnvironmentProviderDefinitionConfigurationSchema
 from .environment_provider_definition_credential_schema_type_0 import EnvironmentProviderDefinitionCredentialSchemaType0
+from .environment_provider_definition_template_configuration_schemas import (
+    EnvironmentProviderDefinitionTemplateConfigurationSchemas,
+)
+from .environment_provider_definition_template_configuration_schemas_additional_property import (
+    EnvironmentProviderDefinitionTemplateConfigurationSchemasAdditionalProperty,
+)
 from .environment_retention_condition import EnvironmentRetentionCondition
 from .environment_state import EnvironmentState
 from .environment_status import EnvironmentStatus
@@ -239,12 +247,17 @@ from .mcp_tool_collection import MCPToolCollection
 from .mcp_tool_input_schema import MCPToolInputSchema
 from .mcp_tool_output_schema_type_0 import MCPToolOutputSchemaType0
 from .mcpo_auth_client_configuration import MCPOAuthClientConfiguration
+from .mcpo_auth_client_configuration_grant_type import MCPOAuthClientConfigurationGrantType
+from .mcpo_auth_client_configuration_source import MCPOAuthClientConfigurationSource
 from .mcpo_auth_client_configuration_token_endpoint_auth_method import (
     MCPOAuthClientConfigurationTokenEndpointAuthMethod,
 )
 from .mcpo_auth_client_input import MCPOAuthClientInput
+from .mcpo_auth_client_input_grant_type import MCPOAuthClientInputGrantType
 from .mcpo_auth_client_input_token_endpoint_auth_method import MCPOAuthClientInputTokenEndpointAuthMethod
 from .mcpo_auth_discovery import MCPOAuthDiscovery
+from .mcpo_auth_discovery_client_registration import MCPOAuthDiscoveryClientRegistration
+from .mcpo_auth_discovery_grant_types_supported_item import MCPOAuthDiscoveryGrantTypesSupportedItem
 from .mcpo_auth_discovery_token_endpoint_auth_methods_supported_item import (
     MCPOAuthDiscoveryTokenEndpointAuthMethodsSupportedItem,
 )
@@ -469,6 +482,7 @@ from .update_agent_request import UpdateAgentRequest
 from .update_connector_connection_request import UpdateConnectorConnectionRequest
 from .update_connector_provider_request import UpdateConnectorProviderRequest
 from .update_connector_provider_request_credentials_type_0 import UpdateConnectorProviderRequestCredentialsType0
+from .update_environment_request import UpdateEnvironmentRequest
 from .update_hook_subscription_request import UpdateHookSubscriptionRequest
 from .update_hook_subscription_state_request import UpdateHookSubscriptionStateRequest
 from .update_mcp_connection_request import UpdateMCPConnectionRequest
@@ -631,6 +645,7 @@ __all__ = (
     "CreateInvitationRequest",
     "CreateKeyRequest",
     "CreateMCPConnectionRequest",
+    "CreateManagedEnvironmentRequest",
     "CreateModelProviderRequest",
     "CreateModelProviderRequestConfiguration",
     "CreateModelProviderRequestExtraHeaders",
@@ -672,9 +687,12 @@ __all__ = (
     "EnvironmentOwnership",
     "EnvironmentProvider",
     "EnvironmentProviderConfiguration",
+    "EnvironmentProviderConfigurationSource",
     "EnvironmentProviderDefinition",
     "EnvironmentProviderDefinitionConfigurationSchema",
     "EnvironmentProviderDefinitionCredentialSchemaType0",
+    "EnvironmentProviderDefinitionTemplateConfigurationSchemas",
+    "EnvironmentProviderDefinitionTemplateConfigurationSchemasAdditionalProperty",
     "EnvironmentRetentionCondition",
     "EnvironmentState",
     "EnvironmentStatus",
@@ -741,10 +759,15 @@ __all__ = (
     "MCPConnectionStatusReason",
     "MCPConnectionToolSelection",
     "MCPOAuthClientConfiguration",
+    "MCPOAuthClientConfigurationGrantType",
+    "MCPOAuthClientConfigurationSource",
     "MCPOAuthClientConfigurationTokenEndpointAuthMethod",
     "MCPOAuthClientInput",
+    "MCPOAuthClientInputGrantType",
     "MCPOAuthClientInputTokenEndpointAuthMethod",
     "MCPOAuthDiscovery",
+    "MCPOAuthDiscoveryClientRegistration",
+    "MCPOAuthDiscoveryGrantTypesSupportedItem",
     "MCPOAuthDiscoveryTokenEndpointAuthMethodsSupportedItem",
     "MCPTool",
     "MCPToolAnnotations",
@@ -968,6 +991,7 @@ __all__ = (
     "UpdateConnectorConnectionRequest",
     "UpdateConnectorProviderRequest",
     "UpdateConnectorProviderRequestCredentialsType0",
+    "UpdateEnvironmentRequest",
     "UpdateHookSubscriptionRequest",
     "UpdateHookSubscriptionStateRequest",
     "UpdateMCPConnectionRequest",

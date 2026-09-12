@@ -306,7 +306,7 @@ class ExternalToolRuntime:
         # Preserve the typed outcome envelope while validating its successful payload
         # against the original source schema, including its own local references.
         outcome_schema = ConnectorToolOutcome.model_json_schema()
-        tools = tuple(mcp_tool(tool).model_copy(update={"outputSchema": outcome_schema}) for tool in definitions)
+        tools = tuple(mcp_tool(tool).model_copy(update={"output_schema": outcome_schema}) for tool in definitions)
 
         async def call(name: str, arguments: JsonObject) -> JsonValue:
             if name not in by_name or (selection.tools is not None and name not in selection.tools):

@@ -55,12 +55,13 @@ from .oauth_bundles import (
 from .oauth_client import (
     MCPOAuthClient,
     MCPOAuthError,
+    OAuthClientContext,
     OAuthPreparation,
     authorization_url,
     oauth_client_metadata,
     oauth_redirect_uri,
 )
-from .oauth_configuration import OAuthConfiguration, configured_client
+from .oauth_configuration import OAuthConfiguration, client_refresh_context, configured_client, store_client
 from .service import ConnectionDiscovery
 
 
@@ -84,6 +85,15 @@ class OAuthSessionSnapshot:
     @classmethod
     def from_record(cls, record: MCPOAuthSessionRecord) -> OAuthSessionSnapshot:
         return cls(record.id, record.mcp_connection_id, assume_utc(record.expires_at), record.credential_snapshot())
+
+
+@dataclass(frozen=True, slots=True)
+class MachineOAuthSource:
+    connection_id: str
+    endpoint_url: str
+    version: int
+    client_generation: int
+    client: OAuthClientContext
 
 
 class MCPOAuthService:
@@ -118,7 +128,7 @@ class MCPOAuthService:
     @property
     def configuration(self) -> OAuthConfiguration:
         return OAuthConfiguration(
-            self._sessions, self._oauth, self._protector, public_origin=self._require_origin(), clock=self._clock
+            self._sessions, self._oauth, self._protector, public_origin=self._public_origin, clock=self._clock
         )
 
     def _require_origin(self) -> str:
@@ -192,6 +202,126 @@ class MCPOAuthService:
             except (MCPOAuthError, httpx2.HTTPError):
                 pass
             raise
+
+    async def authenticate_client_credentials(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        connection_id: str,
+        idempotency_key: str,
+        expected_version: int,
+    ) -> MCPConnection:
+        key_digest = _idempotency_digest(idempotency_key)
+        fingerprint = digest_request({"expected_version": expected_version})
+        async with transaction(self._sessions) as session:
+            connection = await require_connection(session, connection_id)
+            await authorize_connection(session, actor, connection, mode="manage")
+            try:
+                replay = await replay_command(
+                    session,
+                    actor=actor,
+                    workspace_id=connection.workspace_id,
+                    operation="mcp_connection.client_credentials",
+                    scope_id=connection.id,
+                    idempotency_key_digest=key_digest,
+                    fingerprint=fingerprint,
+                    now=self._clock(),
+                )
+            except IdempotencyConflict as error:
+                raise map_management_error(error) from error
+            if replay is not None:
+                return replay.restore(MCPConnection)
+            require_version(connection.version, expected_version)
+            if connection.status == "disabled":
+                raise MCPConnectionError(
+                    "connection_disabled", "MCPConnection is disabled.", category=ErrorCategory.conflict
+                )
+            client_record = await session.get(MCPConnectionOAuthClientRecord, connection.id)
+            if client_record is None:
+                raise MCPConnectionError(
+                    "oauth_client_required", "Client credentials are not configured.", category=ErrorCategory.conflict
+                )
+            client = client_refresh_context(client_record, self._protector)
+            if client.grant_type != "client_credentials" or client.client_secret is None:
+                raise MCPConnectionError(
+                    "invalid_oauth_grant",
+                    "This MCPConnection does not use client credentials.",
+                    category=ErrorCategory.conflict,
+                )
+            source = MachineOAuthSource(
+                connection.id,
+                connection.endpoint_url,
+                connection.version,
+                client_record.credential_generation,
+                client,
+            )
+        credential = await self._acquire_machine_credential(source)
+        now = self._clock()
+        async with transaction(self._sessions) as session:
+            connection = await require_connection(session, connection_id, lock=True)
+            client_record = await session.get(MCPConnectionOAuthClientRecord, connection_id)
+            if (
+                not _source_matches(connection, source)
+                or client_record is None
+                or client_record.credential_generation != source.client_generation
+            ):
+                raise MCPConnectionError(
+                    "version_conflict",
+                    "MCPConnection changed during machine authorization.",
+                    category=ErrorCategory.conflict,
+                )
+            connection.replace_credential(canonical_json(validate_oauth_bundle(credential)), self._protector)
+            connection.status = "pending"
+            connection.status_reason = None
+            connection.version += 1
+            connection.updated_at = now
+            invalidate_refresh_claim(connection, now=now)
+            resource = connection.to_resource()
+            command_id = record_command(
+                session,
+                actor=actor,
+                organization_id=connection.organization_id,
+                workspace_id=connection.workspace_id,
+                operation="mcp_connection.client_credentials",
+                scope_id=connection.id,
+                idempotency_key_digest=key_digest,
+                fingerprint=fingerprint,
+                resource_type="mcp_connection",
+                resource_id=connection.id,
+                result_version=connection.version,
+                now=now,
+                resource=resource,
+            ).id
+            session.add(audit(actor, connection, action="mcp_connection.client_credentials", now=now))
+        try:
+            return (await self._discovery.discover(connection_id, actor=actor, command_id=command_id)).connection
+        except MCPConnectionError as error:
+            if error.code != "mcp_discovery_unavailable":
+                raise
+            return resource
+
+    async def _acquire_machine_credential(self, source: MachineOAuthSource) -> JsonObject:
+        try:
+            credential = await self._oauth.acquire_client_credentials(source.client)
+            return with_expiration(credential, self._clock())
+        except MCPOAuthError as error:
+            if error.action_required:
+                raise MCPConnectionError(
+                    "mcp_oauth_rejected",
+                    "Remote MCP machine credentials were rejected.",
+                    category=ErrorCategory.conflict,
+                ) from error
+            raise MCPConnectionError(
+                "mcp_oauth_unavailable",
+                "Remote MCP machine authorization could not be completed.",
+                category=ErrorCategory.unavailable,
+            ) from error
+        except httpx2.HTTPError as error:
+            raise MCPConnectionError(
+                "mcp_oauth_unavailable",
+                "Remote MCP machine authorization could not be completed.",
+                category=ErrorCategory.unavailable,
+            ) from error
 
     async def receive_callback(self, *, callback_key: str, state: str, code: str, issuer: str | None) -> str:
         """Capture the provider response before an authenticated browser completes it."""
@@ -283,7 +413,14 @@ class MCPOAuthService:
                 "Remote MCP authorization is temporarily unavailable.",
                 category=ErrorCategory.unavailable,
             ) from error
-        await self._discovery.discover(source.connection_id, actor=actor)
+        try:
+            await self._discovery.discover(source.connection_id, actor=actor)
+        except MCPConnectionError as error:
+            if error.code != "mcp_discovery_unavailable":
+                raise
+            # Authorization is already durable. Verification is safe to retry
+            # without asking the user to grant consent a second time.
+            pass
         async with transaction(self._sessions) as session:
             record = await require_connection(session, source.connection_id)
             await authorize_connection(session, actor, record, mode="read")
@@ -339,13 +476,20 @@ class MCPOAuthService:
                     "connection_disabled", "MCPConnection is disabled.", category=ErrorCategory.conflict
                 )
             client_record = await session.get(MCPConnectionOAuthClientRecord, connection.id)
+            client = configured_client(client_record, self._protector) if client_record is not None else None
+            if client is not None and client.grant_type != "authorization_code":
+                raise MCPConnectionError(
+                    "invalid_oauth_grant",
+                    "This MCPConnection uses client credentials.",
+                    category=ErrorCategory.conflict,
+                )
             return OAuthSource(
                 connection_id=connection.id,
                 organization_id=connection.organization_id,
                 workspace_id=connection.workspace_id,
                 endpoint_url=connection.endpoint_url,
                 version=connection.version,
-                client=configured_client(client_record, self._protector) if client_record is not None else None,
+                client=client,
             )
 
     async def _create_session(
@@ -387,6 +531,33 @@ class MCPOAuthService:
                     updated_at=now,
                 )
             )
+
+            if source.client is None:
+                client_record = MCPConnectionOAuthClientRecord(
+                    id=connection.id,
+                    organization_id=connection.organization_id,
+                    workspace_id=connection.workspace_id,
+                    credential_generation=0,
+                )
+                store_client(
+                    client_record,
+                    MCPOAuthClientInput.model_validate(
+                        {
+                            "issuer_url": preparation.issuer_url,
+                            "client_id": preparation.client_id,
+                            "client_secret": preparation.client_secret,
+                            "token_endpoint_auth_method": preparation.token_endpoint_auth_method,
+                        }
+                    ),
+                    source="dynamic" if preparation.registration_endpoint is not None else "metadata_document",
+                    protector=self._protector,
+                    resource_url=preparation.resource_url,
+                    token_endpoint=preparation.token_endpoint,
+                    scope=preparation.scope,
+                    registration_access_token=preparation.registration_access_token,
+                    registration_client_uri=preparation.registration_client_uri,
+                )
+                session.add(client_record)
 
             oauth_session = MCPOAuthSessionRecord(
                 id=session_id,
@@ -623,7 +794,7 @@ class CallbackSource:
     claim_owner: str
 
 
-def _source_matches(connection: MCPConnectionRecord, source: OAuthSource) -> bool:
+def _source_matches(connection: MCPConnectionRecord, source: OAuthSource | MachineOAuthSource) -> bool:
     return (
         connection.deleted_at is None
         and connection.auth_mode == "oauth"

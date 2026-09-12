@@ -527,14 +527,22 @@ frontend-sync: ## Install locked frontend workspace dependencies
 	@pnpm --dir frontend install --frozen-lockfile
 
 .PHONY: frontend-check
-frontend-check: frontend-sync sdk-typescript-build ## Check frontend formatting, types, tests, and API contract
+frontend-check: frontend-sync sdk-typescript-build ## Check frontend formatting, types, and API contract
 	@pnpm --dir frontend run check
 
+.PHONY: frontend-test
+frontend-test: frontend-sync sdk-typescript-build ## Run frontend unit and interaction tests
+	@pnpm --dir frontend run test
+
 .PHONY: frontend-build
-frontend-build: a13n-console-build a13n-harness-ui-webui-build ## Build every frontend application
+frontend-build: a13n-ui-build a13n-console-build a13n-harness-ui-webui-build ## Build frontend applications and the UI showcase
 
 .PHONY: frontend-check-all
-frontend-check-all: frontend-check frontend-build ## Run the complete frontend gate
+frontend-check-all: frontend-check frontend-test frontend-build ## Run the complete frontend gate
+
+.PHONY: a13n-ui-build
+a13n-ui-build: frontend-sync ## Build the shared UI showcase
+	@pnpm --dir frontend --filter a13n-ui run build
 
 .PHONY: a13n-console-build
 a13n-console-build: frontend-sync sdk-typescript-build ## Build Console production assets

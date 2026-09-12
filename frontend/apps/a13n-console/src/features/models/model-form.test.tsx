@@ -7,10 +7,13 @@ import { ModelForm } from "./model-form";
 const state = vi.hoisted(() => ({
   GET: vi.fn(),
   POST: vi.fn(),
+  PATCH: vi.fn(),
   close: vi.fn(),
 }));
 vi.mock("../../auth/context", () => ({
-  useClient: () => ({ http: { GET: state.GET, POST: state.POST } }),
+  useClient: () => ({
+    http: { GET: state.GET, POST: state.POST, PATCH: state.PATCH },
+  }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -49,7 +52,10 @@ const definition = {
     properties: { base_url: { type: "string" }, auth_mode: { type: "string" } },
   },
 };
-function mount(providerId?: string) {
+function mount(
+  providerId?: string,
+  resource?: Parameters<typeof ModelForm>[0]["resource"],
+) {
   render(
     <QueryClientProvider
       client={
@@ -61,6 +67,7 @@ function mount(providerId?: string) {
       <ModelForm
         scope={{ kind: "workspace", id: "ws_test" }}
         providerId={providerId}
+        resource={resource}
         close={state.close}
         reload={async () => {}}
       />
@@ -160,10 +167,8 @@ it.each([
       "My endpoint",
     );
     await user.click(screen.getByRole("button", { name: /Advanced settings/ }));
-    await user.type(
-      screen.getByRole("textbox", { name: "Base URL" }),
-      `https://example.com/v1/${path}`,
-    );
+    await user.click(screen.getByRole("textbox", { name: "Base URL" }));
+    await user.paste(`https://example.com/v1/${path}`);
     await user.click(
       screen.getByRole("button", { name: "Use base URL without the API path" }),
     );
@@ -223,6 +228,7 @@ it.each([
       expect.objectContaining({
         body: expect.objectContaining({
           provider_id: "mp_test",
+          enabled: true,
           upstream_model: "custom-model",
           model_api:
             path === "responses"
@@ -342,4 +348,102 @@ it("opens endpoint setup directly when there are no providers and allows cancell
   await user.click(screen.getByRole("button", { name: "Cancel" }));
   expect(state.close).toHaveBeenCalled();
   expect(state.POST).not.toHaveBeenCalled();
+});
+
+it("keeps identity fields and actions available before model selection and preserves drafts across source tabs", async () => {
+  const user = userEvent.setup();
+  mount("mp_test");
+  await screen.findByRole("tab", { name: "Enter model ID" });
+  const name = screen.getByRole("textbox", { name: "Name" });
+  const key = screen.getByRole("textbox", { name: "Model key" });
+  expect(
+    (screen.getByRole("button", { name: "Add model" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  await user.type(name, "Team model");
+  await user.type(key, "team-model");
+  await user.click(screen.getByRole("tab", { name: "Enter model ID" }));
+  await user.type(
+    screen.getByRole("textbox", { name: "Upstream model" }),
+    "custom-model",
+  );
+  await user.click(screen.getByRole("tab", { name: "From catalog" }));
+  expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
+  expect((name as HTMLInputElement).value).toBe("Team model");
+  expect((key as HTMLInputElement).value).toBe("team-model");
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(state.close).toHaveBeenCalled();
+  expect(state.POST.mock.calls.some(([path]) => path.endsWith("/models"))).toBe(
+    false,
+  );
+});
+
+it("holds status edits until save and restores the unchanged state when reverted", async () => {
+  const user = userEvent.setup();
+  const principal = {
+    principal_id: "usr_test",
+    principal_type: "user" as const,
+  };
+  const model = {
+    id: "mdl_test",
+    key: "team-model",
+    name: "Team model",
+    provider_id: "mp_test",
+    upstream_model: "custom-model",
+    model_api: "openai.chat_completions",
+    settings: {},
+    enabled: true,
+    description: null,
+    organization_id: "org_test",
+    workspace_id: "ws_test",
+    created_at: "2026-09-12T00:00:00Z",
+    updated_at: "2026-09-12T00:00:00Z",
+    created_by: principal,
+    updated_by: principal,
+  };
+  state.PATCH.mockResolvedValue({ data: { ...model, enabled: false } });
+  mount(undefined, { value: model, etag: '"v1"' });
+  const save = await screen.findByRole("button", { name: "Save changes" });
+  await user.click(screen.getByRole("button", { name: /^Connection/ }));
+  const upstream = await screen.findByRole("textbox", {
+    name: "Upstream model",
+  });
+  await user.clear(upstream);
+  await user.type(upstream, "edited-model");
+  await user.click(screen.getByRole("button", { name: /^Connection/ }));
+  await user.click(screen.getByRole("button", { name: /^Connection/ }));
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: "Upstream model",
+      }) as HTMLInputElement
+    ).value,
+  ).toBe("edited-model");
+  await user.clear(screen.getByRole("textbox", { name: "Upstream model" }));
+  await user.type(
+    screen.getByRole("textbox", { name: "Upstream model" }),
+    "custom-model",
+  );
+  await user.click(screen.getByRole("button", { name: /^Connection/ }));
+  expect((save as HTMLButtonElement).disabled).toBe(true);
+  await user.click(
+    screen.getByRole("switch", { name: /^(Enabled|Disabled)$/ }),
+  );
+  expect((save as HTMLButtonElement).disabled).toBe(false);
+  expect(state.PATCH).not.toHaveBeenCalled();
+  await user.click(
+    screen.getByRole("switch", { name: /^(Enabled|Disabled)$/ }),
+  );
+  expect((save as HTMLButtonElement).disabled).toBe(true);
+  await user.click(
+    screen.getByRole("switch", { name: /^(Enabled|Disabled)$/ }),
+  );
+  await user.click(save);
+  await waitFor(() => expect(state.close).toHaveBeenCalled());
+  expect(state.PATCH).toHaveBeenCalledWith(
+    "/api/v1/workspaces/{workspace}/models/{model_id}",
+    expect.objectContaining({
+      body: expect.objectContaining({ enabled: false, name: "Team model" }),
+    }),
+  );
 });

@@ -7,8 +7,8 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "tsc --noEmit && vite build",
-    "check": "pnpm run typecheck && pnpm run test",
+    "build": "vite build",
+    "check": "pnpm run typecheck",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "dev": "vite",
     "typecheck": "tsc --noEmit",

@@ -16,6 +16,7 @@ from a13n_service.connectivity.bounds import (
     MAX_REDIRECTS,
     PROVIDER_REQUEST_MAX_BYTES,
 )
+from a13n_service.environments.domain import LOCAL_PROVIDER_TYPES, JsonObject, LocalProviderType
 from a13n_service.environments.policy import DEFAULT_BATCH_SIZE, DEFAULT_MAX_ACTIVE, DEFAULT_MAX_TARGETS
 from a13n_service.observability import TraceContent
 
@@ -109,13 +110,8 @@ class SubagentsSettings(Section):
 
 
 class EnvironmentsSettings(Section):
-    provider_builtins: tuple[str, ...] = (
-        "a13n.direct-local",
-        "a13n.local-envd",
-        "a13n.docker",
-        "a13n.e2b",
-        "a13n.http-envd",
-    )
+    provider_builtins: tuple[str, ...] = ("a13n.e2b", "a13n.http-envd")
+    local_providers: dict[LocalProviderType, JsonObject] = Field(default_factory=dict)
     provider_extensions: tuple[str, ...] = ()
     maintenance_interval_seconds: float = Field(default=5, gt=0, le=300)
     operation_timeout_seconds: float = Field(default=60, gt=0, le=3600)
@@ -123,6 +119,12 @@ class EnvironmentsSettings(Section):
     max_active_per_workspace: int = Field(default=DEFAULT_MAX_ACTIVE, ge=1)
     maintenance_batch_size: int = Field(default=DEFAULT_BATCH_SIZE, ge=1, le=10_000)
     maintenance_concurrency: int = Field(default=4, ge=1, le=128)
+
+    @model_validator(mode="after")
+    def local_provider_configuration(self) -> Self:
+        if LOCAL_PROVIDER_TYPES.intersection(self.provider_builtins):
+            raise ValueError("Configure local backends through environments.local_providers, not provider_builtins")
+        return self
 
 
 class PricingSettings(Section):

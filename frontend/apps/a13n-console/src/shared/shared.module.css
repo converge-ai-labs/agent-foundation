@@ -249,3 +249,21 @@
 .schemaFields:empty {
   display: none;
 }
+
+.confirmSubject {
+  margin: 0;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--a13n-surface);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+:global([data-a13n-modal]) .json {
+  max-height: none;
+  margin: 0;
+  border: 0;
+  border-radius: 12px;
+  line-height: 1.7;
+}

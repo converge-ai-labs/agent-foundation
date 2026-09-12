@@ -51,6 +51,7 @@ export function NewConnection({
     >
       {open && (
         <ConnectionChoice
+          onCancel={() => setOpen(false)}
           onConnected={(id) => {
             setOpen(false);
             onConnected(id);
@@ -62,8 +63,10 @@ export function NewConnection({
 }
 function ConnectionChoice({
   onConnected,
+  onCancel,
 }: {
   onConnected: (id: string) => void;
+  onCancel: () => void;
 }) {
   const { t } = useTranslation(),
     { can } = useWorkspace(),
@@ -168,6 +171,7 @@ function ConnectionChoice({
           </>
         ) : (
           <CreateMCP
+            onCancel={onCancel}
             preset={selected.preset}
             onStarted={() => setStarted(true)}
             onSuccess={(connection) => onConnected(connection.id)}

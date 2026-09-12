@@ -1,11 +1,4 @@
-import {
-  Button,
-  ModalFrame,
-  Tabs,
-  TabsList,
-  TabsPanel,
-  TabsTab,
-} from "a13n-ui";
+import { Button, ModalFrame } from "a13n-ui";
 
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -73,6 +66,7 @@ export function ApplicationAccountsPage() {
           >
             {open && (
               <AccountForm
+                onCancel={() => setOpen(false)}
                 onSuccess={(account) => {
                   setOpen(false);
                   navigate(account.id);
@@ -175,6 +169,7 @@ export function ApplicationAccountDetail() {
         manage && (
           <>
             <Confirm
+              subject={account.name}
               title={t(
                 account.status === "active"
                   ? "Disable account"
@@ -205,6 +200,7 @@ export function ApplicationAccountDetail() {
               }}
             />
             <Confirm
+              subject={account.name}
               title={t("Delete application account")}
               description={t(
                 "This makes the identity unavailable and clears its credentials. Retained run evidence keeps its original identity.",
@@ -228,14 +224,14 @@ export function ApplicationAccountDetail() {
         )
       }
     >
-      <Tabs key={generation} defaultValue="details">
-        <TabsList aria-label={t("Application account")}>
-          <TabsTab value={"credentials"}>{t("Credentials")}</TabsTab>
-        </TabsList>
-        <TabsPanel value={"credentials"}>
-          {<AccountCredentials account={account} reload={reload} />}
-        </TabsPanel>
-      </Tabs>
+      <section
+        key={generation}
+        className="grid gap-4"
+        aria-label={t("Credentials")}
+      >
+        <h2>{t("Credentials")}</h2>
+        <AccountCredentials account={account} reload={reload} />
+      </section>
     </Page>
   );
 }

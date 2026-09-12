@@ -9,7 +9,6 @@ export interface MCPPreset {
   docs: string;
   logo: string;
   requirements: string;
-  oauthClient?: "preregistered";
   headerNames?: readonly string[];
 }
 

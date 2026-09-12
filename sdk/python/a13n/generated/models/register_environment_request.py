@@ -24,6 +24,7 @@ class RegisterEnvironmentRequest:
         provider_id (str):
         access (EnvironmentAccess | Unset):
         configuration_schema_version (str | Unset):
+        name (None | str | Unset):
         state (EnvironmentState | None | Unset):
     """
 
@@ -31,6 +32,7 @@ class RegisterEnvironmentRequest:
     provider_id: str
     access: EnvironmentAccess | Unset = UNSET
     configuration_schema_version: str | Unset = UNSET
+    name: str | Unset | None = UNSET
     state: EnvironmentState | Unset | None = UNSET
 
     def to_dict(self) -> dict[str, Any]:
@@ -45,6 +47,12 @@ class RegisterEnvironmentRequest:
             access = self.access.value
 
         configuration_schema_version = self.configuration_schema_version
+
+        name: str | Unset | None
+        if isinstance(self.name, Unset):
+            name = UNSET
+        else:
+            name = self.name
 
         state: dict[str, Any] | Unset | None
         if isinstance(self.state, Unset):
@@ -66,6 +74,8 @@ class RegisterEnvironmentRequest:
             field_dict["access"] = access
         if configuration_schema_version is not UNSET:
             field_dict["configuration_schema_version"] = configuration_schema_version
+        if name is not UNSET:
+            field_dict["name"] = name
         if state is not UNSET:
             field_dict["state"] = state
 
@@ -92,6 +102,15 @@ class RegisterEnvironmentRequest:
 
         configuration_schema_version = d.pop("configuration_schema_version", UNSET)
 
+        def _parse_name(data: object) -> str | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(str | Unset | None, data)
+
+        name = _parse_name(d.pop("name", UNSET))
+
         def _parse_state(data: object) -> EnvironmentState | Unset | None:
             if data is None:
                 return data
@@ -114,6 +133,7 @@ class RegisterEnvironmentRequest:
             provider_id=provider_id,
             access=access,
             configuration_schema_version=configuration_schema_version,
+            name=name,
             state=state,
         )
 

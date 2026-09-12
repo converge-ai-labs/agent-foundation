@@ -20,7 +20,7 @@ from .domain import MCP_PROTOCOL_REVISION
 
 
 class BoundedMCPClient(Client):
-    async def list_tools(self, max_pages: int = DISCOVERY_MAX_PAGES) -> list[Tool]:
+    async def list_tools_bounded(self, max_pages: int = DISCOVERY_MAX_PAGES) -> list[Tool]:
         tools: list[Tool] = []
         cursor: str | None = None
         cursors: set[str] = set()
@@ -36,7 +36,7 @@ class BoundedMCPClient(Client):
                 if size > DISCOVERY_MAX_BYTES or names.intersection(tool.name for tool in page.tools):
                     raise ValueError("tool_discovery_invalid")
                 names.update(tool.name for tool in page.tools)
-                cursor = page.nextCursor
+                cursor = page.next_cursor
                 if cursor is None:
                     return tools
                 if cursor in cursors:
@@ -118,7 +118,7 @@ class RemoteTransport:
             # FastMCP owns the client context; httpx2 implements its asynchronous transport API.
             httpx_client_factory=http_factory,  # type: ignore[arg-type]
         )
-        async with BoundedMCPClient(transport, timeout=self._timeout) as client:
-            if client.initialize_result is None or client.initialize_result.protocolVersion != MCP_PROTOCOL_REVISION:
+        async with BoundedMCPClient(transport, timeout=self._timeout, mode="legacy") as client:
+            if client.initialize_result is None or client.initialize_result.protocol_version != MCP_PROTOCOL_REVISION:
                 raise ValueError("mcp_protocol_incompatible")
             yield client

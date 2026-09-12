@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pydantic_ai.mcp import MCPToolset
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
@@ -56,20 +55,18 @@ class MCPDiscoveryService:
             async with self._transport.connect(
                 snapshot.endpoint, headers=snapshot.headers, refresh_headers=headers
             ) as client:
-                toolset = MCPToolset(client)
-                async with toolset:
-                    tools = tuple(
-                        MCPTool(
-                            name=tool.name,
-                            description=tool.description or "",
-                            input_schema=tool.inputSchema,
-                            output_schema=tool.outputSchema,
-                            annotations=tool.annotations.model_dump(mode="json", exclude_none=True)
-                            if tool.annotations
-                            else {},
-                        )
-                        for tool in await toolset.list_tools()
+                tools = tuple(
+                    MCPTool(
+                        name=tool.name,
+                        description=tool.description or "",
+                        input_schema=tool.input_schema,
+                        output_schema=tool.output_schema,
+                        annotations=tool.annotations.model_dump(mode="json", exclude_none=True)
+                        if tool.annotations
+                        else {},
                     )
+                    for tool in await client.list_tools_bounded()
+                )
         except Exception as error:
             raise MCPConnectionError(
                 "mcp_discovery_unavailable", "Remote tool discovery failed.", category=ErrorCategory.unavailable

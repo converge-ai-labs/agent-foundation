@@ -67,6 +67,7 @@ export function TextAreaField({
 export function Confirm({
   title,
   description,
+  subject,
   action,
   onSuccess,
   trigger,
@@ -78,6 +79,7 @@ export function Confirm({
 }: {
   title: string;
   description: string;
+  subject: string;
   action: () => Promise<unknown>;
   onSuccess?: () => void;
   trigger?: ReactNode;
@@ -144,12 +146,13 @@ export function Confirm({
             onClick={() => mutation.mutate()}
             type="button"
           >
-            {t("Confirm")}
+            {title}
           </Button>
         </>
       }
       open={open}
     >
+      <p className={styles.confirmSubject}>{subject}</p>
       {(children || mutation.error) && (
         <>
           {children}

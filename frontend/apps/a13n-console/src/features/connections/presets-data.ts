@@ -101,7 +101,6 @@ export const mcpPresets: readonly MCPPreset[] = [
     logo: "https://svgl.app/library/asana-logo.svg",
     requirements:
       "Create an Asana MCP app, register the displayed redirect URI, and distribute it to your workspace.",
-    oauthClient: "preregistered",
   },
   {
     id: "atlassian",
@@ -795,7 +794,6 @@ export const mcpPresets: readonly MCPPreset[] = [
     logo: "https://cdn.simpleicons.org/hubspot",
     requirements:
       "Create a HubSpot MCP Auth App with the displayed redirect URI. Select client secret in request body.",
-    oauthClient: "preregistered",
   },
   {
     id: "hugging-face",
@@ -1943,6 +1941,5 @@ export const mcpPresets: readonly MCPPreset[] = [
     logo: "https://cdn.simpleicons.org/zoom",
     requirements:
       "Create a Zoom General app with the displayed redirect URI, product licenses, and tool scopes. Select client secret in Basic header; administrator or developer access is required.",
-    oauthClient: "preregistered",
   },
 ];

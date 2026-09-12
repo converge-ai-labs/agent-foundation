@@ -8,6 +8,18 @@ from .seed_client import Client
 from .seed_journeys import run
 
 
+async def local_provider(client: Client, base: str) -> dict:
+    providers = await client.collection(base + "/environment-providers")
+    for provider in providers:
+        if (
+            provider["type"] == "a13n.direct-local"
+            and provider["enabled"]
+            and provider["configuration_source"] == "deployment"
+        ):
+            return provider
+    raise RuntimeError("Local seeding requires environments.local_providers.a13n.direct-local")
+
+
 async def local_workspace(client: Client, base: str, provider_id: str, root: Path, name: str) -> dict:
     root.mkdir(parents=True, mode=0o700)
     template = await client.request(
@@ -33,12 +45,7 @@ async def local_workspace(client: Client, base: str, provider_id: str, root: Pat
 
 
 async def environments(client: Client, base: str, catalog: dict, settings: Settings) -> dict:
-    provider = await client.request(
-        "POST",
-        base + "/environment-providers",
-        expected=201,
-        json={"type": "a13n.direct-local", "name": "Additional local recipe scenarios", "configuration": {}},
-    )
+    provider = await local_provider(client, base)
     scenarios = {}
     for name, access in (
         ("Read-only reference files", "read_only"),
@@ -98,7 +105,7 @@ async def environments(client: Client, base: str, catalog: dict, settings: Setti
         "POST",
         base + "/environment-providers",
         expected=201,
-        json={"type": "a13n.direct-local", "name": "Disabled local Environment provider", "configuration": {}},
+        json={"type": "a13n.e2b", "name": "Disabled E2B provider", "configuration": {}},
     )
     path = f"/api/v1/environment-providers/{disabled['id']}"
     await client.request("PATCH", path, headers=await client.etag(path), json={"enabled": False})

@@ -835,6 +835,25 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
+### `POST /api/v1/mcp-connections/{connection_id}/authenticate`
+
+Authenticate Mcp Connection.
+
+| Parameter         | Location | Required | Type / schema | Constraints and default    |
+| ----------------- | -------- | -------- | ------------- | -------------------------- |
+| `connection_id`   | path     | true     | string        | —                          |
+| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
+
+Request body: required.
+
+- `application/json`: `MCPConnectionCommandRequest`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: MCPConnection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ### `POST /api/v1/mcp-connections/{connection_id}/authorize`
 
 Authorize Mcp Connection.
@@ -1365,6 +1384,25 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
+### `PATCH /api/v1/environments/{environment_id}`
+
+Update Environment.
+
+| Parameter        | Location | Required | Type / schema | Constraints and default    |
+| ---------------- | -------- | -------- | ------------- | -------------------------- |
+| `environment_id` | path     | true     | string        | —                          |
+| `If-Match`       | header   | true     | string        | minLength=1; maxLength=256 |
+
+Request body: required.
+
+- `application/json`: `UpdateEnvironmentRequest`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: Environment`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ### `POST /api/v1/environments/{environment_id}/delete`
 
 Delete Environment.
@@ -1574,7 +1612,7 @@ Create Environment.
 
 Request body: required.
 
-- `application/json`: `NewEnvironmentSelection or RegisterEnvironmentRequest`.
+- `application/json`: `CreateManagedEnvironmentRequest or RegisterEnvironmentRequest`.
 
 Responses:
 

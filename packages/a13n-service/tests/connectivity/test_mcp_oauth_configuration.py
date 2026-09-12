@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 from urllib.parse import parse_qs, urlsplit
 
@@ -74,7 +75,8 @@ async def test_configured_client_is_write_only_survives_authorization_and_is_nev
     async with connectivity_sessions() as session:
         record = await session.get(MCPConnectionOAuthClientRecord, created.id)
         assert record is not None
-        assert record.credential_snapshot().decrypt(credential_protector) == "user-owned-secret"
+        protected = json.loads(record.credential_snapshot().decrypt(credential_protector))
+        assert protected["client_secret"] == "user-owned-secret"
         assert b"user-owned-secret" not in record.ciphertext
     remote.use_dcr = False
     launch, state = await launch_for(oauth, configured)
@@ -92,6 +94,32 @@ async def test_configured_client_is_write_only_survives_authorization_and_is_nev
     assert not remote.registration_deleted
     async with connectivity_sessions() as session:
         assert await session.get(MCPConnectionOAuthClientRecord, created.id) is None
+
+
+@pytest.mark.anyio
+async def test_replacing_service_registered_client_cleans_only_the_owned_registration(mcp_services):
+    connections, oauth, remote = mcp_services
+    remote.use_dcr = True
+    created = await create_connection(connections)
+    await oauth.authorize(
+        actor=actor(),
+        connection_id=created.id,
+        idempotency_key="authorize-owned-client",
+        expected_version=created.version,
+    )
+    current = await connections.get(actor=actor(), connection_id=created.id)
+
+    replaced = await oauth.configuration.configure(
+        actor=actor(),
+        connection_id=created.id,
+        request=ConfigureMCPOAuthClientRequest(expected_version=current.version, client=app_client()),
+    )
+
+    assert replaced.version == current.version + 1
+    assert remote.registration_deleted is True
+    public = await oauth.configuration.get(actor=actor(), connection_id=created.id)
+    assert public is not None
+    assert public.source == "pre_registered"
 
 
 @pytest.mark.anyio
@@ -205,5 +233,16 @@ def test_public_client_cannot_hold_a_secret():
             issuer_url=ISSUER,
             client_id="client",
             token_endpoint_auth_method="none",
+            client_secret="secret",
+        )
+
+
+def test_client_credentials_requires_authenticated_token_requests():
+    with pytest.raises(ValidationError):
+        MCPOAuthClientInput(
+            issuer_url=ISSUER,
+            client_id="client",
+            token_endpoint_auth_method="none",
+            grant_type="client_credentials",
             client_secret="secret",
         )

@@ -82,6 +82,26 @@ root = "/mnt/a13n-service-files"
 
 Supply actual URLs and secrets through protected deployment inputs. The filesystem mount must exist as required by deployment; Service does not provision NFS. Object compatibility, including atomic conditional deletion and fresh object versions, is checked at startup. A grace period cannot compensate for missing object-store guarantees.
 
+## Enable local Environment backends
+
+Local backends are disabled by default. For a self-hosted OSS instance, enable the types you need in the deployment file:
+
+```toml
+[environments.local_providers."a13n.direct-local"]
+
+[environments.local_providers."a13n.local-envd"]
+
+[environments.local_providers."a13n.docker"]
+```
+
+Each empty table uses the backend's defaults, including the current hostname. Control automatically publishes an Organization Provider for each configured type; all Workspaces can select it when creating a template. There is no Add Provider step, and Console shows these Providers as deployment-managed and read-only. The setting is restricted to OSS identity composition.
+
+For separate Control and Worker hosts, set the backend's `host_id` to the Worker host and, for Docker, its `docker_host` explicitly. Workers must have the matching host placement and backend access. Local paths refer to that host; Direct Local is direct OS access, not an isolation boundary. See [host-local placement](resources.md#host-local-placement).
+
+Restart Control after configuration changes. The same normalized configuration reuses its Provider ID. Removing or replacing a backend disables the old Provider and preserves existing template references; create or revise templates to select the replacement. Restoring a previous configuration re-enables its Provider. Keep the configuration consistent across Control replicas.
+
+E2B and HTTP Envd remain in the default implementation catalog. Configure E2B credentials through the Provider API or Console. Do not add local types to `environments.provider_builtins`; use `local_providers`.
+
 ## Environment variable mapping
 
 The [complete field reference](configuration-reference.md) lists every setting, environment variable, default, and field-level constraint from the actual loader.

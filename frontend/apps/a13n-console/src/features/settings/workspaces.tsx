@@ -45,6 +45,7 @@ export function Workspaces() {
             align: "right",
             render: (item) => (
               <Confirm
+                subject={item.name}
                 triggerVariant="ghost"
                 title={t("Delete workspace")}
                 description={t(

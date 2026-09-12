@@ -89,15 +89,10 @@ export function MCPAuthorization({
         </p>
       </div>
       {basis.auth_mode === "oauth" ? (
-        <>
-          <MCPOAuthSetup
-            connection={basis}
-            onConnectionChange={onConnectionChange}
-          />
-          <Button variant="outline" onClick={() => void reload()} type="button">
-            {t("Refresh connection")}
-          </Button>
-        </>
+        <MCPOAuthSetup
+          connection={basis}
+          onConnectionChange={onConnectionChange}
+        />
       ) : (
         basis.auth_mode !== "none" && (
           <form
@@ -128,14 +123,20 @@ export function MCPAuthorization({
           </form>
         )
       )}
-      <Button
-        variant="outline"
-        loading={reconnect.isPending}
-        onClick={() => reconnect.mutate()}
-        type="button"
-      >
-        {t("Verify connection")}
-      </Button>
+      {basis.auth_mode !== "oauth" && (
+        <Button
+          variant="outline"
+          loading={reconnect.isPending}
+          onClick={() => reconnect.mutate()}
+          type="button"
+        >
+          {t(
+            basis.status === "pending"
+              ? "Retry verification"
+              : "Verify connection",
+          )}
+        </Button>
+      )}
       <ErrorNotice
         error={credentials.error ?? reconnect.error}
         retry={() => void reload()}

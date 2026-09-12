@@ -9,7 +9,11 @@ from a13n_environment import (
     EnvironmentPermissionSet,
     EnvironmentState,
 )
-from a13n_service.environments.domain import CreateProviderRequest, CreateTemplateRequest, NewEnvironmentSelection
+from a13n_service.environments.domain import (
+    CreateManagedEnvironmentRequest,
+    CreateProviderRequest,
+    CreateTemplateRequest,
+)
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.models import EnvironmentRecord
 from a13n_service.storage import short_session, transaction
@@ -80,7 +84,7 @@ async def fixture_environment(service):
     return await service.create_environment(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        request=NewEnvironmentSelection(template_id=template.id),
+        request=CreateManagedEnvironmentRequest(template_id=template.id),
         idempotency_key="allocate",
     )
 
@@ -301,7 +305,7 @@ async def test_absent_docker_allocation_releases_capacity_and_delete_is_idempote
     second = await environment_service.create_environment(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        request=NewEnvironmentSelection(template_id=template_id),
+        request=CreateManagedEnvironmentRequest(template_id=template_id),
         idempotency_key="second-allocation",
     )
     now = datetime(2026, 9, 5, tzinfo=UTC)
@@ -366,7 +370,7 @@ async def test_periodic_batches_advance_past_failures_and_exclude_deleted_and_ex
 ):
     from unittest.mock import AsyncMock
 
-    from a13n_service.environments.domain import NewEnvironmentSelection, RegisterEnvironmentRequest
+    from a13n_service.environments.domain import CreateManagedEnvironmentRequest, RegisterEnvironmentRequest
     from a13n_service.environments.maintenance import EnvironmentMaintenanceLoop
 
     first = await fixture_environment(environment_service)
@@ -378,13 +382,13 @@ async def test_periodic_batches_advance_past_failures_and_exclude_deleted_and_ex
     second = await environment_service.create_environment(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        request=NewEnvironmentSelection(template_id=template_id),
+        request=CreateManagedEnvironmentRequest(template_id=template_id),
         idempotency_key="second",
     )
     third = await environment_service.create_environment(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        request=NewEnvironmentSelection(template_id=template_id),
+        request=CreateManagedEnvironmentRequest(template_id=template_id),
         idempotency_key="deleted",
     )
     external = await environment_service.create_environment(
@@ -467,7 +471,7 @@ async def test_unknown_stop_retains_operation_receipt_until_reconciled(
 async def test_observed_expiry_schedules_renewal_without_repeated_provider_calls(
     environment_service, environment_sessions, provider_catalog, protector, tmp_path, monkeypatch, lifetime
 ):
-    from a13n_service.environments.domain import NewEnvironmentSelection
+    from a13n_service.environments.domain import CreateManagedEnvironmentRequest
     from a13n_service.environments.maintenance import EnvironmentMaintenanceLoop
 
     first = await fixture_environment(environment_service)
@@ -487,7 +491,7 @@ async def test_observed_expiry_schedules_renewal_without_repeated_provider_calls
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="retained-target",
-        request=NewEnvironmentSelection(template_id=template.id),
+        request=CreateManagedEnvironmentRequest(template_id=template.id),
     )
     now = datetime(2026, 9, 5, tzinfo=UTC)
     lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: now)
@@ -617,7 +621,7 @@ async def test_slow_target_does_not_block_available_workers_at_a_page_boundary(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
             idempotency_key=f"queued-{index}",
-            request=NewEnvironmentSelection(template_id=template_id),
+            request=CreateManagedEnvironmentRequest(template_id=template_id),
         )
         ids.append(environment.id)
     ids.sort()

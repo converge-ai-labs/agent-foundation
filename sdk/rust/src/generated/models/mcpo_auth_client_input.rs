@@ -24,6 +24,9 @@ pub struct McpoAuthClientInput {
     )]
     pub client_secret: Option<Option<String>>,
 
+    #[serde(rename = "grant_type", skip_serializing_if = "Option::is_none")]
+    pub grant_type: Option<GrantType>,
+
     #[serde(rename = "issuer_url")]
     pub issuer_url: String,
 
@@ -40,9 +43,24 @@ impl McpoAuthClientInput {
         McpoAuthClientInput {
             client_id,
             client_secret: None,
+            grant_type: None,
             issuer_url,
             token_endpoint_auth_method,
         }
+    }
+}
+///
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum GrantType {
+    #[serde(rename = "authorization_code")]
+    AuthorizationCode,
+    #[serde(rename = "client_credentials")]
+    ClientCredentials,
+}
+
+impl Default for GrantType {
+    fn default() -> GrantType {
+        Self::AuthorizationCode
     }
 }
 ///

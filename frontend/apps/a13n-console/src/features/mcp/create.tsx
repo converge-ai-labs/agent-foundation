@@ -23,11 +23,13 @@ export function CreateMCP({
   endpoint: initialEndpoint = "",
   onStarted,
   onSuccess,
+  onCancel,
 }: {
   preset?: MCPPreset;
   endpoint?: string;
   onStarted: () => void;
   onSuccess: (value: Schema["MCPConnection"]) => void;
+  onCancel: () => void;
 }) {
   const client = useClient(),
     cache = useQueryClient(),
@@ -47,8 +49,7 @@ export function CreateMCP({
     ),
     [bearer, setBearer] = useState(""),
     [started, setStarted] = useState(false),
-    [oauthConnection, setOAuthConnection] = useState<Schema["MCPConnection"]>(),
-    [ownApp, setOwnApp] = useState(preset?.oauthClient === "preregistered");
+    [oauthConnection, setOAuthConnection] = useState<Schema["MCPConnection"]>();
   const connect = useMutation({
     gcTime: 0,
     mutationFn: async () => {
@@ -155,7 +156,6 @@ export function CreateMCP({
         connection={oauthConnection}
         onConnectionChange={setOAuthConnection}
         autoStart
-        configureInitially={ownApp}
       />
     </div>
   ) : (
@@ -203,19 +203,6 @@ export function CreateMCP({
           (value) => ({ value, label: t(`auth.${value}`) }),
         )}
       />
-      {mode === "oauth" && (
-        <ChoiceField
-          label={t("OAuth app")}
-          placeholder={t("Select OAuth app")}
-          value={ownApp ? "own" : "automatic"}
-          disabled={started}
-          options={[
-            { value: "automatic", label: t("Automatic client registration") },
-            { value: "own", label: t("Use your own OAuth app") },
-          ]}
-          onValueChange={(value) => setOwnApp(value === "own")}
-        />
-      )}
       {!created.current?.credential_configured &&
         (mode === "static_headers" ? (
           <HeaderFields
@@ -242,6 +229,7 @@ export function CreateMCP({
       )}
       <ErrorNotice error={connect.error} />
       <FormActions
+        onCancel={onCancel}
         pending={connect.isPending}
         label={t(created.current ? "Continue connection" : "Connect")}
       />

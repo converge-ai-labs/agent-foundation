@@ -59,12 +59,15 @@ class EnvironmentProviderRecord(ResourceCredential[str | None], ResourceColumns[
             ("workspace_id", "organization_id"), ("workspaces.id", "workspaces.organization_id"), ondelete="CASCADE"
         ),
         UniqueConstraint("id", "organization_id", name="uq_environment_providers_scope"),
+        CheckConstraint("configuration_source IN ('user', 'deployment')", name="configuration_source_valid"),
+        CheckConstraint("configuration_source != 'deployment' OR workspace_id IS NULL", name="deployment_organization"),
         Index("ix_environment_providers_workspace", "workspace_id", "id"),
     )
     type: Mapped[str] = mapped_column(String(128), nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     configuration: Mapped[dict[str, JsonValue]] = mapped_column(JSON, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    configuration_source: Mapped[str] = mapped_column(String(16), nullable=False, default="user")
 
     def to_resource(self) -> EnvironmentProvider:
         return EnvironmentProvider.model_validate(
@@ -75,6 +78,7 @@ class EnvironmentProviderRecord(ResourceCredential[str | None], ResourceColumns[
                 "configuration": self.configuration,
                 "enabled": self.enabled,
                 "credential_configured": self.ciphertext is not None,
+                "configuration_source": self.configuration_source,
             }
         )
 
@@ -178,6 +182,7 @@ class EnvironmentRecord(ResourceColumns[str], Base):
         Index("ix_environments_maintenance", "next_maintenance_at", "id"),
         Index("ix_environments_capacity", "workspace_id", "ownership", "status"),
     )
+    name: Mapped[str] = mapped_column(String(128), nullable=False, default="Environment")
     provider_id: Mapped[str] = mapped_column(String(72), nullable=False)
     template_revision_id: Mapped[str | None] = mapped_column(String(72))
     ownership: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -202,6 +207,7 @@ class EnvironmentRecord(ResourceColumns[str], Base):
         return Environment.model_validate(
             {
                 **self.identity(),
+                "name": self.name,
                 "provider_id": self.provider_id,
                 "template_revision_id": self.template_revision_id,
                 "ownership": self.ownership,

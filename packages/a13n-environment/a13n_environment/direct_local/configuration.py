@@ -68,7 +68,7 @@ class DirectLocalShellProfile(BaseModel):
 
 
 class DirectLocalProviderConfiguration(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="forbid", json_schema_extra={"x-primary-fields": ["root"]})
 
     root: DirectLocalRootConfiguration
     shell_profiles: tuple[DirectLocalShellProfile, ...] = ()

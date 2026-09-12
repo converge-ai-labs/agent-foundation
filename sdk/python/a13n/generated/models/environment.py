@@ -23,6 +23,7 @@ class Environment:
         created_at (datetime.datetime):
         generation (int):
         id (str):
+        name (str):
         organization_id (str):
         ownership (EnvironmentOwnership):
         provider_id (str):
@@ -38,6 +39,7 @@ class Environment:
     created_at: datetime.datetime
     generation: int
     id: str
+    name: str
     organization_id: str
     ownership: EnvironmentOwnership
     provider_id: str
@@ -57,6 +59,8 @@ class Environment:
         generation = self.generation
 
         id = self.id
+
+        name = self.name
 
         organization_id = self.organization_id
 
@@ -84,6 +88,7 @@ class Environment:
                 "created_at": created_at,
                 "generation": generation,
                 "id": id,
+                "name": name,
                 "organization_id": organization_id,
                 "ownership": ownership,
                 "provider_id": provider_id,
@@ -109,6 +114,8 @@ class Environment:
         generation = d.pop("generation")
 
         id = d.pop("id")
+
+        name = d.pop("name")
 
         organization_id = d.pop("organization_id")
 
@@ -137,6 +144,7 @@ class Environment:
             created_at=created_at,
             generation=generation,
             id=id,
+            name=name,
             organization_id=organization_id,
             ownership=ownership,
             provider_id=provider_id,

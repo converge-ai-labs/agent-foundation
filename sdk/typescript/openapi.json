@@ -3645,6 +3645,45 @@
         "title": "CreateMCPConnectionRequest",
         "type": "object"
       },
+      "CreateManagedEnvironmentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "template_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Template Id",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": ["template_id"],
+        "title": "CreateManagedEnvironmentRequest",
+        "type": "object"
+      },
       "CreateModelProviderRequest": {
         "additionalProperties": false,
         "properties": {
@@ -4408,6 +4447,12 @@
             "title": "Id",
             "type": "string"
           },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
           "organization_id": {
             "maxLength": 72,
             "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
@@ -4460,6 +4505,7 @@
         },
         "required": [
           "id",
+          "name",
           "organization_id",
           "workspace_id",
           "provider_id",
@@ -4544,6 +4590,12 @@
             },
             "title": "Configuration",
             "type": "object"
+          },
+          "configuration_source": {
+            "default": "user",
+            "enum": ["user", "deployment"],
+            "title": "Configuration Source",
+            "type": "string"
           },
           "created_at": {
             "format": "date-time",
@@ -4645,6 +4697,11 @@
             ],
             "title": "Credential Schema"
           },
+          "deployment_managed": {
+            "default": false,
+            "title": "Deployment Managed",
+            "type": "boolean"
+          },
           "display_name": {
             "title": "Display Name",
             "type": "string"
@@ -4665,6 +4722,16 @@
             "title": "Supports Stop",
             "type": "boolean"
           },
+          "template_configuration_schemas": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              "type": "object"
+            },
+            "title": "Template Configuration Schemas",
+            "type": "object"
+          },
           "type": {
             "title": "Type",
             "type": "string"
@@ -4675,6 +4742,7 @@
           "display_name",
           "configuration_versions",
           "configuration_schema",
+          "template_configuration_schemas",
           "credential_schema",
           "supports_managed",
           "supports_stop",
@@ -6620,10 +6688,20 @@
             "title": "Client Id",
             "type": "string"
           },
+          "grant_type": {
+            "enum": ["authorization_code", "client_credentials"],
+            "title": "Grant Type",
+            "type": "string"
+          },
           "issuer_url": {
             "maxLength": 2048,
             "minLength": 1,
             "title": "Issuer Url",
+            "type": "string"
+          },
+          "source": {
+            "enum": ["pre_registered", "dynamic", "metadata_document"],
+            "title": "Source",
             "type": "string"
           },
           "token_endpoint_auth_method": {
@@ -6632,7 +6710,13 @@
             "type": "string"
           }
         },
-        "required": ["issuer_url", "client_id", "token_endpoint_auth_method"],
+        "required": [
+          "issuer_url",
+          "client_id",
+          "token_endpoint_auth_method",
+          "grant_type",
+          "source"
+        ],
         "title": "MCPOAuthClientConfiguration",
         "type": "object"
       },
@@ -6660,6 +6744,12 @@
             ],
             "title": "Client Secret"
           },
+          "grant_type": {
+            "default": "authorization_code",
+            "enum": ["authorization_code", "client_credentials"],
+            "title": "Grant Type",
+            "type": "string"
+          },
           "issuer_url": {
             "maxLength": 2048,
             "minLength": 1,
@@ -6683,6 +6773,19 @@
             "title": "Authorization Response Iss Parameter Supported",
             "type": "boolean"
           },
+          "client_registration": {
+            "enum": ["metadata_document", "dynamic", "manual"],
+            "title": "Client Registration",
+            "type": "string"
+          },
+          "grant_types_supported": {
+            "items": {
+              "enum": ["authorization_code", "client_credentials"],
+              "type": "string"
+            },
+            "title": "Grant Types Supported",
+            "type": "array"
+          },
           "issuer_url": {
             "maxLength": 2048,
             "minLength": 1,
@@ -6690,10 +6793,17 @@
             "type": "string"
           },
           "redirect_uri": {
-            "maxLength": 2048,
-            "minLength": 1,
-            "title": "Redirect Uri",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redirect Uri"
           },
           "token_endpoint_auth_methods_supported": {
             "items": {
@@ -6708,6 +6818,8 @@
           "issuer_url",
           "redirect_uri",
           "token_endpoint_auth_methods_supported",
+          "grant_types_supported",
+          "client_registration",
           "authorization_response_iss_parameter_supported"
         ],
         "title": "MCPOAuthDiscovery",
@@ -8873,6 +8985,19 @@
             "default": "1",
             "title": "Configuration Schema Version",
             "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
           },
           "provider_id": {
             "maxLength": 72,
@@ -13507,6 +13632,20 @@
         },
         "required": ["expected_version"],
         "title": "UpdateConnectorProviderRequest",
+        "type": "object"
+      },
+      "UpdateEnvironmentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": ["name"],
+        "title": "UpdateEnvironmentRequest",
         "type": "object"
       },
       "UpdateHookSubscriptionRequest": {
@@ -19324,6 +19463,110 @@
         "tags": ["environments"]
       }
     },
+    "/api/v1/environments/{environment_id}": {
+      "patch": {
+        "operationId": "patch_environments_environment_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateEnvironmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Environment"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Update Environment",
+        "tags": ["environments"]
+      }
+    },
     "/api/v1/environments/{environment_id}/delete": {
       "post": {
         "operationId": "post_environments_environment_id_delete",
@@ -20607,6 +20850,111 @@
           }
         ],
         "summary": "Update Mcp Connection",
+        "tags": ["connectivity-management"]
+      }
+    },
+    "/api/v1/mcp-connections/{connection_id}/authenticate": {
+      "post": {
+        "operationId": "post_mcp_connections_connection_id_authenticate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPConnectionCommandRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPConnection"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Authenticate Mcp Connection",
         "tags": ["connectivity-management"]
       }
     },
@@ -34404,7 +34752,7 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/NewEnvironmentSelection"
+                    "$ref": "#/components/schemas/CreateManagedEnvironmentRequest"
                   },
                   {
                     "$ref": "#/components/schemas/RegisterEnvironmentRequest"

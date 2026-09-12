@@ -16,8 +16,14 @@ pub struct McpoAuthClientConfiguration {
     #[serde(rename = "client_id")]
     pub client_id: String,
 
+    #[serde(rename = "grant_type")]
+    pub grant_type: GrantType,
+
     #[serde(rename = "issuer_url")]
     pub issuer_url: String,
+
+    #[serde(rename = "source")]
+    pub source: Source,
 
     #[serde(rename = "token_endpoint_auth_method")]
     pub token_endpoint_auth_method: TokenEndpointAuthMethod,
@@ -26,14 +32,48 @@ pub struct McpoAuthClientConfiguration {
 impl McpoAuthClientConfiguration {
     pub fn new(
         client_id: String,
+        grant_type: GrantType,
         issuer_url: String,
+        source: Source,
         token_endpoint_auth_method: TokenEndpointAuthMethod,
     ) -> McpoAuthClientConfiguration {
         McpoAuthClientConfiguration {
             client_id,
+            grant_type,
             issuer_url,
+            source,
             token_endpoint_auth_method,
         }
+    }
+}
+///
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum GrantType {
+    #[serde(rename = "authorization_code")]
+    AuthorizationCode,
+    #[serde(rename = "client_credentials")]
+    ClientCredentials,
+}
+
+impl Default for GrantType {
+    fn default() -> GrantType {
+        Self::AuthorizationCode
+    }
+}
+///
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum Source {
+    #[serde(rename = "pre_registered")]
+    PreRegistered,
+    #[serde(rename = "dynamic")]
+    Dynamic,
+    #[serde(rename = "metadata_document")]
+    MetadataDocument,
+}
+
+impl Default for Source {
+    fn default() -> Source {
+        Self::PreRegistered
     }
 }
 ///

@@ -16,6 +16,12 @@ pub struct EnvironmentProvider {
     #[serde(rename = "configuration")]
     pub configuration: std::collections::HashMap<String, serde_json::Value>,
 
+    #[serde(
+        rename = "configuration_source",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub configuration_source: Option<ConfigurationSource>,
+
     #[serde(rename = "created_at")]
     pub created_at: chrono::DateTime<chrono::FixedOffset>,
 
@@ -59,6 +65,7 @@ impl EnvironmentProvider {
     ) -> EnvironmentProvider {
         EnvironmentProvider {
             configuration,
+            configuration_source: None,
             created_at,
             credential_configured,
             enabled,
@@ -69,5 +76,19 @@ impl EnvironmentProvider {
             updated_at,
             workspace_id,
         }
+    }
+}
+///
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum ConfigurationSource {
+    #[serde(rename = "user")]
+    User,
+    #[serde(rename = "deployment")]
+    Deployment,
+}
+
+impl Default for ConfigurationSource {
+    fn default() -> ConfigurationSource {
+        Self::User
     }
 }

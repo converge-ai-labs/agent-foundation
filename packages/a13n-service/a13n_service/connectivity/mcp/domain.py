@@ -92,22 +92,32 @@ class CompleteMCPOAuthRequest(StrictModel):
 
 
 OAuthTokenAuthMethod = Literal["none", "client_secret_basic", "client_secret_post"]
+OAuthGrantType = Literal["authorization_code", "client_credentials"]
+OAuthClientSource = Literal["pre_registered", "dynamic", "metadata_document"]
 
 
 class MCPOAuthClientConfiguration(StrictModel):
     issuer_url: Endpoint
     client_id: str = Field(min_length=1, max_length=2048)
     token_endpoint_auth_method: OAuthTokenAuthMethod
+    grant_type: OAuthGrantType
+    source: OAuthClientSource
 
 
-class MCPOAuthClientInput(MCPOAuthClientConfiguration):
+class MCPOAuthClientInput(StrictModel):
+    issuer_url: Endpoint
+    client_id: str = Field(min_length=1, max_length=2048)
+    token_endpoint_auth_method: OAuthTokenAuthMethod
+    grant_type: OAuthGrantType = "authorization_code"
     client_secret: SecretStr | None = Field(default=None, min_length=1, max_length=16_384, repr=False)
 
     @model_validator(mode="after")
     def valid_client(self) -> MCPOAuthClientInput:
-        confidential = self.token_endpoint_auth_method != "none"
+        confidential = self.token_endpoint_auth_method != "none" or self.grant_type == "client_credentials"
         if confidential != (self.client_secret is not None):
             raise ValueError("Confidential clients require a secret; public clients must not supply one")
+        if self.grant_type == "client_credentials" and self.token_endpoint_auth_method == "none":
+            raise ValueError("Client credentials requires authenticated token requests")
         return self
 
 
@@ -118,8 +128,10 @@ class ConfigureMCPOAuthClientRequest(StrictModel):
 
 class MCPOAuthDiscovery(StrictModel):
     issuer_url: Endpoint
-    redirect_uri: Endpoint
+    redirect_uri: Endpoint | None
     token_endpoint_auth_methods_supported: tuple[OAuthTokenAuthMethod, ...]
+    grant_types_supported: tuple[OAuthGrantType, ...]
+    client_registration: Literal["metadata_document", "dynamic", "manual"]
     authorization_response_iss_parameter_supported: bool
 
 

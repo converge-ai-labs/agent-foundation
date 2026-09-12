@@ -38,10 +38,12 @@ export function AgentDetails({
   resource,
   reload,
   onImageSaved,
+  close,
 }: {
   resource: { value: Schema["Agent"]; etag?: string };
   reload: () => void;
   onImageSaved: () => Promise<void>;
+  close: () => void;
 }) {
   const [snapshot, setSnapshot] = useState(resource);
   const { value: agent, etag } = snapshot,
@@ -83,6 +85,7 @@ export function AgentDetails({
         cache.removeQueries({ queryKey: ["agent", workspace.id, agent.key] });
         navigate(`${basePath}/agents/${result.key}`, { replace: true });
       } else reload();
+      close();
     },
   });
   const image = useMutation({
@@ -163,7 +166,15 @@ export function AgentDetails({
               disabled={save.isPending}
             />
           </div>
-          <FormActions pending={save.isPending} />
+          <FormActions
+            pending={save.isPending}
+            onCancel={close}
+            disabled={
+              name === agent.name &&
+              key === agent.key &&
+              description === (agent.description ?? "")
+            }
+          />
         </fieldset>
         <ErrorNotice error={save.error ?? image.error} retry={reload} />
       </form>
@@ -228,6 +239,7 @@ export function AgentActions({
         {can("agent.lifecycle") && (
           <>
             <Confirm
+              subject={agent.name}
               title={t(agent.enabled ? "Disable agent" : "Enable agent")}
               description={t("This changes whether new runs can start.")}
               triggerElement={
@@ -239,6 +251,7 @@ export function AgentActions({
               action={() => action(agent.enabled ? "disable" : "enable")}
             />
             <Confirm
+              subject={agent.name}
               title={t(agent.archived_at ? "Unarchive agent" : "Archive agent")}
               description={t(
                 "Archived agents leave the default list. Their history remains available.",
@@ -259,6 +272,7 @@ export function AgentActions({
         )}
         {can("agent.duplicate") && (
           <Confirm
+            subject={agent.name}
             title={t("Duplicate agent")}
             description={t("Create an independent agent from this version.")}
             triggerElement={

@@ -41,7 +41,12 @@ it("uses the saved app and refreshed version for reconnect after authorization f
     static_header_names: [],
   };
   const updated = { ...initial, version: 2 };
-  const failed = { ...updated, version: 3, status: "action_required" };
+  const failed = {
+    ...updated,
+    version: 3,
+    status: "pending",
+    credential_configured: true,
+  };
   http.GET.mockImplementation(async (path: string) => ({
     data: path.endsWith("oauth-client") ? null : failed,
     response: new Response(),
@@ -53,6 +58,8 @@ it("uses the saved app and refreshed version for reconnect after authorization f
         data: {
           issuer_url: "https://auth.example",
           redirect_uri: "https://service.example/api/v1/oauth/mcp/callback/key",
+          grant_types_supported: ["authorization_code"],
+          client_registration: "manual",
           token_endpoint_auth_methods_supported: ["client_secret_post"],
           authorization_response_iss_parameter_supported: false,
         },
@@ -79,27 +86,24 @@ it("uses the saved app and refreshed version for reconnect after authorization f
     </QueryClientProvider>,
   );
   const user = userEvent.setup();
-  await user.click(
-    screen.getByRole("button", { name: "Configure your OAuth app" }),
-  );
   await user.type(
     await screen.findByRole("textbox", { name: "Client ID" }),
     "my-app",
   );
   await user.type(screen.getByLabelText("Client secret"), "private-secret");
   await user.click(screen.getByRole("button", { name: "Save and authorize" }));
-  await screen.findByText("Provider unavailable");
   expect(http.PUT.mock.calls[0][1].body).toMatchObject({
     expected_version: 1,
     client: {
       client_id: "my-app",
       client_secret: "private-secret",
+      grant_type: "authorization_code",
     },
   });
   expect(
     http.POST.mock.calls.find(([path]) => path.endsWith("authorize"))?.[1].body,
   ).toEqual({ expected_version: 2 });
-  await user.click(screen.getByRole("button", { name: "Verify connection" }));
+  await user.click(screen.getByRole("button", { name: "Retry verification" }));
   await waitFor(() =>
     expect(
       http.POST.mock.calls.find(([path]) => path.endsWith("reconnect"))?.[1]

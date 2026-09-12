@@ -119,7 +119,7 @@ export function ConnectionDetails({
                     <TabsTab value={"details"}>{t("Details")}</TabsTab>
                     <TabsTab value={"setup"}>{t("Authorization")}</TabsTab>
                   </TabsList>
-                  <TabsPanel value={"details"}>
+                  <TabsPanel value="details" keepMounted>
                     {
                       <ConnectionSettings
                         onCleanup={onCleanup}
@@ -223,6 +223,7 @@ function ConnectionSettings({
         )}
         <div className={styles.actions}>
           <Confirm
+            subject={basis.name}
             retry={() =>
               void cache.invalidateQueries({
                 queryKey: ["connector-connections"],
@@ -259,6 +260,7 @@ function ConnectionSettings({
           />
           {(["revoke", "delete"] as const).map((action) => (
             <Confirm
+              subject={basis.name}
               retry={() =>
                 void cache.invalidateQueries({
                   queryKey: ["connector-connections"],
@@ -275,7 +277,7 @@ function ConnectionSettings({
               )}
               trigger={t(action === "revoke" ? "Revoke" : "Delete")}
               danger
-              triggerVariant="destructive"
+              triggerVariant="outline"
               action={async () => {
                 const header = commandHeaders(
                   workspace.id,

@@ -6,18 +6,15 @@ import asyncio
 import os
 import socket
 
-from pydantic import BaseModel, Field, JsonValue, ValidationError
+from pydantic import BaseModel, Field
 
 from ..eip.binding import configured_descriptor
-from ..errors import EnvironmentProviderErrorCategory
 from ..management import Environment, EnvironmentProvider, HostLocalProviderConfiguration, ProviderRuntimeContext
 from ..models import EnvironmentDescriptor, EnvironmentState
-from ._errors import provider_error
 from .configuration import DockerProviderConfiguration, DockerProviderStateData, DockerTargetConfiguration
 from .runtime import DirectoryDockerBootstrapStore, DockerProviderRuntime, DockerSDKEngine
 
 _PROVIDER_KEY = "a13n.docker"
-_CONFIGURATION_VERSION = "1"
 
 
 class DockerBackendConfiguration(HostLocalProviderConfiguration):
@@ -42,26 +39,8 @@ class DockerEnvironmentProvider(EnvironmentProvider):
         return _PROVIDER_KEY
 
     @property
-    def configuration_versions(self) -> frozenset[str]:
-        return frozenset({_CONFIGURATION_VERSION})
-
-    def validate_configuration(self, *, schema_version: str, value: JsonValue) -> BaseModel:
-        if schema_version != _CONFIGURATION_VERSION:
-            raise provider_error(
-                "Docker configuration version is unsupported.",
-                code="provider_schema_unsupported",
-                category=EnvironmentProviderErrorCategory.UNSUPPORTED,
-                schema_version=schema_version,
-            )
-        try:
-            return DockerProviderConfiguration.model_validate(value)
-        except ValidationError as error:
-            raise provider_error(
-                "Docker configuration is invalid.",
-                code="provider_spec_invalid",
-                category=EnvironmentProviderErrorCategory.INVALID,
-                schema_version=schema_version,
-            ) from error
+    def configuration_models(self) -> dict[str, type[BaseModel]]:
+        return {"1": DockerProviderConfiguration}
 
     async def create_runtime(
         self, *, configuration: BaseModel, credential: BaseModel | None, context: ProviderRuntimeContext

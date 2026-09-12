@@ -26,13 +26,21 @@ import {
 } from "../../shared/validation";
 import { useAccountProviders, useReceptionOptions } from "./data";
 
+const accountProviderLabels: Record<string, string> = {
+  "github@github_app_http_v1": "GitHub",
+  "lark@lark_http_v1": "Lark",
+  "slack@slack_http_v1": "Slack",
+};
+
 export function AccountForm({
   initial,
   onSuccess,
+  onCancel,
   reload,
 }: {
   initial?: Schema["Account"];
   onSuccess: (account: Schema["Account"]) => void;
+  onCancel: () => void;
   reload?: () => Promise<void>;
 }) {
   const client = useClient(),
@@ -116,6 +124,7 @@ export function AccountForm({
   if (definitions.isPending) return <Loading />;
   return (
     <form
+      autoComplete="off"
       className={styles.form}
       onSubmit={(event) => {
         event.preventDefault();
@@ -151,7 +160,10 @@ export function AccountForm({
         options={
           definitions.data?.items.map((item) => ({
             value: `${item.provider_key}@${item.config_version}`,
-            label: `${item.provider_key} · ${item.config_version}`,
+            label:
+              accountProviderLabels[
+                `${item.provider_key}@${item.config_version}`
+              ] ?? `${item.provider_key} · ${item.config_version}`,
           })) ?? []
         }
       />
@@ -165,60 +177,64 @@ export function AccountForm({
           />
           {!basis && (
             <>
-              <h3>{t("Credentials")}</h3>
-              <SchemaFields
-                key={`${provider}-credentials`}
-                schema={definition.credential_schema}
-                value={credentials}
-                onChange={setCredentials}
-                secret
-              />
+              <DisclosureSection title={t("Credentials")} defaultOpen>
+                <SchemaFields
+                  key={`${provider}-credentials`}
+                  schema={definition.credential_schema}
+                  value={credentials}
+                  onChange={setCredentials}
+                  secret
+                />
+              </DisclosureSection>
             </>
           )}
-          <h3>{t("Reception")}</h3>
-          <Label className="flex items-center gap-2">
-            <Switch checked={receive} onCheckedChange={setReceive} />
-            {t("Receive events")}
-          </Label>
-          <ChoiceField
-            placeholder={t("Select agent")}
-            value={agentId || "none"}
-            className="min-w-0"
-            required={receive}
-            onValueChange={(value) => setAgentId(value === "none" ? "" : value)}
-            label={t("Default agent")}
-            options={[
-              { value: "none", label: t("No default agent") },
-              ...(options.agents.data?.map((item) => ({
-                value: item.id,
-                label: item.name,
-              })) ?? []),
-            ]}
-          />
-          <ChoiceField
-            placeholder={t("Select service account")}
-            value={serviceAccountId || "none"}
-            className="min-w-0"
-            required={receive}
-            onValueChange={(value) =>
-              setServiceAccountId(value === "none" ? "" : value)
-            }
-            label={t("Execution service account")}
-            options={[
-              { value: "none", label: t("No execution identity") },
-              ...(options.accounts.data
-                ?.filter((item) => item.status === "active")
-                .map((item) => ({ value: item.id, label: item.name })) ?? []),
-            ]}
-          />
-          <BatchingFields value={batching} onChange={setBatching} />
-          <DisclosureSection title={<>{t("Provider reception policy")}</>}>
-            <SchemaFields
-              key={`${provider}-policy`}
-              schema={definition.reception_policy_schema}
-              value={policy}
-              onChange={setPolicy}
+          <DisclosureSection title={t("Reception")} defaultOpen={receive}>
+            <Label className="flex items-center gap-2">
+              <Switch checked={receive} onCheckedChange={setReceive} />
+              {t("Receive events")}
+            </Label>
+            <ChoiceField
+              placeholder={t("Select agent")}
+              value={agentId || "none"}
+              className="min-w-0"
+              required={receive}
+              onValueChange={(value) =>
+                setAgentId(value === "none" ? "" : value)
+              }
+              label={t("Default agent")}
+              options={[
+                { value: "none", label: t("No default agent") },
+                ...(options.agents.data?.map((item) => ({
+                  value: item.id,
+                  label: item.name,
+                })) ?? []),
+              ]}
             />
+            <ChoiceField
+              placeholder={t("Select service account")}
+              value={serviceAccountId || "none"}
+              className="min-w-0"
+              required={receive}
+              onValueChange={(value) =>
+                setServiceAccountId(value === "none" ? "" : value)
+              }
+              label={t("Execution service account")}
+              options={[
+                { value: "none", label: t("No execution identity") },
+                ...(options.accounts.data
+                  ?.filter((item) => item.status === "active")
+                  .map((item) => ({ value: item.id, label: item.name })) ?? []),
+              ]}
+            />
+            <BatchingFields value={batching} onChange={setBatching} />
+            <DisclosureSection title={<>{t("Provider reception policy")}</>}>
+              <SchemaFields
+                key={`${provider}-policy`}
+                schema={definition.reception_policy_schema}
+                value={policy}
+                onChange={setPolicy}
+              />
+            </DisclosureSection>
           </DisclosureSection>
         </>
       )}
@@ -227,6 +243,7 @@ export function AccountForm({
         retry={reload ? () => void reload() : undefined}
       />
       <FormActions
+        onCancel={onCancel}
         pending={save.isPending}
         label={t(basis ? "Save changes" : "Create account")}
       />

@@ -231,6 +231,11 @@ export function RunOptions({
       )}
       closeLabel={t("Close")}
       open={open}
+      footer={
+        <Button type="button" onClick={() => setOpen(false)}>
+          {t("Done")}
+        </Button>
+      }
     >
       <div className={styles.composerOptions}>
         <ErrorNotice error={choices.error} />
@@ -243,7 +248,6 @@ export function RunOptions({
               options.setRevision("");
             }}
             label={t("Agent")}
-            hideLabel
             options={[
               { value: "inherit", label: t("Inherit") },
               ...(choices.data?.agents ?? [])
@@ -262,7 +266,6 @@ export function RunOptions({
             options.setModel(value === "inherit" ? "" : value)
           }
           label={t("Model")}
-          hideLabel
           options={[
             { value: "inherit", label: t("Inherit") },
             ...(choices.data?.models ?? []).map((model) => ({
@@ -276,7 +279,6 @@ export function RunOptions({
           value={options.environment}
           onValueChange={(value) => options.setEnvironment(value)}
           label={t("Environment")}
-          hideLabel
           options={[
             { value: "inherit", label: t("Inherit") },
             { value: "none", label: t("No environment") },
@@ -286,7 +288,7 @@ export function RunOptions({
             })),
             ...(choices.data?.environments ?? []).map((environment) => ({
               value: `instance:${environment.id}`,
-              label: environment.id,
+              label: `${t("Instance")}: ${environment.name}`,
             })),
           ]}
         />

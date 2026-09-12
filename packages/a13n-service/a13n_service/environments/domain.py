@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Literal, get_args
 
 from a13n_environment import EnvironmentState
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
@@ -12,6 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints,
 from a13n_service.ids import ObjectId
 
 EnvironmentName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
+type LocalProviderType = Literal["a13n.direct-local", "a13n.local-envd", "a13n.docker"]
+LOCAL_PROVIDER_TYPES = frozenset(get_args(LocalProviderType.__value__))
 JsonObject = dict[str, JsonValue]
 Duration = Annotated[int, Field(ge=0, strict=True)]
 
@@ -50,6 +52,7 @@ class EnvironmentProvider(DomainModel):
     configuration: JsonObject
     enabled: bool
     credential_configured: bool
+    configuration_source: Literal["user", "deployment"] = "user"
     created_at: datetime
     updated_at: datetime
 
@@ -59,6 +62,8 @@ class EnvironmentProviderDefinition(DomainModel):
     display_name: str
     configuration_versions: tuple[str, ...]
     configuration_schema: JsonObject
+    template_configuration_schemas: dict[str, JsonObject]
+    deployment_managed: bool = False
     credential_schema: JsonObject | None
     supports_managed: bool
     supports_stop: bool
@@ -110,6 +115,7 @@ class EnvironmentStatus(StrEnum):
 
 class Environment(DomainModel):
     id: ObjectId
+    name: EnvironmentName
     organization_id: ObjectId
     workspace_id: ObjectId
     provider_id: ObjectId
@@ -170,11 +176,20 @@ class UpdateTemplateRequest(DomainModel):
 
 class RegisterEnvironmentRequest(EnvironmentConfiguration):
     provider_id: ObjectId
+    name: EnvironmentName | None = None
     state: EnvironmentState | None = None
     access: EnvironmentAccess = EnvironmentAccess.full
 
 
-type CreateEnvironmentRequest = NewEnvironmentSelection | RegisterEnvironmentRequest
+class CreateManagedEnvironmentRequest(NewEnvironmentSelection):
+    name: EnvironmentName | None = None
+
+
+class UpdateEnvironmentRequest(DomainModel):
+    name: EnvironmentName
+
+
+type CreateEnvironmentRequest = CreateManagedEnvironmentRequest | RegisterEnvironmentRequest
 
 
 class Collection[T](DomainModel):
