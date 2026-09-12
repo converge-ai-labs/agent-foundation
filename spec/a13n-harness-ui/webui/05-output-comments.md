@@ -52,7 +52,11 @@ After commit, the App emits a best-effort comment-scope invalidation through its
 
 Comments do not modify `HarnessState`, create synthetic user/tool messages, answer pending decisions, or automatically steer an Agent. Reading or posting a comment is not model input.
 
-To discuss feedback with the Agent, a participant explicitly places the selected comment and referenced context into the ordinary composer and reviews it before Send or explicit steering. Existing input bounds, immutable capture, admission, and steering rules apply. Merely selecting or opening a comment does not alter the shared composer; comments remain saved after any resulting prompt is submitted.
+To discuss feedback with the Agent, a participant explicitly captures a selected published comment and its complete referenced assistant text into the ordinary composer. A comment is one complete independent publication; there is no hidden reply tree to omit. The capture preserves the full body, selection, attribution and saved target rather than substituting a quoted excerpt for the original output. Oversized or unavailable complete context is rejected without truncation or a guessed replacement.
+
+Capture uses the existing Thread-scoped retained-input owner and shared attachment selection, not another composer document root or a model-side comment-read Capability. Model input contains the captured text; existing input metadata identifies its comment provenance so the browser can render an inspectable reference card instead of duplicating the expanded text in the editor. The actual captured model-visible text remains available for review before submission and in input history. Opening, publishing or capturing a comment never starts a Run. The explicit Add feedback action changes the shared selection only after capture succeeds.
+
+Existing input bounds, immutable capture, admission, capture-only clearing and text-only steering rules apply. Comments and their original saved targets remain independent publications after the resulting input is submitted. Captured bytes are fixed at selection time; later navigation, comment publication, continuation changes or source inspection do not replace them. No comment-read or navigation action changes the shared prompt implicitly.
 
 ## Failure and Recovery
 

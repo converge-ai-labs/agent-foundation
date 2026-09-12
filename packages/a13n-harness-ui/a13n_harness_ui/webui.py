@@ -899,6 +899,10 @@ def create_webui(
     async def comment(thread_id: str, comment_id: str) -> OutputComment:
         return await app().get_output_comment(thread_id, comment_id)
 
+    @server.post("/api/threads/{thread_id}/comments/{comment_id}/capture", response_model=ThreadAttachment)
+    async def capture_comment(thread_id: str, comment_id: str) -> ThreadAttachment:
+        return await app().capture_output_comment(thread_id, comment_id)
+
     @server.post(
         "/api/threads/{thread_id}/saved-output", response_model=SavedOutputView, openapi_extra=_body(SavedOutputTarget)
     )

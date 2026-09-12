@@ -480,7 +480,9 @@ def _request_parts(part: object) -> tuple[TranscriptPart, ...]:
 
 def _response_part(part: object) -> TranscriptPart:
     if isinstance(part, TextPart):
-        return TranscriptPart(kind="assistant", text=_bounded_text(part.content))
+        return TranscriptPart(
+            kind="assistant", text=_bounded_text(part.content), text_truncated=len(part.content) > _MAX_TEXT
+        )
     if isinstance(part, ThinkingPart):
         return TranscriptPart(kind="thinking", text=_bounded_text(part.content))
     if isinstance(part, ToolCallPart):

@@ -622,6 +622,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/{thread_id}/comments/{comment_id}/capture": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Capture Comment */
+        post: operations["capture_comment_api_threads__thread_id__comments__comment_id__capture_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{thread_id}/saved-output": {
         parameters: {
             query?: never;
@@ -1573,6 +1590,23 @@ export interface components {
             display_name: string;
             /** Participant Id */
             participant_id?: string | null;
+        };
+        /**
+         * CommentContextSource
+         * @description A complete published comment and its exact saved assistant output.
+         */
+        CommentContextSource: {
+            /**
+             * Kind
+             * @default comment_reference
+             * @constant
+             */
+            kind?: "comment_reference";
+            /** Root Thread Id */
+            root_thread_id: string;
+            /** Comment Id */
+            comment_id: string;
+            target: components["schemas"]["SavedOutputTarget"];
         };
         /** CommentPage */
         CommentPage: {
@@ -3166,7 +3200,7 @@ export interface components {
             /** Size */
             size: number;
             /** Source */
-            source?: components["schemas"]["FileContextSource"] | components["schemas"]["GitContextSource"] | null;
+            source?: components["schemas"]["FileContextSource"] | components["schemas"]["GitContextSource"] | components["schemas"]["CommentContextSource"] | null;
         };
         /** ThreadConfiguration */
         ThreadConfiguration: {
@@ -3432,6 +3466,11 @@ export interface components {
         /** TranscriptPart */
         TranscriptPart: {
             comment_target?: components["schemas"]["SavedOutputTarget"] | null;
+            /**
+             * Text Truncated
+             * @default false
+             */
+            text_truncated?: boolean;
             metadata?: components["schemas"]["ContentMetadata"];
             /**
              * Kind
@@ -5467,6 +5506,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OutputComment"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    capture_comment_api_threads__thread_id__comments__comment_id__capture_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadAttachment"];
                 };
             };
             /** @description Validation Error */

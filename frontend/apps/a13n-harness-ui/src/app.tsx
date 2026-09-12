@@ -7,6 +7,7 @@ import { TransportContext } from "./transport/context";
 import { DraftContext, type SourceDraft } from "./configuration/sources";
 import { Workbench } from "./shell/workbench";
 import { ComposerDrafts } from "./conversations/composer";
+import { CommentDrafts, type CommentDraft } from "./conversations/comments";
 import type { ThreadDraft } from "./conversations/draft";
 import { TextField } from "./shell/ui";
 import styles from "./shell/workbench.module.css";
@@ -51,6 +52,7 @@ export function BrowserApp() {
   const [connecting, setConnecting] = useState(true);
   const drafts = useRef(new Map<string, SourceDraft>());
   const composers = useRef(new Map<string, ThreadDraft>());
+  const comments = useRef(new Map<string, CommentDraft>());
   const [queries] = useState(
     () =>
       new QueryClient({
@@ -127,58 +129,60 @@ export function BrowserApp() {
     <QueryClientProvider client={queries}>
       <TransportContext.Provider value={transport}>
         <DraftContext.Provider value={drafts.current}>
-          <ComposerDrafts.Provider value={composers.current}>
-            {status ? (
-              <BrowserRouter>
-                <Workbench
-                  status={status}
-                  forget={forget}
-                  unauthorized={unauthorized}
-                />
-              </BrowserRouter>
-            ) : (
-              <main className={styles.access}>
-                <div className={styles.accessCard}>
-                  <span className={styles.brandMark}>a13n</span>
-                  <h1>Connect to Harness UI</h1>
-                  <p>
-                    Use the instance API key printed by your server. Provider
-                    accounts and model keys are configured after connecting.
-                  </p>
-                  <p role="status">
-                    {error ||
-                      (connecting
-                        ? "Connecting to server…"
-                        : "Enter your instance key.")}
-                  </p>
-                  <form
-                    className={styles.stack}
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      setKey(input);
-                      setAttempt((value) => value + 1);
-                    }}
-                  >
-                    <TextField
-                      label="API key"
-                      type="password"
-                      value={input}
-                      onChange={setInput}
-                    />
-                    <Button type="submit" loading={connecting}>
-                      Connect
-                    </Button>
-                  </form>
-                  {drafts.current.size > 0 && (
+          <CommentDrafts.Provider value={comments.current}>
+            <ComposerDrafts.Provider value={composers.current}>
+              {status ? (
+                <BrowserRouter>
+                  <Workbench
+                    status={status}
+                    forget={forget}
+                    unauthorized={unauthorized}
+                  />
+                </BrowserRouter>
+              ) : (
+                <main className={styles.access}>
+                  <div className={styles.accessCard}>
+                    <span className={styles.brandMark}>a13n</span>
+                    <h1>Connect to Harness UI</h1>
                     <p>
-                      Local resource drafts are retained in this tab. Reconnect
-                      without reloading to resume editing.
+                      Use the instance API key printed by your server. Provider
+                      accounts and model keys are configured after connecting.
                     </p>
-                  )}
-                </div>
-              </main>
-            )}
-          </ComposerDrafts.Provider>
+                    <p role="status">
+                      {error ||
+                        (connecting
+                          ? "Connecting to server…"
+                          : "Enter your instance key.")}
+                    </p>
+                    <form
+                      className={styles.stack}
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        setKey(input);
+                        setAttempt((value) => value + 1);
+                      }}
+                    >
+                      <TextField
+                        label="API key"
+                        type="password"
+                        value={input}
+                        onChange={setInput}
+                      />
+                      <Button type="submit" loading={connecting}>
+                        Connect
+                      </Button>
+                    </form>
+                    {drafts.current.size > 0 && (
+                      <p>
+                        Local resource drafts are retained in this tab.
+                        Reconnect without reloading to resume editing.
+                      </p>
+                    )}
+                  </div>
+                </main>
+              )}
+            </ComposerDrafts.Provider>
+          </CommentDrafts.Provider>
         </DraftContext.Provider>
       </TransportContext.Provider>
     </QueryClientProvider>

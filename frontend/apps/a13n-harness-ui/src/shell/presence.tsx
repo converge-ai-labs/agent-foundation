@@ -85,8 +85,14 @@ export function useLiveWorkbench(
     () =>
       watchSummary(
         transport,
-        () => {
-          void queries.invalidateQueries();
+        (event) => {
+          if (event?.kind === "comment")
+            void queries.invalidateQueries({
+              queryKey: event.root_thread_id
+                ? ["comments", event.root_thread_id]
+                : ["comments"],
+            });
+          else void queries.invalidateQueries();
         },
         setSummary,
       ),

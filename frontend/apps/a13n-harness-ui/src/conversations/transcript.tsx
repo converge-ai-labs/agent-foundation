@@ -1,35 +1,12 @@
 import { memo } from "react";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { MessageText } from "./message-text";
+import { SavedOutput } from "./comments";
+export { MessageText } from "./message-text";
 import type { Schema } from "../transport/client";
 import type { DisplayBlock } from "./stream";
 import { InputContent } from "./input-content";
 import styles from "./conversation.module.css";
 
-export const MessageText = memo(function MessageText({
-  text,
-}: {
-  text: string;
-}) {
-  return (
-    <div className={styles.markdown}>
-      <Markdown
-        remarkPlugins={[remarkGfm]}
-        skipHtml
-        components={{
-          a: ({ children, ...props }) => (
-            <a {...props} target="_blank" rel="noopener noreferrer">
-              {children}
-            </a>
-          ),
-          img: ({ alt }) => <span>[Image: {alt || "attachment"}]</span>,
-        }}
-      >
-        {text}
-      </Markdown>
-    </div>
-  );
-});
 export const SavedEntry = memo(function SavedEntry({
   entry,
   threadId,
@@ -69,14 +46,11 @@ export const SavedEntry = memo(function SavedEntry({
               }
             >
               <header>Assistant</header>
-              <MessageText text={part.text ?? ""} />
-              {/* Keep raw text and the exact saved target together for output discussion. */}
-              {part.kind === "assistant" && part.text && (
-                <details className={styles.rawSource}>
-                  <summary>Original text</summary>
-                  <pre className={styles.code}>{part.text}</pre>
-                </details>
-              )}
+              <SavedOutput
+                target={part.comment_target}
+                text={part.text ?? ""}
+                truncated={part.text_truncated}
+              />
             </section>
           );
         return (

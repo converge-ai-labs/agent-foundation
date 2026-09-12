@@ -178,6 +178,7 @@ class ThreadDetail(SurfaceModel):
 
 class TranscriptPart(SurfaceModel):
     comment_target: SavedOutputTarget | None = None
+    text_truncated: bool = False
     metadata: ContentMetadata = Field(default_factory=ContentMetadata)
 
     kind: Literal[

@@ -23,6 +23,7 @@ import { readPreference, writePreference } from "../shell/preferences";
 import { Composer, useDraft } from "./composer";
 import { Decisions } from "./decisions";
 import { ConversationDetails } from "./details";
+import { Discussion, CommentListButton } from "./comments";
 import { useHistory, useThread } from "./queries";
 import { FocusDisplay, showFocusedOutput, watchThread } from "./stream";
 import { LiveOutput, SavedEntry } from "./transcript";
@@ -245,245 +246,248 @@ function Conversation({
       </div>
     );
   return (
-    <div className={styles.page}>
-      <header className={styles.header}>
-        <div>
-          <h1>{thread.title || "Untitled conversation"}</h1>
-          <small>
-            {projects.data?.find(
-              (project) =>
-                project.project_id === thread.configuration.project_id,
-            )?.name ||
-              thread.configuration.project_id ||
-              "Without a project"}{" "}
-            ·{" "}
-            {selectors.data?.agents.find(
-              (agent) =>
-                agent.agent_id === thread.configuration.agent_source.id,
-            )?.name || thread.configuration.agent_source.id}{" "}
-            · {thread.configuration.environment_profile_id} · {connection}
-            {thread.root_activity.state !== "inactive"
-              ? ` · ${thread.root_activity.state}`
-              : ""}
-          </small>
-        </div>
-        <div className={styles.headerActions}>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Rename conversation"
-            onClick={() => {
-              setTitle(thread.title ?? "");
-              setRename(true);
-            }}
-          >
-            <PencilSimple />
-          </Button>
-          <Button
-            variant="ghost"
-            aria-label="Share conversation"
-            onClick={() => {
-              void navigator.clipboard
-                .writeText(
-                  `${window.location.origin}/threads/${encodeURIComponent(threadId)}`,
-                )
-                .then(
-                  () =>
-                    setMessage(
-                      "Conversation link copied. Other people need this instance's API key.",
-                    ),
-                  () =>
-                    setMessage(
-                      "Could not copy the link. Copy this page's address without an API-key fragment.",
-                    ),
-                );
-            }}
-          >
-            <ShareNetwork />
-            Share
-          </Button>
-          <Button variant="ghost" onClick={() => setInspection(true)}>
-            <SlidersHorizontal />
-            Details
-          </Button>
-          {thread.root_activity.available_actions?.includes("cancel") &&
-            thread.root_activity.receipt_id && (
-              <Button
-                variant="outline"
-                loading={stop.isPending}
-                onClick={() => stop.mutate(thread.root_activity.receipt_id!)}
-              >
-                <Stop />
-                Stop
-              </Button>
-            )}
-        </div>
-      </header>
-      {thread.archived && (
-        <div className={styles.warning}>
-          <p>This conversation is archived. Its history remains available.</p>
-          <Button
-            variant="outline"
-            loading={metadata.isPending}
-            onClick={() => metadata.mutate({ archived: false })}
-          >
-            Restore conversation
-          </Button>
-        </div>
-      )}
-      {message && (
-        <p role="status" className={styles.receipt}>
-          {message}
-        </p>
-      )}
-      <ErrorNotice
-        error={detail.error || history.error || metadata.error || stop.error}
-        retry={reconcile}
-      />
-      <div
-        ref={reader}
-        className={styles.reading}
-        onScroll={() => {
-          const element = reader.current!;
-          follow.current =
-            element.scrollHeight - element.scrollTop - element.clientHeight <
-            64;
-          if (follow.current) setNewOutput(false);
-        }}
-      >
-        <div className={styles.transcript}>
-          {history.hasNextPage && (
+    <Discussion threadId={threadId} profile={profile}>
+      <div className={styles.page}>
+        <header className={styles.header}>
+          <div>
+            <h1>{thread.title || "Untitled conversation"}</h1>
+            <small>
+              {projects.data?.find(
+                (project) =>
+                  project.project_id === thread.configuration.project_id,
+              )?.name ||
+                thread.configuration.project_id ||
+                "Without a project"}{" "}
+              ·{" "}
+              {selectors.data?.agents.find(
+                (agent) =>
+                  agent.agent_id === thread.configuration.agent_source.id,
+              )?.name || thread.configuration.agent_source.id}{" "}
+              · {thread.configuration.environment_profile_id} · {connection}
+              {thread.root_activity.state !== "inactive"
+                ? ` · ${thread.root_activity.state}`
+                : ""}
+            </small>
+          </div>
+          <div className={styles.headerActions}>
             <Button
               variant="ghost"
-              loading={history.isFetchingNextPage}
+              size="icon"
+              aria-label="Rename conversation"
               onClick={() => {
-                if (reader.current)
-                  olderAnchor.current = {
-                    height: reader.current.scrollHeight,
-                    top: reader.current.scrollTop,
-                  };
-                void history.fetchNextPage();
+                setTitle(thread.title ?? "");
+                setRename(true);
               }}
             >
-              Load earlier messages
+              <PencilSimple />
             </Button>
-          )}
-          {entries.map((entry) => (
-            <SavedEntry
-              key={`${continuation}:${entry.position}`}
-              entry={entry}
-              threadId={threadId}
-            />
-          ))}
-          {showLive && (
-            <LiveOutput
-              blocks={[...display.blocks.values()]}
-              gap={display.gap}
-              threadId={threadId}
-            />
-          )}
-          {!!detail.data.deferred_requests?.length && (
-            <Decisions
-              threadId={threadId}
-              continuation={detail.data.continuation_id}
-              reconcile={reconcile}
-            />
-          )}
-          {!entries.length &&
-            !showLive &&
-            !history.isPending &&
-            !history.error && (
-              <div className={styles.empty}>
-                <h2>Start something together.</h2>
-                <p>
-                  Write a prompt below. People on this conversation can edit the
-                  same input.
-                </p>
-              </div>
-            )}
-        </div>
-      </div>
-      {history.isPending && !history.data && (
-        <p role="status">Loading saved history…</p>
-      )}
-      {newOutput && (
-        <Button
-          className={styles.newOutput}
-          variant="outline"
-          onClick={() => {
-            follow.current = true;
-            setNewOutput(false);
-            reader.current?.scrollTo({ top: reader.current.scrollHeight });
-          }}
-        >
-          <ArrowDown />
-          New output
-        </Button>
-      )}
-      {!thread.archived && (
-        <Composer
-          threadId={threadId}
-          activity={thread.root_activity}
-          canRun={detail.data.available_actions?.includes("run") ?? false}
-          profile={profile}
-          unauthorized={unauthorized}
-          reconcile={reconcile}
-        />
-      )}
-      <ModalFrame
-        open={rename}
-        onOpenChange={setRename}
-        title="Rename conversation"
-        closeLabel="Close"
-      >
-        <form
-          className={styles.form}
-          onSubmit={(event) => {
-            event.preventDefault();
-            metadata.mutate({ title: title || null });
-          }}
-        >
-          <TextField
-            label="Title"
-            value={title}
-            onChange={(value) => setTitle(value.slice(0, 512))}
-          />
-          <ErrorNotice error={metadata.error} />
-          <Button type="submit" loading={metadata.isPending}>
-            Save title
-          </Button>
-        </form>
-      </ModalFrame>
-      <ModalFrame
-        open={inspection}
-        onOpenChange={setInspection}
-        title="Conversation details"
-        description="Inspect execution and configuration without changing the current Run."
-        closeLabel="Close"
-      >
-        <ConversationDetails
-          threadId={threadId}
-          receipt={receipt}
-          continuation={detail.data.continuation_id}
-          reconcile={reconcile}
-        />
-        {!thread.archived &&
-          detail.data.available_actions?.includes("archive") && (
+            <Button
+              variant="ghost"
+              aria-label="Share conversation"
+              onClick={() => {
+                void navigator.clipboard
+                  .writeText(
+                    `${window.location.origin}/threads/${encodeURIComponent(threadId)}`,
+                  )
+                  .then(
+                    () =>
+                      setMessage(
+                        "Conversation link copied. Other people need this instance's API key.",
+                      ),
+                    () =>
+                      setMessage(
+                        "Could not copy the link. Copy this page's address without an API-key fragment.",
+                      ),
+                  );
+              }}
+            >
+              <ShareNetwork />
+              Share
+            </Button>
+            <CommentListButton />
+            <Button variant="ghost" onClick={() => setInspection(true)}>
+              <SlidersHorizontal />
+              Details
+            </Button>
+            {thread.root_activity.available_actions?.includes("cancel") &&
+              thread.root_activity.receipt_id && (
+                <Button
+                  variant="outline"
+                  loading={stop.isPending}
+                  onClick={() => stop.mutate(thread.root_activity.receipt_id!)}
+                >
+                  <Stop />
+                  Stop
+                </Button>
+              )}
+          </div>
+        </header>
+        {thread.archived && (
+          <div className={styles.warning}>
+            <p>This conversation is archived. Its history remains available.</p>
             <Button
               variant="outline"
-              onClick={() => {
-                if (
-                  window.confirm(
-                    "Archive this conversation? Its saved history will be retained.",
-                  )
-                )
-                  metadata.mutate({ archived: true });
-              }}
+              loading={metadata.isPending}
+              onClick={() => metadata.mutate({ archived: false })}
             >
-              Archive conversation
+              Restore conversation
             </Button>
-          )}
-      </ModalFrame>
-    </div>
+          </div>
+        )}
+        {message && (
+          <p role="status" className={styles.receipt}>
+            {message}
+          </p>
+        )}
+        <ErrorNotice
+          error={detail.error || history.error || metadata.error || stop.error}
+          retry={reconcile}
+        />
+        <div
+          ref={reader}
+          className={styles.reading}
+          onScroll={() => {
+            const element = reader.current!;
+            follow.current =
+              element.scrollHeight - element.scrollTop - element.clientHeight <
+              64;
+            if (follow.current) setNewOutput(false);
+          }}
+        >
+          <div className={styles.transcript}>
+            {history.hasNextPage && (
+              <Button
+                variant="ghost"
+                loading={history.isFetchingNextPage}
+                onClick={() => {
+                  if (reader.current)
+                    olderAnchor.current = {
+                      height: reader.current.scrollHeight,
+                      top: reader.current.scrollTop,
+                    };
+                  void history.fetchNextPage();
+                }}
+              >
+                Load earlier messages
+              </Button>
+            )}
+            {entries.map((entry) => (
+              <SavedEntry
+                key={`${continuation}:${entry.position}`}
+                entry={entry}
+                threadId={threadId}
+              />
+            ))}
+            {showLive && (
+              <LiveOutput
+                blocks={[...display.blocks.values()]}
+                gap={display.gap}
+                threadId={threadId}
+              />
+            )}
+            {!!detail.data.deferred_requests?.length && (
+              <Decisions
+                threadId={threadId}
+                continuation={detail.data.continuation_id}
+                reconcile={reconcile}
+              />
+            )}
+            {!entries.length &&
+              !showLive &&
+              !history.isPending &&
+              !history.error && (
+                <div className={styles.empty}>
+                  <h2>Start something together.</h2>
+                  <p>
+                    Write a prompt below. People on this conversation can edit
+                    the same input.
+                  </p>
+                </div>
+              )}
+          </div>
+        </div>
+        {history.isPending && !history.data && (
+          <p role="status">Loading saved history…</p>
+        )}
+        {newOutput && (
+          <Button
+            className={styles.newOutput}
+            variant="outline"
+            onClick={() => {
+              follow.current = true;
+              setNewOutput(false);
+              reader.current?.scrollTo({ top: reader.current.scrollHeight });
+            }}
+          >
+            <ArrowDown />
+            New output
+          </Button>
+        )}
+        {!thread.archived && (
+          <Composer
+            threadId={threadId}
+            activity={thread.root_activity}
+            canRun={detail.data.available_actions?.includes("run") ?? false}
+            profile={profile}
+            unauthorized={unauthorized}
+            reconcile={reconcile}
+          />
+        )}
+        <ModalFrame
+          open={rename}
+          onOpenChange={setRename}
+          title="Rename conversation"
+          closeLabel="Close"
+        >
+          <form
+            className={styles.form}
+            onSubmit={(event) => {
+              event.preventDefault();
+              metadata.mutate({ title: title || null });
+            }}
+          >
+            <TextField
+              label="Title"
+              value={title}
+              onChange={(value) => setTitle(value.slice(0, 512))}
+            />
+            <ErrorNotice error={metadata.error} />
+            <Button type="submit" loading={metadata.isPending}>
+              Save title
+            </Button>
+          </form>
+        </ModalFrame>
+        <ModalFrame
+          open={inspection}
+          onOpenChange={setInspection}
+          title="Conversation details"
+          description="Inspect execution and configuration without changing the current Run."
+          closeLabel="Close"
+        >
+          <ConversationDetails
+            threadId={threadId}
+            receipt={receipt}
+            continuation={detail.data.continuation_id}
+            reconcile={reconcile}
+          />
+          {!thread.archived &&
+            detail.data.available_actions?.includes("archive") && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Archive this conversation? Its saved history will be retained.",
+                    )
+                  )
+                    metadata.mutate({ archived: true });
+                }}
+              >
+                Archive conversation
+              </Button>
+            )}
+        </ModalFrame>
+      </div>
+    </Discussion>
   );
 }

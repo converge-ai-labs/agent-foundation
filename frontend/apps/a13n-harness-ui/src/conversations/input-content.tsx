@@ -51,7 +51,12 @@ function Attachment({
   );
   return (
     <div className={styles.attachmentCard}>
-      <strong>{attachment.name}</strong>
+      <strong>
+        {attachment.source && "comment_id" in attachment.source
+          ? "Comment reference · "
+          : ""}
+        {attachment.name}
+      </strong>
       <small>
         {attachment.media_type} · {attachment.size.toLocaleString()} bytes
       </small>

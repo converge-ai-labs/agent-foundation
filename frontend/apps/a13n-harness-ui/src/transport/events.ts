@@ -68,7 +68,7 @@ export function summaryFrame(value: unknown): SummaryFrame {
 
 export function watchSummary(
   transport: Transport,
-  invalidate: () => void,
+  invalidate: (event?: Schema<"SummaryEventFrame">["event"]) => void,
   state: (state: string) => void,
 ) {
   const controller = new AbortController();
@@ -92,6 +92,10 @@ export function watchSummary(
         cursor = frame.resume_cursor;
         failures = 0;
         state("Live");
+        if (frame.kind === "invalidation" && frame.event.kind === "comment") {
+          invalidate(frame.event);
+          return;
+        }
         // Reconcile missed changes on every new subscription, even without a cursor.
         if (
           frame.kind === "open" ||

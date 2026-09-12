@@ -352,9 +352,11 @@ export function Composer({
                 {attachments[index].data?.source && (
                   <small>
                     Captured{" "}
-                    {"repository_path" in attachments[index].data.source
-                      ? "diff"
-                      : "file"}
+                    {"comment_id" in attachments[index].data.source
+                      ? "comment reference"
+                      : "repository_path" in attachments[index].data.source
+                        ? "diff"
+                        : "file"}
                   </small>
                 )}
               </button>

@@ -1939,6 +1939,54 @@
         }
       }
     },
+    "/api/threads/{thread_id}/comments/{comment_id}/capture": {
+      "post": {
+        "summary": "Capture Comment",
+        "operationId": "capture_comment_api_threads__thread_id__comments__comment_id__capture_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadAttachment"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/threads/{thread_id}/saved-output": {
       "post": {
         "summary": "Saved Output",
@@ -4962,6 +5010,39 @@
         ],
         "title": "CommentAuthor",
         "type": "object"
+      },
+      "CommentContextSource": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "comment_reference",
+            "title": "Kind",
+            "default": "comment_reference"
+          },
+          "root_thread_id": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Root Thread Id"
+          },
+          "comment_id": {
+            "type": "string",
+            "pattern": "^comment-[A-Za-z0-9_-]{16,64}$",
+            "title": "Comment Id"
+          },
+          "target": {
+            "$ref": "#/components/schemas/SavedOutputTarget"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "root_thread_id",
+          "comment_id",
+          "target"
+        ],
+        "title": "CommentContextSource",
+        "description": "A complete published comment and its exact saved assistant output."
       },
       "CommentPage": {
         "properties": {
@@ -9257,6 +9338,9 @@
                 "$ref": "#/components/schemas/GitContextSource"
               },
               {
+                "$ref": "#/components/schemas/CommentContextSource"
+              },
+              {
                 "type": "null"
               }
             ],
@@ -10094,6 +10178,11 @@
                 "type": "null"
               }
             ]
+          },
+          "text_truncated": {
+            "type": "boolean",
+            "title": "Text Truncated",
+            "default": false
           },
           "metadata": {
             "$ref": "#/components/schemas/ContentMetadata"

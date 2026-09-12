@@ -66,7 +66,7 @@ A Thread comment list shows published comments, author labels, creation times, a
 
 Publish acknowledges a committed comment, distinct from the shared composer's Synchronized state. Publication failure or a stale target preserves the local comment text. A lost acknowledgement offers reconciliation of the same publication identity, not a second post. Newly published comments update the discussion without replacing the transcript, stealing focus, or clearing another input. Reload and reconnect refetch saved comments independently of presence and draft rejoin.
 
-Comments are human discussion by default. An explicit Add feedback to prompt action copies selected feedback and its source attribution into the shared composer for review; it does not immediately call the model. Existing Send and explicit steering controls retain execution authority. No comment-read or navigation action changes the shared prompt implicitly.
+Comments are human discussion by default. An explicit Add feedback to prompt action captures the complete selected comment and its original assistant output into the shared composer's context selection for review; it does not immediately call the model. The composer presents an inspectable comment reference, while model input carries the actual captured text and presentation metadata. Existing Send and explicit steering controls retain execution authority. No comment-read or navigation action changes the shared prompt implicitly.
 
 ## Project and Resource Configuration
 

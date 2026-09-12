@@ -74,7 +74,7 @@ Page presence is independent of the draft's editor cursors, saved comments and e
 
 ## Saved output comments
 
-`features.output_comments` exposes immutable human comments on **saved visible assistant text only**. It does not make live or unsaved output durable. Root transcript assistant parts include a nullable `comment_target`; user/tool/thinking parts and initial/unsaved history do not. Saved child inspection uses `GET /api/threads/{parent_thread_id}/children/{execution_id}/saved-output`, with up to 20 blocks per page and a source-bound `next_cursor`. Use these detached targets unchanged rather than guessing indices or converting a live event into an object reference.
+`features.output_comments` exposes immutable human comments on **saved visible assistant text only**. It does not make live or unsaved output durable. Root transcript assistant parts include a nullable `comment_target` and an explicit `text_truncated` flag; truncated display excerpts are not exact-selection sources. Fetch original windows for exact selections instead. User/tool/thinking parts and initial/unsaved history do not. Saved child inspection uses `GET /api/threads/{parent_thread_id}/children/{execution_id}/saved-output`, with up to 20 blocks per page and a source-bound `next_cursor`. Use these detached targets unchanged rather than guessing indices or converting a live event into an object reference.
 
 Publish with `POST /api/threads/{root_thread_id}/comments`:
 
@@ -99,7 +99,9 @@ Acknowledgement follows SQLite commit. Repeating the same identity and canonical
 
 POST the target to `/api/threads/{root_thread_id}/saved-output` for the original text. `offset` and `limit` select at most 65,536 Unicode code points; `total_characters` and `next_offset` disclose clipping. This read permits only a currently selected or comment-retained target in that Thread family, not arbitrary immutable objects. A broken source fails explicitly while its comment remains readable. Identical text in a newer continuation is not the same target: show the Thread comment list and original-output view unless exact inline identity is established. Reading original output does not select it for execution.
 
-Comment bodies are not jointly editable and there are no reply/resolution workflows. Referencing feedback in a prompt remains a deliberate frontend composer action followed by ordinary submit/steer; comment publication itself is never model input.
+Comment bodies are not jointly editable and there are no reply/resolution workflows. `POST /api/threads/{root_thread_id}/comments/{comment_id}/capture` explicitly captures one complete publication (body, selection and attribution) plus its complete original assistant block into a Thread attachment. It returns the existing `ThreadAttachment` with `source.kind: comment_reference`, root/comment IDs and the exact saved target. It requires neither native sharing nor a model-side Capability. Complete UTF-8 content, including attribution, must fit 64 KiB; unavailable sources or oversized content fail without truncation. Capture never modifies the shared composer or admits execution. The browser explicitly selects the returned attachment ID only after success.
+
+Ordinary submit and text-only root steering expand the immutable capture as native text with existing `harness_ui.attachment` metadata. Browsers can render an inspectable comment-reference card instead of the expanded editor text; model content remains the complete capture. Retention, eight-attachment bounds and capture-only clearing are unchanged. Publication or inspection alone is never model input.
 
 ## Shared composer
 
@@ -118,7 +120,7 @@ Send is a client action, not a draft endpoint:
 3. On a positive submission acknowledgement, delete only the text/items visible in that captured clone and merge its full deletion update back into the live replica. This preserves concurrent inserts and replaced/added selections. Do not clear the current editor by offsets or replace it with an empty document.
 4. On rejection or unknown outcome, retain the draft. Never retry submission automatically. Resending a CRDT editing update is not resending an execution request.
 
-Explicit root steering accepts `prompt` and optional `attachment_ids`. Only captured NUL-free UTF-8 file/diff context of at most 64 KiB each can be expanded into text for steering. Ordinary uploads, binary or larger captures return `steer_context_unsupported`; retain the entire draft for ordinary submission. Runtime steering remains text-only. Normal submission retains larger/binary captures using existing Thread attachment behavior. A later Host edit cannot change either path's captured bytes or source attribution.
+Explicit root steering accepts `prompt` and optional `attachment_ids`. Only captured NUL-free UTF-8 file/diff/comment context of at most 64 KiB each can be expanded into text for steering, with retained attachment metadata preserved. Ordinary uploads, binary or larger captures return `steer_context_unsupported`; retain the entire draft for ordinary submission. Runtime steering remains text-only. Normal submission retains larger/binary captures using existing Thread attachment behavior. A later Host edit cannot change either path's captured bytes or source attribution.
 
 ## Create a Thread and submit input
 

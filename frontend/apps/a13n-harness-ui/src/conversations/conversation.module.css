@@ -473,3 +473,46 @@
   display: block;
   line-height: 1.6;
 }
+
+.commentActions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-block: 0.5rem;
+}
+.commentActions small {
+  flex-basis: 100%;
+  color: var(--muted-foreground);
+}
+.commentCard,
+.commentDraft {
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  min-width: 0;
+}
+.commentCard header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+.commentCard time {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+.commentCard blockquote {
+  border-left: 2px solid var(--border);
+  padding-left: 0.75rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.commentDraft textarea {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--background);
+  padding: 0.75rem;
+  resize: vertical;
+}

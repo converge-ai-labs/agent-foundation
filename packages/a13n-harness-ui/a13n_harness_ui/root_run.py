@@ -316,9 +316,8 @@ class RootRunCoordinator:
                 await done.wait()
         return await self.get(receipt_id)
 
-    async def steer(self, *, receipt_id: str, message: str) -> RootControlResult:
-        if not message.strip():
-            raise RunCoordinationError("A steering message must not be blank.", code="run_input_invalid")
+    async def steer(self, *, receipt_id: str, message: RunInputValue) -> RootControlResult:
+        message = detach_input(message)
         async with self._lock:
             operation = self._operations.get(receipt_id)
             if operation is None:

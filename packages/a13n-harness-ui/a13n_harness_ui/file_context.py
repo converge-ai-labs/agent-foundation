@@ -1,10 +1,12 @@
-"""Detached provenance for human-selected native file input."""
+"""Detached provenance for human-selected, immutable input context."""
 
 from __future__ import annotations
 
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from a13n_harness_ui.output_comment_models import SavedOutputTarget
 
 MAX_INLINE_CONTEXT_BYTES = 64 * 1024
 
@@ -39,7 +41,18 @@ class GitContextSource(BaseModel):
     end_line: int | None = Field(default=None, ge=1)
 
 
-CapturedSource = FileContextSource | GitContextSource
+class CommentContextSource(BaseModel):
+    """A complete published comment and its exact saved assistant output."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    kind: Literal["comment_reference"] = "comment_reference"
+    root_thread_id: str = Field(min_length=1, max_length=80)
+    comment_id: str = Field(pattern=r"^comment-[A-Za-z0-9_-]{16,64}$")
+    target: SavedOutputTarget
+
+
+CapturedSource = FileContextSource | GitContextSource | CommentContextSource
 
 
 def context_text(source: CapturedSource, data: bytes) -> str | None:
@@ -50,5 +63,7 @@ def context_text(source: CapturedSource, data: bytes) -> str | None:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
         return None
+    if isinstance(source, CommentContextSource):
+        return text
     kind = "Git diff" if isinstance(source, GitContextSource) else "file"
     return f"Selected Host {kind} context (source: {source.model_dump_json()}):\n{text}"

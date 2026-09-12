@@ -5,7 +5,8 @@ import { ApiError, result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice, TextField } from "../shell/ui";
 import { ConversationConfiguration } from "./configuration";
-import { MessageText } from "./transcript";
+import { MessageText } from "./message-text";
+import { ChildSavedOutputs } from "./comments";
 import { useThreads } from "./queries";
 import styles from "./conversation.module.css";
 
@@ -309,6 +310,10 @@ export function Child({
           </pre>
         </details>
       )}
+      <ChildSavedOutputs
+        threadId={child.parent_thread_id}
+        executionId={child.execution_id}
+      />
       <ErrorNotice error={review.error || control.error} />
       {review.data && (
         <details>

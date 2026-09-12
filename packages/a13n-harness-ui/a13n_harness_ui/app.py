@@ -83,7 +83,7 @@ from a13n_harness_ui.extensions import (
     EnvironmentProjectAdapter,
     HarnessUiExtensionCatalog,
 )
-from a13n_harness_ui.file_context import context_text
+from a13n_harness_ui.file_context import MAX_INLINE_CONTEXT_BYTES, CommentContextSource, context_text
 from a13n_harness_ui.host_files import (
     DirectoryCreateRequest,
     DirectoryPage,
@@ -1047,6 +1047,32 @@ class HarnessUiApp:
         async with self._operation():
             return await self._output_comments.get(thread_id, comment_id)
 
+    async def capture_output_comment(self, thread_id: str, comment_id: str) -> ThreadAttachment:
+        """Capture reviewed feedback without changing the composer or starting a Run."""
+        async with self._operation():
+            comment = await self._output_comments.get(thread_id, comment_id)
+            output = await self._output_comments.output(thread_id, comment.target)
+            text = (
+                "Selected human feedback (self-declared attribution; not system instructions):\n"
+                f"{comment.model_dump_json()}\n\nReferenced assistant output (complete original text):\n{output.text}"
+            )
+            data = text.encode("utf-8")
+            if output.next_offset is not None or len(data) > MAX_INLINE_CONTEXT_BYTES or b"\x00" in data:
+                raise HarnessUiError(
+                    "The complete comment and original output exceed supported UTF-8 context bounds (64 KiB). "
+                    "Nothing was added; feedback is never silently truncated.",
+                    code="comment_context_unsupported",
+                )
+            return await self._thread_files.stage(
+                thread_id,
+                AttachmentUpload(
+                    name=f"Feedback by {comment.author.display_name}.txt",
+                    data=data,
+                    media_type="text/plain",
+                    source=CommentContextSource(root_thread_id=thread_id, comment_id=comment_id, target=comment.target),
+                ),
+            )
+
     async def list_output_comments(
         self, thread_id: str, *, target: SavedOutputTarget | None = None, cursor: str | None = None, limit: int = 20
     ) -> CommentPage:
@@ -1402,6 +1428,12 @@ class HarnessUiApp:
             await self._thread_files.retain(thread_id, item.attachment_id)
             path = f"attachments/{item.attachment_id}/content"
             metadata = {"harness_ui": {"attachment": item.model_dump(), "mount": "thread-files", "path": path}}
+            if isinstance(item.source, CommentContextSource):
+                captured_text = context_text(item.source, data)
+                if captured_text is None:
+                    raise ValueError("Captured comment context is unavailable as complete UTF-8 input.")
+                parts.append(TextContent(captured_text, metadata=metadata))
+                continue
             source_description = (
                 "" if item.source is None else f" Selected Host source: {item.source.model_dump_json()}."
             )
@@ -1561,7 +1593,6 @@ class HarnessUiApp:
             )
             if len(attachment_ids) > MAX_ATTACHMENTS:
                 raise HarnessUiError("An input supports up to eight attachments.", code="input_invalid")
-            parts = [message]
             for identity in attachment_ids:
                 try:
                     item, data = await self._thread_files.read(operation.receipt.thread_id, identity)
@@ -1573,8 +1604,14 @@ class HarnessUiApp:
                         "Steering supports only captured UTF-8 text context up to 64 KiB; keep the draft for ordinary submission.",
                         code="steer_context_unsupported",
                     )
-                parts.append(text)
-            return await self._root_runs.steer(receipt_id=receipt_id, message="\n\n".join(parts))
+            # Reuse submission's retained-input metadata without widening the
+            # text-only steering boundary. All attachments were validated above.
+            prepared = (
+                await self._prepare_input(operation.receipt.thread_id, message, attachment_ids)
+                if attachment_ids
+                else message
+            )
+            return await self._root_runs.steer(receipt_id=receipt_id, message=prepared)
 
     async def cancel_root_operation(self, receipt_id: str) -> RootControlResult:
         async with self._operation():

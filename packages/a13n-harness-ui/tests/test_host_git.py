@@ -375,7 +375,12 @@ def test_git_openapi_exposes_required_capture_revision_without_app() -> None:
     assert capture["requestBody"]["required"]
     assert "expected_revision" in document["components"]["schemas"]["GitCaptureRequest"]["required"]
     source = document["components"]["schemas"]["ThreadAttachment"]["properties"]["source"]
-    assert len(source["anyOf"]) == 3
+    assert {item.get("$ref") for item in source["anyOf"]} == {
+        "#/components/schemas/FileContextSource",
+        "#/components/schemas/GitContextSource",
+        "#/components/schemas/CommentContextSource",
+        None,
+    }
 
 
 @pytest.mark.anyio
