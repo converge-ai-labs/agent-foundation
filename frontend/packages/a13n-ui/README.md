@@ -53,4 +53,4 @@ Applications own translations, navigation, persistence, data fetching, and domai
 
 ## Development
 
-Run `pnpm --dir frontend --filter a13n-ui dev` for the showcase and `pnpm --dir frontend --filter a13n-ui check` for type checking, interaction tests, and the showcase build. The complete frontend gate is `make frontend-check-all`.
+Run `pnpm --dir frontend --filter a13n-ui dev` for the showcase. The package scripts `check`, `test`, and `build` run type checking, interaction tests, and the showcase build respectively. The complete frontend gate is `make frontend-check-all`.

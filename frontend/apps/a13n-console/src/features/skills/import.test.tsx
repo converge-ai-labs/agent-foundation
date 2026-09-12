@@ -46,7 +46,8 @@ it("uses source tabs with keyboard selection and retains the GitHub draft", asyn
   const repository = await dialog.findByRole("textbox", {
     name: "Repository URL",
   });
-  await user.type(repository, "https://github.com/example/skill");
+  await user.click(repository);
+  await user.paste("https://github.com/example/skill");
   await user.click(dialog.getByRole("tab", { name: "ZIP file" }));
   await waitFor(() =>
     expect(
@@ -85,10 +86,8 @@ it("publishes a new version using the chosen GitHub source and current version",
   );
   expect(dialog.queryByRole("textbox", { name: "Display name" })).toBeNull();
   await user.click(dialog.getByRole("tab", { name: "GitHub" }));
-  await user.type(
-    dialog.getByRole("textbox", { name: "Repository URL" }),
-    "https://github.com/example/skill",
-  );
+  await user.click(dialog.getByRole("textbox", { name: "Repository URL" }));
+  await user.paste("https://github.com/example/skill");
   await user.click(dialog.getByRole("button", { name: "Advanced settings" }));
   await user.type(
     dialog.getByRole("textbox", { name: "Subdirectory" }),
