@@ -80,11 +80,3 @@
   overflow-x: auto;
   justify-content: flex-start;
 }
-/* Keep navigation stationary when a dialog's tab content changes height. */
-[data-slot="dialog-viewport"]:has([data-a13n-modal] [role="tablist"]) {
-  align-items: start;
-  padding-top: min(10dvh, 80px);
-}
-[data-a13n-modal]:has([role="tablist"]) {
-  max-height: calc(90dvh - 24px);
-}

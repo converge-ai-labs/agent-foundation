@@ -5,6 +5,7 @@ import {
   Badge,
   Button,
   Spinner,
+  useToast,
 } from "a13n-ui";
 
 import {
@@ -23,7 +24,7 @@ import {
   TrayIcon,
   ArrowsClockwiseIcon,
 } from "@phosphor-icons/react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { PageActionsTarget } from "./page-actions";
 
 import { useTranslation } from "react-i18next";
@@ -31,12 +32,124 @@ import { Link } from "react-router";
 import styles from "./shared.module.css";
 import { relativeTime } from "./time";
 
-export function Loading() {
+export function Loading({ page = false }: { page?: boolean }) {
   const { t } = useTranslation();
   return (
-    <div role="status" className={styles.loading}>
+    <div
+      role="status"
+      className={`${styles.loading} ${page ? styles.pageLoading : ""}`}
+    >
       <Spinner aria-hidden="true" />
       {t("Loading…")}
+    </div>
+  );
+}
+
+function errorDetails(error: unknown, t: (value: string) => string) {
+  const conflict =
+    error instanceof ApiError &&
+    (error.status === 412 ||
+      [
+        "version_conflict",
+        "thread_version_conflict",
+        "queue_version_conflict",
+      ].includes(error.code));
+  return {
+    conflict,
+    title: t(conflict ? "This resource changed" : "Something went wrong"),
+    description: conflict
+      ? t(
+          "Your draft is preserved. Reload the latest version before trying again.",
+        )
+      : error instanceof Error
+        ? t(error.message)
+        : t("The request could not be completed."),
+    requestId:
+      error instanceof ApiError && error.requestId
+        ? error.requestId
+        : undefined,
+  };
+}
+
+export function ErrorToast({
+  error,
+  retry,
+}: {
+  error: unknown;
+  retry?: () => void;
+}) {
+  return error ? <ErrorToastContent error={error} retry={retry} /> : null;
+}
+
+function ErrorToastContent({
+  error,
+  retry,
+}: {
+  error: unknown;
+  retry?: () => void;
+}) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const toastId = useId();
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
+  useEffect(() => {
+    const details = errorDetails(error, t);
+    toastRef.current.add({
+      id: toastId,
+      type: "error",
+      priority: "high",
+      timeout: 0,
+      title: details.title,
+      description: (
+        <>
+          {details.description}
+          {details.requestId && (
+            <small>
+              {t("Request ID")}: {details.requestId}
+            </small>
+          )}
+        </>
+      ),
+      actionProps: retry
+        ? { children: t("Try again"), onClick: retry }
+        : undefined,
+    });
+  }, [error, retry, t, toastId]);
+  useEffect(
+    () => () => {
+      toastRef.current.close(toastId);
+    },
+    [toastId],
+  );
+  return null;
+}
+
+export function ErrorPage({
+  error,
+  title,
+  actions,
+}: {
+  error: unknown;
+  title?: string;
+  actions?: ReactNode;
+}) {
+  const { t } = useTranslation();
+  if (!error) return null;
+  const details = errorDetails(error, t);
+  return (
+    <div className={styles.errorPage} role="alert">
+      <div className={styles.errorMark}>
+        <WarningCircleIcon aria-hidden="true" />
+      </div>
+      <h1>{title ?? details.title}</h1>
+      <p>{details.description}</p>
+      {details.requestId && (
+        <small>
+          {t("Request ID")}: {details.requestId}
+        </small>
+      )}
+      {actions && <div className={styles.errorPageActions}>{actions}</div>}
     </div>
   );
 }
@@ -49,33 +162,16 @@ export function ErrorNotice({
 }) {
   const { t } = useTranslation();
   if (!error) return null;
-  const conflict =
-    error instanceof ApiError &&
-    (error.status === 412 ||
-      [
-        "version_conflict",
-        "thread_version_conflict",
-        "queue_version_conflict",
-      ].includes(error.code));
+  const details = errorDetails(error, t);
   return (
     <Alert variant="error" className="my-4">
       <WarningCircleIcon aria-hidden="true" />
-      <AlertTitle>
-        {t(conflict ? "This resource changed" : "Something went wrong")}
-      </AlertTitle>
+      <AlertTitle>{details.title}</AlertTitle>
       <AlertDescription>
-        <p>
-          {conflict
-            ? t(
-                "Your draft is preserved. Reload the latest version before trying again.",
-              )
-            : error instanceof Error
-              ? t(error.message)
-              : t("The request could not be completed.")}
-        </p>
-        {error instanceof ApiError && error.requestId && (
+        <p>{details.description}</p>
+        {details.requestId && (
           <small>
-            {t("Request ID")}: {error.requestId}
+            {t("Request ID")}: {details.requestId}
           </small>
         )}
         {retry && (

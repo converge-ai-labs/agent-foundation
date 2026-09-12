@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.connectivity.browser_urls import is_secure_or_loopback_url
 from a13n_service.connectivity.connectors.contracts import (
     AdapterConnectionStatus,
     AdapterStatusReason,
@@ -138,12 +139,12 @@ class ConnectorSetupCoordinator:
             and (
                 (binding is None and handoff is None)
                 or self._public_origin is None
-                or not self._public_origin.startswith("https://")
+                or not is_secure_or_loopback_url(self._public_origin)
             )
         ):
             raise ConnectorError(
                 "browser_setup_required",
-                "Composio setup requires browser binding and a public HTTPS origin.",
+                "Composio setup requires browser binding and an HTTPS or exact loopback HTTP origin.",
                 category=ErrorCategory.invalid_request,
             )
         correlation = self.correlation(connector, workspace_id=connection.workspace_id)

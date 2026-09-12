@@ -46,6 +46,7 @@ export function ModelEditor({
   return (
     <ModalFrame
       {...modalProps}
+      placement="top"
       trigger={
         controlledOpen === undefined ? (
           <ResourceEditorButton

@@ -154,11 +154,15 @@ async def test_composio_invalid_execution_evidence_remains_unknown_without_retry
         "/",
         "//outside.invalid/",
         "http://outside.invalid",
+        "http://localhost.example",
+        "http://localhost:not-a-port/callback",
+        "http://127.0.0.2",
+        "http://[::2]",
         "https://user:password@outside.invalid",
         "https://outside.invalid/#fragment",
     ],
 )
-def test_authorization_requires_a_credential_free_https_return_url(target):
+def test_authorization_requires_a_safe_browser_return_url(target):
     from a13n_service.connectivity.connections.domain import CreateAuthorizationRequest
     from pydantic import ValidationError
 
@@ -168,10 +172,18 @@ def test_authorization_requires_a_credential_free_https_return_url(target):
         )
 
 
-def test_authorization_accepts_an_application_https_return_url():
+@pytest.mark.parametrize(
+    "target",
+    [
+        "https://customer.example/oauth/complete",
+        "http://localhost:5173/connections/callback",
+        "http://127.0.0.1:5173/connections/callback",
+        "http://[::1]:5173/connections/callback",
+    ],
+)
+def test_authorization_accepts_https_or_exact_loopback_http_return_url(target):
     from a13n_service.connectivity.connections.domain import CreateAuthorizationRequest
 
-    target = "https://customer.example/oauth/complete"
     assert (
         CreateAuthorizationRequest(
             expected_version=1, method="browser", return_url=target, state="s" * 32, completion_challenge="a" * 64

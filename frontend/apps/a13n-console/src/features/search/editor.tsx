@@ -62,6 +62,7 @@ export function SearchProviderEditor({
   return (
     <ModalFrame
       {...modalProps}
+      size="lg"
       title={t(
         readOnly ? "Provider" : providerId ? "Edit provider" : "Add provider",
       )}

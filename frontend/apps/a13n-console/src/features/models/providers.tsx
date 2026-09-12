@@ -173,7 +173,7 @@ export function ProviderEditor({
           />
         ) : undefined
       }
-      size="md"
+      size="lg"
       title={t(providerId ? "Edit provider" : "Add provider")}
       description={
         providerId ? undefined : t("Connect a model service to add its models.")

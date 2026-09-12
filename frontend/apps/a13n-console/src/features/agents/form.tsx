@@ -20,7 +20,7 @@ import {
   StackIcon,
 } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
-import { ErrorNotice } from "../../shared/feedback";
+import { ErrorNotice, ErrorToast } from "../../shared/feedback";
 import { TextAreaField } from "../../shared/form";
 import { ResourceReference } from "../../shared/resource-reference";
 import { jsonObject } from "../../shared/validation";
@@ -410,9 +410,13 @@ export function AgentForm({
             )}
           </div>
         </aside>
-        <div className={styles.editorError}>
-          <ErrorNotice error={error ?? choices.error} retry={reload} />
-        </div>
+        <ErrorToast
+          error={error ?? choices.error}
+          retry={() => {
+            void choices.refetch();
+            reload?.();
+          }}
+        />
       </form>
     </div>
   );

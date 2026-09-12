@@ -45,7 +45,7 @@ def settings(tmp_path: Path, database_path: Path) -> Settings:
             "master_key_base64": b64encode(b"0123456789abcdef0123456789abcdef").decode(),
             "encryption_key_id": "model-management-test-key",
         },
-        connectivity={"public_origin": "http://testserver", "http_origins": ("http://testserver",)},
+        connectivity={"public_origin": "http://127.0.0.1", "http_origins": ("http://127.0.0.1",)},
     )
 
 

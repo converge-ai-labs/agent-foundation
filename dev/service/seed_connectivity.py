@@ -56,40 +56,42 @@ async def connectivity(client: Client, base: str, catalog: dict, identity: dict,
             raise RuntimeError("MCP tool result did not appear in the retained model output")
         scenarios[name] = result["id"]
 
-    for state in ("active", "disabled"):
-        provider = await client.request(
-            "POST",
-            base + "/connector-providers",
-            expected=201,
-            json={
-                "name": f"Fictional Composio configuration · {state}",
-                "type": "composio",
-                "configuration": {},
-                "credentials": {"api_key": "public-local-connector-token"},
+    provider = await client.request(
+        "POST",
+        base + "/connector-providers",
+        expected=201,
+        json={
+            "name": "Fictional Composio configuration · disabled",
+            "type": "composio",
+            "configuration": {},
+            "credentials": {"api_key": "public-local-connector-token"},
+        },
+    )
+    connection = await client.request(
+        "POST",
+        base + "/connections",
+        expected=201,
+        json={
+            "source": {
+                "kind": "connector",
+                "provider_id": provider["id"],
+                "connector_key": "github",
             },
-        )
-        connection = await client.request(
-            "POST",
-            base + "/connections",
-            expected=201,
-            json={
-                "source": {"kind": "connector", "provider_id": provider["id"], "connector_key": "github"},
-                "name": f"Fictional repository · {state}",
-            },
-        )
-        if state == "disabled":
-            connection = await client.request(
-                "POST",
-                f"/api/v1/connections/{connection['id']}/disable",
-                json={"expected_version": connection["version"]},
-            )
-            provider = await client.request(
-                "POST",
-                f"/api/v1/connector-providers/{provider['id']}/disable",
-                json={"expected_version": provider["version"]},
-            )
-        scenarios[f"connector_provider_{state}"] = provider["id"]
-        scenarios[f"connector_connection_{connection['status']}"] = connection["id"]
+            "name": "Fictional repository · disabled",
+        },
+    )
+    connection = await client.request(
+        "POST",
+        f"/api/v1/connections/{connection['id']}/disable",
+        json={"expected_version": connection["version"]},
+    )
+    provider = await client.request(
+        "POST",
+        f"/api/v1/connector-providers/{provider['id']}/disable",
+        json={"expected_version": provider["version"]},
+    )
+    scenarios["connector_provider_disabled"] = provider["id"]
+    scenarios[f"connector_connection_{connection['status']}"] = connection["id"]
 
     for index, state in enumerate(("active", "disabled")):
         account = await client.request(

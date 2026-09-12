@@ -30,7 +30,7 @@ import { WorkspaceMenu } from "./workspace-menu";
 function PageOutlet() {
   return (
     <main id="main-content" className="min-w-0">
-      <Suspense fallback={<Loading />}>
+      <Suspense fallback={<Loading page />}>
         <Outlet />
       </Suspense>
     </main>

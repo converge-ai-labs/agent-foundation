@@ -5,10 +5,10 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
-from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
+from a13n_service.connectivity.browser_urls import split_browser_url
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.names import DisplayName
@@ -115,15 +115,12 @@ class CreateAuthorizationRequest(ConnectionCommandRequest):
                 or self.credentials is not None
             ):
                 raise ValueError("Browser authorization requires a return URL, state, and completion challenge")
-            target = urlsplit(self.return_url)
-            if (
-                target.scheme != "https"
-                or not target.hostname
-                or target.username is not None
-                or target.password is not None
-                or target.fragment
-            ):
-                raise ValueError("Authorization return URL must be a credential-free HTTPS URL without a fragment")
+            try:
+                split_browser_url(self.return_url)
+            except ValueError as error:
+                raise ValueError(
+                    "Authorization return URL must use HTTPS or exact loopback HTTP without credentials or a fragment"
+                ) from error
         elif self.return_url is not None or self.state is not None or self.completion_challenge is not None:
             raise ValueError("Noninteractive authorization does not accept browser parameters")
         if (self.method == "credentials") != (self.credentials is not None):

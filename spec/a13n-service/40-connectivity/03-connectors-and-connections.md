@@ -140,7 +140,7 @@ A newer attempt supersedes older attempts through the Connection's authorization
 
 ### Browser handoff
 
-The application backend creates browser authorization with its own unpredictable `state`, an exact registered HTTPS `return_url`, and the SHA-256 challenge of an unpredictable completion verifier. The backend retains that verifier. The returned launch URL is a narrowly scoped bearer capability, not a general Service API credential.
+The application backend creates browser authorization with its own unpredictable `state`, an exact registered `return_url`, and the SHA-256 challenge of an unpredictable completion verifier. The return URL uses HTTPS, except that local development can use plain HTTP only with the exact host `localhost`, `127.0.0.1`, or `[::1]`; alternate spellings, subdomains, and other loopback addresses are rejected. The configured Service `public_origin` follows the same transport rule. The backend retains the verifier. The returned launch URL is a narrowly scoped bearer capability, not a general Service API credential.
 
 Service hosts the minimal browser handoff. The browser binds the launch capability to a per-tab nonce and follows the provider URL. OAuth or hosted-form returns pass through the same browser binding. The application receives its original state, authorization ID, and a short-lived receipt at its registered return URL. It validates its state and completes authorization through its authenticated backend using the receipt and verifier. Browser possession alone grants no Connection-management or completion authority. Cross-tab substitution, altered return URLs, another initiating principal, and a wrong verifier fail closed. The application customer never needs to log in to Console.
 

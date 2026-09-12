@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import { WorkspaceProvider, useWorkspace } from "./workspace";
@@ -28,7 +29,10 @@ function CurrentWorkspace() {
   const { workspace, basePath } = useWorkspace();
   return <p>{`${useLocation().pathname}|${workspace.id}|${basePath}`}</p>;
 }
-function mount(path: string) {
+function mount(
+  path: string,
+  { permissionsError }: { permissionsError?: Error } = {},
+) {
   mocks.GET.mockImplementation(async (route: string) => {
     if (route.endsWith("/workspaces"))
       return {
@@ -40,8 +44,10 @@ function mount(path: string) {
           next_cursor: null,
         },
       };
-    if (route.endsWith("/permissions"))
+    if (route.endsWith("/permissions")) {
+      if (permissionsError) throw permissionsError;
       return { data: { actions: ["agent.read"], organization_admin: false } };
+    }
     throw new Error(`Unexpected route: ${route}`);
   });
   render(
@@ -111,4 +117,35 @@ it("preserves the selected workspace when provider management opens in another t
       "/workspace/design/settings|ws_second|/workspace/design",
     ),
   ).toBeTruthy();
+});
+
+it("offers retry, workspace switching, and personal settings when permissions fail", async () => {
+  mount("/workspace/design/agents", {
+    permissionsError: new Error("Permissions unavailable"),
+  });
+
+  expect(
+    await screen.findByRole("heading", { name: "Workspace unavailable" }),
+  ).toBeTruthy();
+  expect(
+    screen
+      .getByRole("link", { name: "Personal settings" })
+      .getAttribute("href"),
+  ).toBe("/settings/profile");
+  expect(
+    screen
+      .getByRole("link", { name: "Switch workspace: Research" })
+      .getAttribute("href"),
+  ).toBe("/workspace/research/agents");
+  expect(
+    screen.queryByRole("link", { name: "Switch workspace: Design" }),
+  ).toBeNull();
+
+  const permissionCalls = () =>
+    mocks.GET.mock.calls.filter(([route]) =>
+      String(route).endsWith("/permissions"),
+    ).length;
+  const beforeRetry = permissionCalls();
+  await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+  await waitFor(() => expect(permissionCalls()).toBeGreaterThan(beforeRetry));
 });

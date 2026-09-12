@@ -1,13 +1,13 @@
+import type { MCPServerId } from "a13n-mcp-directory";
 import type { Schema } from "../../shared/api";
 
 export interface MCPPreset {
-  id: string;
+  id: MCPServerId;
   name: string;
   description: string;
   endpoint: string;
   auth: Schema["MCPSource"]["auth_mode"];
   docs: string;
-  logo: string;
   requirements: string;
   headerNames?: readonly string[];
 }

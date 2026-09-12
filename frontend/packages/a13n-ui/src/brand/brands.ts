@@ -1,3 +1,4 @@
+import { mcpServers } from "a13n-mcp-directory";
 import { lobeBrands, lobeIconsCdn } from "./lobe-brands.generated";
 
 /** Display identities only. These mappings never select an endpoint or account. */
@@ -7,6 +8,7 @@ export interface Brand {
   invertInDark?: boolean;
   aliases?: readonly string[];
   hosts?: readonly string[];
+  endpoints?: readonly string[];
 }
 
 const svgl = "https://svgl.app/library/";
@@ -20,6 +22,10 @@ const curatedBrands: Record<string, Brand> = {
     icon: `${svgl}notion.svg`,
     invertInDark: true,
     hosts: ["mcp.notion.com", "notion.so", "notion.com"],
+  },
+  cloudflare: {
+    ...lobeBrands.cloudflare,
+    hosts: ["mcp.cloudflare.com", "cloudflare.com"],
   },
   linear: {
     icon: `${svgl}linear.svg`,
@@ -104,10 +110,24 @@ const curatedBrands: Record<string, Brand> = {
   "a13n.e2b": { icon: "https://e2b.dev/brand/e2b-symbol-fire-orange-s.svg" },
 };
 
-export const brands: Record<string, Brand> = {
-  ...lobeBrands,
-  ...curatedBrands,
-};
+const mcpDirectoryBrands: Record<string, Brand> = {};
+for (const [identity, server] of Object.entries(mcpServers))
+  if ("icon" in server)
+    mcpDirectoryBrands[identity] = {
+      icon: server.icon,
+      endpoints: [server.endpoint],
+    };
+
+export const brands = mergeBrandCatalogs(
+  lobeBrands,
+  mcpDirectoryBrands,
+  curatedBrands,
+);
+
+const brandsByEndpoint = new Map<string, Brand>();
+for (const brand of Object.values(brands))
+  for (const endpoint of brand.endpoints ?? [])
+    brandsByEndpoint.set(canonicalEndpoint(endpoint), brand);
 
 export function resolveBrand({
   identity,
@@ -131,7 +151,10 @@ export function resolveBrand({
   }
   if (endpoint) {
     try {
-      const hostname = new URL(endpoint).hostname.toLowerCase();
+      const url = new URL(endpoint);
+      const exact = brandsByEndpoint.get(url.href);
+      if (exact) return exact;
+      const hostname = url.hostname.toLowerCase();
       return Object.values(brands).find((brand) =>
         brand.hosts?.includes(hostname),
       );
@@ -140,4 +163,34 @@ export function resolveBrand({
     }
   }
   return undefined;
+}
+
+function mergeBrandCatalogs(
+  ...catalogs: readonly Readonly<Record<string, Brand>>[]
+): Record<string, Brand> {
+  const merged: Record<string, Brand> = {};
+  for (const catalog of catalogs)
+    for (const [identity, brand] of Object.entries(catalog)) {
+      const previous = merged[identity];
+      merged[identity] = {
+        ...previous,
+        ...brand,
+        aliases: mergeValues(previous?.aliases, brand.aliases),
+        hosts: mergeValues(previous?.hosts, brand.hosts),
+        endpoints: mergeValues(previous?.endpoints, brand.endpoints),
+      };
+    }
+  return merged;
+}
+
+function mergeValues(
+  previous?: readonly string[],
+  current?: readonly string[],
+): readonly string[] | undefined {
+  const values = [...(previous ?? []), ...(current ?? [])];
+  return values.length ? [...new Set(values)] : undefined;
+}
+
+function canonicalEndpoint(endpoint: string): string {
+  return new URL(endpoint).href;
 }

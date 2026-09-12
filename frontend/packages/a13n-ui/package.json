@@ -30,6 +30,7 @@
     "@base-ui/react": "1.8.0",
     "@daypicker/react": "^10.0.1",
     "@phosphor-icons/react": "^2.1.10",
+    "a13n-mcp-directory": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "tailwind-merge": "^3.4.0"

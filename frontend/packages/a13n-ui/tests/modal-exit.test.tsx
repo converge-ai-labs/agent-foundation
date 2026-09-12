@@ -31,3 +31,21 @@ it("retains content when the caller clears it during exit and uses fresh content
     animations.mockRestore();
   }
 });
+
+it("supports stable top placement without changing the centered default", () => {
+  const { rerender } = render(
+    <ModalFrame open title="Connection" closeLabel="Close" placement="top">
+      <p>Authorization</p>
+    </ModalFrame>,
+  );
+  expect(screen.getByRole("dialog").getAttribute("data-placement")).toBe("top");
+
+  rerender(
+    <ModalFrame open title="Connection" closeLabel="Close">
+      <p>Authorization</p>
+    </ModalFrame>,
+  );
+  expect(screen.getByRole("dialog").getAttribute("data-placement")).toBe(
+    "center",
+  );
+});

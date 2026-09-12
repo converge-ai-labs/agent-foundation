@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Collection
 from functools import lru_cache
-from urllib.parse import urlsplit
 
 from pydantic import Field
 
+from a13n_service.connectivity.browser_urls import split_browser_url
 from a13n_service.database import MigrationConfig
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam.configuration import IdentityConfiguration
@@ -190,9 +190,11 @@ class Settings(Section):
             raise ValueError("A13N_SERVICE_CONNECTIVITY_PUBLIC_ORIGIN is required for control-capable roles")
         try:
             normalized, _, _ = self.connectivity_endpoint_policy().validate_syntax(self.connectivity.public_origin)
+            parsed = split_browser_url(normalized)
         except EndpointPolicyError as error:
             raise ValueError("A13N_SERVICE_CONNECTIVITY_PUBLIC_ORIGIN is invalid") from error
-        parsed = urlsplit(normalized)
+        except ValueError as error:
+            raise ValueError("A13N_SERVICE_CONNECTIVITY_PUBLIC_ORIGIN must use HTTPS or exact loopback HTTP") from error
         if parsed.path or parsed.query:
             raise ValueError("A13N_SERVICE_CONNECTIVITY_PUBLIC_ORIGIN must be an exact origin")
         return normalized

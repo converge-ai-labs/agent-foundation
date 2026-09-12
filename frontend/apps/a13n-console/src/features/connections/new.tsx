@@ -10,7 +10,7 @@ import {
 import { ArrowLeftIcon, PlusIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
-import { ErrorNotice } from "../../shared/feedback";
+import { ErrorToast } from "../../shared/feedback";
 import type { Schema } from "../../shared/api";
 import { ManageProvidersLink } from "../providers/manage-link";
 import { ConnectionSetup } from "../connectors/setup";
@@ -42,7 +42,7 @@ export function NewConnection({
         "Connect an application or a remote MCP server to this workspace.",
       )}
       closeLabel={t("Close")}
-      size="md"
+      size="lg"
       trigger={
         <Button type="button">
           <PlusIcon />
@@ -92,20 +92,24 @@ function ConnectionChoice({
       icon: <BrandIcon alias={connector.key} logo={connector.logo_url} />,
     })),
     ...(can("connection.manage")
-      ? mcpPresets.map((preset) => ({
-          value: `mcp:${preset.id}`,
-          label: preset.name,
-          description: t(preset.description),
-          badge: t("Remote MCP"),
-          keywords: [preset.id, preset.endpoint],
-          icon: (
-            <BrandIcon
-              identity={preset.id}
-              endpoint={preset.endpoint}
-              logo={preset.logo}
-            />
-          ),
-        }))
+      ? [
+          ...mcpPresets.map((preset) => ({
+            value: `mcp:${preset.id}`,
+            label: preset.name,
+            description: t(preset.description),
+            badge: t("Remote MCP"),
+            keywords: [preset.id, preset.endpoint],
+            icon: <BrandIcon identity={preset.id} endpoint={preset.endpoint} />,
+          })),
+          {
+            value: "mcp:custom",
+            label: t("Custom Remote MCP"),
+            description: t("Connect any compatible remote MCP server."),
+            badge: t("Remote MCP"),
+            keywords: ["custom", "remote", "mcp"],
+            icon: <BrandIcon identity="mcp" />,
+          },
+        ]
       : []),
   ].sort(
     (a, b) =>
@@ -136,7 +140,6 @@ function ConnectionChoice({
           ) : (
             <BrandIcon
               identity={selected.preset?.id}
-              logo={selected.preset?.logo}
               endpoint={selected.preset?.endpoint}
             />
           )}
@@ -230,6 +233,7 @@ function ConnectionChoice({
               (entry) => value === `mcp:${entry.id}`,
             );
             if (preset) setSelected({ kind: "mcp", preset });
+            else if (value === "mcp:custom") setSelected({ kind: "mcp" });
           }}
           footer={
             directory.pending ? (
@@ -253,32 +257,18 @@ function ConnectionChoice({
           }
         />
       </FormField>
-      <ErrorNotice error={directory.error} />
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <ManageProvidersLink category="connectors" scope="workspace" />
-          {!!directory.providers.length && (
-            <Button
-              variant="ghost"
-              size="sm"
-              loading={directory.loadingMore}
-              onClick={directory.refresh}
-              type="button"
-            >
-              {t("Refresh applications")}
-            </Button>
-          )}
-        </div>
-        {can("connection.manage") && (
+      <ErrorToast error={directory.error} retry={directory.refresh} />
+      <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
+        <ManageProvidersLink category="connectors" scope="workspace" />
+        {!!directory.providers.length && (
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="sm"
-            className="ml-auto"
-            onClick={() => setSelected({ kind: "mcp" })}
+            loading={directory.loadingMore}
+            onClick={directory.refresh}
           >
-            <PlusIcon />
-            {t("Custom Remote MCP")}
+            {t("Refresh applications")}
           </Button>
         )}
       </div>

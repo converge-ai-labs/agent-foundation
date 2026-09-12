@@ -36,6 +36,7 @@ export function ImportSkill({
   return (
     <ModalFrame
       onOpenChange={setOpen}
+      placement="top"
       trigger={
         <Button variant="default" type="button">
           {t(skill ? "New version" : "Import skill")}

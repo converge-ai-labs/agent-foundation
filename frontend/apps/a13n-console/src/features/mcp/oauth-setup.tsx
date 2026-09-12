@@ -171,45 +171,34 @@ export function MCPOAuthSetup({
         <p className={styles.muted}>
           {t("This connection is authorized and verified.")}
         </p>
-      ) : (
-        <Button
-          type="button"
-          loading={pending}
-          disabled={connection.status === "disabled"}
-          onClick={() =>
-            needsVerification ? verify.mutate(connection) : connect(connection)
-          }
-        >
-          {t(
-            needsVerification
-              ? "Retry verification"
-              : connection.status === "action_required"
+      ) : null}
+      {!authorize.data && (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={pending}
+            onClick={() => setEditing(true)}
+          >
+            {t("Use your own OAuth app")}
+          </Button>
+          <Button
+            type="button"
+            variant={connection.status === "ready" ? "outline" : "default"}
+            loading={pending}
+            disabled={connection.status === "disabled"}
+            onClick={() => connect(connection)}
+          >
+            {t(
+              connection.status === "ready" ||
+                connection.status === "action_required"
                 ? "Reauthorize"
                 : configuration?.grant_type === "client_credentials"
                   ? "Connect"
                   : "Continue authorization",
-          )}
-        </Button>
-      )}
-      {!authorize.data && connection.status === "ready" && (
-        <Button
-          type="button"
-          variant="outline"
-          loading={pending}
-          onClick={() => connect(connection)}
-        >
-          {t("Reauthorize")}
-        </Button>
-      )}
-      {!authorize.data && !needsVerification && (
-        <Button
-          type="button"
-          variant="ghost"
-          disabled={pending}
-          onClick={() => setEditing(true)}
-        >
-          {t("Use your own OAuth app")}
-        </Button>
+            )}
+          </Button>
+        </div>
       )}
       <ErrorNotice error={error} retry={() => void setup.refetch()} />
     </div>

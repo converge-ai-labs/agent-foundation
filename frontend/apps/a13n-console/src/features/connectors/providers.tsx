@@ -1,11 +1,12 @@
 import { useSuggestedName } from "../../shared/suggested-name";
 import { FormSection, formSectionStyles } from "../../shared/form-section";
-import { ResourceModalTitle } from "../../shared/resource-modal-title";
 import { CredentialEditor } from "../../shared/credential-editor";
 import { ConfigurationSummary } from "../../shared/configuration-summary";
+import { ResourceReference } from "../../shared/resource-reference";
 import { ProviderTypeField } from "../../shared/provider-type-field";
 import { ProviderEnabled } from "../../shared/provider-enabled";
 import { ProviderIcon } from "../../shared/provider-icon";
+import { ProviderKeyLink } from "../../shared/provider-key-link";
 import {
   useResourceEditorState,
   useResourceRows,
@@ -201,27 +202,12 @@ function ProviderEditor({
           />
         ) : undefined
       }
-      size={"md"}
-      title={
-        providerId && resource.data ? (
-          <ResourceModalTitle name={resource.data.name} id={resource.data.id} />
-        ) : (
-          t("Add provider")
-        )
-      }
+      size="lg"
+      title={t(providerId ? "Edit provider" : "Add provider")}
       description={
-        providerId && resource.data ? (
-          <span className="flex flex-wrap items-center gap-2">
-            <span>
-              {definitions.data?.items.find(
-                (item) => item.type === resource.data?.type,
-              )?.display_name ?? resource.data.type}
-            </span>
-            <StateBadge state={resource.data.status} />
-          </span>
-        ) : (
-          t("Connect a service to browse connectors and authorize accounts.")
-        )
+        providerId
+          ? undefined
+          : t("Connect a service to browse connectors and authorize accounts.")
       }
       closeLabel={t("Close")}
     >
@@ -330,178 +316,175 @@ function ProviderForm({
     },
   });
   return (
-    <div className={styles.stack}>
-      <form
-        className={formSectionStyles.form}
-        onSubmit={(event) => {
-          event.preventDefault();
-          save.mutate();
-        }}
-      >
-        <FormSection>
-          <FormField className="min-w-0 w-full" label={t("Name")}>
-            <Input
-              required={true}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              maxLength={128}
-            />
-          </FormField>
-        </FormSection>
-        <FormSection title={t("Connection")}>
-          <ProviderTypeField
-            definitions={definitions}
-            value={type}
-            readOnly={!!basis}
-            onValueChange={(value) => {
-              setType(value);
-              suggestName(
-                definitions.find((item) => item.type === value)?.display_name ??
-                  value,
-              );
-              setConfiguration({});
-              setCredentials({});
-            }}
+    <form
+      className={formSectionStyles.form}
+      onSubmit={(event) => {
+        event.preventDefault();
+        save.mutate();
+      }}
+    >
+      <FormSection>
+        <FormField
+          className="min-w-0 w-full"
+          label={t("Name")}
+          labelAction={basis && <ResourceReference id={basis.id} />}
+        >
+          <Input
+            required={true}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            maxLength={128}
           />
-          {type === "composio" && (
-            <div className="space-y-2 text-sm text-muted-foreground">
-              <p>
-                {t(
-                  "Use an API key from the Composio project that owns your auth configs and connected accounts.",
-                )}
-              </p>
-              <p>
-                {t(
-                  "For OAuth, open that project's Settings → OAuth user verification and set the callback URL to your Service public HTTPS origin followed by /connection-authorizations/browser. Local development needs a public HTTPS tunnel.",
-                )}
-              </p>
-              <p>
-                {t(
-                  "Composio managed apps work without your own OAuth client. To use a custom app or different scopes, create an auth config in Composio Dashboard. Account credentials are collected on Composio's hosted page.",
-                )}
-              </p>
-              <a
-                href="https://docs.composio.dev/docs/tools-direct/authenticating-tools"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {t("Composio setup guide")}
-              </a>
-            </div>
-          )}
-          {basis ? (
-            <>
-              {Object.keys(configuration).length > 0 && (
-                <div className={styles.stack}>
-                  {typeof configuration.endpoint === "string" && (
-                    <ReadOnlyField label={t("Endpoint")}>
-                      {configuration.endpoint}
-                    </ReadOnlyField>
-                  )}
-                  <DisclosureSection title={t("Configuration details")}>
-                    <ConfigurationSummary
-                      value={Object.fromEntries(
-                        Object.entries(configuration).filter(
-                          ([key]) => key !== "endpoint",
-                        ),
-                      )}
-                      schema={definition?.configuration_schema}
-                    />
-                  </DisclosureSection>
-                </div>
+        </FormField>
+      </FormSection>
+      <FormSection title={t("Connection")}>
+        <ProviderTypeField
+          definitions={definitions}
+          value={type}
+          readOnly={!!basis}
+          onValueChange={(value) => {
+            setType(value);
+            suggestName(
+              definitions.find((item) => item.type === value)?.display_name ??
+                value,
+            );
+            setConfiguration({});
+            setCredentials({});
+          }}
+        />
+        {type === "composio" && (
+          <DisclosureSection
+            title={t("Composio setup")}
+            summary={t("OAuth and connected accounts")}
+          >
+            <p className="text-sm text-muted-foreground">
+              {t(
+                "For OAuth, open that project's Settings → OAuth user verification and set the callback URL to your Service HTTPS origin followed by /connection-authorizations/browser. Local development can use an exact localhost or loopback-IP HTTP origin.",
               )}
-            </>
-          ) : (
-            <>
-              {definition && (
-                <>
-                  <SchemaFields
-                    key={type}
-                    schema={definition.configuration_schema}
-                    value={configuration}
-                    onChange={setConfiguration}
-                  />
-                  <SchemaFields
-                    secret
-                    key={`${type}-credentials`}
-                    schema={definition.credential_schema}
-                    value={credentials}
-                    onChange={setCredentials}
-                  />
-                </>
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {t(
+                "Composio managed apps work without your own OAuth client. To use a custom app or different scopes, create an auth config in Composio Dashboard. Account credentials are collected on Composio's hosted page.",
               )}
-            </>
-          )}
-          {basis &&
-            definition &&
-            Object.keys(definition.credential_schema.properties ?? {}).length >
-              0 && (
-              <CredentialEditor configured={basis.credential_configured}>
+            </p>
+            <ProviderKeyLink
+              href="https://docs.composio.dev/docs/tools-direct/authenticating-tools"
+              label="Open setup guide"
+            />
+          </DisclosureSection>
+        )}
+        {basis ? (
+          <>
+            {Object.keys(configuration).length > 0 && (
+              <div className={styles.stack}>
+                {typeof configuration.endpoint === "string" && (
+                  <ReadOnlyField label={t("Endpoint")}>
+                    {configuration.endpoint}
+                  </ReadOnlyField>
+                )}
+                <DisclosureSection title={t("Configuration details")}>
+                  <ConfigurationSummary
+                    value={Object.fromEntries(
+                      Object.entries(configuration).filter(
+                        ([key]) => key !== "endpoint",
+                      ),
+                    )}
+                    schema={definition?.configuration_schema}
+                  />
+                </DisclosureSection>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            {definition && (
+              <>
+                <SchemaFields
+                  key={type}
+                  schema={definition.configuration_schema}
+                  value={configuration}
+                  onChange={setConfiguration}
+                />
                 <SchemaFields
                   secret
-                  schema={{ ...definition.credential_schema, required: [] }}
+                  key={`${type}-credentials`}
+                  schema={definition.credential_schema}
                   value={credentials}
                   onChange={setCredentials}
                 />
-              </CredentialEditor>
+              </>
             )}
-          {basis && (
-            <>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  loading={test.isPending}
-                  disabled={
-                    save.isPending ||
-                    name !== basis.name ||
-                    enabled !== (basis.status === "active") ||
-                    Object.keys(credentials).length > 0
-                  }
-                  onClick={() => test.mutate()}
-                  type="button"
-                >
-                  {t("Check connection")}
-                </Button>
-                <span className="text-xs text-muted-foreground">
-                  {t("May consume quota or incur cost.")}
-                </span>
-              </div>
-              <ErrorNotice error={test.error} retry={() => void reload()} />
-              {test.data && (
-                <p role="status" className={styles.muted}>
-                  {test.data.verified_access
-                    .map((access) =>
-                      t(
-                        access === "account_read"
-                          ? "Connected-account access verified."
-                          : "Catalog access verified.",
-                      ),
-                    )
-                    .join(" ")}{" "}
-                  {t(
-                    "OAuth callback configuration and upstream account credentials were not tested.",
-                  )}
-                </p>
-              )}
-            </>
-          )}
-        </FormSection>
-        {basis && (
-          <FormSection>
-            <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
-          </FormSection>
+          </>
         )}
-        <ErrorNotice
-          error={save.error}
-          retry={basis ? () => void reload() : undefined}
-        />
-        <FormActions
-          pending={save.isPending}
-          onCancel={close}
-          label={t(basis ? "Save changes" : "Add provider")}
-        />
-      </form>
-    </div>
+        {basis &&
+          definition &&
+          Object.keys(definition.credential_schema.properties ?? {}).length >
+            0 && (
+            <CredentialEditor configured={basis.credential_configured}>
+              <SchemaFields
+                secret
+                schema={{ ...definition.credential_schema, required: [] }}
+                value={credentials}
+                onChange={setCredentials}
+              />
+            </CredentialEditor>
+          )}
+        {basis && (
+          <>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <Button
+                size="sm"
+                variant="outline"
+                loading={test.isPending}
+                disabled={
+                  save.isPending ||
+                  name !== basis.name ||
+                  enabled !== (basis.status === "active") ||
+                  Object.keys(credentials).length > 0
+                }
+                onClick={() => test.mutate()}
+                type="button"
+              >
+                {t("Check connection")}
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                {t("May consume quota or incur cost.")}
+              </span>
+            </div>
+            <ErrorNotice error={test.error} retry={() => void reload()} />
+            {test.data && (
+              <p role="status" className={styles.muted}>
+                {test.data.verified_access
+                  .map((access) =>
+                    t(
+                      access === "account_read"
+                        ? "Connected-account access verified."
+                        : "Catalog access verified.",
+                    ),
+                  )
+                  .join(" ")}{" "}
+                {t(
+                  "OAuth callback configuration and upstream account credentials were not tested.",
+                )}
+              </p>
+            )}
+          </>
+        )}
+      </FormSection>
+      {basis && (
+        <FormSection>
+          <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
+        </FormSection>
+      )}
+      <ErrorNotice
+        error={save.error}
+        retry={basis ? () => void reload() : undefined}
+      />
+      <FormActions
+        pending={save.isPending}
+        onCancel={close}
+        label={t(basis ? "Save changes" : "Add provider")}
+      />
+    </form>
   );
 }

@@ -12,6 +12,12 @@ it("uses canonical identities, exact aliases and exact hosts without substring m
   expect(resolveBrand({ endpoint: "https://mcp.notion.com/mcp" })).toBe(
     brands.notion,
   );
+  expect(resolveBrand({ endpoint: "https://mcp.cloudflare.com/mcp" })).toBe(
+    brands.cloudflare,
+  );
+  expect(resolveBrand({ endpoint: "https://app.airops.com/mcp" })).toBe(
+    brands.airops,
+  );
   expect(
     resolveBrand({
       alias: "my-github-provider",

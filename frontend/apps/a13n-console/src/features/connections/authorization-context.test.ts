@@ -3,6 +3,7 @@ import { afterEach, expect, it } from "vitest";
 import {
   clearAuthorization,
   readAuthorization,
+  supportsBrowserAuthorization,
   takeCallback,
 } from "./authorization-context";
 const state = "a".repeat(64),
@@ -20,6 +21,21 @@ afterEach(() => {
   clearAuthorization();
   window.history.replaceState(null, "", "/");
 });
+it.each([
+  ["https:", "console.example", true],
+  ["http:", "localhost", true],
+  ["http:", "127.0.0.1", true],
+  ["http:", "[::1]", true],
+  ["http:", "localhost.example", false],
+  ["http:", "127.0.0.2", false],
+  ["ftp:", "localhost", false],
+  ["ws:", "127.0.0.1", false],
+])(
+  "validates browser authorization origin %s//%s",
+  (protocol, hostname, expected) => {
+    expect(supportsBrowserAuthorization({ protocol, hostname })).toBe(expected);
+  },
+);
 it("binds completion to the application proof and strips callback material immediately", () => {
   sessionStorage.setItem(
     "a13n.connection-authorization",

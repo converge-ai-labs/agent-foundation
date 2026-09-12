@@ -1,6 +1,7 @@
 import { ResourceModalTitle } from "../../shared/resource-modal-title";
 import { ConfigurationSummary } from "../../shared/configuration-summary";
 import {
+  BrandIcon,
   Button,
   FormField,
   Input,
@@ -79,12 +80,27 @@ export function ConnectionDetails({
           </Button>
         ) : undefined
       }
-      size={"md"}
+      size="lg"
+      placement="top"
       title={
-        <ResourceModalTitle
-          name={query.data?.name ?? t("Connection")}
-          id={connectionId}
-        />
+        <span className="flex min-w-0 items-center gap-3">
+          <BrandIcon
+            alias={
+              query.data?.source.kind === "connector"
+                ? query.data.source.connector_key
+                : undefined
+            }
+            endpoint={
+              query.data?.source.kind === "mcp"
+                ? query.data.source.endpoint_url
+                : undefined
+            }
+          />
+          <ResourceModalTitle
+            name={query.data?.name ?? t("Connection")}
+            id={connectionId}
+          />
+        </span>
       }
       description={
         <span className="flex flex-wrap items-center gap-2">
@@ -222,8 +238,8 @@ function ConnectionSettings({
           save.mutate();
         }}
       >
-        <div className="flex items-end gap-3">
-          <FormField className="min-w-0 w-full" label={t("Name")}>
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
+          <FormField label={t("Name")}>
             <Input
               required={true}
               value={name}
@@ -233,7 +249,7 @@ function ConnectionSettings({
           </FormField>
           <Button
             type="submit"
-            variant="outline"
+            className="h-10 min-w-24 sm:h-10"
             loading={save.isPending}
             disabled={name === basis.name}
           >

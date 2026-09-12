@@ -18,6 +18,41 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
+it("shows preset authentication as read-only", () => {
+  const preset = mcpPresets.find((item) => item.id === "airtable")!;
+  const cache = new QueryClient();
+  render(
+    <QueryClientProvider client={cache}>
+      <CreateMCP
+        onCancel={vi.fn()}
+        preset={preset}
+        onStarted={vi.fn()}
+        onSuccess={vi.fn()}
+      />
+    </QueryClientProvider>,
+  );
+
+  expect(screen.queryByRole("combobox", { name: "Authentication" })).toBeNull();
+  expect(
+    screen.getByRole("group", { name: "Authentication" }).textContent,
+  ).toContain(`auth.${preset.auth}`);
+  cache.clear();
+});
+
+it("keeps authentication selectable for custom MCP connections", () => {
+  const cache = new QueryClient();
+  render(
+    <QueryClientProvider client={cache}>
+      <CreateMCP onCancel={vi.fn()} onStarted={vi.fn()} onSuccess={vi.fn()} />
+    </QueryClientProvider>,
+  );
+
+  expect(
+    screen.getByRole("combobox", { name: "Authentication" }),
+  ).toBeDefined();
+  cache.clear();
+});
+
 it.each(["google-compute-engine", "jentic"])(
   "%s prefills header names and sends values only through the credential endpoint",
   async (presetId) => {

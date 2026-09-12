@@ -16,12 +16,25 @@ const random = () =>
   Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) =>
     byte.toString(16).padStart(2, "0"),
   ).join("");
+export function supportsBrowserAuthorization(
+  location: Pick<Location, "protocol" | "hostname">,
+) {
+  return (
+    location.protocol === "https:" ||
+    (location.protocol === "http:" &&
+      ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname))
+  );
+}
 export async function startBrowserAuthorization(
   client: Client,
   connection: Schema["Connection"],
   basePath: string,
   options: Schema["CreateAuthorizationRequest"]["options"] = {},
 ) {
+  if (!supportsBrowserAuthorization(window.location))
+    throw new Error(
+      "Browser authorization requires HTTPS or an exact loopback HTTP origin.",
+    );
   const verifier = random(),
     state = random();
   const digest = await crypto.subtle.digest(

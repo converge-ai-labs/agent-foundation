@@ -9,7 +9,13 @@ import { useAuth, useClient } from "../auth/context";
 import { CreateWorkspace } from "../features/settings/create-workspace";
 import { workspacePath } from "../shared/paths";
 import { allPages, data, type Schema } from "../shared/api";
-import { Empty, ErrorNotice, Loading, Page } from "../shared/feedback";
+import {
+  Empty,
+  ErrorNotice,
+  ErrorPage,
+  Loading,
+  Page,
+} from "../shared/feedback";
 
 interface WorkspaceContextValue {
   workspace?: Schema["Workspace"];
@@ -72,12 +78,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     workspaces.isPending ||
     (selected && permissions.isPending)
   )
-    return <Loading />;
+    return <Loading page />;
   if (workspaceKey && workspaces.isSuccess && !selected)
     return (
-      <Page title={t("Not found")}>
-        <ErrorNotice error={new Error(t("Resource not found"))} />
-      </Page>
+      <ErrorPage
+        title={t("Not found")}
+        error={new Error(t("Resource not found"))}
+        actions={<WorkspaceRecoveryActions workspaces={items} />}
+      />
     );
   if (organization && workspaces.data?.items.length === 0)
     return <NoWorkspace organization={organization} />;
@@ -85,34 +93,28 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   if (error && location.pathname === "/settings/profile") return <Outlet />;
   if (error)
     return (
-      <Page title={t("Workspace unavailable")}>
-        <ErrorNotice
-          error={error}
-          retry={() => {
-            void workspaces.refetch();
-            void permissions.refetch();
-          }}
-        />
-        {workspaces.data?.items
-          .filter((item) => item.id !== selected)
-          .map((item) => (
-            <p key={item.id}>
-              <Link to={`${workspacePath(item)}/agents`}>{item.name}</Link>
-            </p>
-          ))}
-        <Link to="/settings/profile">{t("Personal settings")}</Link>
-      </Page>
+      <ErrorPage
+        title={t("Workspace unavailable")}
+        error={error}
+        actions={
+          <WorkspaceRecoveryActions
+            workspaces={items}
+            currentWorkspaceId={selected}
+            retry={() => {
+              void workspaces.refetch();
+              if (selected) void permissions.refetch();
+            }}
+          />
+        }
+      />
     );
   if (!organization || !workspace || !permissions.data)
     return (
-      <Page title={t("Workspace unavailable")}>
-        <ErrorNotice error={new Error("Workspace unavailable")} />
-        {workspaces.data?.items.map((item) => (
-          <p key={item.id}>
-            <Link to={`${workspacePath(item)}/agents`}>{item.name}</Link>
-          </p>
-        ))}
-      </Page>
+      <ErrorPage
+        title={t("Workspace unavailable")}
+        error={new Error(t("Workspace unavailable"))}
+        actions={<WorkspaceRecoveryActions workspaces={items} />}
+      />
     );
   if (!workspaceKey && location.pathname === "/")
     return <Navigate to={`${workspacePath(workspace)}/agents`} replace />;
@@ -128,6 +130,37 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     >
       {children}
     </Context.Provider>
+  );
+}
+
+function WorkspaceRecoveryActions({
+  workspaces,
+  currentWorkspaceId,
+  retry,
+}: {
+  workspaces: Schema["Workspace"][];
+  currentWorkspaceId?: string;
+  retry?: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {retry && <Button onClick={retry}>{t("Try again")}</Button>}
+      {workspaces
+        .filter((workspace) => workspace.id !== currentWorkspaceId)
+        .map((workspace) => (
+          <Button
+            key={workspace.id}
+            variant="outline"
+            render={<Link to={`${workspacePath(workspace)}/agents`} />}
+          >
+            {t("Switch workspace")}: {workspace.name}
+          </Button>
+        ))}
+      <Button variant="ghost" render={<Link to="/settings/profile" />}>
+        {t("Personal settings")}
+      </Button>
+    </>
   );
 }
 export function useAccess() {

@@ -169,13 +169,21 @@ def test_connectivity_bounds_and_public_origin_fail_closed() -> None:
             connectivity={"public_origin": "https://foundation.example.com/path"}
         ).validated_connectivity_public_origin()
 
+    with pytest.raises(ValueError, match="HTTPS or exact loopback HTTP"):
+        Settings(
+            connectivity={
+                "public_origin": "http://foundation.internal:8080",
+                "http_origins": ("http://foundation.internal:8080",),
+            }
+        ).validated_connectivity_public_origin()
+
     settings = Settings(
         connectivity={
-            "public_origin": "http://foundation.internal:8080",
-            "http_origins": ("http://foundation.internal:8080",),
+            "public_origin": "http://127.0.0.1:8080",
+            "http_origins": ("http://127.0.0.1:8080",),
         }
     )
-    assert settings.validated_connectivity_public_origin() == "http://foundation.internal:8080"
+    assert settings.validated_connectivity_public_origin() == "http://127.0.0.1:8080"
 
 
 def test_environment_capacity_configuration(monkeypatch):

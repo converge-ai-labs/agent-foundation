@@ -31,8 +31,8 @@ def local_settings(tmp_path: Path, *, database_template: Path | None = None, **u
         "filesystem_root": tmp_path / "files",
         "secret_master_key_base64": b64encode(b"0123456789abcdef0123456789abcdef").decode(),
         "secret_encryption_key_id": "a13n-service-test-key",
-        "connectivity_public_origin": "http://testserver",
-        "connectivity_http_origins": ("http://testserver",),
+        "connectivity_public_origin": "http://127.0.0.1",
+        "connectivity_http_origins": ("http://127.0.0.1",),
         "iam_initial_admin_email": "admin@example.com",
         "iam_public_origin": "https://testserver",
     }

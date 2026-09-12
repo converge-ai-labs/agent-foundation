@@ -46,6 +46,58 @@
   gap: 10px;
   color: var(--a13n-secondary);
 }
+.pageLoading {
+  min-height: 100svh;
+}
+.page > .loading {
+  min-height: calc(100svh - 160px);
+}
+.errorPage {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 32px;
+  text-align: center;
+}
+.errorPage h1 {
+  margin: 8px 0 0;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.4px;
+}
+.errorPage p {
+  max-width: 440px;
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 14px;
+}
+.errorPage small {
+  color: var(--a13n-secondary);
+  font-size: 11px;
+}
+.errorPageActions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.errorMark {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--destructive) 8%, transparent);
+  color: var(--destructive);
+}
+.errorMark svg {
+  width: 20px;
+  height: 20px;
+}
 .back {
   color: var(--a13n-secondary);
   display: inline-flex;

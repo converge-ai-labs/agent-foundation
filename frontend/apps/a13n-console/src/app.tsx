@@ -1,4 +1,4 @@
-import { TooltipProvider } from "a13n-ui";
+import { Button, ToastProvider, TooltipProvider } from "a13n-ui";
 import { lazy, Suspense, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -16,7 +16,7 @@ import { ConnectionAuthorizationCallback } from "./features/connections/callback
 import { AppearanceProvider } from "./layout/appearance";
 import { Shell } from "./layout/shell";
 import { WorkspaceProvider } from "./layout/workspace";
-import { Empty, ErrorNotice, Loading, Page } from "./shared/feedback";
+import { Empty, ErrorPage, Loading, Page } from "./shared/feedback";
 
 const ModelsPage = lazy(() =>
   import("./features/models/page").then((module) => ({
@@ -121,10 +121,18 @@ const RunPage = lazy(() =>
 
 function Authenticated() {
   const auth = useAuth();
-  if (auth.isPending) return <Loading />;
+  const { t } = useTranslation();
+  if (auth.isPending) return <Loading page />;
   if (auth.anonymous) return <Navigate to="/login" replace />;
   if (auth.error)
-    return <ErrorNotice error={auth.error} retry={() => void auth.refetch()} />;
+    return (
+      <ErrorPage
+        error={auth.error}
+        actions={
+          <Button onClick={() => void auth.refetch()}>{t("Try again")}</Button>
+        }
+      />
+    );
   return <Outlet />;
 }
 function WorkspaceShell() {
@@ -177,93 +185,104 @@ function AppContent() {
       <a href="#main-content" className="skip-link">
         {i18n.t("Skip to content")}
       </a>
-      <TooltipProvider>
-        <BrowserRouter>
-          <AuthProvider>
-            <Suspense fallback={<Loading />}>
-              <Routes>
-                <Route
-                  path="/connections/callback"
-                  element={<ConnectionAuthorizationCallback />}
-                />
-                {[
-                  "/login",
-                  "/forgot-password",
-                  "/reset-password",
-                  "/confirm-email",
-                  "/invitations/:invitationId/accept",
-                ].map((path) => (
+      <ToastProvider closeLabel={i18n.t("Dismiss")}>
+        <TooltipProvider>
+          <BrowserRouter>
+            <AuthProvider>
+              <Suspense fallback={<Loading page />}>
+                <Routes>
                   <Route
-                    key={path}
-                    path={path}
-                    element={<AuthPage key={path} />}
+                    path="/connections/callback"
+                    element={<ConnectionAuthorizationCallback />}
                   />
-                ))}
-                <Route element={<Authenticated />}>
-                  <Route
-                    path="/workspace/:workspaceKey"
-                    element={<WorkspaceShell />}
-                  >
-                    <Route index element={<Navigate to="agents" replace />} />
-                    <Route path="agents" element={<Agents />} />
-                    <Route path="agents/new" element={<CreateAgent />} />
-                    <Route path="agents/:agentKey" element={<AgentDetail />} />
-                    <Route path="sessions" element={<ConversationsPage />}>
-                      <Route path="new" element={<NewConversation />} />
-                      <Route path=":sessionId" element={<SessionLayout />}>
-                        <Route
-                          path="threads/:threadId"
-                          element={<ThreadLayout />}
-                        >
-                          <Route path="runs/:runId" element={<RunPage />} />
+                  {[
+                    "/login",
+                    "/forgot-password",
+                    "/reset-password",
+                    "/confirm-email",
+                    "/invitations/:invitationId/accept",
+                  ].map((path) => (
+                    <Route
+                      key={path}
+                      path={path}
+                      element={<AuthPage key={path} />}
+                    />
+                  ))}
+                  <Route element={<Authenticated />}>
+                    <Route
+                      path="/workspace/:workspaceKey"
+                      element={<WorkspaceShell />}
+                    >
+                      <Route index element={<Navigate to="agents" replace />} />
+                      <Route path="agents" element={<Agents />} />
+                      <Route path="agents/new" element={<CreateAgent />} />
+                      <Route
+                        path="agents/:agentKey"
+                        element={<AgentDetail />}
+                      />
+                      <Route path="sessions" element={<ConversationsPage />}>
+                        <Route path="new" element={<NewConversation />} />
+                        <Route path=":sessionId" element={<SessionLayout />}>
+                          <Route
+                            path="threads/:threadId"
+                            element={<ThreadLayout />}
+                          >
+                            <Route path="runs/:runId" element={<RunPage />} />
+                          </Route>
                         </Route>
                       </Route>
+                      <Route path="traces" element={<TracesPage />} />
+                      <Route
+                        path="traces/:traceId"
+                        element={<TraceDetailPage />}
+                      />
+                      <Route
+                        path="application-accounts"
+                        element={<ApplicationAccountsPage />}
+                      />
+                      <Route
+                        path="application-accounts/:accountId"
+                        element={<ApplicationAccountDetail />}
+                      />
+                      <Route path="connections" element={<ConnectionsPage />} />
+                      <Route
+                        path="environments"
+                        element={<EnvironmentsPage />}
+                      />
+                      <Route
+                        path="environments/instances"
+                        element={<EnvironmentsPage section="instances" />}
+                      />
+                      <Route path="skills" element={<SkillsPage />} />
+                      <Route
+                        path="skills/:skillKey"
+                        element={<SkillDetail />}
+                      />
+                      <Route path="models" element={<ModelsPage />} />
+                      <Route path="settings" element={<WorkspaceSettings />} />
+                      <Route path="usage" element={<ComingSoon />} />
+                      <Route path="schedules" element={<ComingSoon />} />
+                      <Route path="*" element={<NotFound />} />
                     </Route>
-                    <Route path="traces" element={<TracesPage />} />
-                    <Route
-                      path="traces/:traceId"
-                      element={<TraceDetailPage />}
-                    />
-                    <Route
-                      path="application-accounts"
-                      element={<ApplicationAccountsPage />}
-                    />
-                    <Route
-                      path="application-accounts/:accountId"
-                      element={<ApplicationAccountDetail />}
-                    />
-                    <Route path="connections" element={<ConnectionsPage />} />
-                    <Route path="environments" element={<EnvironmentsPage />} />
-                    <Route
-                      path="environments/instances"
-                      element={<EnvironmentsPage section="instances" />}
-                    />
-                    <Route path="skills" element={<SkillsPage />} />
-                    <Route path="skills/:skillKey" element={<SkillDetail />} />
-                    <Route path="models" element={<ModelsPage />} />
-                    <Route path="settings" element={<WorkspaceSettings />} />
-                    <Route path="usage" element={<ComingSoon />} />
-                    <Route path="schedules" element={<ComingSoon />} />
-                    <Route path="*" element={<NotFound />} />
+                    <Route element={<WorkspaceShell />}>
+                      <Route path="/" element={null} />
+                      <Route
+                        path="/settings/profile"
+                        element={<PersonalSettings />}
+                      />
+                      <Route
+                        path="/organization/settings"
+                        element={<OrganizationSettings />}
+                      />
+                    </Route>
                   </Route>
-                  <Route element={<WorkspaceShell />}>
-                    <Route path="/" element={null} />
-                    <Route
-                      path="/settings/profile"
-                      element={<PersonalSettings />}
-                    />
-                    <Route
-                      path="/organization/settings"
-                      element={<OrganizationSettings />}
-                    />
-                  </Route>
-                </Route>
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </Suspense>
-          </AuthProvider>
-        </BrowserRouter>
-      </TooltipProvider>
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </Suspense>
+            </AuthProvider>
+          </BrowserRouter>
+        </TooltipProvider>
+      </ToastProvider>
     </div>
   );
 }

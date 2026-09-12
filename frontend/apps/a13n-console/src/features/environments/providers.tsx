@@ -15,7 +15,14 @@ import { ProviderKeyLink } from "../../shared/provider-key-link";
 import { ResourceEditorButton } from "../../shared/resource-editor-button";
 import { ResourceIdentity } from "../../shared/collection";
 import { ScopeBadge } from "../../shared/scope-badge";
-import { Button, FormField, Input, ModalFrame } from "a13n-ui";
+import {
+  Button,
+  DisclosureSection,
+  FormField,
+  Input,
+  ModalFrame,
+  ReadOnlyField,
+} from "a13n-ui";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -226,13 +233,13 @@ function ProviderEditor({
           />
         ) : undefined
       }
-      size={"md"}
+      size="lg"
       title={t(
-        query.data?.value.configuration_source === "deployment"
-          ? "Environment provider"
-          : providerId
-            ? "Edit provider"
-            : "Add provider",
+        providerId
+          ? query.data?.value.configuration_source === "deployment"
+            ? "Provider details"
+            : "Edit provider"
+          : "Add provider",
       )}
       description={
         providerId ? undefined : t("Choose where your environments run.")
@@ -331,15 +338,22 @@ function ProviderForm({
     onSuccess: done,
   });
   return (
-    <div className={styles.stack}>
-      <form
-        className={formSectionStyles.form}
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!deployment) save.mutate();
-        }}
-      >
-        <FormSection>
+    <form
+      className={formSectionStyles.form}
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!deployment) save.mutate();
+      }}
+    >
+      <FormSection>
+        {deployment ? (
+          <ReadOnlyField label={t("Name")}>
+            <span className="flex items-center gap-2">
+              {name}
+              {basis && <ResourceReference id={basis.value.id} />}
+            </span>
+          </ReadOnlyField>
+        ) : (
           <FormField
             className="min-w-0 w-full"
             label={t("Name")}
@@ -347,114 +361,110 @@ function ProviderForm({
           >
             <Input
               required={true}
-              readOnly={deployment}
               value={name}
               onChange={(event) => setName(event.target.value)}
               maxLength={128}
             />
           </FormField>
-        </FormSection>
-        <FormSection title={t("Connection")}>
-          <div className={styles.stack}>
-            <ProviderTypeField
-              definitions={
-                basis
-                  ? definitions
-                  : definitions.filter((item) => !item.deployment_managed)
-              }
-              value={type}
-              readOnly={!!basis}
-              onValueChange={(value) => {
-                setType(value);
-                suggestName(
-                  definitions.find((item) => item.type === value)
-                    ?.display_name ?? value,
-                );
-                setConfiguration({});
-                setCredential({});
-              }}
-              labelAction={
-                type === "a13n.e2b" && (
-                  <ProviderKeyLink href="https://e2b.dev/dashboard?tab=keys" />
-                )
-              }
-            />
-            {basis && Object.keys(configuration).length > 0 && (
-              <ConfigurationSummary
-                fields
-                value={configuration}
-                schema={configSchema}
-              />
-            )}
-          </div>
-          {!basis && (
-            <>
-              <SchemaFields
-                key={type}
-                schema={configSchema}
-                value={configuration}
-                onChange={setConfiguration}
-              />
-              <SchemaFields
-                secret
-                key={`${type}-credential`}
-                schema={credentialSchema}
-                value={credential}
-                onChange={setCredential}
-              />
-            </>
-          )}
-          {basis && (
-            <>
-              {!!Object.keys(schema(credentialSchema.properties)).length && (
-                <CredentialEditor
-                  configured={basis.value.credential_configured}
-                  removing={removeCredential}
-                  onRemovingChange={(value) => {
-                    setRemoveCredential(value);
-                    setCredential({});
-                  }}
-                >
-                  <SchemaFields
-                    secret
-                    schema={{ ...credentialSchema, required: [] }}
-                    value={credential}
-                    onChange={setCredential}
-                  />
-                </CredentialEditor>
-              )}
-            </>
-          )}
-        </FormSection>
-        {deployment ? (
-          <p className={styles.muted}>
-            {t(
-              "Configured by deployment. Change backend settings in the Service configuration.",
-            )}
-          </p>
-        ) : (
-          basis && (
-            <FormSection>
-              <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
-            </FormSection>
-          )
         )}
-        <ErrorNotice
-          error={save.error}
-          retry={basis ? () => void reload() : undefined}
+      </FormSection>
+      <FormSection
+        title={t("Connection")}
+        description={
+          deployment
+            ? t(
+                "Connection settings come from the running Service and cannot be edited here.",
+              )
+            : undefined
+        }
+      >
+        <ProviderTypeField
+          definitions={
+            basis
+              ? definitions
+              : definitions.filter((item) => !item.deployment_managed)
+          }
+          value={type}
+          readOnly={!!basis}
+          onValueChange={(value) => {
+            setType(value);
+            suggestName(
+              definitions.find((item) => item.type === value)?.display_name ??
+                value,
+            );
+            setConfiguration({});
+            setCredential({});
+          }}
+          labelAction={
+            type === "a13n.e2b" && (
+              <ProviderKeyLink href="https://e2b.dev/dashboard?tab=keys" />
+            )
+          }
         />
-        {deployment ? (
+        {basis && Object.keys(configuration).length > 0 && (
+          <DisclosureSection title={t("Configuration details")}>
+            <ConfigurationSummary value={configuration} schema={configSchema} />
+          </DisclosureSection>
+        )}
+        {!basis && (
+          <>
+            <SchemaFields
+              key={type}
+              schema={configSchema}
+              value={configuration}
+              onChange={setConfiguration}
+            />
+            <SchemaFields
+              secret
+              key={`${type}-credential`}
+              schema={credentialSchema}
+              value={credential}
+              onChange={setCredential}
+            />
+          </>
+        )}
+      </FormSection>
+      {basis && !!Object.keys(schema(credentialSchema.properties)).length && (
+        <FormSection title={t("Credentials")}>
+          <CredentialEditor
+            configured={basis.value.credential_configured}
+            removing={removeCredential}
+            onRemovingChange={(value) => {
+              setRemoveCredential(value);
+              setCredential({});
+            }}
+          >
+            <SchemaFields
+              secret
+              schema={{ ...credentialSchema, required: [] }}
+              value={credential}
+              onChange={setCredential}
+            />
+          </CredentialEditor>
+        </FormSection>
+      )}
+      {!deployment && basis && (
+        <FormSection>
+          <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
+        </FormSection>
+      )}
+      <ErrorNotice
+        error={save.error}
+        retry={basis ? () => void reload() : undefined}
+      />
+      {deployment ? (
+        <footer data-a13n-form-actions className={styles.formActions}>
           <Button type="button" variant="outline" onClick={close}>
             {t("Close")}
           </Button>
-        ) : (
-          <FormActions
-            pending={save.isPending}
-            onCancel={close}
-            label={t(basis ? "Save changes" : "Add provider")}
-          />
-        )}
-      </form>
-    </div>
+        </footer>
+      ) : (
+        <FormActions
+          pending={save.isPending}
+          onCancel={close}
+          label={t(basis ? "Save changes" : "Add provider")}
+        />
+      )}
+    </form>
   );
 }

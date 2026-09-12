@@ -194,6 +194,7 @@ export function CreateMCP({
         label={t("Authentication")}
         value={mode}
         disabled={started}
+        readOnly={preset !== undefined}
         onValueChange={(value) => {
           if (
             value === "none" ||
