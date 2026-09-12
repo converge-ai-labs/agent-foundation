@@ -23,11 +23,13 @@ export function CreateMCP({
   endpoint: initialEndpoint = "",
   onStarted,
   onSuccess,
+  onCancel,
 }: {
   preset?: MCPPreset;
   endpoint?: string;
   onStarted: () => void;
   onSuccess: (value: Schema["MCPConnection"]) => void;
+  onCancel: () => void;
 }) {
   const client = useClient(),
     cache = useQueryClient(),
@@ -227,6 +229,7 @@ export function CreateMCP({
       )}
       <ErrorNotice error={connect.error} />
       <FormActions
+        onCancel={onCancel}
         pending={connect.isPending}
         label={t(created.current ? "Continue connection" : "Connect")}
       />

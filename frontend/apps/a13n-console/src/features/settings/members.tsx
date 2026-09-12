@@ -154,6 +154,7 @@ export function Members({ scope }: { scope: MembershipScope }) {
                       readVersion={readVersion}
                     />
                     <Confirm
+                      subject={`${members.data?.find((user) => user.id === item.principal_id)?.email ?? item.principal_id} · ${t(`role.${item.role_key}`, { defaultValue: item.role_key })}`}
                       triggerVariant="ghost"
                       title={t("Remove member")}
                       description={t(
@@ -280,7 +281,10 @@ function ChangeRole({
           error={reload.error ?? change.error}
           retry={() => reload.mutate()}
         />
-        <FormActions pending={change.isPending} />
+        <FormActions
+          onCancel={() => setOpen(false)}
+          pending={change.isPending}
+        />
       </form>
     </ModalFrame>
   );
@@ -384,7 +388,11 @@ function AddMember({
           }))}
         />
         <ErrorNotice error={users.error ?? add.error} />
-        <FormActions pending={add.isPending} label={t("Add member")} />
+        <FormActions
+          onCancel={() => setOpen(false)}
+          pending={add.isPending}
+          label={t("Add member")}
+        />
       </form>
     </ModalFrame>
   );

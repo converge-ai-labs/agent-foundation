@@ -43,6 +43,7 @@ export function Composer({
       ? ""
       : JSON.stringify(initial.structured_content, null, 2),
   );
+  const [attachmentsOpen, setAttachmentsOpen] = useState(false);
   const [url, setUrl] = useState(""),
     [key, setKey] = useState(crypto.randomUUID()),
     [uploadFile, setUploadFile] = useState<{ file: File; key: string }>();
@@ -178,6 +179,13 @@ export function Composer({
         <div className={styles.composerFooter}>
           <div className={styles.composerTools}>
             <ModalFrame
+              open={attachmentsOpen}
+              onOpenChange={setAttachmentsOpen}
+              footer={
+                <Button type="button" onClick={() => setAttachmentsOpen(false)}>
+                  {t("Done")}
+                </Button>
+              }
               trigger={
                 <Button
                   type="button"

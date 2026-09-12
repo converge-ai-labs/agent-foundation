@@ -221,6 +221,7 @@ it("loads separate observation pages, deduplicates the root, and retains paginat
   );
   await user.click(screen.getByRole("button", { name: /^child/ }));
   const dialog = await screen.findByRole("dialog");
+  await user.click(within(dialog).getByRole("tab", { name: "Metadata" }));
   expect(within(dialog).getByText("Diagnostic reason")).toBeTruthy();
   expect(within(dialog).getByText("Requested model")).toBeTruthy();
   expect(within(dialog).getByText("model-alias")).toBeTruthy();
@@ -596,7 +597,7 @@ it("opens the root content tab from preview links without substituting child out
   expect(screen.queryByText("Child only output")).toBeNull();
   await user.click(screen.getByRole("tab", { name: "Observations" }));
   await user.click(await screen.findByRole("button", { name: /^child/ }));
-  expect(
-    within(await screen.findByRole("dialog")).getByText("Child only output"),
-  ).toBeTruthy();
+  const childDialog = within(await screen.findByRole("dialog"));
+  await user.click(childDialog.getByRole("tab", { name: "Output" }));
+  expect(childDialog.getByText("Child only output")).toBeTruthy();
 });

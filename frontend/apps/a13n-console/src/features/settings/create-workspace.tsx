@@ -82,7 +82,11 @@ export function CreateWorkspace({
           />
         </FormField>
         <ErrorNotice error={create.error} />
-        <FormActions pending={create.isPending} label={t("Create workspace")} />
+        <FormActions
+          onCancel={() => setOpen(false)}
+          pending={create.isPending}
+          label={t("Create workspace")}
+        />
       </form>
     </ModalFrame>
   );

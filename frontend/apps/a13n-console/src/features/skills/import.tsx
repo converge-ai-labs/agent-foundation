@@ -248,40 +248,42 @@ function ImportForm({
               placeholder="https://github.com/owner/repository"
             />
           </FormField>
-          <FormField
-            className="min-w-0 w-full"
-            label={t("Git ref")}
-            description={t(
-              "Use a branch, tag, or commit. Leave empty for the default branch.",
-            )}
-          >
-            <Input
-              value={ref}
-              onChange={(event) => setRef(event.target.value)}
-              placeholder={t("Default branch")}
-            />
-          </FormField>
-          <FormField
-            className="min-w-0 w-full"
-            label={t("Subdirectory")}
-            description={t(
-              "Path to the skill inside the repository. Leave empty for the repository root.",
-            )}
-          >
-            <Input
-              value={subdirectory}
-              onChange={(event) => setSubdirectory(event.target.value)}
-            />
-          </FormField>
-          <FormField
-            className="min-w-0 w-full"
-            label={t("Expected commit SHA (optional)")}
-          >
-            <Input
-              value={commit}
-              onChange={(event) => setCommit(event.target.value)}
-            />
-          </FormField>
+          <DisclosureSection title={t("Advanced settings")}>
+            <FormField
+              className="min-w-0 w-full"
+              label={t("Git ref")}
+              description={t(
+                "Use a branch, tag, or commit. Leave empty for the default branch.",
+              )}
+            >
+              <Input
+                value={ref}
+                onChange={(event) => setRef(event.target.value)}
+                placeholder={t("Default branch")}
+              />
+            </FormField>
+            <FormField
+              className="min-w-0 w-full"
+              label={t("Subdirectory")}
+              description={t(
+                "Path to the skill inside the repository. Leave empty for the repository root.",
+              )}
+            >
+              <Input
+                value={subdirectory}
+                onChange={(event) => setSubdirectory(event.target.value)}
+              />
+            </FormField>
+            <FormField
+              className="min-w-0 w-full"
+              label={t("Expected commit SHA (optional)")}
+            >
+              <Input
+                value={commit}
+                onChange={(event) => setCommit(event.target.value)}
+              />
+            </FormField>
+          </DisclosureSection>
         </TabsPanel>
       </Tabs>
       <ErrorNotice error={publish.error} />

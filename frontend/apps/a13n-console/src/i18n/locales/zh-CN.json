@@ -1745,5 +1745,7 @@
   "Manage authentication project settings": "管理身份验证项目设置",
   "Marketing data, analytics, and reporting": "营销数据、分析和报告",
   "Marketing data connectors and attribution": "营销数据连接和归因",
-  "Supply a LunarCrush API key. Tool access and request limits depend on your plan.": "提供 LunarCrush API key；可用工具和请求限额取决于你的套餐。"
+  "Supply a LunarCrush API key. Tool access and request limits depend on your plan.": "提供 LunarCrush API key；可用工具和请求限额取决于你的套餐。",
+  "Used by agents. Cannot be changed later.": "供智能体引用，创建后不可更改。",
+  "Leave blank to keep saved credentials.": "留空可保留已保存的凭据。"
 }

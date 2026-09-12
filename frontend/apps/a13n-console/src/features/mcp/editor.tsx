@@ -127,7 +127,7 @@ export function MCPEditor({
                     </TabsTab>
                     <TabsTab value={"tools"}>{t("Tools")}</TabsTab>
                   </TabsList>
-                  <TabsPanel value={"details"}>
+                  <TabsPanel value="details" keepMounted>
                     {
                       <MCPSettings
                         onCleanup={onCleanup}
@@ -254,6 +254,7 @@ export function MCPSettings({
           )}
         <div className={styles.actions}>
           <Confirm
+            subject={basis.name}
             retry={() =>
               void cache.invalidateQueries({ queryKey: ["mcp-connections"] })
             }
@@ -288,6 +289,7 @@ export function MCPSettings({
             }}
           />
           <Confirm
+            subject={basis.name}
             retry={() =>
               void cache.invalidateQueries({ queryKey: ["mcp-connections"] })
             }
@@ -297,7 +299,7 @@ export function MCPSettings({
             )}
             trigger={t("Delete")}
             danger
-            triggerVariant="destructive"
+            triggerVariant="outline"
             action={async () => {
               const query = { expected_version: basis.version };
               const result = data(

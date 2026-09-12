@@ -39,6 +39,11 @@ export function CredentialEditor({
           )}
         </div>
       )}
+      {!removing && configured && (
+        <p className="text-xs text-muted-foreground">
+          {t("Leave blank to keep saved credentials.")}
+        </p>
+      )}
       {!removing && children}
     </section>
   );

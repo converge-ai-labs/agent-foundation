@@ -108,7 +108,7 @@ export function TemplateEditor({
                   <TabsTab value="recipe">{t("Recipe")}</TabsTab>
                   <TabsTab value={"settings"}>{t("Settings")}</TabsTab>
                 </TabsList>
-                <TabsPanel value="recipe">
+                <TabsPanel value="recipe" keepMounted>
                   <CurrentRecipe
                     template={query.data.value}
                     scope={scope}
@@ -117,7 +117,7 @@ export function TemplateEditor({
                     reload={reload}
                   />
                 </TabsPanel>
-                <TabsPanel value={"settings"}>
+                <TabsPanel value="settings" keepMounted>
                   {
                     <TemplateSettings
                       initial={query.data}
@@ -243,7 +243,17 @@ export function TemplateSettings({
         {t("Archived")}
       </Label>
       <ErrorNotice error={save.error} retry={() => void reload()} />
-      {editable && <FormActions pending={save.isPending} />}
+      {editable && (
+        <FormActions
+          pending={save.isPending}
+          onCancel={close}
+          disabled={
+            name === basis.value.name &&
+            description === (basis.value.description ?? "") &&
+            archived === !!basis.value.archived_at
+          }
+        />
+      )}
     </form>
   );
 }

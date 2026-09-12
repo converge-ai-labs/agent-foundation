@@ -106,6 +106,7 @@ export function AccountTargets({ account }: { account: Schema["Account"] }) {
                     <div className={styles.actions}>
                       <TargetEditor account={account} target={item} />
                       <Confirm
+                        subject={item.external_target_id}
                         triggerVariant="ghost"
                         title={t("Delete target override")}
                         description={t(
@@ -380,7 +381,11 @@ function TargetForm({
         error={save.error}
         retry={basis ? () => reload.mutate() : undefined}
       />
-      <FormActions pending={save.isPending} />
+      <FormActions
+        pending={save.isPending}
+        onCancel={close}
+        label={t(basis ? "Save changes" : "Add target")}
+      />
     </form>
   );
 }

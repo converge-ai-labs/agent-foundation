@@ -120,7 +120,7 @@ export function TemplateRecipe({
     >
       <ErrorNotice error={providers.error ?? types.error} />
       {!basis && (
-        <FormSection aside title={t("General")}>
+        <FormSection>
           <div className={styles.stack}>
             <FormField className="min-w-0 w-full" label={t("Name")}>
               <Input
@@ -143,7 +143,6 @@ export function TemplateRecipe({
         </FormSection>
       )}
       <FormSection
-        aside
         title={t("Runtime")}
         description={t("Provider, permissions, and environment configuration.")}
       >
@@ -209,10 +208,10 @@ export function TemplateRecipe({
           />
         </div>
       </FormSection>
-      <FormSection aside title={t("Lifecycle")}>
+      <FormSection>
         <DisclosureSection
           className={editorStyles.advanced}
-          title={t("Advanced settings")}
+          title={t("Lifecycle")}
         >
           <div className={editorStyles.advancedBody}>
             <div className={styles.twoColumns}>
