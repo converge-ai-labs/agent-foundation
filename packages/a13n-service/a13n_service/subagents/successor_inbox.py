@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection, Sequence
+from collections.abc import Sequence
 from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.interactions.control_domain import ThreadInboxKind, ThreadInboxStatus
-from a13n_service.interactions.control_models import ThreadInboxCounterRecord, ThreadInboxRecord
+from a13n_service.interactions.control_models import ThreadInboxRecord
 from a13n_service.interactions.inbox_persistence import (
     ThreadInboxConflict,
     finalize_ineligible_async_results,
-    lock_inbox_counter,
     lock_inbox_related_runs,
     release_pending_inbox_capacity,
 )
@@ -23,27 +22,18 @@ from a13n_service.interactions.models import ThreadRecord
 async def lock_unbound_async_entries(
     database: AsyncSession,
     *,
-    organization_id: str,
-    thread_id: str,
-    required_run_ids: Collection[str],
+    thread: ThreadRecord,
     now: datetime,
-) -> tuple[ThreadInboxCounterRecord, tuple[ThreadInboxRecord, ...]]:
+) -> tuple[ThreadInboxRecord, ...]:
     """Lock, origin-gate, and return the inactive Thread's unbound async FIFO."""
 
-    await lock_inbox_related_runs(
-        database,
-        organization_id=organization_id,
-        thread_id=thread_id,
-        required_run_ids=required_run_ids,
-    )
-    counter = await lock_inbox_counter(database, organization_id, thread_id)
     rows = tuple(
         (
             await database.scalars(
                 select(ThreadInboxRecord)
                 .where(
-                    ThreadInboxRecord.organization_id == organization_id,
-                    ThreadInboxRecord.thread_id == thread_id,
+                    ThreadInboxRecord.organization_id == thread.organization_id,
+                    ThreadInboxRecord.thread_id == thread.id,
                     ThreadInboxRecord.kind == ThreadInboxKind.async_subagent_result.value,
                     ThreadInboxRecord.status == ThreadInboxStatus.pending.value,
                     ThreadInboxRecord.target_run_id.is_(None),
@@ -56,12 +46,11 @@ async def lock_unbound_async_entries(
     )
     await finalize_ineligible_async_results(
         database,
-        organization_id=organization_id,
+        thread=thread,
         rows=rows,
         now=now,
-        locked_counter=counter,
     )
-    return counter, tuple(row for row in rows if row.status == ThreadInboxStatus.pending.value)
+    return tuple(row for row in rows if row.status == ThreadInboxStatus.pending.value)
 
 
 async def reconcile_pending_async_results(
@@ -76,7 +65,6 @@ async def reconcile_pending_async_results(
     if thread is None:
         return 0
     await lock_inbox_related_runs(database, organization_id=organization_id, thread_id=thread_id, required_run_ids=())
-    counter = await lock_inbox_counter(database, organization_id, thread_id)
     rows = tuple(
         await database.scalars(
             select(ThreadInboxRecord)
@@ -90,9 +78,7 @@ async def reconcile_pending_async_results(
             .with_for_update()
         )
     )
-    await finalize_ineligible_async_results(
-        database, organization_id=organization_id, rows=rows, now=now, locked_counter=counter
-    )
+    await finalize_ineligible_async_results(database, thread=thread, rows=rows, now=now)
     return sum(row.status != ThreadInboxStatus.pending.value for row in rows)
 
 
@@ -119,7 +105,7 @@ def bind_locked_unbound_async_entries(
 
 
 def consume_async_result_for_successor(
-    counter: ThreadInboxCounterRecord,
+    thread: ThreadRecord,
     row: ThreadInboxRecord,
     *,
     successor_run_id: str,
@@ -142,7 +128,7 @@ def consume_async_result_for_successor(
     row.consumed_state_digest_sha256 = state_digest_sha256
     row.consumed_checkpoint_seq = 0
     row.finalized_at = now
-    release_pending_inbox_capacity(counter, (row,))
+    release_pending_inbox_capacity(thread, (row,))
 
 
 __all__ = [

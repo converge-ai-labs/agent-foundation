@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import replace
 from datetime import timedelta
 
@@ -17,7 +18,7 @@ from a13n_service.interactions.control_domain import (
     ThreadInboxStatus,
     normalize_feedback,
 )
-from a13n_service.interactions.control_models import ThreadInboxCounterRecord, ThreadInboxRecord
+from a13n_service.interactions.control_models import ThreadInboxRecord
 from a13n_service.interactions.domain import RunInputKind, RunLineageKind
 from a13n_service.interactions.inbox import (
     DatabaseThreadInboxReconciler,
@@ -32,7 +33,7 @@ from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
 from a13n_service.interactions.outcomes import RunOutcomeService
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
 from a13n_service.interactions.state import HostContinuationState, RunCheckpoint
-from a13n_service.storage import ObjectStore, short_session
+from a13n_service.storage import ObjectStore, short_session, transaction
 from fakeredis.aioredis import FakeRedis
 from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -48,6 +49,78 @@ pytestmark = pytest.mark.anyio
 
 def _input(text: str) -> AcceptedAgentInput:
     return AcceptedAgentInput(schema_version="1", content=(TextContent(text=text),))
+
+
+async def test_failed_admission_rolls_back_thread_accounting(relational_interaction_sessions, interaction_object_store):
+    sessions = relational_interaction_sessions
+    _, run, _ = await _accept_root(sessions, interaction_object_store)
+    store = ThreadInboxStore(sessions, clock=lambda: NOW)
+
+    async def reject_after_insert(database, receipt):
+        await database.flush()
+        raise RuntimeError("reject the complete transaction")
+
+    with pytest.raises(RuntimeError, match="complete transaction"):
+        await store.append_steer(
+            organization_id=ORGANIZATION_ID,
+            run_id=run.id,
+            input=_input("rolled back"),
+            transaction_hook=reject_after_insert,
+        )
+    async with short_session(sessions) as database:
+        thread = await database.get(ThreadRecord, run.thread_id)
+        assert (thread.next_delivery_sequence, thread.pending_count, thread.pending_bytes) == (1, 0, 0)
+        assert (await database.scalars(select(ThreadInboxRecord))).all() == []
+
+
+@pytest.mark.parametrize("capacity", [3, 8])
+async def test_concurrent_steer_reserves_thread_capacity_once(
+    postgres_interaction_sessions, interaction_object_store, capacity
+):
+    sessions = postgres_interaction_sessions
+    _, run, _ = await _accept_root(sessions, interaction_object_store)
+    payload = _input("same payload")
+    store = ThreadInboxStore(sessions, max_pending_count=capacity, clock=lambda: NOW)
+    results = await asyncio.wait_for(
+        asyncio.gather(
+            *(store.append_steer(organization_id=ORGANIZATION_ID, run_id=run.id, input=payload) for _ in range(8)),
+            return_exceptions=True,
+        ),
+        timeout=15,
+    )
+    accepted = [result for result in results if not isinstance(result, BaseException)]
+    rejected = [result for result in results if isinstance(result, BaseException)]
+    assert sorted(receipt.delivery_sequence for receipt in accepted) == list(range(1, capacity + 1))
+    assert len(rejected) == 8 - capacity
+    assert all(isinstance(error, ThreadInboxConflict) for error in rejected)
+    async with short_session(sessions) as database:
+        thread = await database.get(ThreadRecord, run.thread_id)
+        assert (thread.next_delivery_sequence, thread.pending_count, thread.pending_bytes) == (
+            capacity + 1,
+            capacity,
+            capacity * len(payload.canonical_bytes()),
+        )
+        assert (thread.version, thread.queue_version, thread.current_run_id, thread.head_run_id) == (1, 0, run.id, None)
+        assert len((await database.scalars(select(ThreadInboxRecord))).all()) == capacity
+
+
+async def test_stale_thread_projection_does_not_overwrite_new_accounting(
+    postgres_interaction_sessions, interaction_object_store
+):
+    sessions = postgres_interaction_sessions
+    _, run, _ = await _accept_root(sessions, interaction_object_store)
+    # A pending admission commits after a different transaction has loaded the
+    # Thread. Updating another field must not write that stale accounting back.
+    async with transaction(sessions) as database:
+        stale = await database.get(ThreadRecord, run.thread_id)
+        await ThreadInboxStore(sessions, clock=lambda: NOW).append_steer(
+            organization_id=ORGANIZATION_ID, run_id=run.id, input=_input("new input")
+        )
+        stale.queue_version += 1
+    async with short_session(sessions) as database:
+        thread = await database.get(ThreadRecord, run.thread_id)
+        assert (thread.next_delivery_sequence, thread.pending_count, thread.queue_version) == (2, 1, 1)
+        assert thread.pending_bytes == len(_input("new input").canonical_bytes())
 
 
 async def test_idle_control_reads_are_narrow_unlocked_and_still_fenced(
@@ -96,6 +169,8 @@ async def test_steer_accepts_before_or_after_claim_without_advancing_thread(
     interaction_object_store: ObjectStore,
 ) -> None:
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
+    async with short_session(interaction_sessions) as database:
+        original = (await database.get(ThreadRecord, run.thread_id)).to_resource().model_dump()
     store = ThreadInboxStore(interaction_sessions, clock=lambda: NOW + timedelta(seconds=2))
 
     first = await store.append_steer(
@@ -125,12 +200,13 @@ async def test_steer_accepts_before_or_after_claim_without_advancing_thread(
     assert status.status is ThreadInboxStatus.pending
     assert status.target_run_id == run.id
     async with short_session(interaction_sessions) as database:
-        counter = await database.get(ThreadInboxCounterRecord, run.thread_id)
         thread = await database.get(ThreadRecord, run.thread_id)
-        assert counter is not None and thread is not None
-        assert (counter.next_delivery_sequence, counter.pending_count) == (3, 2)
+        assert thread is not None
+        assert (thread.next_delivery_sequence, thread.pending_count) == (3, 2)
         assert thread.version == 1
         assert thread.queue_version == 0
+        assert thread.to_resource().model_dump() == original
+        assert {"next_delivery_sequence", "pending_count", "pending_bytes"}.isdisjoint(original)
 
 
 async def test_steer_capacity_rejection_is_atomic(
@@ -168,10 +244,10 @@ async def test_steer_capacity_rejection_is_atomic(
         )
 
     async with short_session(interaction_sessions) as database:
-        counter = await database.get(ThreadInboxCounterRecord, run.thread_id)
+        thread = await database.get(ThreadRecord, run.thread_id)
         rows = tuple((await database.scalars(select(ThreadInboxRecord))).all())
-        assert counter is not None
-        assert (counter.next_delivery_sequence, counter.pending_count) == (2, 1)
+        assert thread is not None
+        assert (thread.next_delivery_sequence, thread.pending_count) == (2, 1)
         assert [row.id for row in rows] == ["inb_1212121212121212"]
 
 
@@ -296,12 +372,12 @@ async def test_checkpoint_consumes_only_exact_fifo_prefix(
         rows = tuple(
             (await database.scalars(select(ThreadInboxRecord).order_by(ThreadInboxRecord.delivery_sequence))).all()
         )
-        counter = await database.get(ThreadInboxCounterRecord, run.thread_id)
-        assert counter is not None
+        thread = await database.get(ThreadRecord, run.thread_id)
+        assert thread is not None
         assert [row.status for row in rows] == ["consumed", "consumed"]
         assert all(row.consumed_state_digest_sha256 == stored.digest_sha256 for row in rows)
-        assert counter.pending_count == 0
-        assert counter.pending_bytes == 0
+        assert thread.pending_count == 0
+        assert thread.pending_bytes == 0
 
 
 async def test_interrupt_supersedes_pending_steer_and_releases_budget(
@@ -344,9 +420,9 @@ async def test_interrupt_supersedes_pending_steer_and_releases_budget(
     assert status.status is ThreadInboxStatus.superseded
     assert status.target_run_id is None
     async with short_session(interaction_sessions) as database:
-        counter = await database.get(ThreadInboxCounterRecord, run.thread_id)
-        assert counter is not None
-        assert (counter.pending_count, counter.pending_bytes) == (0, 0)
+        thread = await database.get(ThreadRecord, run.thread_id)
+        assert thread is not None
+        assert (thread.pending_count, thread.pending_bytes) == (0, 0)
 
 
 async def test_waiting_outcome_rolls_delivery_and_feedback_binds_it_to_successor(

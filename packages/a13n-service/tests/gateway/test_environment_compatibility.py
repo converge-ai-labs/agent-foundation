@@ -72,6 +72,9 @@ async def test_empty_thread_is_readable_and_accepts_first_input_with_explicit_nu
         body=CreateThreadRequest(agent_id=AGENT_ID, environment=None),
         idempotency_key="empty-thread",
     )
+    async with short_session(service.sessions) as database:
+        persisted = await database.get(ThreadRecord, thread.id)
+        assert (persisted.next_delivery_sequence, persisted.pending_count, persisted.pending_bytes) == (1, 0, 0)
     objects = await LocalObjectStore.create(tmp_path / "gateway-objects")
     commands = _commands(lifecycle_interaction_sessions, objects, _Preparation(), _Freezing([_frozen()]))
     queries = NativeInteractionQueries(lifecycle_interaction_sessions, RunReplayStore(objects))

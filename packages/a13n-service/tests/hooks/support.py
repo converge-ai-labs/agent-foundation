@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
-from a13n_service.interactions.control_records import inbox_counter_record
 from a13n_service.interactions.domain import (
     ExecutionBudget,
     Run,
@@ -184,4 +183,3 @@ async def seed_run_and_secret(sessions: async_sessionmaker[AsyncSession]) -> Non
         await database.flush()
         persisted_thread = await database.get(ThreadRecord, THREAD_ID)
         assert persisted_thread is not None
-        database.add(inbox_counter_record(persisted_thread.to_resource()))

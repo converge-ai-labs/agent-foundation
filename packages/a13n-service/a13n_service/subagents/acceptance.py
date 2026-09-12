@@ -16,7 +16,6 @@ from a13n_service.interactions.acceptance import (
     validate_prepared_run,
 )
 from a13n_service.interactions.attempts import AttemptContext, lock_attempt_authority, read_attempt_authority
-from a13n_service.interactions.control_records import inbox_counter_record
 from a13n_service.interactions.domain import Run, StrictModel, Thread
 from a13n_service.interactions.environment_acceptance import add_run_with_environment
 from a13n_service.interactions.environment_selection import (
@@ -159,7 +158,6 @@ class ChildRunAcceptanceService:
                 database.add(
                     child_run_relationship_record(prepared.relationship, organization_id=prepared.run.organization_id)
                 )
-                database.add(inbox_counter_record(prepared.thread))
         except IntegrityError as error:
             raise ChildRunAcceptanceError(
                 "child_run_acceptance_conflict",

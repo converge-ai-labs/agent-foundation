@@ -16,7 +16,6 @@ from a13n_service.ids import new_object_id
 from a13n_service.storage import transaction
 from a13n_service.temporal import utc_now
 
-from .control_records import inbox_counter_record
 from .domain import Thread, ThreadOriginKind, ThreadRole, new_thread_id
 from .models import SessionRecord, ThreadRecord
 from .records import thread_record
@@ -118,7 +117,6 @@ async def allocate_thread(
             )
             session.add(thread_record(thread))
             await session.flush()
-            session.add(inbox_counter_record(thread))
             session.add(
                 evidence_record(
                     actor=actor,

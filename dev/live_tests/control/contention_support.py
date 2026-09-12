@@ -228,8 +228,8 @@ def assert_lifecycle(events, run_id, outcome, attempts):
 async def inbox_budget(journey, thread_id):
     rows = await query(
         journey,
-        "SELECT next_delivery_sequence, pending_count, pending_bytes FROM thread_inbox_counters "
-        "WHERE organization_id = %s AND thread_id = %s",
+        "SELECT next_delivery_sequence, pending_count, pending_bytes FROM threads "
+        "WHERE organization_id = %s AND id = %s",
         (journey.live.config["organization_id"], thread_id),
     )
     assert len(rows) == 1

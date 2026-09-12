@@ -124,6 +124,7 @@ class RunOutcomeService:
             candidate = envelope.outcome_candidate
             can_seal = await apply_run_outcome(
                 database,
+                thread=thread,
                 run=run,
                 outcome="waiting" if isinstance(candidate, WaitingOutcomeCandidate) else "completed",
                 state=state,
@@ -249,7 +250,7 @@ class RunOutcomeService:
             thread.version += 1
             thread.updated_at = now
             await refresh_run_retention(database, run=run, now=now)
-            await apply_run_outcome(database, run=run, outcome="cancelled", now=now)
+            await apply_run_outcome(database, thread=thread, run=run, outcome="cancelled", now=now)
             if attempt is None:
                 await self._lifecycle.append_run_lifecycle(
                     database,

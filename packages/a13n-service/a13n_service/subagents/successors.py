@@ -301,7 +301,7 @@ class AsyncSubagentSuccessorReconciler:
                 await database.flush()
                 await self._lifecycle.append_accepted_run_lifecycle(database, successor_record)
                 consume_async_result_for_successor(
-                    selected.counter,
+                    selected.thread,
                     selected.entry,
                     successor_run_id=prepared.run.id,
                     state_digest_sha256=initial_state.digest_sha256,

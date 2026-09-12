@@ -167,8 +167,7 @@ class CompletionQueueHandoffService:
                     )
                     await bind_unbound_async_entries(
                         database,
-                        organization_id=successor_run.organization_id,
-                        thread_id=thread.id,
+                        thread=thread,
                         target_run_id=successor_run.id,
                         now=now,
                     )
@@ -451,6 +450,7 @@ async def _lock_and_seal_source(
     )
     await _seal_completed_source(
         database,
+        thread=thread,
         source=source,
         attempt=attempt,
         source_state=source_state,
@@ -463,6 +463,7 @@ async def _lock_and_seal_source(
 async def _seal_completed_source(
     database: AsyncSession,
     *,
+    thread: ThreadRecord,
     source: RunRecord,
     attempt: RunAttemptRecord,
     source_state: StoredRunState,
@@ -477,7 +478,9 @@ async def _seal_completed_source(
     source.updated_at = now
     source.version += 1
     await refresh_run_retention(database, run=source, now=now)
-    if not await apply_run_outcome(database, run=source, outcome="completed", state=source_state, now=now):
+    if not await apply_run_outcome(
+        database, thread=thread, run=source, outcome="completed", state=source_state, now=now
+    ):
         raise ThreadInboxConflict("Run completion must process pending input before queue handoff")
 
 

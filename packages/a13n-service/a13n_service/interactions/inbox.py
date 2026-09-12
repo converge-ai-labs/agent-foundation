@@ -37,7 +37,6 @@ from .inbox_delivery import AdaptedThreadInboxEntry
 from .inbox_persistence import (
     ThreadInboxConflict,
     finalize_ineligible_async_results,
-    lock_inbox_counter,
     reconcile_checkpoint,
 )
 from .input import AcceptedAgentInput
@@ -107,8 +106,7 @@ class ThreadInboxStore:
                 raise ThreadInboxConflict("steer target is not the current accepted, running, or selected waiting Run")
             entry = await allocate_steer(
                 database,
-                organization_id=organization_id,
-                thread_id=thread.id,
+                thread=thread,
                 accepted_against_run_id=run.id,
                 target_run_id=target_run_id,
                 source_waiting_run_id=source_waiting_run_id,
@@ -215,13 +213,13 @@ class DatabaseThreadInboxReconciler:
     ) -> AttemptMutationReceipt:
         now = assume_utc(self._clock())
         async with transaction(self._sessions) as database:
-            run, attempt, _ = await lock_attempt_authority(
+            run, attempt, thread = await lock_attempt_authority(
                 database,
                 authority,
                 now,
                 lock_inbox_origins=True,
             )
-            await reconcile_checkpoint(database, run=run, state=state, now=now)
+            await reconcile_checkpoint(database, thread=thread, run=run, state=state, now=now)
             return AttemptMutationReceipt(
                 run_version=run.version,
                 attempt_version=attempt.version,
@@ -250,8 +248,7 @@ class DatabaseThreadInboxReconciler:
                 await read_attempt_authority(database, authority, now, load_execution_state=False)
                 return ()
         async with transaction(self._sessions) as database:
-            run, _, _ = await lock_attempt_authority(database, authority, now, lock_inbox_origins=True)
-            counter = await lock_inbox_counter(database, run.organization_id, run.thread_id)
+            run, _, thread = await lock_attempt_authority(database, authority, now, lock_inbox_origins=True)
             pending = tuple(
                 (
                     await database.scalars(
@@ -266,9 +263,7 @@ class DatabaseThreadInboxReconciler:
                     )
                 ).all()
             )
-            await finalize_ineligible_async_results(
-                database, organization_id=run.organization_id, rows=pending, now=now, locked_counter=counter
-            )
+            await finalize_ineligible_async_results(database, thread=thread, rows=pending, now=now)
             rows = _contiguous_target_prefix(
                 tuple(row for row in pending if row.status == ThreadInboxStatus.pending.value), run_id=run.id
             )

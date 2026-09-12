@@ -28,7 +28,6 @@ from .control_domain import (
     QueuedSubmission,
     QueuedSubmissionFailure,
     QueuedSubmissionState,
-    ThreadInboxCounter,
     ThreadInboxEntry,
     ThreadInboxKind,
     ThreadInboxStatus,
@@ -55,36 +54,6 @@ def _run_references() -> tuple[ForeignKeyConstraint, ...]:
             "consumed_by_run_id",
         )
     )
-
-
-class ThreadInboxCounterRecord(Base):
-    __tablename__ = "thread_inbox_counters"
-    __table_args__ = (
-        ForeignKeyConstraint(
-            ("organization_id", "thread_id"),
-            ("threads.organization_id", "threads.id"),
-            ondelete="CASCADE",
-        ),
-        CheckConstraint("next_delivery_sequence >= 1", name="next_delivery_sequence_positive"),
-        CheckConstraint("pending_count >= 0", name="pending_count_non_negative"),
-        CheckConstraint("pending_bytes >= 0", name="pending_bytes_non_negative"),
-        UniqueConstraint("organization_id", "thread_id", name="uq_thread_inbox_counters_scope"),
-    )
-
-    thread_id: Mapped[str] = mapped_column(String(72), primary_key=True)
-    organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    next_delivery_sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    pending_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    pending_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
-
-    def to_resource(self) -> ThreadInboxCounter:
-        return ThreadInboxCounter(
-            organization_id=self.organization_id,
-            thread_id=self.thread_id,
-            next_delivery_sequence=self.next_delivery_sequence,
-            pending_count=self.pending_count,
-            pending_bytes=self.pending_bytes,
-        )
 
 
 class ThreadInboxRecord(Base):
@@ -367,4 +336,4 @@ def _required[T](value: T | None) -> T:
     return value
 
 
-__all__ = ["QueuedSubmissionRecord", "ThreadInboxCounterRecord", "ThreadInboxRecord"]
+__all__ = ["QueuedSubmissionRecord", "ThreadInboxRecord"]

@@ -3,7 +3,7 @@
 from contextlib import asynccontextmanager
 from datetime import timedelta
 
-from a13n_service.interactions.control_models import ThreadInboxCounterRecord, ThreadInboxRecord
+from a13n_service.interactions.control_models import ThreadInboxRecord
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord, ThreadRecord
 from a13n_service.interactions.queue import QueuedSubmissionConflict
 from a13n_service.storage import short_session
@@ -51,7 +51,7 @@ async def operation(service, name, prepared, *, size):
                 row = await database.get(ThreadInboxRecord, receipt.steer_id)
                 assert row.status == "consumed" and row.consumed_by_run_id == prepared.run.id
                 assert row.consumed_state_digest_sha256 == stored.digest_sha256
-                counter = await database.get(ThreadInboxCounterRecord, prepared.thread.id)
+                counter = await database.get(ThreadRecord, prepared.thread.id)
                 assert counter.pending_count == 0 and counter.pending_bytes == 0
 
         return Operation(call, verify)

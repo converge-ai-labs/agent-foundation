@@ -34,7 +34,6 @@ from .control_domain import (
     WaitingRunFeedback,
 )
 from .control_models import QueuedSubmissionRecord
-from .control_records import inbox_counter_record
 from .domain import (
     Run,
     RunInputKind,
@@ -127,7 +126,6 @@ class RunAcceptanceService:
                     workspace_id=workspace_id,
                     intent=environment,
                 )
-                database.add(inbox_counter_record(thread))
                 hook_subscription_id = await self._inline_hooks.create(
                     database,
                     run=run_record_value,
@@ -221,8 +219,7 @@ class RunAcceptanceService:
                     assert run.parent_run_id is not None
                     await bind_waiting_entries(
                         database,
-                        organization_id=run.organization_id,
-                        thread_id=thread.id,
+                        thread=thread,
                         source_waiting_run_id=run.parent_run_id,
                         target_run_id=run.id,
                         now=self._clock(),
@@ -232,8 +229,7 @@ class RunAcceptanceService:
                     if prior_head.status == RunStatus.waiting.value:
                         await abandon_waiting_entries(
                             database,
-                            organization_id=run.organization_id,
-                            thread_id=thread.id,
+                            thread=thread,
                             source_waiting_run_id=prior_head.id,
                             now=self._clock(),
                         )
@@ -352,8 +348,7 @@ class RunAcceptanceService:
                 await database.flush()
                 await bind_unbound_async_entries(
                     database,
-                    organization_id=run.organization_id,
-                    thread_id=thread.id,
+                    thread=thread,
                     target_run_id=run.id,
                     now=now,
                 )

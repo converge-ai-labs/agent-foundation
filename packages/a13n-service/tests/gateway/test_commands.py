@@ -775,6 +775,7 @@ async def test_fork_creates_child_thread_and_replays(
     assert forked_thread.origin_kind == "fork"
     assert forked_thread.origin_thread_id == source.thread_id
     assert forked_thread.origin_run_id == source.run_id
+    assert (forked_thread.next_delivery_sequence, forked_thread.pending_count, forked_thread.pending_bytes) == (1, 0, 0)
 
 
 async def test_fork_idempotency_rejects_changed_input(

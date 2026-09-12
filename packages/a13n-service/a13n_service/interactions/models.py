@@ -131,6 +131,9 @@ class ThreadRecord(Base):
         ),
         CheckConstraint("version >= 1", name="version_positive"),
         CheckConstraint("queue_version >= 0", name="queue_version_non_negative"),
+        CheckConstraint("next_delivery_sequence >= 1", name="next_delivery_sequence_positive"),
+        CheckConstraint("pending_count >= 0", name="pending_count_non_negative"),
+        CheckConstraint("pending_bytes >= 0", name="pending_bytes_non_negative"),
         CheckConstraint("role IN ('root', 'child')", name="role_valid"),
         CheckConstraint("origin_kind IN ('new', 'fork', 'child')", name="origin_kind_valid"),
         CheckConstraint(
@@ -160,6 +163,9 @@ class ThreadRecord(Base):
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     queue_version: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    next_delivery_sequence: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1, server_default="1")
+    pending_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
+    pending_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     session_id: Mapped[str] = mapped_column(String(72), nullable=False)
     role: Mapped[str] = mapped_column(String(16), nullable=False)

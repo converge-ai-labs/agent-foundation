@@ -433,14 +433,6 @@ def _validate_inbox_binding(entry: ThreadInboxEntry) -> None:
         raise ValueError("pending inbox binding is invalid")
 
 
-class ThreadInboxCounter(StrictModel):
-    organization_id: ObjectId
-    thread_id: ThreadId
-    next_delivery_sequence: int = Field(ge=1)
-    pending_count: int = Field(ge=0)
-    pending_bytes: int = Field(ge=0)
-
-
 class SteerReceipt(StrictModel):
     schema_version: Literal["1"] = "1"
     session_id: ObjectId
@@ -651,7 +643,6 @@ __all__ = [
     "SteerReceipt",
     "SteerStatus",
     "SubmittedPendingResolution",
-    "ThreadInboxCounter",
     "ThreadInboxEntry",
     "ThreadInboxKind",
     "ThreadInboxStatus",

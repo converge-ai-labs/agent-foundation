@@ -5,7 +5,7 @@ from datetime import timedelta
 
 import pytest
 from a13n_service.interactions.attempts import AttemptExecutionService, AttemptPreparationAccepted
-from a13n_service.interactions.control_models import ThreadInboxCounterRecord, ThreadInboxRecord
+from a13n_service.interactions.control_models import ThreadInboxRecord
 from a13n_service.interactions.domain import Run, RunInputKind
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
@@ -82,8 +82,8 @@ async def test_completed_parent_result_accepts_exact_checkpoint_zero_successor(
         thread = await database.get(ThreadRecord, parent.thread_id)
         successor = await database.get(RunRecord, successor_id)
         entry = await database.get(ThreadInboxRecord, result.id)
-        counter = await database.get(ThreadInboxCounterRecord, parent.thread_id)
-        assert thread is not None and successor is not None and entry is not None and counter is not None
+        thread = await database.get(ThreadRecord, parent.thread_id)
+        assert thread is not None and successor is not None and entry is not None
         accepted = successor.to_resource()
         assert (thread.version, thread.current_run_id, thread.head_run_id) == (
             3,
@@ -124,7 +124,7 @@ async def test_completed_parent_result_accepts_exact_checkpoint_zero_successor(
             successor_state.digest_sha256,
             0,
         )
-        assert (counter.next_delivery_sequence, counter.pending_count, counter.pending_bytes) == (2, 0, 0)
+        assert (thread.next_delivery_sequence, thread.pending_count, thread.pending_bytes) == (2, 0, 0)
 
 
 async def test_object_backed_result_item_is_revalidated_for_automatic_successor(
@@ -240,12 +240,12 @@ async def test_oldest_result_accepts_successor_and_later_result_binds_in_fifo_or
                 )
             ).all()
         )
-        counter = await database.get(ThreadInboxCounterRecord, parent.thread_id)
+        thread = await database.get(ThreadRecord, parent.thread_id)
         assert [(row.id, row.status, row.target_run_id) for row in rows] == [
             (first.id, "consumed", receipt.successor.run_id),
             (second.id, "pending", receipt.successor.run_id),
         ]
-        assert counter is not None and (counter.next_delivery_sequence, counter.pending_count) == (3, 1)
+        assert thread is not None and (thread.next_delivery_sequence, thread.pending_count) == (3, 1)
 
 
 async def test_automatic_successor_rejects_payload_forged_after_publication(
@@ -444,9 +444,9 @@ async def test_periodic_recovery_expires_bound_result_and_releases_capacity(
     assert (await reconciler.scan()).completed == 0
     async with short_session(interaction_sessions) as database:
         entry = await database.get(ThreadInboxRecord, result.id)
-        counter = await database.get(ThreadInboxCounterRecord, parent.thread_id)
+        thread = await database.get(ThreadRecord, parent.thread_id)
         assert entry.status == "expired" and entry.target_run_id is None
-        assert (counter.pending_count, counter.pending_bytes) == (0, 0)
+        assert (thread.pending_count, thread.pending_bytes) == (0, 0)
         assert (await database.get(ThreadRecord, parent.thread_id)).current_run_id == parent.id
 
 

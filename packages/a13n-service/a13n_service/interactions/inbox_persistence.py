@@ -13,8 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.temporal import assume_utc
 
 from .control_domain import ThreadInboxKind, ThreadInboxStatus
-from .control_models import ThreadInboxCounterRecord, ThreadInboxRecord
-from .models import RunRecord
+from .control_models import ThreadInboxRecord
+from .models import RunRecord, ThreadRecord
 from .objects import StoredRunState
 from .state import InboxReceipt
 
@@ -71,8 +71,7 @@ async def lock_inbox_related_runs(
 async def bind_waiting_entries(
     database: AsyncSession,
     *,
-    organization_id: str,
-    thread_id: str,
+    thread: ThreadRecord,
     source_waiting_run_id: str,
     target_run_id: str,
     now: datetime,
@@ -81,11 +80,10 @@ async def bind_waiting_entries(
 
     rows = await _lock_pending_scope(
         database,
-        organization_id=organization_id,
-        thread_id=thread_id,
+        thread=thread,
         source_waiting_run_id=source_waiting_run_id,
     )
-    await finalize_ineligible_async_results(database, organization_id=organization_id, rows=rows, now=now)
+    await finalize_ineligible_async_results(database, thread=thread, rows=rows, now=now)
     for row in rows:
         if row.status == ThreadInboxStatus.pending.value:
             row.target_run_id = target_run_id
@@ -94,8 +92,7 @@ async def bind_waiting_entries(
 async def bind_unbound_async_entries(
     database: AsyncSession,
     *,
-    organization_id: str,
-    thread_id: str,
+    thread: ThreadRecord,
     target_run_id: str,
     now: datetime,
 ) -> None:
@@ -107,8 +104,8 @@ async def bind_unbound_async_entries(
             await database.scalars(
                 select(ThreadInboxRecord.origin_run_id)
                 .where(
-                    ThreadInboxRecord.organization_id == organization_id,
-                    ThreadInboxRecord.thread_id == thread_id,
+                    ThreadInboxRecord.organization_id == thread.organization_id,
+                    ThreadInboxRecord.thread_id == thread.id,
                     ThreadInboxRecord.kind == ThreadInboxKind.async_subagent_result.value,
                     ThreadInboxRecord.status == ThreadInboxStatus.pending.value,
                     ThreadInboxRecord.target_run_id.is_(None),
@@ -119,15 +116,14 @@ async def bind_unbound_async_entries(
         ).all()
         if value is not None
     )
-    await _lock_runs(database, organization_id=organization_id, run_ids=origin_ids)
-    await lock_inbox_counter(database, organization_id, thread_id)
+    await _lock_runs(database, organization_id=thread.organization_id, run_ids=origin_ids)
     rows = tuple(
         (
             await database.scalars(
                 select(ThreadInboxRecord)
                 .where(
-                    ThreadInboxRecord.organization_id == organization_id,
-                    ThreadInboxRecord.thread_id == thread_id,
+                    ThreadInboxRecord.organization_id == thread.organization_id,
+                    ThreadInboxRecord.thread_id == thread.id,
                     ThreadInboxRecord.kind == ThreadInboxKind.async_subagent_result.value,
                     ThreadInboxRecord.status == ThreadInboxStatus.pending.value,
                     ThreadInboxRecord.target_run_id.is_(None),
@@ -138,7 +134,7 @@ async def bind_unbound_async_entries(
             )
         ).all()
     )
-    await finalize_ineligible_async_results(database, organization_id=organization_id, rows=rows, now=now)
+    await finalize_ineligible_async_results(database, thread=thread, rows=rows, now=now)
     for row in rows:
         if row.status == ThreadInboxStatus.pending.value:
             row.target_run_id = target_run_id
@@ -147,8 +143,7 @@ async def bind_unbound_async_entries(
 async def abandon_waiting_entries(
     database: AsyncSession,
     *,
-    organization_id: str,
-    thread_id: str,
+    thread: ThreadRecord,
     source_waiting_run_id: str,
     now: datetime,
 ) -> None:
@@ -156,17 +151,17 @@ async def abandon_waiting_entries(
 
     rows = await _lock_pending_scope(
         database,
-        organization_id=organization_id,
-        thread_id=thread_id,
+        thread=thread,
         source_waiting_run_id=source_waiting_run_id,
     )
-    await finalize_ineligible_async_results(database, organization_id=organization_id, rows=rows, now=now)
-    await _finalize_rows(database, rows, fallback=ThreadInboxStatus.superseded, now=now)
+    await finalize_ineligible_async_results(database, thread=thread, rows=rows, now=now)
+    _finalize_rows(thread, rows, fallback=ThreadInboxStatus.superseded, now=now)
 
 
 async def reconcile_checkpoint(
     database: AsyncSession,
     *,
+    thread: ThreadRecord,
     run: RunRecord,
     state: StoredRunState,
     now: datetime,
@@ -199,7 +194,6 @@ async def reconcile_checkpoint(
         if value is not None
     )
     await _lock_runs(database, organization_id=run.organization_id, run_ids=origin_ids)
-    counter = await lock_inbox_counter(database, run.organization_id, run.thread_id)
     rows = tuple(
         (
             await database.scalars(
@@ -228,7 +222,7 @@ async def reconcile_checkpoint(
     eligible = tuple(
         row for row in rows if row.target_run_id == run.id and row.status == ThreadInboxStatus.pending.value
     )
-    await finalize_ineligible_async_results(database, organization_id=run.organization_id, rows=eligible, now=now)
+    await finalize_ineligible_async_results(database, thread=thread, rows=eligible, now=now)
     pending_receipt_ids = tuple(
         receipt.inbox_entry_id
         for receipt in receipts
@@ -250,12 +244,13 @@ async def reconcile_checkpoint(
         row.consumed_state_digest_sha256 = state.digest_sha256
         row.consumed_checkpoint_seq = envelope.checkpoint_seq
         row.finalized_at = now
-    release_pending_inbox_capacity(counter, consumed_rows)
+    release_pending_inbox_capacity(thread, consumed_rows)
 
 
 async def apply_run_outcome(
     database: AsyncSession,
     *,
+    thread: ThreadRecord,
     run: RunRecord,
     outcome: Literal["waiting", "completed", "failed", "cancelled"],
     now: datetime,
@@ -264,17 +259,16 @@ async def apply_run_outcome(
     """Reconcile a seal under Thread/Run locks; return False when completion must continue."""
 
     if state is not None:
-        await reconcile_checkpoint(database, run=run, state=state, now=now)
+        await reconcile_checkpoint(database, thread=thread, run=run, state=state, now=now)
     rows = await _lock_pending_scope(
         database,
-        organization_id=run.organization_id,
-        thread_id=run.thread_id,
+        thread=thread,
         target_run_id=run.id,
         origin_run_id=run.id if outcome in {"failed", "cancelled"} else None,
     )
     await finalize_ineligible_async_results(
         database,
-        organization_id=run.organization_id,
+        thread=thread,
         rows=rows,
         now=now,
         terminal_origin_run_id=run.id if outcome in {"failed", "cancelled"} else None,
@@ -287,15 +281,14 @@ async def apply_run_outcome(
             row.target_run_id = None
             row.source_waiting_run_id = run.id
         return True
-    await _finalize_rows(database, remaining, fallback=ThreadInboxStatus.superseded, now=now)
+    _finalize_rows(thread, remaining, fallback=ThreadInboxStatus.superseded, now=now)
     return True
 
 
 async def _lock_pending_scope(
     database: AsyncSession,
     *,
-    organization_id: str,
-    thread_id: str,
+    thread: ThreadRecord,
     target_run_id: str | None = None,
     source_waiting_run_id: str | None = None,
     origin_run_id: str | None = None,
@@ -316,8 +309,8 @@ async def _lock_pending_scope(
             await database.scalars(
                 select(ThreadInboxRecord.origin_run_id)
                 .where(
-                    ThreadInboxRecord.organization_id == organization_id,
-                    ThreadInboxRecord.thread_id == thread_id,
+                    ThreadInboxRecord.organization_id == thread.organization_id,
+                    ThreadInboxRecord.thread_id == thread.id,
                     ThreadInboxRecord.status == ThreadInboxStatus.pending.value,
                     or_(*predicates),
                     ThreadInboxRecord.origin_run_id.is_not(None),
@@ -327,15 +320,14 @@ async def _lock_pending_scope(
         ).all()
         if value is not None
     )
-    await _lock_runs(database, organization_id=organization_id, run_ids=origin_ids)
-    await lock_inbox_counter(database, organization_id, thread_id)
+    await _lock_runs(database, organization_id=thread.organization_id, run_ids=origin_ids)
     return tuple(
         (
             await database.scalars(
                 select(ThreadInboxRecord)
                 .where(
-                    ThreadInboxRecord.organization_id == organization_id,
-                    ThreadInboxRecord.thread_id == thread_id,
+                    ThreadInboxRecord.organization_id == thread.organization_id,
+                    ThreadInboxRecord.thread_id == thread.id,
                     ThreadInboxRecord.status == ThreadInboxStatus.pending.value,
                     or_(*predicates),
                 )
@@ -344,24 +336,6 @@ async def _lock_pending_scope(
             )
         ).all()
     )
-
-
-async def lock_inbox_counter(
-    database: AsyncSession,
-    organization_id: str,
-    thread_id: str,
-) -> ThreadInboxCounterRecord:
-    counter = await database.scalar(
-        select(ThreadInboxCounterRecord)
-        .where(
-            ThreadInboxCounterRecord.organization_id == organization_id,
-            ThreadInboxCounterRecord.thread_id == thread_id,
-        )
-        .with_for_update()
-    )
-    if counter is None:
-        raise ThreadInboxConflict("Thread inbox counter was not found")
-    return counter
 
 
 async def _lock_runs(
@@ -389,11 +363,10 @@ async def _lock_runs(
 async def finalize_ineligible_async_results(
     database: AsyncSession,
     *,
-    organization_id: str,
+    thread: ThreadRecord,
     rows: Sequence[ThreadInboxRecord],
     now: datetime,
     terminal_origin_run_id: str | None = None,
-    locked_counter: ThreadInboxCounterRecord | None = None,
 ) -> None:
     origin_ids = {
         row.origin_run_id
@@ -406,7 +379,7 @@ async def finalize_ineligible_async_results(
             (
                 await database.scalars(
                     select(RunRecord.id).where(
-                        RunRecord.organization_id == organization_id,
+                        RunRecord.organization_id == thread.organization_id,
                         RunRecord.id.in_(origin_ids),
                         RunRecord.status.in_(("failed", "cancelled")),
                     )
@@ -427,15 +400,14 @@ async def finalize_ineligible_async_results(
     )
     if not finalized:
         return
-    counter = locked_counter or await lock_inbox_counter(database, rows[0].organization_id, rows[0].thread_id)
     for row in finalized:
         status = ThreadInboxStatus.suppressed if row.origin_run_id in failed else ThreadInboxStatus.expired
         _set_terminal(row, status, now)
-    release_pending_inbox_capacity(counter, finalized)
+    release_pending_inbox_capacity(thread, finalized)
 
 
-async def _finalize_rows(
-    database: AsyncSession,
+def _finalize_rows(
+    thread: ThreadRecord,
     rows: Sequence[ThreadInboxRecord],
     *,
     fallback: ThreadInboxStatus,
@@ -444,10 +416,9 @@ async def _finalize_rows(
     pending = tuple(row for row in rows if row.status == ThreadInboxStatus.pending.value)
     if not pending:
         return
-    counter = await lock_inbox_counter(database, pending[0].organization_id, pending[0].thread_id)
     for row in pending:
         _set_terminal(row, fallback, now)
-    release_pending_inbox_capacity(counter, pending)
+    release_pending_inbox_capacity(thread, pending)
 
 
 def _set_terminal(row: ThreadInboxRecord, status: ThreadInboxStatus, now: datetime) -> None:
@@ -460,12 +431,12 @@ def _set_terminal(row: ThreadInboxRecord, status: ThreadInboxStatus, now: dateti
 
 
 def release_pending_inbox_capacity(
-    counter: ThreadInboxCounterRecord,
+    thread: ThreadRecord,
     rows: Collection[ThreadInboxRecord],
 ) -> None:
-    counter.pending_count -= len(rows)
-    counter.pending_bytes -= sum(_payload_size(row) for row in rows)
-    if counter.pending_count < 0 or counter.pending_bytes < 0:
+    thread.pending_count -= len(rows)
+    thread.pending_bytes -= sum(_payload_size(row) for row in rows)
+    if thread.pending_count < 0 or thread.pending_bytes < 0:
         raise ThreadInboxConflict("Thread inbox pending counters would become negative")
 
 
@@ -498,7 +469,6 @@ __all__ = [
     "bind_unbound_async_entries",
     "bind_waiting_entries",
     "finalize_ineligible_async_results",
-    "lock_inbox_counter",
     "lock_inbox_related_runs",
     "reconcile_checkpoint",
     "release_pending_inbox_capacity",

@@ -4,7 +4,6 @@ from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
-from a13n_service.interactions.control_models import ThreadInboxCounterRecord
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord, ThreadRecord
 from a13n_service.interactions.scheduling import ClaimedAttempt
 from a13n_service.interactions.thread_creation import allocate_thread
@@ -54,7 +53,7 @@ async def measure_threads(benchmark, config, service):
                         async with short_session(service.sessions) as database:
                             row = await database.get(ThreadRecord, result.id)
                             assert row.current_run_id is None and row.version == 1 and row.queue_version == 0
-                            assert await database.get(ThreadInboxCounterRecord, result.id) is not None
+                            assert (row.next_delivery_sequence, row.pending_count, row.pending_bytes) == (1, 0, 0)
 
                     calls.append(Operation(call, verify))
                 yield calls
@@ -69,7 +68,7 @@ async def measure_threads(benchmark, config, service):
                     "pg_prewarm_connections": concurrency if state == "warm" else 0,
                     "model_requests": 0,
                 },
-                boundary="allocate_thread including PG connection acquisition, authorization, Session/Thread/counter/idempotency writes and PG commit; connection state reset before every wave",
+                boundary="allocate_thread including PG connection acquisition, authorization, Session/Thread/idempotency writes and PG commit; connection state reset before every wave",
             )
 
 

@@ -11,12 +11,12 @@ from a13n_harness import HarnessRunResult, HarnessRunResultEvent, HarnessState, 
 from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.interactions.attempts import AttemptExecutionService
 from a13n_service.interactions.control_domain import ThreadInboxEntry, ThreadInboxKind, ThreadInboxStatus
-from a13n_service.interactions.control_models import ThreadInboxCounterRecord, ThreadInboxRecord
+from a13n_service.interactions.control_models import ThreadInboxRecord
 from a13n_service.interactions.domain import RunPayloadObjectRef
 from a13n_service.interactions.inbox import DatabaseThreadInboxReconciler, ThreadInboxStore
 from a13n_service.interactions.inbox_persistence import ThreadInboxCapacityExceeded
 from a13n_service.interactions.input import AcceptedAgentInput, TextContent
-from a13n_service.interactions.models import RunRecord
+from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
 from a13n_service.interactions.run_control import RunAttemptControl
 from a13n_service.interactions.scheduling import AttemptScheduler
@@ -75,6 +75,14 @@ async def test_sealed_child_result_reconciles_idempotently_into_active_fifo(
         interaction_sessions,
         interaction_object_store,
     )
+    async with short_session(interaction_sessions) as database:
+        child = await database.get(RunRecord, child_run_id)
+        child_thread = await database.get(ThreadRecord, child.thread_id)
+        assert (child_thread.next_delivery_sequence, child_thread.pending_count, child_thread.pending_bytes) == (
+            1,
+            0,
+            0,
+        )
     store = ThreadInboxStore(
         interaction_sessions,
         clock=lambda: NOW + timedelta(seconds=3),
@@ -206,10 +214,10 @@ async def test_parent_failure_suppresses_unconsumed_child_result_on_both_race_or
     assert entry.target_run_id is None
     assert entry.finalized_at is not None
     async with short_session(interaction_sessions) as database:
-        counter = await database.get(ThreadInboxCounterRecord, parent.thread_id)
+        thread = await database.get(ThreadRecord, parent.thread_id)
         rows = tuple((await database.scalars(select(ThreadInboxRecord))).all())
-        assert counter is not None
-        assert (counter.next_delivery_sequence, counter.pending_count, counter.pending_bytes) == (2, 0, 0)
+        assert thread is not None
+        assert (thread.next_delivery_sequence, thread.pending_count, thread.pending_bytes) == (2, 0, 0)
         assert len(rows) == 1
     assert signals.threads == ([(ORGANIZATION_ID, parent.thread_id)] if publish_first else [])
 
@@ -245,10 +253,10 @@ async def test_result_capacity_failure_leaves_no_partial_publication(
     assert await publisher.reconcile_once() == 0
 
     async with short_session(interaction_sessions) as database:
-        counter = await database.get(ThreadInboxCounterRecord, parent.thread_id)
+        thread = await database.get(ThreadRecord, parent.thread_id)
         rows = tuple((await database.scalars(select(ThreadInboxRecord))).all())
-        assert counter is not None
-        assert (counter.next_delivery_sequence, counter.pending_count) == (2, 1)
+        assert thread is not None
+        assert (thread.next_delivery_sequence, thread.pending_count) == (2, 1)
         assert [(row.id, row.kind) for row in rows] == [("inb_6666666666666666", "steer")]
 
 
@@ -321,10 +329,10 @@ async def test_object_backed_result_requires_and_uses_authorized_terminal_item(
     assert await publisher.reconcile_once() == 0
 
     async with short_session(interaction_sessions) as database:
-        counter = await database.get(ThreadInboxCounterRecord, parent.thread_id)
+        thread = await database.get(ThreadRecord, parent.thread_id)
         rows = tuple((await database.scalars(select(ThreadInboxRecord))).all())
-        assert counter is not None
-        assert (counter.next_delivery_sequence, counter.pending_count, counter.pending_bytes) == (1, 0, 0)
+        assert thread is not None
+        assert (thread.next_delivery_sequence, thread.pending_count, thread.pending_bytes) == (1, 0, 0)
         assert rows == ()
 
     await _project_all_lifecycle(projector)
@@ -380,10 +388,10 @@ async def test_result_publication_reauthorizes_the_spawning_principal(
         )
 
     async with short_session(interaction_sessions) as database:
-        counter = await database.get(ThreadInboxCounterRecord, parent.thread_id)
+        thread = await database.get(ThreadRecord, parent.thread_id)
         rows = tuple((await database.scalars(select(ThreadInboxRecord))).all())
-        assert counter is not None
-        assert (counter.next_delivery_sequence, counter.pending_count, counter.pending_bytes) == (1, 0, 0)
+        assert thread is not None
+        assert (thread.next_delivery_sequence, thread.pending_count, thread.pending_bytes) == (1, 0, 0)
         assert rows == ()
 
 
@@ -709,9 +717,9 @@ async def test_expired_result_is_not_materialized_after_cached_receipt_confirmat
     assert materialize.call_args.args[0].id == next_steer.steer_id
     async with short_session(sessions) as database:
         expired = await database.get(ThreadInboxRecord, result.id)
-        counter = await database.get(ThreadInboxCounterRecord, parent.thread_id)
+        thread = await database.get(ThreadRecord, parent.thread_id)
         assert expired.status == "expired"
         assert expired.target_run_id is None
-        assert counter.pending_count == 1
+        assert thread.pending_count == 1
         pending = await database.get(ThreadInboxRecord, next_steer.steer_id)
-        assert counter.pending_bytes == len(rfc8785.dumps(pending.payload_json))
+        assert thread.pending_bytes == len(rfc8785.dumps(pending.payload_json))

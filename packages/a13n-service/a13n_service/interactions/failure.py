@@ -28,7 +28,7 @@ async def finalize_failed_run(
     """Seal, release inbox/retention, and publish one complete failure transaction."""
     seal_failed_run(run, thread, failure, now)
     await refresh_run_retention(database, run=run, now=now)
-    await apply_run_outcome(database, run=run, outcome="failed", now=now)
+    await apply_run_outcome(database, thread=thread, run=run, outcome="failed", now=now)
     if failed_attempt is None:
         await lifecycle.append_run_lifecycle(
             database,

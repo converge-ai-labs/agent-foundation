@@ -9,6 +9,8 @@ from a13n_service.iam.models import UserRecord
 from a13n_service.interactions.attempts import AttemptExecutionService
 from a13n_service.interactions.control_models import QueuedSubmissionRecord
 from a13n_service.interactions.harness_results import AttemptDisposition
+from a13n_service.interactions.inbox import ThreadInboxStore
+from a13n_service.interactions.inbox_persistence import ThreadInboxConflict
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord, ThreadRecord
 from a13n_service.interactions.objects import RunPayloadStore
 from a13n_service.interactions.outcomes import RunOutcomeService
@@ -32,6 +34,7 @@ from tests.lifecycle_support import test_lifecycle_writer
 
 from .conftest import NOW, ORGANIZATION_ID, USER_ID, WORKSPACE_ID
 from .test_attempt_execution import _accept_root, _authority, _completed_state, _worker
+from .test_inbox import _input
 from .test_queue import _inline_hooks, _intent, _principal, _RecordingEndpoint
 from .worker_helpers import worker_runtime
 
@@ -163,6 +166,38 @@ async def test_terminal_committer_completes_and_accepts_successor(
         )
         assert await database.scalar(select(func.count()).select_from(RunRecord)) == 2
     assert (await QueueRecovery(sessions, commands.queued).scan()).completed == 0
+
+
+async def test_steer_after_handoff_preparation_preserves_input_and_rejects_stale_completion(
+    relational_interaction_sessions, interaction_object_store
+):
+    sessions = relational_interaction_sessions
+    source, authority, stored, queued, _, completion, _ = await _completion(sessions, interaction_object_store)
+    commit = await completion.prepare(authority, stored)
+    assert commit is not None
+    payload = _input("arrived after completion preparation")
+    await ThreadInboxStore(sessions, clock=lambda: NOW + timedelta(seconds=5)).append_steer(
+        organization_id=ORGANIZATION_ID, run_id=source.id, input=payload
+    )
+    with pytest.raises(ThreadInboxConflict, match="pending input"):
+        await commit()
+    async with short_session(sessions) as database:
+        thread = await database.get(ThreadRecord, source.thread_id)
+        run = await database.get(RunRecord, source.id)
+        entry = await database.get(QueuedSubmissionRecord, queued.queued_submission_id)
+        assert (thread.next_delivery_sequence, thread.pending_count, thread.pending_bytes) == (
+            2,
+            1,
+            len(payload.canonical_bytes()),
+        )
+        assert (thread.version, thread.queue_version, thread.current_run_id, thread.head_run_id) == (
+            1,
+            1,
+            source.id,
+            None,
+        )
+        assert run.status == "running" and entry.position == 1 and entry.consumed_run_id is None
+        assert await database.scalar(select(func.count()).select_from(RunRecord)) == 1
 
 
 @pytest.mark.parametrize("failure", ["dependency", "timeout", "commit_timeout"])
