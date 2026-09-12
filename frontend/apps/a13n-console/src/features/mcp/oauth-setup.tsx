@@ -28,7 +28,8 @@ export function MCPOAuthSetup({
     { t } = useTranslation(),
     key = useIdempotency(),
     started = useRef(false),
-    [editing, setEditing] = useState(false);
+    [editing, setEditing] = useState(false),
+    redirectUri = `${window.location.origin}/connections/callback`;
   const needsVerification =
     connection.status === "pending" && connection.credential_configured;
   const setup = useQuery({
@@ -39,7 +40,7 @@ export function MCPOAuthSetup({
         .POST("/api/v1/connections/{connection_id}/mcp/oauth-setup", {
           params: { path: { connection_id: connection.id } },
           body: {
-            redirect_uri: `${window.location.origin}/connections/callback`,
+            redirect_uri: redirectUri,
           },
           signal,
         })
@@ -99,6 +100,18 @@ export function MCPOAuthSetup({
   const configuration = setup.data?.client;
   const action = setup.data?.next_action;
   const needsClientSetup = action?.type === "configure_oauth_client";
+  const discovery = useQuery({
+    queryKey: ["mcp-oauth-discovery", connection.id, redirectUri],
+    enabled: editing || needsClientSetup,
+    queryFn: async ({ signal }) =>
+      client.http
+        .POST("/api/v1/connections/{connection_id}/mcp/oauth-discovery", {
+          params: { path: { connection_id: connection.id } },
+          body: { redirect_uri: redirectUri },
+          signal,
+        })
+        .then(data),
+  });
   const connect = (basis: Schema["Connection"]) => {
     if (action?.type === "authenticate_client_credentials")
       authenticate.mutate(basis);
@@ -135,12 +148,20 @@ export function MCPOAuthSetup({
     return (
       <ErrorNotice error={setup.error} retry={() => void setup.refetch()} />
     );
-  if (editing || needsClientSetup)
+  if (editing || needsClientSetup) {
+    if (discovery.isPending) return <Loading />;
+    if (discovery.error)
+      return (
+        <ErrorNotice
+          error={discovery.error}
+          retry={() => void discovery.refetch()}
+        />
+      );
     return (
       <MCPOAuthClientEditor
         connection={connection}
         configuration={setup.data.client ?? null}
-        discovery={setup.data.next_action}
+        discovery={discovery.data}
         onCancel={needsClientSetup ? undefined : () => setEditing(false)}
         onSaved={(updated, grant) => {
           onConnectionChange(updated);
@@ -150,6 +171,7 @@ export function MCPOAuthSetup({
         }}
       />
     );
+  }
   const pending =
     authorize.isPending || authenticate.isPending || verify.isPending;
   const error = authorize.error ?? authenticate.error ?? verify.error;

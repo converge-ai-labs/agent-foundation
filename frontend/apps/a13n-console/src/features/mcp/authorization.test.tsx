@@ -61,6 +61,18 @@ it("uses the saved app and refreshed version for reconnect after authorization f
   http.GET.mockResolvedValue({ data: failed, response: new Response() });
   http.PUT.mockResolvedValue({ data: updated, response: new Response() });
   http.POST.mockImplementation(async (path: string) => {
+    if (path.endsWith("oauth-discovery"))
+      return {
+        data: {
+          issuer_url: "https://auth.example",
+          redirect_uri: "https://application.example/connections/callback",
+          grant_types_supported: ["authorization_code"],
+          client_registration: "manual",
+          token_endpoint_auth_methods_supported: ["client_secret_post"],
+          authorization_response_iss_parameter_supported: true,
+        },
+        response: new Response(),
+      };
     if (path.endsWith("oauth-setup"))
       return {
         data: {

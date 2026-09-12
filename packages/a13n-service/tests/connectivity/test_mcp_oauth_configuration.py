@@ -16,7 +16,11 @@ from a13n_service.connectivity.mcp.domain import (
     MCPOAuthSetupRequest,
 )
 from a13n_service.connectivity.mcp.errors import MCPConnectionError
-from a13n_service.connectivity.mcp.models import MCPAuthorizationRecord, MCPConnectionOAuthClientRecord
+from a13n_service.connectivity.mcp.models import (
+    MCPAuthorizationRecord,
+    MCPConnectionOAuthClientRecord,
+    MCPConnectionRecord,
+)
 from a13n_service.storage import transaction
 from pydantic import SecretStr, ValidationError
 
@@ -45,6 +49,16 @@ def app_client():
         client_secret=SecretStr("user-owned-secret"),
         token_endpoint_auth_method="client_secret_post",
         redirect_uri=APP_CALLBACK,
+    )
+
+
+def machine_client():
+    return MCPOAuthClientInput(
+        issuer_url=ISSUER,
+        client_id="machine-client",
+        client_secret=SecretStr("machine-secret"),
+        token_endpoint_auth_method="client_secret_basic",
+        grant_type="client_credentials",
     )
 
 
@@ -201,6 +215,42 @@ async def test_pre_registered_browser_client_does_not_require_service_public_ori
     )
 
     assert ready.status == "ready"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("grant", "expected_action"),
+    [("authorization_code", "start_authorization"), ("client_credentials", "authenticate_client_credentials")],
+)
+async def test_setup_reauthorizes_retained_unusable_credentials(
+    mcp_services, connectivity_sessions, credential_protector, grant, expected_action
+):
+    connections, oauth, _ = mcp_services
+    created = await create_connection(connections)
+    configured = await oauth.configuration.configure(
+        actor=actor(),
+        connection_id=created.id,
+        request=ConfigureMCPOAuthClientRequest(
+            expected_version=created.version,
+            client=app_client() if grant == "authorization_code" else machine_client(),
+        ),
+    )
+    async with transaction(connectivity_sessions) as session:
+        connection = await session.get(MCPConnectionRecord, configured.id)
+        assert connection is not None
+        connection.replace_credential('{"access_token":"unusable"}', credential_protector)
+        connection.status = "action_required"
+        connection.status_reason = "reauthorization_required"
+
+    setup = await oauth.configuration.setup(
+        actor=actor(),
+        connection_id=configured.id,
+        request=MCPOAuthSetupRequest(redirect_uri=APP_CALLBACK),
+    )
+
+    assert setup.next_action.type == expected_action
+    assert setup.client is not None
+    assert setup.client.grant_type == grant
 
 
 @pytest.mark.anyio

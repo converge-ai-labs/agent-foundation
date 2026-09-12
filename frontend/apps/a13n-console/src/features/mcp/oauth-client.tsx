@@ -28,15 +28,15 @@ export function MCPOAuthClientEditor({
 }: {
   connection: Schema["Connection"];
   configuration: Schema["MCPOAuthClientConfiguration"] | null;
-  discovery: Schema["MCPOAuthSetupAction"];
+  discovery: Schema["MCPOAuthDiscovery"];
   onSaved: (connection: Schema["Connection"], grant: GrantType) => void;
   onCancel?: () => void;
 }) {
   const client = useClient(),
     cache = useQueryClient(),
     { t } = useTranslation(),
-    supportedGrants = discovery.grant_types ?? [],
-    supportedMethods = discovery.token_endpoint_auth_methods ?? [],
+    supportedGrants = discovery.grant_types_supported,
+    supportedMethods = discovery.token_endpoint_auth_methods_supported,
     initialGrant =
       configuration?.grant_type ?? supportedGrants[0] ?? "authorization_code";
   const [grant, setGrant] = useState<GrantType>(initialGrant),

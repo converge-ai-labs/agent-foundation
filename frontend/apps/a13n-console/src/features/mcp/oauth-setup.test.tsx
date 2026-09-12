@@ -46,12 +46,21 @@ const connection: Schema["Connection"] = {
 };
 
 const discovery = {
-  type: "configure_oauth_client",
   issuer_url: "https://auth.example",
   redirect_uri: "https://application.example/connections/callback",
-  token_endpoint_auth_methods: ["client_secret_basic"],
-  grant_types: ["authorization_code", "client_credentials"],
+  token_endpoint_auth_methods_supported: ["client_secret_basic"],
+  grant_types_supported: ["authorization_code", "client_credentials"],
   client_registration: "dynamic",
+  authorization_response_iss_parameter_supported: true,
+} satisfies Schema["MCPOAuthDiscovery"];
+
+const configureAction = {
+  type: "configure_oauth_client",
+  issuer_url: discovery.issuer_url,
+  redirect_uri: discovery.redirect_uri,
+  token_endpoint_auth_methods: discovery.token_endpoint_auth_methods_supported,
+  grant_types: discovery.grant_types_supported,
+  client_registration: discovery.client_registration,
 } satisfies Schema["MCPOAuthSetupAction"];
 
 afterEach(() => {
@@ -116,17 +125,15 @@ it("continues automatic browser authorization without asking for client details"
 it("opens manual setup with a focused client ID and copyable callback", async () => {
   const user = userEvent.setup();
   const write = vi.spyOn(navigator.clipboard, "writeText");
-  http.POST.mockResolvedValue({
-    data: {
-      client: null,
-      next_action: {
-        ...discovery,
-        type: "configure_oauth_client",
-        client_registration: "manual",
-      },
-    },
+  http.POST.mockImplementation(async (path: string) => ({
+    data: path.endsWith("oauth-discovery")
+      ? { ...discovery, client_registration: "manual" }
+      : {
+          client: null,
+          next_action: { ...configureAction, client_registration: "manual" },
+        },
     response: new Response(),
-  });
+  }));
 
   renderSetup(connection, false);
 
@@ -173,22 +180,29 @@ it("opens machine-only discovery as client setup and connects without a callback
   const machineDiscovery = {
     ...discovery,
     redirect_uri: null,
-    grant_types: ["client_credentials"],
-  } satisfies Schema["MCPOAuthSetupAction"];
+    grant_types_supported: ["client_credentials"],
+  } satisfies Schema["MCPOAuthDiscovery"];
   http.PUT.mockResolvedValue({
     data: { ...connection, version: 2 },
     response: new Response(),
   });
   http.POST.mockImplementation(async (path: string) => ({
-    data: path.endsWith("oauth-setup")
-      ? {
-          client: null,
-          next_action: {
-            ...machineDiscovery,
-            type: "configure_oauth_client",
-          },
-        }
-      : { ...connection, status: "ready", credential_configured: true },
+    data: path.endsWith("oauth-discovery")
+      ? machineDiscovery
+      : path.endsWith("oauth-setup")
+        ? {
+            client: null,
+            next_action: {
+              type: "configure_oauth_client",
+              issuer_url: machineDiscovery.issuer_url,
+              redirect_uri: null,
+              token_endpoint_auth_methods:
+                machineDiscovery.token_endpoint_auth_methods_supported,
+              grant_types: machineDiscovery.grant_types_supported,
+              client_registration: machineDiscovery.client_registration,
+            },
+          }
+        : { ...connection, status: "ready", credential_configured: true },
     response: new Response(),
   }));
 
@@ -210,4 +224,48 @@ it("opens machine-only discovery as client setup and connects without a callback
     ).toBe(true),
   );
   expect(http.start).not.toHaveBeenCalled();
+});
+
+it("loads provider capabilities when editing an already authorized app", async () => {
+  const configured = {
+    issuer_url: discovery.issuer_url,
+    client_id: "existing-client",
+    token_endpoint_auth_method: "client_secret_basic",
+    grant_type: "authorization_code",
+    source: "pre_registered",
+    redirect_uri: discovery.redirect_uri,
+  } satisfies Schema["MCPOAuthClientConfiguration"];
+  http.POST.mockImplementation(async (path: string) => ({
+    data: path.endsWith("oauth-discovery")
+      ? discovery
+      : { client: configured, next_action: { type: "completed" } },
+    response: new Response(),
+  }));
+
+  renderSetup(
+    {
+      ...connection,
+      status: "ready",
+      credential_configured: true,
+    },
+    false,
+  );
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Use your own OAuth app" }),
+  );
+
+  expect(
+    ((await screen.findByLabelText("Client ID")) as HTMLInputElement).value,
+  ).toBe("existing-client");
+  expect(screen.getByText(discovery.redirect_uri)).not.toBeNull();
+  expect(
+    http.POST.mock.calls.some(([path]) => path.endsWith("oauth-discovery")),
+  ).toBe(true);
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Save and authorize",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(false);
 });

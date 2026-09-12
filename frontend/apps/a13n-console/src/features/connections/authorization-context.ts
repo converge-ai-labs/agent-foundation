@@ -78,18 +78,21 @@ export async function startBrowserAuthorization(
   requireAuthorizationProgress(authorization);
   const href = authorizationHref(authorization.next_action?.url);
   if (!href) throw new Error("Invalid authorization URL.");
-  const providerState = new URL(href).searchParams.get("state");
-  if (!providerState) throw new Error("Authorization URL has no state.");
+  const providerState = connector
+    ? undefined
+    : new URL(href).searchParams.get("state");
+  if (!connector && !providerState)
+    throw new Error("Authorization URL has no state.");
   const contextBase = {
-    state: state ?? providerState,
+    state: connector ? state! : providerState!,
     authorizationId: authorization.id,
     connectionId: connection.id,
     workspaceId: connection.workspace_id,
     returnPath: `${basePath}/connections`,
     expiresAt: authorization.expires_at,
   };
-  const context: AuthorizationContext = verifier
-    ? { ...contextBase, type: "connector", verifier }
+  const context: AuthorizationContext = connector
+    ? { ...contextBase, type: "connector", verifier: verifier! }
     : { ...contextBase, type: "mcp" };
   sessionStorage.setItem(storageKey, JSON.stringify(context));
   window.location.assign(href);

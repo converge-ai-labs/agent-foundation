@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
+import type { Client } from "@converge.ai/a13n";
+import type { Schema } from "../../shared/api";
 import {
   clearAuthorization,
   readAuthorization,
+  startBrowserAuthorization,
   supportsBrowserAuthorization,
   takeCallback,
 } from "./authorization-context";
@@ -37,6 +40,57 @@ it.each([
     expect(supportsBrowserAuthorization({ protocol, hostname })).toBe(expected);
   },
 );
+it("keeps application state for Connector fragment authorization URLs", async () => {
+  const expiresAt = new Date(Date.now() + 60_000).toISOString();
+  const authorization = {
+    id: "authz_test",
+    connection_id: "conn_test",
+    status: "awaiting_user",
+    next_action: {
+      type: "open_url",
+      url: "http://localhost/connection-authorizations/browser#authorization_id=authz_test&token=launch-token",
+    },
+    error_code: null,
+    outcome_unknown: false,
+    expires_at: expiresAt,
+    updated_at: new Date().toISOString(),
+  } satisfies Schema["Authorization"];
+  const post = vi.fn().mockResolvedValue({
+    data: authorization,
+    response: new Response(),
+  });
+  const client = { http: { POST: post } } as unknown as Client;
+  const connection = {
+    id: "conn_test",
+    organization_id: "org_test",
+    workspace_id: "ws_test",
+    source: {
+      kind: "connector",
+      provider_id: "cnr_test",
+      connector_key: "github",
+    },
+    name: "GitHub",
+    status: "pending",
+    version: 1,
+    authorization_generation: 1,
+    credential_configured: false,
+    created_by: { principal_type: "user", principal_id: "usr_test" },
+    created_at: "2026-09-12T00:00:00Z",
+    updated_at: "2026-09-12T00:00:00Z",
+  } satisfies Schema["Connection"];
+
+  await startBrowserAuthorization(client, connection, "/workspace/design");
+
+  const saved = readAuthorization();
+  expect(saved).toMatchObject({
+    type: "connector",
+    authorizationId: authorization.id,
+    connectionId: connection.id,
+    returnPath: "/workspace/design/connections",
+  });
+  expect(saved?.state).toMatch(/^[a-f0-9]{64}$/);
+  expect(post.mock.calls[0][1].body.state).toBe(saved?.state);
+});
 it("binds completion to the application proof and strips callback material immediately", () => {
   sessionStorage.setItem(
     "a13n.connection-authorization",

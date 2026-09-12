@@ -220,7 +220,7 @@ class OAuthConfiguration:
             record = await session.get(MCPConnectionOAuthClientRecord, connection_id)
             configured = client_configuration(record) if record is not None else None
             documentation_url = self._documentation_urls.get(connection.endpoint_url)
-            if connection.ciphertext is not None:
+            if connection.ciphertext is not None and connection.status in {"ready", "pending"}:
                 action = "completed" if connection.status == "ready" else "check_connection"
                 return MCPOAuthSetup(
                     next_action=MCPOAuthSetupAction(type=action, documentation_url=documentation_url),
