@@ -45,7 +45,10 @@ async def composio_setup(composio_sessions, credential_protector):
                 "name": "GitHub",
                 "meta": {"version": "20260903_01"},
                 "auth_config_details": [
-                    {"mode": "OAUTH2", "fields": {"connected_account_initiation": {"required": [], "optional": []}}}
+                    {
+                        "mode": state.get("scheme", "OAUTH2"),
+                        "fields": {"connected_account_initiation": {"required": [], "optional": []}},
+                    }
                 ],
             }
             return httpx2.Response(200, json={"items": [toolkit]} if path.endswith("/toolkits") else toolkit)
@@ -70,7 +73,12 @@ async def composio_setup(composio_sessions, credential_protector):
                 200,
                 json={
                     "items": [
-                        {"id": "ac_test", "toolkit": {"slug": "github"}, "status": "ENABLED", "auth_scheme": "OAUTH2"}
+                        {
+                            "id": "ac_test",
+                            "toolkit": {"slug": "github"},
+                            "status": "ENABLED",
+                            "auth_scheme": state.get("scheme", "OAUTH2"),
+                        }
                     ]
                 },
             )
@@ -179,13 +187,13 @@ async def complete(service, attempt_id, *, nonce=NONCE):
 async def test_link_attaches_only_attempt_and_replay_does_not_create_an_account(composio_setup):
     service, connection, reconciler, sessions, requests, state, now = composio_setup
     result = await launch(service, connection)
-    assert result.requires_browser_callback and result.expires_at == now[0] + timedelta(seconds=120)
+    assert result.completion_method == "oauth_verifier" and result.expires_at == now[0] + timedelta(seconds=120)
     async with short_session(sessions) as session:
         record = await session.get(ConnectorConnectionRecord, connection.id)
         attempt = await session.get(ConnectorSetupAttemptRecord, result.attempt_id)
         assert record.external_ref is None and attempt.external_ref == "ca_test"
         assert attempt.claim_owner is None and attempt.status == "attached"
-        assert attempt.external_handle_digest is None
+        assert attempt.completion_method == "oauth_verifier"
     replay = await launch(service, connection)
     assert replay.attempt_id == result.attempt_id and replay.redirect_url is None
     assert state["link_calls"] == 1 and not await reconciler.reconcile_once()
@@ -308,19 +316,6 @@ async def test_reconnect_of_verified_account_is_rejected_before_remote_write(com
     assert state["link_calls"] == 1
 
 
-async def test_old_protocol_attempt_is_failed_without_provider_calls(composio_setup):
-    service, connection, reconciler, sessions, requests, _, _ = composio_setup
-    result = await launch(service, connection)
-    async with transaction(sessions) as session:
-        attempt = await session.get(ConnectorSetupAttemptRecord, result.attempt_id)
-        attempt.browser_binding_digest = None
-        attempt.external_handle_digest = "old-upstream-digest"
-    requests.clear()
-    assert await reconciler.reconcile_once()
-    assert not requests
-    assert (await service.get(actor=actor(), connection_id=connection.id)).status == "action_required"
-
-
 async def test_crash_after_reservation_before_redemption_never_replays_session(composio_setup, monkeypatch):
     service, connection, reconciler, sessions, _, state, now = composio_setup
     result = await launch(service, connection)
@@ -400,3 +395,49 @@ async def test_new_idempotency_key_cannot_start_same_setup_generation(composio_s
         browser_nonce=NONCE,
     )
     assert restarted.attempt_id != first.attempt_id and state["link_calls"] == 2
+
+
+@pytest.mark.parametrize("scheme", ["API_KEY", "BEARER_TOKEN", "BASIC"])
+async def test_non_oauth_requires_bound_confirmation_before_attachment(composio_setup, scheme):
+    service, connection, reconciler, _, requests, state, _ = composio_setup
+    state["scheme"] = scheme
+    result = await launch(service, connection)
+    assert result.completion_method == "browser_confirmation"
+    link = next(json.loads(request.content) for request in requests if request.url.path.endswith("/link"))
+    assert "connection_data" not in link and "?" not in link["callback_url"]
+    state["status"] = "ACTIVE"
+    assert not await reconciler.reconcile_once()
+    with pytest.raises(ConnectorError):
+        await service.complete_callback(
+            actor=actor(), attempt_id=result.attempt_id, browser_nonce=NONCE, session_uri="oauth-downgrade"
+        )
+    with pytest.raises(ConnectorError):
+        await service.complete_callback(actor=actor(), attempt_id=result.attempt_id, browser_nonce="a" * 64)
+    assert (await service.get(actor=actor(), connection_id=connection.id)).status == "pending"
+    assert (
+        await service.complete_callback(actor=actor(), attempt_id=result.attempt_id, browser_nonce=NONCE)
+        == "/connections"
+    )
+    assert state["redeem_calls"] == 0
+    assert (await service.get(actor=actor(), connection_id=connection.id)).status == "ready"
+
+
+async def test_oauth_cannot_be_completed_by_confirmation(composio_setup):
+    service, connection, _, _, _, state, _ = composio_setup
+    result = await launch(service, connection)
+    state["status"] = "ACTIVE"
+    with pytest.raises(ConnectorError, match="OAuth user verification"):
+        await service.complete_callback(actor=actor(), attempt_id=result.attempt_id, browser_nonce=NONCE)
+    assert (await service.get(actor=actor(), connection_id=connection.id)).status == "pending"
+
+
+async def test_non_oauth_confirmation_rejects_an_account_with_changed_owner(composio_setup):
+    service, connection, _, _, _, state, _ = composio_setup
+    state["scheme"] = "API_KEY"
+    result = await launch(service, connection)
+    state["status"] = "ACTIVE"
+    state["user_id"] = "another-owner"
+    with pytest.raises(ConnectorError):
+        await service.complete_callback(actor=actor(), attempt_id=result.attempt_id, browser_nonce=NONCE)
+    assert (await service.get(actor=actor(), connection_id=connection.id)).status != "ready"
+    assert state["redeem_calls"] == 0

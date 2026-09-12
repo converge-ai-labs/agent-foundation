@@ -8,7 +8,6 @@ from typing import Any
 from sqlalchemy import (
     JSON,
     BigInteger,
-    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKeyConstraint,
@@ -200,6 +199,10 @@ class ConnectorSetupAttemptRecord(Base):
             name="status_valid",
         ),
         CheckConstraint("generation >= 1", name="generation_positive"),
+        CheckConstraint(
+            "completion_method IN ('polling', 'oauth_verifier', 'browser_confirmation')",
+            name="completion_method_valid",
+        ),
         CheckConstraint("initiating_principal_type = 'user'", name="initiating_user_required"),
         CheckConstraint("claim_generation >= 0", name="claim_generation_non_negative"),
         Index(
@@ -223,10 +226,8 @@ class ConnectorSetupAttemptRecord(Base):
     setup_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     external_ref: Mapped[str | None] = mapped_column(String(2048))
     setup_ref: Mapped[str | None] = mapped_column(String(2048))
-    # Retained during the additive migration; old callback digests are never trusted.
-    external_handle_digest: Mapped[str | None] = mapped_column(String(64))
     browser_binding_digest: Mapped[str | None] = mapped_column(String(64))
-    supports_verified_callback: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    completion_method: Mapped[str] = mapped_column(String(32), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

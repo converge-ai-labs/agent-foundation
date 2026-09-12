@@ -6,6 +6,7 @@ from a13n_service.connectivity.connectors.contracts import (
     AdapterConnectionStatus,
     AdapterStatusReason,
     BeforeDispatch,
+    BeforeSharedSetup,
     ConnectionBinding,
     ConnectionInspection,
     ConnectorProviderError,
@@ -112,7 +113,7 @@ class FakeConnectorProvider:
         setup: JsonObject,
         context: SetupContext,
         resume_ref: str | None = None,
-        before_shared_setup: BeforeDispatch | None = None,
+        before_shared_setup: BeforeSharedSetup | None = None,
     ) -> SetupStarted:
         self.backend.started += 1
         return SetupStarted(
@@ -121,7 +122,7 @@ class FakeConnectorProvider:
                 context.external_user_correlation, f"external-{len(self.backend.external_accounts) + 1}"
             ),
             redirect_url="https://connector.example/authorize",
-            supports_verified_callback=self.backend.supports_callback,
+            completion_method="oauth_verifier" if self.backend.supports_callback else "polling",
         )
 
     async def complete_setup(

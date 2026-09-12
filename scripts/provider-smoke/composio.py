@@ -15,6 +15,7 @@ from a13n_service.connectivity.connectors.contracts import (
     ConnectorConnectionRuntime,
     ConnectorProviderRuntime,
     ConnectorTool,
+    SetupCompletionMethod,
     SetupContext,
 )
 from a13n_service.connectivity.connectors.http import ConnectorHttpClient
@@ -75,8 +76,10 @@ async def authorize_account(args: argparse.Namespace, provider: ConnectorProvide
     print("Keep the connection ID and user ID to inspect or reuse this account later. The script does not revoke it.")
     if started.redirect_url is None:
         raise ValueError("Provider returned no authorization URL; inspect the saved connection ID in its dashboard")
+    if started.completion_method == SetupCompletionMethod.browser_confirmation:
+        print("Only confirm credentials you entered yourself. Composio cannot verify which browser submitted them.")
     input("Open the authorization URL in your browser, complete authorization, then press Enter to verify: ")
-    if started.supports_verified_callback:
+    if started.completion_method == SetupCompletionMethod.oauth_verifier:
         session_uri = getpass("session_uri from the callback (hidden): ").strip()
         if not session_uri:
             raise ValueError("A session_uri is required to complete authorization")

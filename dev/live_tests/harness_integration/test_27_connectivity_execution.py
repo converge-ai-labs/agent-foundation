@@ -69,7 +69,7 @@ async def connection(journey, kind):
         },
         expected=200,
     )
-    assert launch["requires_browser_callback"] and launch["connection"]["status"] != "ready"
+    assert launch["completion_method"] == "oauth_verifier" and launch["connection"]["status"] != "ready"
     await journey.post(
         "/api/v1/connector-setup/complete",
         {"attempt_id": launch["attempt_id"], "browser_nonce": nonce, "session_uri": "live-session"},

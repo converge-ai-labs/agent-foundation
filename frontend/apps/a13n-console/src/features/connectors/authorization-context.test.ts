@@ -22,6 +22,9 @@ it("keeps browser proof separate from the upstream session and rejects expired c
     return_path: "/workspace/default/connections",
     workspace_id: "ws_test",
     connection_id: "cconn_test",
+    connection_name: "GitHub",
+    workspace_name: "Default",
+    completion_method: "oauth_verifier" as const,
     attempt_id: "csa_test",
     expires_at: new Date(Date.now() + 60_000).toISOString(),
   };
@@ -49,6 +52,16 @@ it("rejects ambiguous callback parameters and missing tab context", () => {
     null,
     "",
     "/connector-setup/callback?session_uri=one&session_uri=two",
+  );
+  expect(takeCallbackSession()).toBeNull();
+  expect(window.location.search).toBe("");
+});
+
+it("discards untrusted hosted account and status parameters", () => {
+  window.history.replaceState(
+    null,
+    "",
+    "/connector-setup/callback?status=success&connected_account_id=untrusted",
   );
   expect(takeCallbackSession()).toBeNull();
   expect(window.location.search).toBe("");

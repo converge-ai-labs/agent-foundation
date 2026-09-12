@@ -372,7 +372,7 @@ def test_discovery_rejects_unsafe_setup_schemas(schema) -> None:
 @pytest.mark.anyio
 async def test_malformed_setup_response_retains_unknown_outcome(monkeypatch) -> None:
     from a13n_service.connectivity.connectors.contracts import DiscoveredConnector
-    from a13n_service.connectivity.connectors.providers.composio.catalog import ComposioCatalog
+    from a13n_service.connectivity.connectors.providers.composio.catalog import AuthConfiguration, ComposioCatalog
 
     async def connector(self, key):
         return DiscoveredConnector(
@@ -380,10 +380,10 @@ async def test_malformed_setup_response_retains_unknown_outcome(monkeypatch) -> 
         )
 
     async def resolve(self, *args):
-        return "ac"
+        return AuthConfiguration("ac", "Test", "github", True, "OAUTH2")
 
     monkeypatch.setattr(ComposioCatalog, "connector", connector)
-    monkeypatch.setattr(ComposioCatalog, "resolve_auth_config", resolve)
+    monkeypatch.setattr(ComposioCatalog, "prepare_setup", resolve)
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(lambda _: httpx2.Response(200, json={}))) as http:
         with pytest.raises(ConnectorProviderError) as raised:
             await _composio(http).start_setup(

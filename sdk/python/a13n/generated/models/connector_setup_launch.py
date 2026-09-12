@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 from attrs import define as _attrs_define
 
 from ..models.connector_setup_launch_status import ConnectorSetupLaunchStatus
+from ..models.setup_completion_method import SetupCompletionMethod
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
@@ -21,22 +22,24 @@ class ConnectorSetupLaunch:
     """
     Attributes:
         attempt_id (str):
+        completion_method (SetupCompletionMethod):
         connection (ConnectorConnection):
         expires_at (datetime.datetime):
         status (ConnectorSetupLaunchStatus):
         redirect_url (None | str | Unset):
-        requires_browser_callback (bool | Unset):
     """
 
     attempt_id: str
+    completion_method: SetupCompletionMethod
     connection: ConnectorConnection
     expires_at: datetime.datetime
     status: ConnectorSetupLaunchStatus
     redirect_url: str | Unset | None = UNSET
-    requires_browser_callback: bool | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         attempt_id = self.attempt_id
+
+        completion_method = self.completion_method.value
 
         connection = self.connection.to_dict()
 
@@ -50,13 +53,12 @@ class ConnectorSetupLaunch:
         else:
             redirect_url = self.redirect_url
 
-        requires_browser_callback = self.requires_browser_callback
-
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
             {
                 "attempt_id": attempt_id,
+                "completion_method": completion_method,
                 "connection": connection,
                 "expires_at": expires_at,
                 "status": status,
@@ -64,8 +66,6 @@ class ConnectorSetupLaunch:
         )
         if redirect_url is not UNSET:
             field_dict["redirect_url"] = redirect_url
-        if requires_browser_callback is not UNSET:
-            field_dict["requires_browser_callback"] = requires_browser_callback
 
         return field_dict
 
@@ -75,6 +75,8 @@ class ConnectorSetupLaunch:
 
         d = dict(src_dict)
         attempt_id = d.pop("attempt_id")
+
+        completion_method = SetupCompletionMethod(d.pop("completion_method"))
 
         connection = ConnectorConnection.from_dict(d.pop("connection"))
 
@@ -91,15 +93,13 @@ class ConnectorSetupLaunch:
 
         redirect_url = _parse_redirect_url(d.pop("redirect_url", UNSET))
 
-        requires_browser_callback = d.pop("requires_browser_callback", UNSET)
-
         connector_setup_launch = cls(
             attempt_id=attempt_id,
+            completion_method=completion_method,
             connection=connection,
             expires_at=expires_at,
             status=status,
             redirect_url=redirect_url,
-            requires_browser_callback=requires_browser_callback,
         )
 
         return connector_setup_launch

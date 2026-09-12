@@ -2,10 +2,20 @@
 import { StrictMode } from "react";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { ConnectorSetupCallback } from "./callback";
 
-const mocks = vi.hoisted(() => ({ POST: vi.fn(), clear: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  POST: vi.fn(),
+  clear: vi.fn(),
+  method: "oauth_verifier",
+}));
 vi.mock("../../auth/context", () => ({
   useClient: () => ({ http: { POST: mocks.POST } }),
   useAuth: () => ({ isPending: false, anonymous: false, error: null }),
@@ -18,6 +28,9 @@ vi.mock("./authorization-context", () => ({
     workspace_id: "ws_test",
     return_path: "/workspace/design/connections",
     connection_id: "cconn_test",
+    connection_name: "Review account",
+    workspace_name: "Design",
+    completion_method: mocks.method,
   }),
   clearAuthorization: mocks.clear,
 }));
@@ -48,4 +61,28 @@ it("redeems once under StrictMode and never retries an uncertain response", asyn
   expect(
     screen.getByRole("link", { name: "Continue" }).getAttribute("href"),
   ).toBe("/workspace/design/connections?connection=cconn_test");
+});
+
+it("requires an explicit confirmation for a non-OAuth return", async () => {
+  mocks.POST.mockClear();
+  mocks.method = "browser_confirmation";
+  mocks.POST.mockRejectedValue(new Error("Still pending."));
+  render(
+    <MemoryRouter>
+      <ConnectorSetupCallback />
+    </MemoryRouter>,
+  );
+  const button = await screen.findByRole("button", {
+    name: "Confirm connection",
+  });
+  expect(mocks.POST).not.toHaveBeenCalled();
+  expect(screen.getByText(/Composio cannot verify which browser/)).toBeTruthy();
+  fireEvent.click(button);
+  await screen.findByText("Still pending.");
+  expect(mocks.POST).toHaveBeenCalledExactlyOnceWith(
+    "/api/v1/connector-setup/complete",
+    {
+      body: { attempt_id: "csa_test", browser_nonce: "b".repeat(64) },
+    },
+  );
 });

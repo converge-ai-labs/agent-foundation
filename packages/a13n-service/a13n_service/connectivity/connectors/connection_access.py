@@ -123,7 +123,18 @@ def external_error(error: ConnectorProviderError) -> ConnectorError:
     if error.code == "shared_setup_outcome_unknown":
         return ConnectorError(
             "shared_setup_outcome_unknown",
-            "OAuth configuration creation is unresolved. Check the provider dashboard, then retry with an existing configuration.",
+            "Authentication configuration creation is unresolved. Check the provider dashboard, then retry with an existing configuration.",
+            category=ErrorCategory.conflict,
+        )
+    if error.code in {
+        "auth_configuration_unavailable",
+        "auth_configuration_ambiguous",
+        "invalid_setup_options",
+        "connector_setup_unavailable",
+    }:
+        return ConnectorError(
+            "setup_configuration_changed",
+            "Refresh configurations and select an available authentication configuration before restarting authorization.",
             category=ErrorCategory.conflict,
         )
     if error.retryable or error.outcome_unknown:

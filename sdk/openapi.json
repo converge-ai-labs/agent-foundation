@@ -2459,16 +2459,22 @@
             "type": "string"
           },
           "session_uri": {
-            "maxLength": 4096,
-            "minLength": 1,
-            "title": "Session Uri",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Uri"
           }
         },
         "required": [
           "attempt_id",
-          "browser_nonce",
-          "session_uri"
+          "browser_nonce"
         ],
         "title": "CompleteConnectorSetupRequest",
         "type": "object"
@@ -3195,6 +3201,9 @@
             "title": "Attempt Id",
             "type": "string"
           },
+          "completion_method": {
+            "$ref": "#/components/schemas/SetupCompletionMethod"
+          },
           "connection": {
             "$ref": "#/components/schemas/ConnectorConnection"
           },
@@ -3215,11 +3224,6 @@
             ],
             "title": "Redirect Url"
           },
-          "requires_browser_callback": {
-            "default": false,
-            "title": "Requires Browser Callback",
-            "type": "boolean"
-          },
           "status": {
             "enum": [
               "pending",
@@ -3232,6 +3236,7 @@
           }
         },
         "required": [
+          "completion_method",
           "attempt_id",
           "status",
           "expires_at",
@@ -11911,6 +11916,15 @@
         ],
         "title": "SetRoleRequest",
         "type": "object"
+      },
+      "SetupCompletionMethod": {
+        "enum": [
+          "polling",
+          "oauth_verifier",
+          "browser_confirmation"
+        ],
+        "title": "SetupCompletionMethod",
+        "type": "string"
       },
       "Skill": {
         "additionalProperties": false,

@@ -132,6 +132,8 @@ export function ConnectionSetup({
         workspace_id: workspace.id,
         return_path: returnPath,
         connection_id: target.id,
+        connection_name: target.name,
+        workspace_name: workspace.name,
       };
       saveAuthorization(context);
       const body = {
@@ -155,14 +157,15 @@ export function ConnectionSetup({
               { params, body },
             )),
       );
-      if (result.requires_browser_callback)
+      if (result.completion_method !== "polling")
         saveAuthorization({
           ...context,
           attempt_id: result.attempt_id,
+          completion_method: result.completion_method,
           expires_at: result.expires_at,
         });
       const href = authorizationHref(result.redirect_url);
-      if (href && result.requires_browser_callback)
+      if (href && result.completion_method !== "polling")
         window.location.assign(href);
       return result;
     },
@@ -277,7 +280,7 @@ export function ConnectionSetup({
             <AuthorizationLink
               url={launch.data.redirect_url}
               expiresAt={launch.data.expires_at}
-              sameTab={launch.data.requires_browser_callback}
+              sameTab={launch.data.completion_method !== "polling"}
             />
           )}
           {(!launch.data.redirect_url ||
@@ -331,6 +334,17 @@ export function ConnectionSetup({
               />
             </fieldset>
           )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="justify-self-start"
+            loading={definition.isFetching}
+            disabled={started}
+            onClick={() => void definition.refetch()}
+          >
+            {t("Refresh configurations")}
+          </Button>
           {definition.data?.unavailable_reason ? (
             <p role="status">{t(definition.data.unavailable_reason)}</p>
           ) : (

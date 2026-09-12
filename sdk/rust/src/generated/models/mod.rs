@@ -560,6 +560,8 @@ pub mod session_resource;
 pub use self::session_resource::SessionResource;
 pub mod set_role_request;
 pub use self::set_role_request::SetRoleRequest;
+pub mod setup_completion_method;
+pub use self::setup_completion_method::SetupCompletionMethod;
 pub mod skill;
 pub use self::skill::Skill;
 pub mod skill_agent_reference;

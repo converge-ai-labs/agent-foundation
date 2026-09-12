@@ -15,8 +15,7 @@ class ComposioConfiguration(StrictModel):
 
 
 class ComposioSetup(StrictModel):
-    auth_config_id: str = Field(default="managed", min_length=1, max_length=256)
-    connection_data: JsonObject = Field(default_factory=dict)
+    auth_config_id: str = Field(min_length=1, max_length=256)
     toolkit_version: str = Field(pattern=r"^[0-9]{8}_[0-9]{2}$")
 
 

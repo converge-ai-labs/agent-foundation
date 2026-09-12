@@ -645,10 +645,13 @@ class ConnectorConnectionService:
         self,
         *,
         actor: AuthenticatedActor,
-        session_uri: str,
+        session_uri: str | None = None,
         attempt_id: str,
         browser_nonce: str,
     ) -> str:
         return await self._setup.complete_callback(
-            actor=actor, attempt_id=attempt_id, browser_nonce=browser_nonce, session_uri=session_uri
+            actor=actor,
+            attempt_id=attempt_id,
+            browser_nonce=browser_nonce,
+            session_uri=session_uri,
         )

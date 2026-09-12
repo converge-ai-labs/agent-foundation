@@ -363,6 +363,32 @@ function ProviderForm({
               setCredentials({});
             }}
           />
+          {type === "composio" && (
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <p>
+                {t(
+                  "Use an API key from the Composio project that owns your auth configs and connected accounts.",
+                )}
+              </p>
+              <p>
+                {t(
+                  "For OAuth, open that project's Settings → OAuth user verification and set the callback URL to your Service public HTTPS origin followed by /connector-setup/callback. Local development needs a public HTTPS tunnel.",
+                )}
+              </p>
+              <p>
+                {t(
+                  "Composio managed apps work without your own OAuth client. To use a custom app or different scopes, create an auth config in Composio Dashboard. Account credentials are collected on Composio's hosted page.",
+                )}
+              </p>
+              <a
+                href="https://docs.composio.dev/docs/tools-direct/authenticating-tools"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {t("Composio setup guide")}
+              </a>
+            </div>
+          )}
           {basis ? (
             <>
               {Object.keys(configuration).length > 0 && (
@@ -444,7 +470,18 @@ function ProviderForm({
               <ErrorNotice error={test.error} retry={() => void reload()} />
               {test.data && (
                 <p role="status" className={styles.muted}>
-                  {t("Connection verified")}
+                  {test.data.verified_access
+                    .map((access) =>
+                      t(
+                        access === "account_read"
+                          ? "Connected-account access verified."
+                          : "Catalog access verified.",
+                      ),
+                    )
+                    .join(" ")}{" "}
+                  {t(
+                    "OAuth callback configuration and upstream account credentials were not tested.",
+                  )}
                 </p>
               )}
             </>

@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from a13n_service.connectivity.domain import AdapterKey, DisplayName, JsonObject
 from a13n_service.iam.domain import PrincipalRef
 
-from .contracts import ConnectorKey, ProviderAccess
+from .contracts import ConnectorKey, ProviderAccess, SetupCompletionMethod
 
 
 class StrictModel(BaseModel):
@@ -164,7 +164,7 @@ class ReconnectConnectorConnectionRequest(StartConnectorConnectionSetupRequest):
 class CompleteConnectorSetupRequest(StrictModel):
     attempt_id: str = Field(min_length=1, max_length=72)
     browser_nonce: str = Field(pattern=r"^[a-f0-9]{64}$", repr=False)
-    session_uri: str = Field(min_length=1, max_length=4096, repr=False)
+    session_uri: str | None = Field(default=None, min_length=1, max_length=4096, repr=False)
 
 
 class ConnectorSetupCompletion(StrictModel):
@@ -172,7 +172,7 @@ class ConnectorSetupCompletion(StrictModel):
 
 
 class ConnectorSetupLaunch(StrictModel):
-    requires_browser_callback: bool = False
+    completion_method: SetupCompletionMethod
     attempt_id: str
     status: Literal["pending", "completed", "failed", "expired"]
     expires_at: datetime

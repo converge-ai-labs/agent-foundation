@@ -187,8 +187,7 @@ def upgrade() -> None:
         sa.Column("setup_json", sa.JSON(), nullable=False),
         sa.Column("external_ref", sa.String(length=2048), nullable=True),
         sa.Column("setup_ref", sa.String(length=2048), nullable=True),
-        sa.Column("external_handle_digest", sa.String(length=64), nullable=True),
-        sa.Column("supports_verified_callback", sa.Boolean(), nullable=False),
+        sa.Column("completion_method", sa.String(length=32), nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False),
         sa.Column("available_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
@@ -201,6 +200,10 @@ def upgrade() -> None:
         sa.Column("last_error_code", sa.String(length=128), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint(
+            "completion_method IN ('polling', 'oauth_verifier', 'browser_confirmation')",
+            name=op.f("ck_connector_setup_attempts_completion_method_valid"),
+        ),
         sa.CheckConstraint(
             "initiating_principal_type = 'user'", name=op.f("ck_connector_setup_attempts_initiating_user_required")
         ),

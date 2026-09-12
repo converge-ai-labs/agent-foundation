@@ -5,6 +5,9 @@ export type BrowserAuthorization = {
   workspace_id: string;
   return_path: string;
   connection_id: string;
+  connection_name: string;
+  workspace_name: string;
+  completion_method?: "polling" | "oauth_verifier" | "browser_confirmation";
   attempt_id?: string;
   expires_at?: string;
 };
@@ -34,6 +37,11 @@ export function readAuthorization(): BrowserAuthorization | null {
       typeof value.return_path !== "string" ||
       !/^\/workspace\/[a-z0-9-]+\/connections$/.test(value.return_path) ||
       typeof value.connection_id !== "string" ||
+      typeof value.connection_name !== "string" ||
+      typeof value.workspace_name !== "string" ||
+      !["oauth_verifier", "browser_confirmation"].includes(
+        value.completion_method,
+      ) ||
       typeof value.attempt_id !== "string" ||
       typeof value.expires_at !== "string" ||
       !(Date.parse(value.expires_at) > Date.now())
@@ -48,8 +56,9 @@ export function readAuthorization(): BrowserAuthorization | null {
 /** Capture once before identity requests or rendering; never store the upstream session. */
 export function takeCallbackSession(): string | null {
   if (window.location.pathname !== "/connector-setup/callback") return null;
-  const parameters = new URLSearchParams(window.location.search);
-  const sessions = parameters.getAll("session_uri");
+  const sessions = new URLSearchParams(window.location.search).getAll(
+    "session_uri",
+  );
   window.history.replaceState(null, "", window.location.pathname);
   return sessions.length === 1 &&
     sessions[0].length > 0 &&

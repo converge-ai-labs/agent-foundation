@@ -3976,7 +3976,7 @@ export interface components {
       /** Browser Nonce */
       browser_nonce: string;
       /** Session Uri */
-      session_uri: string;
+      session_uri?: string | null;
     };
     /** CompleteEmailChangeRequest */
     CompleteEmailChangeRequest: {
@@ -4242,6 +4242,7 @@ export interface components {
     ConnectorSetupLaunch: {
       /** Attempt Id */
       attempt_id: string;
+      completion_method: components["schemas"]["SetupCompletionMethod"];
       connection: components["schemas"]["ConnectorConnection"];
       /**
        * Expires At
@@ -4250,11 +4251,6 @@ export interface components {
       expires_at: string;
       /** Redirect Url */
       redirect_url?: string | null;
-      /**
-       * Requires Browser Callback
-       * @default false
-       */
-      requires_browser_callback?: boolean;
       /**
        * Status
        * @enum {string}
@@ -7196,6 +7192,12 @@ export interface components {
        */
       role: "member" | "viewer" | "runner" | "builder" | "admin";
     };
+    /**
+     * SetupCompletionMethod
+     * @enum {string}
+     */
+    SetupCompletionMethod:
+      "polling" | "oauth_verifier" | "browser_confirmation";
     /** Skill */
     Skill: {
       /**

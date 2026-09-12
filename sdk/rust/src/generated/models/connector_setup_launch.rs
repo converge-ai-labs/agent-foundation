@@ -16,6 +16,9 @@ pub struct ConnectorSetupLaunch {
     #[serde(rename = "attempt_id")]
     pub attempt_id: String,
 
+    #[serde(rename = "completion_method")]
+    pub completion_method: models::SetupCompletionMethod,
+
     #[serde(rename = "connection")]
     pub connection: Box<models::ConnectorConnection>,
 
@@ -30,12 +33,6 @@ pub struct ConnectorSetupLaunch {
     )]
     pub redirect_url: Option<Option<String>>,
 
-    #[serde(
-        rename = "requires_browser_callback",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub requires_browser_callback: Option<bool>,
-
     #[serde(rename = "status")]
     pub status: Status,
 }
@@ -43,16 +40,17 @@ pub struct ConnectorSetupLaunch {
 impl ConnectorSetupLaunch {
     pub fn new(
         attempt_id: String,
+        completion_method: models::SetupCompletionMethod,
         connection: models::ConnectorConnection,
         expires_at: chrono::DateTime<chrono::FixedOffset>,
         status: Status,
     ) -> ConnectorSetupLaunch {
         ConnectorSetupLaunch {
             attempt_id,
+            completion_method,
             connection: Box::new(connection),
             expires_at,
             redirect_url: None,
-            requires_browser_callback: None,
             status,
         }
     }

@@ -12,7 +12,7 @@ vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     basePath: "/workspace/design",
-    workspace: { id: "ws_test" },
+    workspace: { id: "ws_test", name: "Design" },
   }),
 }));
 vi.mock("react-i18next", () => ({
@@ -78,7 +78,7 @@ it("submits fixed schema values and binds same-tab authorization to the returned
   http.POST.mockResolvedValue({
     data: {
       attempt_id: "csa_test",
-      requires_browser_callback: true,
+      completion_method: "oauth_verifier",
       redirect_url: "https://connect.composio.dev/link/test",
       expires_at: expiry,
       connection,
@@ -134,7 +134,7 @@ it("restarts a lost link only on an explicit click with fresh browser proof", as
   http.POST.mockResolvedValue({
     data: {
       attempt_id: "csa_lost",
-      requires_browser_callback: true,
+      completion_method: "oauth_verifier",
       redirect_url: null,
       expires_at: expiry,
       connection,
@@ -256,7 +256,7 @@ it("offers an explicit restart after reopening an already-started setup", async 
   ).mockResolvedValue({
     data: {
       attempt_id: "csa_restart",
-      requires_browser_callback: true,
+      completion_method: "oauth_verifier",
       redirect_url: "https://connect.composio.dev/link/restart",
       expires_at: new Date(Date.now() + 60_000).toISOString(),
       connection,

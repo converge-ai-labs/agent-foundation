@@ -416,6 +416,7 @@ from .session_preview import SessionPreview
 from .session_resource import SessionResource
 from .set_role_request import SetRoleRequest
 from .set_role_request_role import SetRoleRequestRole
+from .setup_completion_method import SetupCompletionMethod
 from .skill import Skill
 from .skill_agent_reference import SkillAgentReference
 from .skill_agent_reference_collection import SkillAgentReferenceCollection
@@ -920,6 +921,7 @@ __all__ = (
     "SessionResource",
     "SetRoleRequest",
     "SetRoleRequestRole",
+    "SetupCompletionMethod",
     "Skill",
     "SkillAgentReference",
     "SkillAgentReferenceCollection",

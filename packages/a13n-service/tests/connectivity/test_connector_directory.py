@@ -77,6 +77,7 @@ async def test_shared_setup_claim_is_single_use_and_survives_uncertain_outcome(
     async def claim():
         await reserve_shared_setup(
             connectivity_sessions,
+            configuration_key="oauth",
             provider_id=provider.id,
             credential_generation=provider.credential_generation,
             connector_key="github",
@@ -96,6 +97,7 @@ async def test_shared_setup_claim_is_single_use_and_survives_uncertain_outcome(
     with pytest.raises(ConnectorProviderError, match="shared_setup_outcome_unknown"):
         await reserve_shared_setup(
             connectivity_sessions,
+            configuration_key="oauth",
             provider_id=provider.id,
             credential_generation=provider.credential_generation + 1,
             connector_key="github",

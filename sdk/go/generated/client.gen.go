@@ -1871,6 +1871,27 @@ func (e SetRoleRequestRole) Valid() bool {
 	}
 }
 
+// Defines values for SetupCompletionMethod.
+const (
+	BrowserConfirmation SetupCompletionMethod = "browser_confirmation"
+	OauthVerifier       SetupCompletionMethod = "oauth_verifier"
+	Polling             SetupCompletionMethod = "polling"
+)
+
+// Valid indicates whether the value is a known member of the SetupCompletionMethod enum.
+func (e SetupCompletionMethod) Valid() bool {
+	switch e {
+	case BrowserConfirmation:
+		return true
+	case OauthVerifier:
+		return true
+	case Polling:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SkillListItemSourceKind.
 const (
 	SkillListItemSourceKindGithub SkillListItemSourceKind = "github"
@@ -2977,9 +2998,9 @@ type CollectionEnvironment struct {
 
 // CompleteConnectorSetupRequest defines model for CompleteConnectorSetupRequest.
 type CompleteConnectorSetupRequest struct {
-	AttemptId    string `json:"attempt_id"`
-	BrowserNonce string `json:"browser_nonce"`
-	SessionUri   string `json:"session_uri"`
+	AttemptId    string                    `json:"attempt_id"`
+	BrowserNonce string                    `json:"browser_nonce"`
+	SessionUri   nullable.Nullable[string] `json:"session_uri,omitempty"`
 }
 
 // CompleteEmailChangeRequest defines model for CompleteEmailChangeRequest.
@@ -3155,12 +3176,12 @@ type ConnectorSetupCompletion struct {
 
 // ConnectorSetupLaunch defines model for ConnectorSetupLaunch.
 type ConnectorSetupLaunch struct {
-	AttemptId               string                     `json:"attempt_id"`
-	Connection              ConnectorConnection        `json:"connection"`
-	ExpiresAt               time.Time                  `json:"expires_at"`
-	RedirectUrl             nullable.Nullable[string]  `json:"redirect_url,omitempty"`
-	RequiresBrowserCallback *bool                      `json:"requires_browser_callback,omitempty"`
-	Status                  ConnectorSetupLaunchStatus `json:"status"`
+	AttemptId        string                     `json:"attempt_id"`
+	CompletionMethod SetupCompletionMethod      `json:"completion_method"`
+	Connection       ConnectorConnection        `json:"connection"`
+	ExpiresAt        time.Time                  `json:"expires_at"`
+	RedirectUrl      nullable.Nullable[string]  `json:"redirect_url,omitempty"`
+	Status           ConnectorSetupLaunchStatus `json:"status"`
 }
 
 // ConnectorSetupLaunchStatus defines model for ConnectorSetupLaunch.Status.
@@ -5028,6 +5049,9 @@ type SetRoleRequest struct {
 
 // SetRoleRequestRole defines model for SetRoleRequest.Role.
 type SetRoleRequestRole string
+
+// SetupCompletionMethod defines model for SetupCompletionMethod.
+type SetupCompletionMethod string
 
 // Skill defines model for Skill.
 type Skill struct {

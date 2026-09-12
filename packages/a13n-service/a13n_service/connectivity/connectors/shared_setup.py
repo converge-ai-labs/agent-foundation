@@ -16,7 +16,12 @@ from .models import ConnectorProviderRecord
 
 
 async def reserve_shared_setup(
-    sessions: async_sessionmaker[AsyncSession], *, provider_id: str, credential_generation: int, connector_key: str
+    sessions: async_sessionmaker[AsyncSession],
+    configuration_key: str,
+    *,
+    provider_id: str,
+    credential_generation: int,
+    connector_key: str,
 ) -> None:
     async with transaction(sessions) as session:
         record = await session.scalar(
@@ -29,6 +34,7 @@ async def reserve_shared_setup(
         ):
             raise ConnectorProviderError("connector_provider_changed")
         claims = record.setup_claims_json
-        if connector_key in claims:
+        key = f"{connector_key}:{configuration_key}"
+        if key in claims:
             raise ConnectorProviderError("shared_setup_outcome_unknown")
-        record.setup_claims_json = {**claims, connector_key: credential_generation}
+        record.setup_claims_json = {**claims, key: credential_generation}

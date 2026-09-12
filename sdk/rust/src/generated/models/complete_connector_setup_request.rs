@@ -19,20 +19,21 @@ pub struct CompleteConnectorSetupRequest {
     #[serde(rename = "browser_nonce")]
     pub browser_nonce: String,
 
-    #[serde(rename = "session_uri")]
-    pub session_uri: String,
+    #[serde(
+        rename = "session_uri",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub session_uri: Option<Option<String>>,
 }
 
 impl CompleteConnectorSetupRequest {
-    pub fn new(
-        attempt_id: String,
-        browser_nonce: String,
-        session_uri: String,
-    ) -> CompleteConnectorSetupRequest {
+    pub fn new(attempt_id: String, browser_nonce: String) -> CompleteConnectorSetupRequest {
         CompleteConnectorSetupRequest {
             attempt_id,
             browser_nonce,
-            session_uri,
+            session_uri: None,
         }
     }
 }

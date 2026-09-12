@@ -14,6 +14,7 @@ from a13n_service.background import PeriodicTask, Sweep
 from a13n_service.connectivity.connectors.contracts import (
     AdapterConnectionStatus,
     ConnectorProviderError,
+    SetupCompletionMethod,
 )
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.storage import short_session, transaction
@@ -129,7 +130,7 @@ class ConnectorReconciler:
                     not_(
                         and_(
                             ConnectorSetupAttemptRecord.status == "attached",
-                            ConnectorSetupAttemptRecord.supports_verified_callback.is_(True),
+                            ConnectorSetupAttemptRecord.completion_method != SetupCompletionMethod.polling,
                             ConnectorSetupAttemptRecord.browser_binding_digest.is_not(None),
                         )
                     ),
@@ -158,15 +159,6 @@ class ConnectorReconciler:
                 if attempt is None:
                     return
                 status = attempt.status
-                legacy = attempt.type == "composio" and attempt.browser_binding_digest is None
-            if legacy:
-                await self._setup.fail_attempt(
-                    attempt_id,
-                    code="setup_protocol_changed",
-                    claim_owner=self._instance_id,
-                    claim_generation=claim_generation,
-                )
-                return
             if status in {"pending", "starting"}:
                 try:
                     await self._setup.start_attempt(
@@ -179,7 +171,7 @@ class ConnectorReconciler:
                 return
             snapshot = await self._setup.attempt_snapshot(attempt_id)
             require_active_provider(snapshot.connector)
-            if status == "attached" and snapshot.attempt.supports_verified_callback:
+            if status == "attached" and snapshot.attempt.completion_method != SetupCompletionMethod.polling:
                 await self._defer_attempt(attempt_id, claim_generation, code=None, increment=False)
                 return
             if snapshot.attempt.setup_ref is None:

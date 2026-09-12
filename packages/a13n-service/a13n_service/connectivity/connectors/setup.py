@@ -22,6 +22,7 @@ from a13n_service.connectivity.connectors.contracts import (
     AdapterStatusReason,
     ConnectionInspection,
     ConnectorProviderError,
+    SetupCompletionMethod,
     SetupContext,
     SetupStarted,
 )
@@ -78,7 +79,7 @@ class SetupSnapshot:
     external_user_correlation: str
     external_ref: str | None
     setup_ref: str | None
-    supports_verified_callback: bool
+    completion_method: str
     setup_json: JsonObject
 
 
@@ -151,9 +152,8 @@ class ConnectorSetupCoordinator:
             return_path=return_path,
             setup_json=setup,
             external_ref=None,
-            external_handle_digest=None,
             browser_binding_digest=binding,
-            supports_verified_callback=False,
+            completion_method=SetupCompletionMethod.polling,
             status="starting",
             available_at=now,
             expires_at=now
@@ -180,7 +180,7 @@ class ConnectorSetupCoordinator:
                 raise ConnectorError(
                     "setup_unavailable", "ConnectorProvider setup is unavailable.", category=ErrorCategory.not_found
                 )
-            if attempt.status in {"completed", "failed", "expired"}:
+            if attempt.status in {"attached", "reserved", "completed", "failed", "expired"}:
                 return await self._receipt(session, attempt, connection_id=connection_id, redirect_url=None)
         try:
             started = await self.start_attempt(attempt_id, initial_claim=initial_claim)
@@ -212,7 +212,7 @@ class ConnectorSetupCoordinator:
         status = attempt.status if attempt.status in {"completed", "failed", "expired"} else "pending"
         return ConnectorSetupLaunch.model_validate(
             {
-                "requires_browser_callback": attempt.supports_verified_callback,
+                "completion_method": attempt.completion_method,
                 "attempt_id": attempt.id,
                 "status": status,
                 "expires_at": assume_utc(attempt.expires_at),
@@ -222,7 +222,12 @@ class ConnectorSetupCoordinator:
         )
 
     async def complete_callback(
-        self, *, actor: AuthenticatedActor, attempt_id: str, browser_nonce: str, session_uri: str
+        self,
+        *,
+        actor: AuthenticatedActor,
+        attempt_id: str,
+        browser_nonce: str,
+        session_uri: str | None = None,
     ) -> str:
         if actor.principal.principal_type is not PrincipalType.user:
             raise ConnectorError(
@@ -235,18 +240,17 @@ class ConnectorSetupCoordinator:
             connection, attempt = await _lock_setup(session, attempt_id)
             if (
                 attempt is None
-                or not 1 <= len(session_uri) <= 4096
                 or attempt.initiating_principal_id != actor.principal.principal_id
                 or attempt.browser_binding_digest is None
                 or digest is None
                 or not hmac.compare_digest(attempt.browser_binding_digest, digest)
-                or not attempt.supports_verified_callback
                 or attempt.external_ref is None
             ):
                 raise ConnectorError(
                     "invalid_callback", "Invalid browser authorization context.", category=ErrorCategory.invalid_request
                 )
             await authorize_connection(session, actor, connection, mode="manage")
+            self._verify_callback_proof(attempt, session_uri=session_uri)
             if attempt.status == "completed":
                 if connection.setup_generation != attempt.generation or connection.status != "ready":
                     raise ConnectorError(
@@ -459,7 +463,7 @@ class ConnectorSetupCoordinator:
                     raise ConnectorError(
                         "setup_expired", "Authorization link has expired.", category=ErrorCategory.conflict
                     )
-            attempt.supports_verified_callback = started.supports_verified_callback
+            attempt.completion_method = started.completion_method
             attempt.status = "attached"
             attempt.last_error_code = None
             attempt.available_at = now
@@ -492,7 +496,7 @@ class ConnectorSetupCoordinator:
                 return
             await _require_eligible(session, attempt, connection, now=now)
             verify_inspection(attempt, connection, inspection)
-            if attempt.supports_verified_callback and attempt.status != "reserved":
+            if attempt.completion_method != SetupCompletionMethod.polling and attempt.status != "reserved":
                 raise ConnectorError(
                     "invalid_callback", "Browser verification is required.", category=ErrorCategory.conflict
                 )
@@ -555,7 +559,7 @@ class ConnectorSetupCoordinator:
                 attempt.external_user_correlation,
                 attempt.external_ref,
                 attempt.setup_ref,
-                attempt.supports_verified_callback,
+                attempt.completion_method,
                 dict(attempt.setup_json),
             )
         try:
@@ -644,18 +648,44 @@ class ConnectorSetupCoordinator:
         digest = hmac.new(self._correlation_secret, payload, hashlib.sha256).digest()
         return "usrh_" + base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
 
+    @staticmethod
+    def _verify_callback_proof(attempt: ConnectorSetupAttemptRecord, *, session_uri: str | None) -> None:
+        if attempt.completion_method == SetupCompletionMethod.oauth_verifier:
+            if session_uri is not None and 1 <= len(session_uri) <= 4096:
+                return
+            raise ConnectorError(
+                "oauth_verifier_required",
+                "Configure the provider project's OAuth user verification URL, then restart authorization.",
+                category=ErrorCategory.conflict,
+            )
+        if attempt.completion_method == SetupCompletionMethod.browser_confirmation and session_uri is None:
+            # This is the initiating user's confirmation, not proof of the credential-entry browser.
+            return
+        raise ConnectorError(
+            "invalid_callback", "Invalid browser authorization context.", category=ErrorCategory.invalid_request
+        )
+
     def callback_url(self) -> str | None:
         if self._public_origin is None:
             return None
         return f"{self._public_origin}/connector-setup/callback"
 
-    async def _complete_attempt(self, attempt_id: str, *, session_uri: str) -> ConnectionInspection:
+    async def _complete_attempt(self, attempt_id: str, *, session_uri: str | None) -> ConnectionInspection:
         snapshot = await self.attempt_snapshot(attempt_id)
         if snapshot.attempt.external_ref is None:
             raise ConnectorProviderError("setup_incomplete")
         require_active_provider(snapshot.connector)
         runtime = configure_provider(self._adapters, snapshot.connector, snapshot.credentials)
         async with aclosing(runtime):
+            if snapshot.attempt.completion_method == SetupCompletionMethod.browser_confirmation:
+                inspection = await runtime.inspect_setup(
+                    setup_ref=snapshot.attempt.external_ref, context=_setup_context(snapshot.attempt, callback_url=None)
+                )
+                if inspection is None:
+                    raise ConnectorProviderError("setup_incomplete")
+                return inspection
+            if session_uri is None:
+                raise ConnectorProviderError("invalid_callback")
             return await runtime.complete_setup(
                 session_uri=session_uri,
                 context=_setup_context(snapshot.attempt, callback_url=self.callback_url()),
