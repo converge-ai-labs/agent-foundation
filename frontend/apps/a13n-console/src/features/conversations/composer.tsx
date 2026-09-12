@@ -2,7 +2,7 @@ import { Button, FormField, Input, ModalFrame, Textarea } from "a13n-ui";
 import { FileUpload } from "../../shared/file-upload";
 
 import { useMutation } from "@tanstack/react-query";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 import { ArrowUpIcon, PaperclipIcon, XIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
@@ -35,6 +35,13 @@ export function Composer({
       .map((block) => block.text)
       .join("\n\n") ?? "",
   );
+  const messageInput = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const input = messageInput.current;
+    if (!input) return;
+    input.style.height = "auto";
+    input.style.height = `${Math.min(input.scrollHeight, 240)}px`;
+  }, [text]);
   const [attachments, setAttachments] = useState<Schema["BinaryContent"][]>(
     initial?.content?.filter((block) => block.type === "binary") ?? [],
   );
@@ -125,6 +132,8 @@ export function Composer({
     >
       <fieldset disabled={disabled || busy} className={styles.composerFields}>
         <Textarea
+          ref={messageInput}
+          rows={1}
           unstyled
           className={styles.messageInput}
           aria-label={t("Message")}
@@ -133,8 +142,6 @@ export function Composer({
           onChange={(event) => {
             setText(event.target.value);
             changed();
-            event.target.style.height = "auto";
-            event.target.style.height = `${Math.min(event.target.scrollHeight, 240)}px`;
           }}
           onKeyDown={(event) => {
             if (
@@ -146,7 +153,6 @@ export function Composer({
               if (!busy && !disabled) event.currentTarget.form?.requestSubmit();
             }
           }}
-          rows={3}
         />
         {!!attachments.length && (
           <div className={styles.attachments}>
@@ -257,7 +263,6 @@ export function Composer({
                     setStructured(value);
                     changed();
                   }}
-                  rows={3}
                   code
                 />
               </fieldset>

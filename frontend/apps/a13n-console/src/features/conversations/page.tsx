@@ -1,7 +1,7 @@
 import { Button, ChoiceField } from "a13n-ui";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Link,
   Navigate,
@@ -12,17 +12,24 @@ import {
   useSearchParams,
 } from "react-router";
 
-import { ChatIcon, PlusIcon } from "@phosphor-icons/react";
+import {
+  CaretRightIcon,
+  ChatIcon,
+  PlusIcon,
+  TreeStructureIcon,
+} from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { allPages, commandHeaders, data } from "../../shared/api";
 import { Empty, ErrorNotice, Loading } from "../../shared/feedback";
 import { SessionList } from "./list";
+import { CopyableId } from "../../shared/copy";
 import { useIdempotency } from "../../shared/idempotency";
 import { conversationQueries, invalidateConversation, runPath } from "./api";
 import { Composer } from "./composer";
 import styles from "./conversations.module.css";
+import { SessionMap } from "./session-map";
 import { SessionIdentity } from "./identity";
 import { useConversationNotifications } from "./notifications";
 import { OptionsComposer, RunOptions, useRunOptions } from "./options";
@@ -34,7 +41,7 @@ export function ConversationsPage() {
   const nested = !!sessionId || /\/sessions\/new\/?$/.test(location.pathname);
   const notifications = useConversationNotifications();
   return nested ? (
-    <div className={`${styles.sessionStage} a13n-scrollbar`} data-session-stage>
+    <div className={`${styles.sessionStage} a13n-scrollbar`}>
       <ErrorNotice
         error={notifications.error}
         retry={notifications.reconnect}
@@ -141,28 +148,33 @@ export function SessionLayout() {
     client = useClient(),
     queries = conversationQueries(client, workspace.id);
   const threads = useQuery(queries.threads(sessionId));
-  const navigate = useNavigate();
+  const [mapOpen, setMapOpen] = useState(false);
+  const mapTrigger = useRef<HTMLButtonElement>(null);
   const first = threads.data?.[0];
   return (
     <div className={styles.sessionDetail}>
       <header className={styles.sessionHeader}>
-        <SessionIdentity />
-        <div className={styles.sessionControls}>
+        <div className={styles.sessionBreadcrumb}>
           <Link className={styles.backToSessions} to={`${basePath}/sessions`}>
             {t("Sessions")}
           </Link>
-          <ChoiceField
-            placeholder={t("Thread")}
-            value={threadId ?? ""}
-            onValueChange={(id) => navigate(`threads/${id}`)}
-            label={t("Threads")}
-            hideLabel
-            options={(threads.data ?? []).map((thread, index) => ({
-              value: thread.id,
-              label: `${t(thread.origin_kind === "fork" ? "Branch" : "Thread")} ${index + 1}`,
-            }))}
-          />
-          {threadId && <RunHistory />}
+          <CaretRightIcon size={12} aria-hidden="true" />
+          <CopyableId value={sessionId} />
+        </div>
+        <SessionIdentity />
+        <div className={styles.sessionControls}>
+          <Button
+            ref={mapTrigger}
+            variant={mapOpen ? "secondary" : "outline"}
+            size="sm"
+            aria-expanded={mapOpen}
+            aria-controls={mapOpen ? "session-map" : undefined}
+            disabled={threads.isPending || (!threads.data && threads.isError)}
+            onClick={() => setMapOpen((value) => !value)}
+          >
+            <TreeStructureIcon size={16} />
+            {t("Session map")}
+          </Button>
           {can("agent.invoke") && (
             <Link
               className={styles.newThread}
@@ -176,18 +188,34 @@ export function SessionLayout() {
         </div>
       </header>
       <ErrorNotice error={threads.error} retry={() => void threads.refetch()} />
-      {threadId ? (
-        <Outlet />
-      ) : first ? (
-        <Navigate to={`threads/${first.id}`} replace />
-      ) : threads.isPending ? (
-        <Loading />
-      ) : (
-        <Empty
-          title={t("No threads yet")}
-          description={t("Start a thread to work with an agent.")}
-        />
-      )}
+      <div className={styles.sessionBody} data-map-open={mapOpen || undefined}>
+        <div
+          className={`${styles.sessionContent} a13n-scrollbar`}
+          data-session-stage
+        >
+          {threadId ? (
+            <Outlet />
+          ) : first ? (
+            <Navigate to={`threads/${first.id}`} replace />
+          ) : threads.isPending ? (
+            <Loading />
+          ) : (
+            <Empty
+              title={t("No threads yet")}
+              description={t("Start a thread to work with an agent.")}
+            />
+          )}
+        </div>
+        {mapOpen && (
+          <SessionMap
+            threads={threads.data ?? []}
+            onClose={() => {
+              setMapOpen(false);
+              mapTrigger.current?.focus();
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 }
@@ -264,48 +292,5 @@ export function ThreadLayout() {
         )
       )}
     </>
-  );
-}
-
-function RunHistory() {
-  const { t } = useTranslation(),
-    { workspace, basePath } = useWorkspace(),
-    client = useClient(),
-    navigate = useNavigate();
-  const { sessionId = "", threadId = "", runId = "" } = useParams();
-  const runs = useQuery(
-    conversationQueries(client, workspace.id).runs(threadId),
-  );
-  if (runs.error)
-    return (
-      <Button
-        size="sm"
-        variant="ghost"
-        onClick={() => void runs.refetch()}
-        type="button"
-      >
-        {t("Retry history")}
-      </Button>
-    );
-  return (
-    <ChoiceField
-      placeholder={t("Run history")}
-      value={runId}
-      onValueChange={(id) =>
-        navigate(
-          runPath(basePath, {
-            session_id: sessionId,
-            thread_id: threadId,
-            run_id: id,
-          }),
-        )
-      }
-      label={t("Run history")}
-      hideLabel
-      options={(runs.data ?? []).map((run, index) => ({
-        value: run.id,
-        label: `${t("Run")} ${runs.data!.length - index} · ${t(`state.${run.status}`, { defaultValue: run.status })}`,
-      }))}
-    />
   );
 }

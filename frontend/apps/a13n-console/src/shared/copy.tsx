@@ -1,7 +1,6 @@
 import { Button } from "a13n-ui";
 
-import { useMutation } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { CheckIcon, CopyIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
@@ -12,22 +11,34 @@ export function CopyButton({
   iconOnly = false,
   copyLabel,
 }: {
-  value: string;
+  value: string | (() => string);
   iconOnly?: boolean;
   copyLabel?: string;
 }) {
   const { t } = useTranslation();
-  const copy = useMutation({
-    mutationFn: () => navigator.clipboard.writeText(value),
-  });
+  const [status, setStatus] = useState<
+    "idle" | "pending" | "copied" | "failed"
+  >("idle");
+  async function copy() {
+    setStatus("pending");
+    try {
+      await navigator.clipboard.writeText(
+        typeof value === "function" ? value() : value,
+      );
+      setStatus("copied");
+    } catch {
+      setStatus("failed");
+    }
+  }
   useEffect(() => {
-    if (!copy.isSuccess) return;
-    const timer = window.setTimeout(() => copy.reset(), 1500);
+    if (status !== "copied") return;
+    const timer = window.setTimeout(() => setStatus("idle"), 1500);
     return () => window.clearTimeout(timer);
-  }, [copy.isSuccess, copy.reset]);
-  const label = copy.isSuccess
-    ? t("Copied")
-    : (copyLabel ?? t(iconOnly ? "Copy ID" : "Copy"));
+  }, [status]);
+  const label =
+    status === "copied"
+      ? t("Copied")
+      : (copyLabel ?? t(iconOnly ? "Copy ID" : "Copy"));
   return (
     <span className={styles.control}>
       <Button
@@ -35,11 +46,11 @@ export function CopyButton({
         variant={iconOnly ? "ghost" : "outline"}
         size={iconOnly ? "icon-xs" : "sm"}
         aria-label={label}
-        disabled={copy.isPending}
-        onClick={() => copy.mutate()}
+        disabled={status === "pending"}
+        onClick={() => void copy()}
         type="button"
       >
-        {copy.isSuccess ? (
+        {status === "copied" ? (
           <CheckIcon className="size-3" />
         ) : (
           <CopyIcon className="size-3" />
@@ -47,9 +58,9 @@ export function CopyButton({
         {iconOnly ? undefined : label}
       </Button>
       <span role="status" className="visually-hidden">
-        {copy.isSuccess ? t("Copied") : ""}
+        {status === "copied" ? t("Copied") : ""}
       </span>
-      {copy.isError && (
+      {status === "failed" && (
         <span className={styles.error} role="alert">
           {t("Copy failed. Try again.")}
         </span>

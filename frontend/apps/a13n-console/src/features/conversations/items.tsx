@@ -1,12 +1,8 @@
-import { Button, DisclosureSection } from "a13n-ui";
-
-import { useState } from "react";
+import { DisclosureSection } from "a13n-ui";
 
 import {
-  HeartIcon,
   BrainIcon,
   CheckIcon,
-  CopyIcon,
   FileIcon,
   CircleNotchIcon,
   WrenchIcon,
@@ -17,14 +13,22 @@ import { JsonView } from "../../shared/form";
 import styles from "./conversations.module.css";
 import { MarkdownContent } from "../../shared/markdown";
 import { isObject, type PresentedItem } from "./projection";
+import { inputText } from "./input";
+import { AssetAttachment } from "./attachment";
+import { AgentAvatar } from "../agents/avatar";
+import { CopyableId, CopyButton } from "../../shared/copy";
 export function PresentedItems({
   items,
   runState,
   agentName,
+  agentId,
+  agentImageUrl,
 }: {
   items: readonly PresentedItem[];
   runState?: string;
   agentName?: string;
+  agentId?: string;
+  agentImageUrl?: string | null;
 }) {
   const { t } = useTranslation();
   return items
@@ -42,7 +46,9 @@ export function PresentedItems({
             title={
               <span className={styles.disclosureTitle}>
                 <WrenchIcon size={14} />
-                <strong>{item.toolName || t("Tool call")}</strong>
+                <strong title={item.toolName}>
+                  {item.toolName || t("Tool call")}
+                </strong>
                 <span className={styles.toolState}>
                   {item.state === "completed" ? (
                     <CheckIcon size={13} aria-label={t("Completed")} />
@@ -62,6 +68,7 @@ export function PresentedItems({
             }
           >
             <div className={styles.toolBody}>
+              <CopyableId value={item.toolName || item.id} />
               <h4>{t("Arguments")}</h4>
               <JsonView value={parseJson(item.arguments)} />
               {item.result !== undefined && (
@@ -109,7 +116,12 @@ export function PresentedItems({
         );
       return (
         <article key={item.id} className={styles.message} data-role={item.role}>
-          <div className={styles.messageAvatar}>{<HeartIcon size={16} />}</div>
+          <AgentAvatar
+            name={agentName ?? t("Agent")}
+            id={agentId}
+            url={agentImageUrl}
+            className={styles.messageAvatar}
+          />
           <div className={styles.messageBody}>
             <div className={styles.messageHeading}>
               <strong>{agentName ?? t("Agent")}</strong>
@@ -124,7 +136,13 @@ export function PresentedItems({
               }
             />
             {item.text && item.state === "completed" && (
-              <CopyMessage text={item.text} />
+              <div className={styles.messageActions}>
+                <CopyButton
+                  value={item.text}
+                  iconOnly
+                  copyLabel={t("Copy message")}
+                />
+              </div>
             )}
             {item.failure !== undefined && <JsonView value={item.failure} />}
           </div>
@@ -169,17 +187,7 @@ export function InputContent({
     );
   return (
     <>
-      <div className={styles.prose}>
-        {ordinary.content
-          .flatMap((block) =>
-            isObject(block) &&
-            block.type === "text" &&
-            typeof block.text === "string"
-              ? [block.text]
-              : [],
-          )
-          .join("\n\n") || fallback}
-      </div>
+      <div className={styles.prose}>{inputText(input, fallback)}</div>
       <div className={styles.attachments}>
         {ordinary.content.flatMap((block, index) => {
           if (
@@ -196,6 +204,21 @@ export function InputContent({
                 : block.source.type === "url"
                   ? String(block.source.url)
                   : String(block.source.path);
+          if (
+            block.source.type === "asset" &&
+            typeof block.source.asset_id === "string"
+          )
+            return [
+              <AssetAttachment
+                key={index}
+                assetId={block.source.asset_id}
+                filename={
+                  typeof block.filename === "string"
+                    ? block.filename
+                    : undefined
+                }
+              />,
+            ];
           return [
             <span key={index} className={styles.attachment}>
               <FileIcon size={13} />
@@ -220,36 +243,4 @@ function parseJson(value: unknown) {
   } catch {
     return value;
   }
-}
-
-function CopyMessage({ text }: { text: string }) {
-  const { t } = useTranslation();
-  const [status, setStatus] = useState("idle");
-  return (
-    <div className={styles.messageActions}>
-      <Button
-        type="button"
-        variant="ghost"
-        aria-label={t(status === "copied" ? "Copied" : "Copy message")}
-        onClick={async () => {
-          try {
-            await navigator.clipboard.writeText(text);
-            setStatus("copied");
-          } catch {
-            setStatus("failed");
-          }
-        }}
-        size="icon-sm"
-      >
-        {status === "copied" ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
-      </Button>
-      <span role="status">
-        {status === "copied"
-          ? t("Copied")
-          : status === "failed"
-            ? t("Could not copy. Select the message to copy it manually.")
-            : ""}
-      </span>
-    </div>
-  );
 }

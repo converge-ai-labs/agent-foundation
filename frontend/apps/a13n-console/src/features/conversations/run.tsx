@@ -275,7 +275,7 @@ function RunContent({
         <HistoryTranscript runId={runId} />
         <article className={styles.inputMessage}>
           <strong>
-            {t(run.input_kind === "feedback" ? "Your responses" : "You")}
+            {t(run.input_kind === "feedback" ? "Feedback" : "Input")}
           </strong>
           <InputContent input={run.input} fallback={run.input_text} />
         </article>
@@ -283,6 +283,8 @@ function RunContent({
           items={live.items}
           runState={run.status}
           agentName={agent.data?.name}
+          agentId={run.agent_id}
+          agentImageUrl={agent.data?.image_url}
         />
         {!live.items.some(
           (item) =>
@@ -321,7 +323,11 @@ function RunContent({
           </section>
         )}
         {run.output != null && run.output !== run.output_text && (
-          <DisclosureSection title={<>{t("Structured output")}</>}>
+          <DisclosureSection
+            className={styles.structuredOutput}
+            defaultOpen
+            title={<>{t("Structured output")}</>}
+          >
             <JsonView value={run.output} />
           </DisclosureSection>
         )}

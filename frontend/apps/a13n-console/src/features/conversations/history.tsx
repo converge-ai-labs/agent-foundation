@@ -6,7 +6,13 @@ import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
+import {
+  ErrorNotice,
+  Loading,
+  StateBadge,
+  Timestamp,
+} from "../../shared/feedback";
+import { useAgent } from "../agents/queries";
 import { conversationQueries, runPath } from "./api";
 import styles from "./conversations.module.css";
 import { InputContent, PresentedItems } from "./items";
@@ -52,6 +58,7 @@ function HistoricalRun({ runId }: { runId: string }) {
     { t } = useTranslation(),
     queries = conversationQueries(client, workspace.id);
   const runQuery = useQuery({ ...queries.run(runId), staleTime: 60_000 });
+  const agent = useAgent(runQuery.data?.agent_id);
   const retained = useQuery({ ...queries.items(runId), staleTime: 60_000 });
   const items = useMemo(
     () => [
@@ -76,12 +83,21 @@ function HistoricalRun({ runId }: { runId: string }) {
         to={runPath(basePath, { ...run, run_id: run.id })}
       >
         {t("View run")} · <Timestamp value={run.created_at} />
+        <StateBadge state={run.status} />
       </Link>
       <article className={styles.inputMessage}>
-        <strong>{t("You")}</strong>
+        <strong>
+          {t(run.input_kind === "feedback" ? "Feedback" : "Input")}
+        </strong>
         <InputContent input={run.input} fallback={run.input_text} />
       </article>
-      <PresentedItems items={items} runState={run.status} />
+      <PresentedItems
+        items={items}
+        runState={run.status}
+        agentName={agent.data?.name}
+        agentId={run.agent_id}
+        agentImageUrl={agent.data?.image_url}
+      />
       {!items.some(
         (item) =>
           item.kind === "text_message" &&
