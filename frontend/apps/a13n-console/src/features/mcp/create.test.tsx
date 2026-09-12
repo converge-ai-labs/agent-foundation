@@ -5,7 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { CreateMCP } from "./create";
 import { mcpPresets } from "../connections/presets";
 
-const http = vi.hoisted(() => ({ POST: vi.fn() }));
+const http = vi.hoisted(() => ({ POST: vi.fn(), GET: vi.fn() }));
 vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({ workspace: { id: "ws_test" }, can: () => true }),
@@ -30,10 +30,11 @@ it.each(["google-compute-engine", "jentic"])(
     };
     const configured = { ...initial, version: 2, credential_configured: true };
     const ready = { ...configured, version: 3, status: "ready" };
+    http.GET.mockResolvedValue({ data: configured, response: new Response() });
     http.POST.mockImplementation(async (path: string) => ({
-      data: path.endsWith("/credentials")
-        ? configured
-        : path.endsWith("/reconnect")
+      data: path.endsWith("/authorizations")
+        ? { id: "authz_test", status: "completed" }
+        : path.endsWith("/check")
           ? ready
           : initial,
       response: new Response(),
@@ -74,16 +75,20 @@ it.each(["google-compute-engine", "jentic"])(
     )!;
     expect(create[1].body).toEqual({
       name: preset.name,
-      endpoint_url: preset.endpoint,
-      auth_mode: "static_headers",
-      static_header_names: headers.map((name) => name.toLowerCase()),
+      source: {
+        kind: "mcp",
+        endpoint_url: preset.endpoint,
+        auth_mode: "static_headers",
+        static_header_names: headers.map((name) => name.toLowerCase()),
+      },
     });
     const credentials = http.POST.mock.calls.find(([path]) =>
-      path.endsWith("/credentials"),
+      path.endsWith("/authorizations"),
     )!;
     expect(credentials[1].body).toEqual({
       expected_version: 1,
-      static_headers: values,
+      method: "credentials",
+      credentials: values,
     });
     cache.clear();
   },

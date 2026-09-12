@@ -124,6 +124,7 @@ impl From<&str> for ContentType {
 
 pub mod agent_management_api;
 pub mod asset_management_api;
+pub mod connections_api;
 pub mod connectivity_management_api;
 pub mod environments_api;
 pub mod hook_subscriptions_api;

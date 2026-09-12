@@ -4,20 +4,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.connectivity.connections.models import ConnectionRecord
 from a13n_service.connectivity.connectors.models import ConnectorConnectionRecord, ConnectorProviderRecord
-from a13n_service.connectivity.mcp.models import MCPConnectionRecord
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_workspace
 from a13n_service.iam.authorization import PrincipalPermissions
 from a13n_service.iam.resource_scope import visible_workspace
 from a13n_service.storage import short_session
 
 from .selection_domain import (
-    ConnectorConnectionRunSelection,
-    ConnectorConnectionToolSelection,
-    MCPConnectionToolSelection,
+    ConnectionRunSelection,
+    ConnectionToolSelection,
 )
 
 
@@ -30,8 +29,7 @@ class ConnectivitySelectionError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class FrozenRunConnectivity:
-    connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...]
-    mcp_connection_selections: tuple[MCPConnectionToolSelection, ...]
+    connection_selections: tuple[ConnectionRunSelection, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,7 +41,7 @@ class PreparedConnectivity:
 
 
 class ConnectivitySelectionResolver:
-    """Recheck current resource authority in the short acceptance transaction."""
+    """Freeze connection identity and authorization at Run acceptance."""
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
@@ -54,8 +52,7 @@ class ConnectivitySelectionResolver:
         actor: AuthenticatedActor,
         organization_id: str,
         workspace_id: str,
-        connector_tools: tuple[ConnectorConnectionToolSelection, ...],
-        mcp_tools: tuple[MCPConnectionToolSelection, ...],
+        connection_tools: tuple[ConnectionToolSelection, ...],
     ) -> PreparedConnectivity:
         async with short_session(self._sessions) as session:
             selections = await self.resolve_in_session(
@@ -63,8 +60,7 @@ class ConnectivitySelectionResolver:
                 actor=actor,
                 organization_id=organization_id,
                 workspace_id=workspace_id,
-                connector_tools=connector_tools,
-                mcp_tools=mcp_tools,
+                connection_tools=connection_tools,
             )
         return PreparedConnectivity(actor, organization_id, workspace_id, selections)
 
@@ -74,12 +70,11 @@ class ConnectivitySelectionResolver:
             actor=prepared.actor,
             organization_id=prepared.organization_id,
             workspace_id=prepared.workspace_id,
-            connector_tools=prepared.selections.connector_connection_selections,
-            mcp_tools=prepared.selections.mcp_connection_selections,
+            connection_tools=prepared.selections.connection_selections,
             lock=True,
         )
         if current != prepared.selections:
-            raise ConnectivitySelectionError("connection_changed", path="connectivity")
+            raise ConnectivitySelectionError("connection_changed", path="connection_tools")
         return prepared.selections
 
     async def require_current_source(
@@ -89,25 +84,19 @@ class ConnectivitySelectionResolver:
         actor: AuthenticatedActor,
         organization_id: str,
         workspace_id: str,
-        selection: ConnectorConnectionRunSelection | MCPConnectionToolSelection,
+        selection: ConnectionRunSelection,
         snapshot: PrincipalPermissions | None = None,
     ) -> None:
-        expected = (
-            FrozenRunConnectivity((selection,), ())
-            if isinstance(selection, ConnectorConnectionRunSelection)
-            else FrozenRunConnectivity((), (selection,))
-        )
         current = await self.resolve_in_session(
             session,
             actor=actor,
             organization_id=organization_id,
             workspace_id=workspace_id,
-            connector_tools=expected.connector_connection_selections,
-            mcp_tools=expected.mcp_connection_selections,
+            connection_tools=(selection,),
             snapshot=snapshot,
         )
-        if current != expected:
-            raise ConnectivitySelectionError("connection_changed", path="connectivity")
+        if current != FrozenRunConnectivity((selection,)):
+            raise ConnectivitySelectionError("connection_changed", path="connection_tools")
 
     @staticmethod
     async def resolve_in_session(
@@ -116,91 +105,77 @@ class ConnectivitySelectionResolver:
         actor: AuthenticatedActor,
         organization_id: str,
         workspace_id: str,
-        connector_tools: tuple[ConnectorConnectionToolSelection, ...],
-        mcp_tools: tuple[MCPConnectionToolSelection, ...],
+        connection_tools: tuple[ConnectionToolSelection, ...],
         lock: bool = False,
         snapshot: PrincipalPermissions | None = None,
     ) -> FrozenRunConnectivity:
-        for path, identifiers, action in (
-            (
-                "connector_tools",
-                tuple(item.connector_connection_id for item in connector_tools),
-                WorkspaceAction.connector_connection_read,
-            ),
-            ("mcp_tools", tuple(item.mcp_connection_id for item in mcp_tools), WorkspaceAction.mcp_connection_read),
-        ):
-            if len(identifiers) != len(set(identifiers)):
-                raise ConnectivitySelectionError("connection_selected_more_than_once", path=path)
-            if identifiers:
-                try:
-                    await authorize_workspace(
-                        session, actor=actor, workspace_id=workspace_id, action=action, snapshot=snapshot
-                    )
-                except AuthorizationError as error:
-                    raise ConnectivitySelectionError("connection_not_eligible", path=path) from error
-        connectors: list[ConnectorConnectionRunSelection] = []
-        if connector_tools:
-            query = (
-                select(ConnectorConnectionRecord, ConnectorProviderRecord)
-                .join(
-                    ConnectorProviderRecord,
-                    and_(
-                        ConnectorProviderRecord.id == ConnectorConnectionRecord.connector_provider_id,
-                        ConnectorProviderRecord.organization_id == ConnectorConnectionRecord.organization_id,
-                        visible_workspace(ConnectorProviderRecord.workspace_id, workspace_id),
-                    ),
-                )
-                .where(
-                    ConnectorConnectionRecord.id.in_(item.connector_connection_id for item in connector_tools),
-                    ConnectorConnectionRecord.organization_id == organization_id,
-                    ConnectorConnectionRecord.workspace_id == workspace_id,
-                    ConnectorConnectionRecord.deleted_at.is_(None),
-                )
-                .order_by(ConnectorConnectionRecord.id)
+        identifiers = tuple(item.connection_id for item in connection_tools)
+        if len(identifiers) != len(set(identifiers)):
+            raise ConnectivitySelectionError("connection_selected_more_than_once", path="connection_tools")
+        if not identifiers:
+            return FrozenRunConnectivity(())
+        try:
+            await authorize_workspace(
+                session,
+                actor=actor,
+                workspace_id=workspace_id,
+                action=WorkspaceAction.connection_read,
+                snapshot=snapshot,
             )
-            # Freeze selected configuration against edits, not other admissions.
-            rows = (await session.execute(query.with_for_update(read=True) if lock else query)).all()
-            by_id = {connection.id: (connection, provider) for connection, provider in rows}
-            for index, selection in enumerate(connector_tools):
-                path = f"connector_tools.{index}"
-                row = by_id.get(selection.connector_connection_id)
-                if row is None:
-                    raise ConnectivitySelectionError("connector_connection_unavailable", path=path)
-                connection, provider = row
-                if connection.status != "ready" or provider.status != "active":
-                    raise ConnectivitySelectionError("connector_connection_unavailable", path=path)
-                connectors.append(
-                    ConnectorConnectionRunSelection(
-                        connector_connection_id=connection.id,
-                        connector_provider_id=provider.id,
-                        tools=selection.tools,
-                        defer_loading=selection.defer_loading,
-                    )
-                )
-        mcps: list[MCPConnectionToolSelection] = []
-        if mcp_tools:
-            query = (
-                select(MCPConnectionRecord)
-                .where(
-                    MCPConnectionRecord.id.in_(item.mcp_connection_id for item in mcp_tools),
-                    MCPConnectionRecord.organization_id == organization_id,
-                    MCPConnectionRecord.workspace_id == workspace_id,
-                    MCPConnectionRecord.deleted_at.is_(None),
-                )
-                .order_by(MCPConnectionRecord.id)
+        except AuthorizationError as error:
+            raise ConnectivitySelectionError("connection_not_eligible", path="connection_tools") from error
+        query = (
+            select(ConnectionRecord)
+            .where(
+                ConnectionRecord.id.in_(identifiers),
+                ConnectionRecord.organization_id == organization_id,
+                ConnectionRecord.workspace_id == workspace_id,
+                ConnectionRecord.deleted_at.is_(None),
             )
-            rows = (await session.scalars(query.with_for_update() if lock else query)).all()
-            by_id = {connection.id: connection for connection in rows}
-            for index, selection in enumerate(mcp_tools):
-                path = f"mcp_tools.{index}"
-                connection = by_id.get(selection.mcp_connection_id)
-                if connection is None or connection.status != "ready":
-                    raise ConnectivitySelectionError("mcp_connection_unavailable", path=path)
-                mcps.append(
-                    MCPConnectionToolSelection(
-                        mcp_connection_id=connection.id,
-                        tools=selection.tools,
-                        defer_loading=selection.defer_loading,
-                    )
+            .order_by(ConnectionRecord.id)
+        )
+        rows = (await session.scalars(query.with_for_update(read=True) if lock else query)).all()
+        by_id = {connection.id: connection for connection in rows}
+        provider_ids = {
+            connection.connector_provider_id for connection in rows if isinstance(connection, ConnectorConnectionRecord)
+        }
+        providers = {}
+        if provider_ids:
+            provider_query = (
+                select(ConnectorProviderRecord)
+                .where(
+                    ConnectorProviderRecord.id.in_(provider_ids),
+                    ConnectorProviderRecord.organization_id == organization_id,
+                    visible_workspace(ConnectorProviderRecord.workspace_id, workspace_id),
                 )
-        return FrozenRunConnectivity(tuple(connectors), tuple(mcps))
+                .order_by(ConnectorProviderRecord.id)
+            )
+            providers = {
+                provider.id: provider
+                for provider in (
+                    await session.scalars(provider_query.with_for_update(read=True) if lock else provider_query)
+                ).all()
+            }
+        selections = []
+        for index, selection in enumerate(connection_tools):
+            connection = by_id.get(selection.connection_id)
+            path = f"connection_tools.{index}"
+            if connection is None or connection.status != "ready":
+                raise ConnectivitySelectionError("connection_unavailable", path=path)
+            provider_id = None
+            if isinstance(connection, ConnectorConnectionRecord):
+                provider = providers.get(connection.connector_provider_id)
+                if provider is None or provider.status != "active":
+                    raise ConnectivitySelectionError("connection_unavailable", path=path)
+                provider_id = provider.id
+            selections.append(
+                ConnectionRunSelection(
+                    connection_id=connection.id,
+                    kind="connector" if isinstance(connection, ConnectorConnectionRecord) else "mcp",
+                    connector_provider_id=provider_id,
+                    authorization_generation=connection.authorization_generation,
+                    tools=selection.tools,
+                    defer_loading=selection.defer_loading,
+                )
+            )
+        return FrozenRunConnectivity(tuple(selections))

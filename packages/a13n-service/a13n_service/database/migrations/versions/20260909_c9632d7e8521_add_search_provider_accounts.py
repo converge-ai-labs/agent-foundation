@@ -1,7 +1,7 @@
 """add search provider accounts.
 
 Revision ID: c9632d7e8521
-Revises: 7b6b3373420a
+Revises: 10fb2934dec9
 Create Date: 2026-09-09 13:41:35.529483+00:00
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "c9632d7e8521"
-down_revision: str | Sequence[str] | None = "7b6b3373420a"
+down_revision: str | Sequence[str] | None = "10fb2934dec9"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

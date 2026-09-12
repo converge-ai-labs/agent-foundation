@@ -4,7 +4,7 @@
 
 Connectivity is Service-owned configuration and authorization around provider-specific adapters. It preserves provider-native behavior at the edge and standardizes only the minimum concepts required to admit external input, select one Agent, select an authorized tool scope, and dispatch authorized external actions.
 
-Native event receipt, Connector-backed SaaS actions, and user-configured Remote MCP are separate even when they concern the same external product. A Slack Account can receive when enabled and reply as its Bot identity without a separate Composio ConnectorConnection. A separate ConnectorConnection is used only for broader Connector-provided Slack actions or another account. A user Remote MCP endpoint is represented independently by `MCPConnection`.
+Native event receipt, Connector-backed SaaS actions, and user-configured Remote MCP are separate even when they concern the same external product. A Slack Account can receive when enabled and reply as its Bot identity without a separate Composio Connection. A separate Connection is used only for broader Connector-provided Slack actions or another account. A user Remote MCP endpoint is represented independently by `Connection`.
 
 ## Boundaries
 
@@ -16,8 +16,8 @@ Native event receipt, Connector-backed SaaS actions, and user-configured Remote 
 | External-to-Thread correlation                  | AgentThreadBinding                              | One Account and stable external reference to one Thread; no fixed Agent                 |
 | Durable Run acceptance and active input         | [a13n Service](../README.md)                    | Owns Run creation, Ingress Steer, deduplication acceptance, and Thread lifecycle        |
 | General outbound connector service              | ConnectorProvider                               | Configures one Composio or another registered Connector Provider adapter                |
-| Safe externally managed account reference       | ConnectorConnection                             | Refers to one account whose real credentials remain in its external integration service |
-| User-configured remote MCP access               | MCPConnection                                   | Combines one Streamable HTTP endpoint, one authorization identity, and one lifecycle    |
+| Safe externally managed account reference       | Connection                                      | Refers to one account whose real credentials remain in its external integration service |
+| User-configured remote MCP access               | Connection                                      | Combines one Streamable HTTP endpoint, one authorization identity, and one lifecycle    |
 | Service-owned in-process tool groups            | a13n MCP                                        | Serves Account actions, Ingress replies, and Connector tools for the current RunAttempt |
 | Model-facing discovery and loading              | Harness                                         | Discovers selected sources and uses native capability loading                           |
 | Provider and remote tool names, schemas, result | Their adapter, ConnectorProvider, or MCP server | Retain source-specific meaning; Service creates no universal action vocabulary          |
@@ -34,9 +34,7 @@ Reception is embedded [Account configuration](01a-application-accounts.md). It s
 
 `Connector` is one integration discovered through that configured Provider, such as GitHub or Slack. It is a safe Provider-scoped catalog value, not a separate Workspace resource. Its setup requirements and available tools retain Provider-specific semantics. [Connector discovery](03-connectors-and-connections.md#connector-discovery) owns this boundary.
 
-`ConnectorConnection` is Service's safe reference to one external account held by one ConnectorProvider. It is not that account's credential. The longer name is intentional: `ConnectorConnection` and `MCPConnection` are distinct resources with different credential custody, transports, and execution paths. Public collection routes use `/connector-connections`, while fields that coexist with another connection kind use `connector_connection_id`.
-
-`MCPConnection` is one configured authorization identity for one user-supplied Remote MCP endpoint. The same endpoint used with two different identities creates two MCPConnections rather than a separate server resource and another connection layer.
+[Connection](03-connectors-and-connections.md) is the stable Workspace resource for one configured external source and its current authorization. A discriminated source fixes either a Connector Provider and Connector key, or an MCP endpoint and authentication mode. Both use `/connections`, one lifecycle, and queryable Authorization operations. Their protocol adapters retain different credential custody and transport behavior. Multiple accounts at one application or endpoint use separate Connections. Reauthorization preserves the Connection ID and fences old Runs through an accepted authorization generation.
 
 ## Object Identity
 
@@ -47,8 +45,8 @@ Connectivity allocates these Service object-ID prefixes under the shared [Platfo
 | Application Account                | `acct_`  | Public resource               |
 | AccountTarget                      | `tgt_`   | Public Account child resource |
 | ConnectorProvider                  | `cnr_`   | Public resource               |
-| ConnectorConnection                | `cconn_` | Public resource               |
-| MCPConnection                      | `mcpc_`  | Public resource               |
+| Connection                         | `cconn_` | Public resource               |
+| Connection                         | `mcpc_`  | Public resource               |
 | AgentThreadBinding                 | `atb_`   | Internal durable object       |
 | Inbound event admission            | `iadm_`  | Internal durable object       |
 | Input batch                        | `ibat_`  | Internal durable object       |
@@ -99,9 +97,9 @@ Inbound completion means that an event was rejected safely, ignored by policy, o
 
 1. Provider adapters can differ completely before `InboundEvent`; external integration services and Remote MCP servers can differ completely behind their own boundaries.
 2. Service standardizes identity, authorization, routing, input acceptance, and model exposure, not provider business APIs.
-3. Raw external data never creates an Agent, Tool, ConnectorConnection, MCPConnection, Secret, Principal, AccountTarget, or Run grant.
+3. Raw external data never creates an Agent, Tool, Connection, Secret, Principal, AccountTarget, or Run grant.
 4. One Account can select different Agents through exact targets; one inbound event activates at most one.
-5. Agent selection and effective Skills, Tools, MCPConnections, ConnectorConnections, and native actions are independent decisions.
-6. An accepted Run fixes its Agent, Agent Thread, effective capability selection, protected native tool contexts, ConnectorConnection choices, MCPConnection choices, and tool scopes. Recovery preserves those choices while discovering current external tool definitions.
+5. Agent selection and effective Skills, Tools, Connections, and native actions are independent decisions.
+6. An accepted Run fixes its Agent, Agent Thread, effective capability selection, protected native tool contexts, Connection choices, and tool scopes. Recovery preserves those choices while discovering current external tool definitions.
 7. Connectivity retains only bounded event-admission, deduplication, correlation, and external-resource facts; it persists no transcript, Agent inbox, or execution state beside Service Threads, Runs, and the Thread inbox.
 8. Provider credentials are typed and owned at the edge; the common model never forces Slack, Lark, GitHub, Gmail, ConnectorProvider, and MCP authorization into one credential schema.

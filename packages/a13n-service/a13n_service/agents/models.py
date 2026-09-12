@@ -30,8 +30,7 @@ from .domain import (
     AgentConfig,
     AgentRevision,
     AgentSource,
-    ConnectorConnectionToolSelection,
-    MCPConnectionToolSelection,
+    ConnectionToolSelection,
     ResolvedAgentModel,
     ResolvedSkillBinding,
     ResolvedSubagentEdge,
@@ -40,8 +39,7 @@ from .domain import (
 _CONFIG_ADAPTER = TypeAdapter(AgentConfig)
 _MODEL_ADAPTER = TypeAdapter(ResolvedAgentModel)
 _SKILLS_ADAPTER = TypeAdapter(tuple[ResolvedSkillBinding, ...])
-_CONNECTOR_TOOLS_ADAPTER = TypeAdapter(tuple[ConnectorConnectionToolSelection, ...])
-_MCP_TOOLS_ADAPTER = TypeAdapter(tuple[MCPConnectionToolSelection, ...])
+_CONNECTION_TOOLS_ADAPTER = TypeAdapter(tuple[ConnectionToolSelection, ...])
 _SUBAGENTS_ADAPTER = TypeAdapter(tuple[ResolvedSubagentEdge, ...])
 
 
@@ -145,12 +143,7 @@ class AgentRevisionRecord(Base):
     config_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     resolved_model: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     resolved_skills: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
-    connector_tools: Mapped[list[dict[str, Any]]] = mapped_column(
-        JSON,
-        nullable=False,
-        server_default=text("'[]'"),
-    )
-    mcp_tools: Mapped[list[dict[str, Any]]] = mapped_column(
+    connection_tools: Mapped[list[dict[str, Any]]] = mapped_column(
         JSON,
         nullable=False,
         server_default=text("'[]'"),
@@ -173,8 +166,7 @@ class AgentRevisionRecord(Base):
             config_digest=self.config_digest,
             resolved_model=_MODEL_ADAPTER.validate_python(self.resolved_model),
             resolved_skills=_SKILLS_ADAPTER.validate_python(self.resolved_skills),
-            connector_tools=_CONNECTOR_TOOLS_ADAPTER.validate_python(self.connector_tools),
-            mcp_tools=_MCP_TOOLS_ADAPTER.validate_python(self.mcp_tools),
+            connection_tools=_CONNECTION_TOOLS_ADAPTER.validate_python(self.connection_tools),
             resolved_subagents=_SUBAGENTS_ADAPTER.validate_python(self.resolved_subagents),
             content_digest=self.content_digest,
             source_revision_id=self.source_revision_id,

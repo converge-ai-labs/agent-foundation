@@ -1,7 +1,7 @@
 """move inbox accounting onto threads.
 
 Revision ID: 56b4ee866468
-Revises: f6ec04da96ed
+Revises: ec86f1da8c98
 Create Date: 2026-09-12 02:00:18.455135+00:00
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "56b4ee866468"
-down_revision: str | Sequence[str] | None = "f6ec04da96ed"
+down_revision: str | Sequence[str] | None = "ec86f1da8c98"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -83,7 +83,7 @@ class OAuthCredentialRefresh:
             connection = await require_connection(session, connection_id)
             if connection.status not in {"ready", "pending"} or not await _workspace_active(session, connection):
                 raise MCPConnectionError(
-                    "connection_unavailable", "MCPConnection is unavailable.", category=ErrorCategory.conflict
+                    "connection_unavailable", "Connection is unavailable.", category=ErrorCategory.conflict
                 )
             value = (
                 connection.credential_snapshot().decrypt(self._protector) if connection.auth_mode != "none" else None

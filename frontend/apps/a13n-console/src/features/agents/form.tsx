@@ -95,8 +95,7 @@ export function AgentForm({
     [validation, setValidation] = useState<Error>();
   const [search, setSearch] = useState(initial.search ?? null);
   const [skills, setSkills] = useState(initial.skills ?? []),
-    [mcp, setMcp] = useState(initial.mcp_tools ?? []),
-    [connectors, setConnectors] = useState(initial.connector_tools ?? []);
+    [connections, setConnections] = useState(initial.connection_tools ?? []);
   const choices = useAgentChoices();
   useEffect(() => {
     if (error instanceof ApiError && [400, 422].includes(error.status)) {
@@ -119,8 +118,7 @@ export function AgentForm({
             settings: jsonObject(settings),
           },
           skills,
-          mcp_tools: mcp,
-          connector_tools: connectors,
+          connection_tools: connections,
         },
         advanced,
       );
@@ -144,9 +142,8 @@ export function AgentForm({
     settings !== JSON.stringify(initial.model.settings ?? {}, null, 2) ||
     advanced !== advancedConfig(initial) ||
     JSON.stringify(skills) !== JSON.stringify(initial.skills ?? []) ||
-    JSON.stringify(mcp) !== JSON.stringify(initial.mcp_tools ?? []) ||
-    JSON.stringify(connectors) !==
-      JSON.stringify(initial.connector_tools ?? []);
+    JSON.stringify(connections) !==
+      JSON.stringify(initial.connection_tools ?? []);
   return (
     <div className={styles.editorPage}>
       <Link className={styles.back} to={back}>
@@ -337,10 +334,8 @@ export function AgentForm({
               choices={choices}
               skills={skills}
               setSkills={setSkills}
-              mcp={mcp}
-              setMcp={setMcp}
-              connectors={connectors}
-              setConnectors={setConnectors}
+              connections={connections}
+              setConnections={setConnections}
             />
             <EditorSection
               title={t("Web search")}

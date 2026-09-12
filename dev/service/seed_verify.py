@@ -37,9 +37,8 @@ async def verify(client: Client, manifest: dict) -> dict:
         "environments",
         "environment-templates",
         "environment-providers",
-        "mcp-connections",
+        "connections",
         "connector-providers",
-        "connector-connections",
         "application-accounts",
         "service-accounts",
     ):

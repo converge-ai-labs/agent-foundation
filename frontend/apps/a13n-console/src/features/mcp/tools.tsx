@@ -16,11 +16,7 @@ import { useClient } from "../../auth/context";
 import { data, type Schema } from "../../shared/api";
 import { Empty, ErrorNotice } from "../../shared/feedback";
 
-export function MCPTools({
-  connection,
-}: {
-  connection: Schema["MCPConnection"];
-}) {
+export function MCPTools({ connection }: { connection: Schema["Connection"] }) {
   const { t } = useTranslation(),
     client = useClient(),
     [search, setSearch] = useState(""),
@@ -28,7 +24,7 @@ export function MCPTools({
   const discovery = useMutation({
     mutationFn: () =>
       client.http
-        .POST("/api/v1/mcp-connections/{connection_id}/discover", {
+        .POST("/api/v1/connections/{connection_id}/mcp/discover", {
           params: { path: { connection_id: connection.id } },
           body: { expected_version: connection.version },
         })

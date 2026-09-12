@@ -167,7 +167,7 @@ async def test_paused_ingress_keeps_accepted_reply_but_disabled_account_blocks_i
         ),
         ORG_ID,
         WORKSPACE_ID,
-        FrozenRunConnectivity((), ()),
+        FrozenRunConnectivity(()),
         (context,),
         authorization=await execution_authorization(principal=principal),
     )

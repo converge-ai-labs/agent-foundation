@@ -14,8 +14,10 @@ vi.mock("./choices", () => ({
         { key: "research", name: "Research model", upstream_model: "upstream" },
       ],
       skills: [{ key: "sources", name: "Source verification" }],
-      mcp: [{ id: "mcp_0123456789abcdef", name: "Web tools" }],
-      connectors: [{ id: "conn_0123456789abcdef", name: "Repository" }],
+      connections: [
+        { id: "mcp_0123456789abcdef", name: "Web tools" },
+        { id: "conn_0123456789abcdef", name: "Repository" },
+      ],
     },
   }),
 }));
@@ -49,7 +51,7 @@ afterEach(() => {
 function editor(
   readonly = false,
   connectorTools: NonNullable<
-    ReturnType<typeof initialConfig>["connector_tools"]
+    ReturnType<typeof initialConfig>["connection_tools"]
   > = [],
 ) {
   const submit = vi.fn();
@@ -57,7 +59,7 @@ function editor(
     ...initialConfig("Research"),
     model: { model_key: "research" },
     instructions: "Check the evidence.",
-    connector_tools: connectorTools,
+    connection_tools: connectorTools,
     skills: [{ skill_key: "sources", version: 3 }],
     secret_requirements: [{ key: "research-token", required: true }],
   };
@@ -93,20 +95,19 @@ it("edits capabilities inline and preserves pinned versions, hidden configuratio
       }) as HTMLInputElement
     ).value,
   ).toBe("3");
-  await user.click(screen.getByRole("button", { name: "Add MCP connections" }));
+  await user.click(screen.getByRole("button", { name: "Add Connections" }));
   await user.click(screen.getByRole("checkbox", { name: "Web tools" }));
   await user.type(
     screen.getByRole("textbox", { name: "Tool names" }),
     "search, read",
   );
-  await user.click(screen.getByRole("button", { name: "Add Connectors" }));
   await user.click(screen.getByRole("checkbox", { name: "Repository" }));
   await user.type(
     screen.getAllByRole("textbox", { name: "Tool names" })[1],
     "profile.read, search",
   );
   await user.click(
-    screen.getByRole("checkbox", { name: "Load tools on demand" }),
+    screen.getAllByRole("checkbox", { name: "Load tools on demand" })[1],
   );
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   expect(screen.queryByRole("alert")?.textContent).toBeUndefined();
@@ -115,15 +116,13 @@ it("edits capabilities inline and preserves pinned versions, hidden configuratio
       instructions: initial.instructions,
       skills: initial.skills,
       secret_requirements: initial.secret_requirements,
-      mcp_tools: [
+      connection_tools: [
         {
-          mcp_connection_id: "mcp_0123456789abcdef",
+          connection_id: "mcp_0123456789abcdef",
           tools: ["search", "read"],
         },
-      ],
-      connector_tools: [
         {
-          connector_connection_id: "conn_0123456789abcdef",
+          connection_id: "conn_0123456789abcdef",
           tools: ["profile.read", "search"],
           defer_loading: true,
         },
@@ -137,9 +136,7 @@ it("edits capabilities inline and preserves pinned versions, hidden configuratio
 
 it("shows configuration as readable values for readers", () => {
   const { submit } = editor(true);
-  expect(
-    screen.queryByRole("button", { name: "Add MCP connections" }),
-  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "Add Connections" })).toBeNull();
   expect(
     screen.queryByRole("button", { name: "Remove Source verification" }),
   ).toBeNull();
@@ -182,7 +179,7 @@ it("requires saving the instruction draft before trial or agent management", asy
 it("distinguishes an empty Connector allowlist from all tools", async () => {
   const user = userEvent.setup(),
     { submit } = editor();
-  await user.click(screen.getByRole("button", { name: "Add Connectors" }));
+  await user.click(screen.getByRole("button", { name: "Add Connections" }));
   await user.click(screen.getByRole("checkbox", { name: "Repository" }));
   await user.click(screen.getByRole("checkbox", { name: "Select no tools" }));
   expect(
@@ -190,10 +187,10 @@ it("distinguishes an empty Connector allowlist from all tools", async () => {
       .disabled,
   ).toBe(true);
   await user.click(screen.getByRole("button", { name: "Save changes" }));
-  expect(submit.mock.calls[0][0].connector_tools[0].tools).toEqual([]);
+  expect(submit.mock.calls[0][0].connection_tools[0].tools).toEqual([]);
   await user.click(screen.getByRole("checkbox", { name: "Select no tools" }));
   await user.click(screen.getByRole("button", { name: "Save changes" }));
-  expect(submit.mock.calls[1][0].connector_tools[0].tools).toBeNull();
+  expect(submit.mock.calls[1][0].connection_tools[0].tools).toBeNull();
 });
 
 it.each([
@@ -206,7 +203,7 @@ it.each([
     const user = userEvent.setup();
     const { submit } = editor(true, [
       {
-        connector_connection_id: "conn_0123456789abcdef",
+        connection_id: "conn_0123456789abcdef",
         tools,
         defer_loading: true,
       },

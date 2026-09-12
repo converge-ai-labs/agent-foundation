@@ -32,12 +32,13 @@ def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
             assert columns == set(service_metadata().tables[table].columns.keys()), table
         run_columns = {column["name"] for column in inspector.get_columns("runs")}
         assert {
-            "connector_connection_selections_json",
+            "connection_selections_json",
             "current_run_attempt_id",
             "execution_policy_version",
             "sealed_state_digest_sha256",
         } <= run_columns
-        assert "connection_selections_json" not in run_columns
+        assert "connector_selections_json" not in run_columns
+        assert "mcp_selections_json" not in run_columns
         run_indexes = {index["name"] for index in inspector.get_indexes("runs")}
         assert {
             "ix_runs_worker_scan",

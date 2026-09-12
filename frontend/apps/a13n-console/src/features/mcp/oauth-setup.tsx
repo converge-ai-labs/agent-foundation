@@ -1,3 +1,4 @@
+import { requireCompletedAuthorization } from "../connections/authorization-context";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
 import { useEffect, useRef, useState } from "react";
@@ -9,7 +10,7 @@ import { AuthorizationLink } from "../../shared/authorization-link";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
-import { saveMCPAuthorization } from "./authorization-context";
+import { startBrowserAuthorization } from "../connections/authorization-context";
 import { MCPOAuthClientEditor } from "./oauth-client";
 
 export function MCPOAuthSetup({
@@ -17,8 +18,8 @@ export function MCPOAuthSetup({
   onConnectionChange,
   autoStart = false,
 }: {
-  connection: Schema["MCPConnection"];
-  onConnectionChange: (connection: Schema["MCPConnection"]) => void;
+  connection: Schema["Connection"];
+  onConnectionChange: (connection: Schema["Connection"]) => void;
   autoStart?: boolean;
 }) {
   const client = useClient(),
@@ -37,13 +38,13 @@ export function MCPOAuthSetup({
       const params = { path: { connection_id: connection.id } };
       const [configuration, discovery] = await Promise.all([
         client.http
-          .GET("/api/v1/mcp-connections/{connection_id}/oauth-client", {
+          .GET("/api/v1/connections/{connection_id}/mcp/oauth-client", {
             params,
             signal,
           })
           .then(data),
         client.http
-          .POST("/api/v1/mcp-connections/{connection_id}/oauth-discovery", {
+          .POST("/api/v1/connections/{connection_id}/mcp/oauth-discovery", {
             params,
             signal,
           })
@@ -54,33 +55,18 @@ export function MCPOAuthSetup({
   });
   const authorize = useMutation({
     gcTime: 0,
-    mutationFn: (basis: Schema["MCPConnection"]) => {
-      const body = { expected_version: basis.version };
-      return client.http
-        .POST("/api/v1/mcp-connections/{connection_id}/authorize", {
-          params: {
-            path: { connection_id: basis.id },
-            header: commandHeaders(
-              workspace.id,
-              key.forBody({ authorize: basis.id, ...body }),
-            ),
-          },
-          body,
-        })
-        .then(data);
-    },
-    onSuccess: (launch, basis) => {
-      const href = saveMCPAuthorization(launch, basis, basePath);
-      void cache.invalidateQueries({ queryKey: ["mcp-connections"] });
-      window.location.assign(href);
-    },
+    mutationFn: (basis: Schema["Connection"]) =>
+      startBrowserAuthorization(client, basis, basePath),
   });
   const authenticate = useMutation({
     gcTime: 0,
-    mutationFn: (basis: Schema["MCPConnection"]) => {
-      const body = { expected_version: basis.version };
+    mutationFn: (basis: Schema["Connection"]) => {
+      const body = {
+        expected_version: basis.version,
+        method: "client_credentials" as const,
+      };
       return client.http
-        .POST("/api/v1/mcp-connections/{connection_id}/authenticate", {
+        .POST("/api/v1/connections/{connection_id}/authorizations", {
           params: {
             path: { connection_id: basis.id },
             header: commandHeaders(
@@ -90,21 +76,26 @@ export function MCPOAuthSetup({
           },
           body,
         })
-        .then(data);
+        .then(data)
+        .then(requireCompletedAuthorization);
     },
-    onSuccess: onConnectionChange,
+    onSuccess: async () => {
+      const updated = data(
+        await client.http.GET("/api/v1/connections/{connection_id}", {
+          params: { path: { connection_id: connection.id } },
+        }),
+      );
+      onConnectionChange(updated);
+      void cache.invalidateQueries({ queryKey: ["connections"] });
+    },
   });
   const verify = useMutation({
-    mutationFn: (basis: Schema["MCPConnection"]) => {
+    mutationFn: (basis: Schema["Connection"]) => {
       const body = { expected_version: basis.version };
       return client.http
-        .POST("/api/v1/mcp-connections/{connection_id}/reconnect", {
+        .POST("/api/v1/connections/{connection_id}/check", {
           params: {
             path: { connection_id: basis.id },
-            header: commandHeaders(
-              workspace.id,
-              key.forBody({ reconnect: basis.id, ...body }),
-            ),
           },
           body,
         })
@@ -119,7 +110,7 @@ export function MCPOAuthSetup({
       !setup.data?.discovery.grant_types_supported.includes(
         "authorization_code",
       ));
-  const connect = (basis: Schema["MCPConnection"]) => {
+  const connect = (basis: Schema["Connection"]) => {
     if (configuration?.grant_type === "client_credentials")
       authenticate.mutate(basis);
     else authorize.mutate(basis);
@@ -173,7 +164,7 @@ export function MCPOAuthSetup({
       {authorize.data ? (
         <AuthorizationLink
           sameTab
-          url={authorize.data.authorization_url}
+          url={authorize.data.next_action?.url}
           expiresAt={authorize.data.expires_at}
         />
       ) : connection.status === "ready" ? (
@@ -198,6 +189,16 @@ export function MCPOAuthSetup({
                   ? "Connect"
                   : "Continue authorization",
           )}
+        </Button>
+      )}
+      {!authorize.data && connection.status === "ready" && (
+        <Button
+          type="button"
+          variant="outline"
+          loading={pending}
+          onClick={() => connect(connection)}
+        >
+          {t("Reauthorize")}
         </Button>
       )}
       {!authorize.data && !needsVerification && (

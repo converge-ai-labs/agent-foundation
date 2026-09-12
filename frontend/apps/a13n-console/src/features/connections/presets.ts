@@ -5,7 +5,7 @@ export interface MCPPreset {
   name: string;
   description: string;
   endpoint: string;
-  auth: Schema["MCPAuthMode"];
+  auth: Schema["MCPSource"]["auth_mode"];
   docs: string;
   logo: string;
   requirements: string;

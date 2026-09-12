@@ -14,8 +14,7 @@ class InheritedRunFields(TypedDict):
     agent_revision_id: str
     effective_agent_config_digest: str
     model_execution_observation: ModelExecutionObservation
-    connector_connection_selections: tuple[JsonObject, ...]
-    mcp_connection_selections: tuple[JsonObject, ...]
+    connection_selections: tuple[JsonObject, ...]
     native_tool_contexts: tuple[JsonObject, ...]
 
 
@@ -27,7 +26,6 @@ def inherited_run_fields(source: Run) -> InheritedRunFields:
         agent_revision_id=source.agent_revision_id,
         effective_agent_config_digest=source.effective_agent_config_digest,
         model_execution_observation=source.model_execution_observation,
-        connector_connection_selections=source.connector_connection_selections,
-        mcp_connection_selections=source.mcp_connection_selections,
+        connection_selections=source.connection_selections,
         native_tool_contexts=source.native_tool_contexts,
     )

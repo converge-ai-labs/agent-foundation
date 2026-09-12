@@ -220,7 +220,7 @@ async def test_lost_database_renewal_stops_tool_and_same_worker_recovers(run_fau
 async def test_mcp_error_or_unknown_effect_is_reported_without_automatic_replay(run_faults, failure):
     journey = run_faults
     resource = await connection(journey, "mcp")
-    agent = await journey.agent(mcp_tools=[{"mcp_connection_id": resource["id"], "tools": ["live_echo"]}])
+    agent = await journey.agent(connection_tools=[{"connection_id": resource["id"], "tools": ["live_echo"]}])
     case = await journey.case()
     value = f"LIVE_FAULT:{failure}:{case['case_id']}"
     journey.plan(case, steps=[{"tool": "live_echo", "arguments": {"value": value}}])

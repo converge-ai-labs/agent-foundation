@@ -34,7 +34,7 @@ async def test_default_process_accepts_bootstrap_and_authenticates_product_api(t
             key = await client.post(f"/api/v1/workspaces/{ws}/personal-api-keys", json={"name": "application"})
             assert key.status_code == 201, key.text
             denied = await client.post(
-                "/api/v1/oauth/mcp/complete",
+                "/api/v1/connection-authorizations/authz_test/complete",
                 headers={"X-A13N-CSRF-Token": ""},
                 json={"receipt": "private-receipt" * 3, "state": "s" * 32},
             )
@@ -42,7 +42,7 @@ async def test_default_process_accepts_bootstrap_and_authenticates_product_api(t
             assert denied.json()["error"]["code"] == "csrf_rejected"
             assert "private-receipt" not in denied.text
             completion = await client.post(
-                "/api/v1/connector-setup/complete",
+                "/api/v1/connection-authorizations/authz_test/cancel",
                 headers={"X-A13N-CSRF-Token": ""},
                 json={"attempt_id": "csa_test", "browser_nonce": "b" * 64, "session_uri": "private-session"},
             )

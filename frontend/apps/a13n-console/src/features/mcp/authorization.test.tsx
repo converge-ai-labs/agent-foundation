@@ -2,10 +2,18 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
-import { MCPEditor } from "./editor";
+import { ConnectionDetails } from "../connections/editor";
 import type { Schema } from "../../shared/api";
 
-const http = vi.hoisted(() => ({ GET: vi.fn(), POST: vi.fn(), PUT: vi.fn() }));
+const http = vi.hoisted(() => ({
+  GET: vi.fn(),
+  POST: vi.fn(),
+  PUT: vi.fn(),
+  start: vi.fn(),
+}));
+vi.mock("../connections/authorization-context", () => ({
+  startBrowserAuthorization: http.start,
+}));
 vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
@@ -23,23 +31,26 @@ afterEach(() => {
 });
 
 it("uses the saved app and refreshed version for reconnect after authorization fails", async () => {
-  const initial: Schema["MCPConnection"] = {
+  const initial: Schema["Connection"] = {
     id: "mcpc_test",
     organization_id: "org_test",
     name: "Test OAuth connection",
-    endpoint_url: "https://mcp.example",
+    source: {
+      kind: "mcp",
+      endpoint_url: "https://mcp.example",
+      auth_mode: "oauth",
+    },
     status_reason: null,
     credential_configured: false,
-    credential_generation: 0,
+    authorization_generation: 1,
     created_by: { principal_id: "usr_test", principal_type: "user" },
     created_at: "2026-09-11T00:00:00Z",
     updated_at: "2026-09-11T00:00:00Z",
     workspace_id: "ws_test",
     version: 1,
     status: "pending",
-    auth_mode: "oauth",
-    static_header_names: [],
   };
+  http.start.mockRejectedValue(new Error("Provider unavailable"));
   const updated = { ...initial, version: 2 };
   const failed = {
     ...updated,
@@ -65,7 +76,8 @@ it("uses the saved app and refreshed version for reconnect after authorization f
         },
         response: new Response(),
       };
-    if (path.endsWith("authorize")) throw new Error("Provider unavailable");
+    if (path.endsWith("authorizations"))
+      throw new Error("Provider unavailable");
     return { data: failed, response: new Response() };
   });
   const cache = new QueryClient({
@@ -74,10 +86,10 @@ it("uses the saved app and refreshed version for reconnect after authorization f
       mutations: { retry: false },
     },
   });
-  cache.setQueryData(["mcp-connections", "ws_test", initial.id], initial);
+  cache.setQueryData(["connections", "ws_test", initial.id], initial);
   render(
     <QueryClientProvider client={cache}>
-      <MCPEditor
+      <ConnectionDetails
         connectionId={initial.id}
         controlledOpen
         onClose={vi.fn()}
@@ -100,14 +112,17 @@ it("uses the saved app and refreshed version for reconnect after authorization f
       grant_type: "authorization_code",
     },
   });
-  expect(
-    http.POST.mock.calls.find(([path]) => path.endsWith("authorize"))?.[1].body,
-  ).toEqual({ expected_version: 2 });
+  await waitFor(() =>
+    expect(http.start).toHaveBeenCalledWith(
+      expect.anything(),
+      updated,
+      "/workspace/test",
+    ),
+  );
   await user.click(screen.getByRole("button", { name: "Retry verification" }));
   await waitFor(() =>
     expect(
-      http.POST.mock.calls.find(([path]) => path.endsWith("reconnect"))?.[1]
-        .body,
+      http.POST.mock.calls.find(([path]) => path.endsWith("check"))?.[1].body,
     ).toEqual({ expected_version: 3 }),
   );
 });

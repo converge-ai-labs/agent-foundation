@@ -75,8 +75,7 @@ def _frozen(*, content_digest: str | None = None) -> FrozenAgentInvocation:
         agent_revision_id=AGENT_REVISION_ID,
         selector_kind="current",
         effective_config=config,
-        connector_connection_selections=(),
-        mcp_connection_selections=(),
+        connection_selections=(),
     )
 
 
@@ -700,8 +699,7 @@ async def test_fork_creates_child_thread_and_replays(
         agent_revision_id=source_config.agent_revision_id,
         selector_kind=source_config.selector_kind,
         effective_config=source_config.effective_config.model_copy(update={"instructions": "Run-only instructions"}),
-        connector_connection_selections=(),
-        mcp_connection_selections=(),
+        connection_selections=(),
     )
     config = source_config.effective_config
     config = config.model_copy(
@@ -716,8 +714,7 @@ async def test_fork_creates_child_thread_and_replays(
         agent_revision_id=source_config.agent_revision_id,
         selector_kind=source_config.selector_kind,
         effective_config=config,
-        connector_connection_selections=(),
-        mcp_connection_selections=(),
+        connection_selections=(),
     )
     commands = _commands(
         lifecycle_interaction_sessions,

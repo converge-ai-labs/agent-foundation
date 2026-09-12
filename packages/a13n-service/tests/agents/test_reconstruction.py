@@ -18,10 +18,9 @@ from a13n_service.agents.domain import (
     AgentConfig,
     AgentRevision,
     ChildAgentExecution,
-    ConnectorConnectionToolSelection,
+    ConnectionToolSelection,
     EffectiveAgentConfig,
     EffectiveAgentModel,
-    MCPConnectionToolSelection,
     PluginSelection,
     PreparedAgentPlugins,
     ResolvedAgentModel,
@@ -133,16 +132,14 @@ def _effective(
     config: AgentConfig,
     *,
     plugins: tuple[PluginSelection, ...] = (),
-    connector_tools: tuple[ConnectorConnectionToolSelection, ...] = (),
-    mcp_tools: tuple[MCPConnectionToolSelection, ...] = (),
+    connection_tools: tuple[ConnectionToolSelection, ...] = (),
     subagents: tuple[ResolvedSubagentEdge, ...] = (),
 ) -> EffectiveAgentConfig:
     candidate = EffectiveAgentConfig(
         resolved_model=_effective_model(config),
         plugins=plugins,
         skills=(),
-        connector_tools=connector_tools,
-        mcp_tools=mcp_tools,
+        connection_tools=connection_tools,
         resolved_subagents=subagents,
         instructions=config.instructions,
         input_adapter=config.input_adapter,
@@ -164,8 +161,7 @@ def _revision(
     agent_id: str = CHILD_AGENT_ID,
     config: AgentConfig | None = None,
     plugins: tuple[PluginSelection, ...] = (),
-    connector_tools: tuple[ConnectorConnectionToolSelection, ...] = (),
-    mcp_tools: tuple[MCPConnectionToolSelection, ...] = (),
+    connection_tools: tuple[ConnectionToolSelection, ...] = (),
     subagents: tuple[ResolvedSubagentEdge, ...] = (),
 ) -> AgentRevision:
     selected_config = (config or agent_config(instructions="Handle delegated work.")).model_copy(
@@ -174,8 +170,7 @@ def _revision(
     resolved = ResolvedRevisionContent(
         resolved_model=_resolved_model(selected_config),
         resolved_skills=(),
-        connector_tools=connector_tools,
-        mcp_tools=mcp_tools,
+        connection_tools=connection_tools,
         resolved_subagents=subagents,
     )
     digest = digest_request(
@@ -194,8 +189,7 @@ def _revision(
         config_digest=digest_request(selected_config),
         resolved_model=resolved.resolved_model,
         resolved_skills=resolved.resolved_skills,
-        connector_tools=resolved.connector_tools,
-        mcp_tools=resolved.mcp_tools,
+        connection_tools=resolved.connection_tools,
         resolved_subagents=resolved.resolved_subagents,
         content_digest=digest,
         source_revision_id=None,
@@ -232,8 +226,7 @@ def _with_children(effective: EffectiveAgentConfig, children: Mapping[str, Agent
             effective_config=_effective(
                 revision.config,
                 plugins=revision.config.plugins,
-                connector_tools=revision.connector_tools,
-                mcp_tools=revision.mcp_tools,
+                connection_tools=revision.connection_tools,
                 subagents=revision.resolved_subagents,
             ),
         )
@@ -348,33 +341,29 @@ def test_reconstructs_root_model_client_tools_output_and_fresh_capabilities() ->
 
 
 def test_reconstruction_preserves_root_and_child_connectivity_selections() -> None:
-    connector = ConnectorConnectionToolSelection(
-        connector_connection_id="cconn_1234567890abcdef",
+    connector = ConnectionToolSelection(
+        connection_id="cconn_1234567890abcdef",
         tools=("lookup_order",),
         defer_loading=False,
     )
-    mcp = MCPConnectionToolSelection(
-        mcp_connection_id="mcpc_1234567890abcdef",
+    mcp = ConnectionToolSelection(
+        connection_id="mcpc_1234567890abcdef",
         tools=("search", "fetch"),
         defer_loading=True,
     )
     child_config = _config(
-        connector_tools=(connector,),
-        mcp_tools=(mcp,),
+        connection_tools=(connector, mcp),
     )
     child = _revision(
         config=child_config,
-        connector_tools=(connector,),
-        mcp_tools=(mcp,),
+        connection_tools=(connector, mcp),
     )
     root_config = _config(
-        connector_tools=(connector,),
-        mcp_tools=(mcp,),
+        connection_tools=(connector, mcp),
     )
     effective = _effective(
         root_config,
-        connector_tools=(connector,),
-        mcp_tools=(mcp,),
+        connection_tools=(connector, mcp),
         subagents=(_edge("reviewer"),),
     )
     contexts: list[AgentDefinitionReconstructionContext] = []
@@ -390,8 +379,7 @@ def test_reconstruction_preserves_root_and_child_connectivity_selections() -> No
     )
 
     assert [context.is_root for context in contexts] == [False, True]
-    assert all(context.config.connector_tools == (connector,) for context in contexts)
-    assert all(context.config.mcp_tools == (mcp,) for context in contexts)
+    assert all(context.config.connection_tools == (connector, mcp) for context in contexts)
 
 
 def test_reconstructs_variants_as_distinct_structured_outputs() -> None:

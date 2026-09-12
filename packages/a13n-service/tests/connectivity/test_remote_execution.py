@@ -11,7 +11,7 @@ from a13n_service.connectivity.connectors.registry import ConnectorProviderRegis
 from a13n_service.connectivity.execution import AttemptToolScope
 from a13n_service.connectivity.mcp.models import MCPConnectionRecord
 from a13n_service.connectivity.mcp.transport import RemoteTransport
-from a13n_service.connectivity.selection_domain import MCPConnectionToolSelection
+from a13n_service.connectivity.selection_domain import ConnectionRunSelection
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionError, FrozenRunConnectivity
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.storage import transaction
@@ -59,13 +59,15 @@ async def test_recovery_admission_checks_current_connections_without_opening_cli
     remote_runtime, connectivity_sessions, monkeypatch, child, execution_authorization
 ):
     runtime, server = remote_runtime
-    selection = MCPConnectionToolSelection(mcp_connection_id=MCP_CONNECTION_ID, tools=("search",))
-    selected = FrozenRunConnectivity((), (selection,))
+    selection = ConnectionRunSelection(
+        kind="mcp", authorization_generation=1, connection_id=MCP_CONNECTION_ID, tools=("search",)
+    )
+    selected = FrozenRunConnectivity((selection,))
     scope = AttemptToolScope(
         replace(actor(), auth_method="internal"),
         ORG_ID,
         WORKSPACE_ID,
-        FrozenRunConnectivity((), ()) if child else selected,
+        FrozenRunConnectivity(()) if child else selected,
         (),
         authorization=await execution_authorization(),
     )
@@ -82,7 +84,7 @@ async def test_recovery_admission_checks_current_connections_without_opening_cli
     async with transaction(connectivity_sessions) as session:
         source = await session.get(MCPConnectionRecord, MCP_CONNECTION_ID)
         source.status = "disabled"
-    with pytest.raises(ConnectivitySelectionError, match="mcp_connection_unavailable"):
+    with pytest.raises(ConnectivitySelectionError, match="connection_unavailable"):
         await runtime.validate(lambda: context, **arguments)
     open_clients.assert_not_called()
     assert server.calls == []
@@ -101,7 +103,9 @@ async def test_selected_remote_tool_uses_call_guard_and_revocation_stops_dispatc
         if revoked:
             raise ValueError("test_lease_revoked")
 
-    selection = MCPConnectionToolSelection(mcp_connection_id=MCP_CONNECTION_ID, tools=("search",))
+    selection = ConnectionRunSelection(
+        kind="mcp", authorization_generation=1, connection_id=MCP_CONNECTION_ID, tools=("search",)
+    )
     async with runtime._mcp(
         selection,
         guard,
@@ -109,7 +113,7 @@ async def test_selected_remote_tool_uses_call_guard_and_revocation_stops_dispatc
             replace(actor(), auth_method="internal"),
             ORG_ID,
             WORKSPACE_ID,
-            FrozenRunConnectivity((), (selection,)),
+            FrozenRunConnectivity((selection,)),
             (),
             authorization=await execution_authorization(),
         ),
@@ -133,7 +137,9 @@ async def test_replacement_discovers_changed_tool_and_missing_explicit_name_fail
     async def guard(session=None):
         pass
 
-    selection = MCPConnectionToolSelection(mcp_connection_id=MCP_CONNECTION_ID, tools=("search",))
+    selection = ConnectionRunSelection(
+        kind="mcp", authorization_generation=1, connection_id=MCP_CONNECTION_ID, tools=("search",)
+    )
     async with runtime._mcp(
         selection,
         guard,
@@ -141,7 +147,7 @@ async def test_replacement_discovers_changed_tool_and_missing_explicit_name_fail
             replace(actor(), auth_method="internal"),
             ORG_ID,
             WORKSPACE_ID,
-            FrozenRunConnectivity((), (selection,)),
+            FrozenRunConnectivity((selection,)),
             (),
             authorization=await execution_authorization(),
         ),
@@ -156,7 +162,7 @@ async def test_replacement_discovers_changed_tool_and_missing_explicit_name_fail
                 replace(actor(), auth_method="internal"),
                 ORG_ID,
                 WORKSPACE_ID,
-                FrozenRunConnectivity((), (selection,)),
+                FrozenRunConnectivity((selection,)),
                 (),
                 authorization=await execution_authorization(),
             ),
@@ -169,7 +175,7 @@ async def test_replacement_discovers_changed_tool_and_missing_explicit_name_fail
             replace(actor(), auth_method="internal"),
             ORG_ID,
             WORKSPACE_ID,
-            FrozenRunConnectivity((), (selection,)),
+            FrozenRunConnectivity((selection,)),
             (),
             authorization=await execution_authorization(),
         ),
@@ -229,7 +235,9 @@ async def test_replacement_during_authorization_blocks_stale_headers(
     async def guard(session=None):
         pass
 
-    selection = MCPConnectionToolSelection(mcp_connection_id=MCP_CONNECTION_ID, tools=("search",))
+    selection = ConnectionRunSelection(
+        kind="mcp", authorization_generation=1, connection_id=MCP_CONNECTION_ID, tools=("search",)
+    )
     with pytest.raises(ValueError, match="mcp_connection_changed"):
         async with runtime._mcp(
             selection,
@@ -238,7 +246,7 @@ async def test_replacement_during_authorization_blocks_stale_headers(
                 replace(actor(), auth_method="internal"),
                 ORG_ID,
                 WORKSPACE_ID,
-                FrozenRunConnectivity((), (selection,)),
+                FrozenRunConnectivity((selection,)),
                 (),
                 authorization=await execution_authorization(),
             ),

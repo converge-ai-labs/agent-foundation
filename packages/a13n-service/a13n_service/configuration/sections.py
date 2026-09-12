@@ -296,6 +296,7 @@ class ConnectivitySettings(Section):
     max_redirects: int = Field(default=MAX_REDIRECTS, ge=0, le=MAX_REDIRECTS)
     oauth_setup_ttl_seconds: int = Field(default=600, ge=60, le=900)
     public_origin: str | None = Field(default=None, min_length=1, max_length=2048)
+    authorization_return_urls: tuple[str, ...] = ()
     oauth_client_name: str = Field(default="Agent Foundation", min_length=1, max_length=128)
     private_endpoint_domains: tuple[str, ...] = ()
     private_endpoint_cidrs: tuple[str, ...] = ()

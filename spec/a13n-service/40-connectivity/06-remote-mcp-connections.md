@@ -2,70 +2,25 @@
 
 ## Design Position
 
-`MCPConnection` is Service's single configuration resource for using a user-supplied Remote MCP endpoint with one authorization identity. It combines endpoint and authorization lifecycle because MCP tool availability can vary by presented authorization. The same endpoint used by two identities is represented by two MCPConnections; Service defines no separate `MCPServer` resource.
+An MCP source on a managed Connection selects one user-supplied Remote MCP endpoint and its authentication mode. The shared Connection and authorization contracts apply to both MCP and externally managed Connector sources; Service defines no separate MCP server resource.
 
 a13n Service acts as the MCP client and supports only the Streamable HTTP transport at protocol revision `2025-11-25`. Local `stdio` MCP configuration remains a direct Harness or Harness UI concern and never causes a hosted Worker to launch a user-supplied process. A server that cannot negotiate that exact revision is incompatible; Service does not silently select another revision.
 
 Service implements the standard MCP OAuth client flow once. It does not implement provider-specific Slack, GitHub, Google, or other OAuth branches. Externally managed SaaS OAuth remains owned by the [external integration service](03-connectors-and-connections.md#credential-custody-and-setup), not this contract.
 
-## MCPConnection
+## Connection source and authority
 
-The following schema is conceptual and is not a wire or ORM model:
+The [Connection contract](03-connectors-and-connections.md#connection) owns identity, Workspace scope, lifecycle, authorization operations, checks, and Run generation fencing. An MCP source uses `kind: mcp`, an immutable endpoint URL and authentication mode, and fixed static header names when applicable. Several Connections can use the same endpoint with independent authorization. Endpoint and authentication-mode changes require a new Connection.
 
-```python
-type MCPAuthMode = Literal["none", "bearer", "oauth", "static_headers"]
-type MCPConnectionStatus = Literal[
-    "pending",
-    "ready",
-    "action_required",
-    "disabled",
-]
-type MCPConnectionStatusReason = Literal[
-    "reauthorization_required",
-    "incompatible",
-]
-
-
-class MCPConnection:
-    id: MCPConnectionId
-    organization_id: OrganizationId
-    workspace_id: WorkspaceId
-    name: str
-    endpoint_url: str
-    auth_mode: MCPAuthMode
-    status: MCPConnectionStatus
-    status_reason: MCPConnectionStatusReason | None
-    version: int
-    created_by: PrincipalRef
-    created_at: datetime
-    updated_at: datetime
-```
-
-`endpoint_url` is one credential-free absolute Streamable HTTP MCP endpoint validated under the shared [Connectivity outbound-network policy](00-overview.md#outbound-endpoint-policy). It contains no user info, access token, API key, fragment, or model-controlled component. Redirects and resolved destinations are bounded and revalidated on every discovery, authorization, and runtime request.
-
-Endpoint, Workspace, authentication mode, and the normalized static-header name set are immutable. Changing any of them creates another MCPConnection. Name and local disabled state are mutable under exact version preconditions. OAuth token refresh, bearer or static-header value replacement, tool discovery, health observations, and safe status reconciliation do not reinterpret endpoint identity.
-
-Every MCPConnection belongs to its Workspace. There is no personal owner field; remote account identity is never inferred from email or display names.
-
-`pending` means setup or verification has not completed. It can already have a durable usable credential when authorization succeeded but authenticated tool discovery failed. `ready` means the latest authorized setup and tool discovery succeeded, not that every later request will succeed. `action_required` blocks use until the user repairs authorization or compatibility. `disabled` is a reversible Service decision that blocks new selection and calls. `status_reason` is non-null exactly for `action_required` and is one finite safe code; it never contains remote payloads or credentials. Transient discovery or request failures do not change status. An explicit reconnect can verify a credential-bearing `pending` connection without repeating authorization, or restore `action_required` to `ready` only while the immutable endpoint, Workspace, authentication mode, and header-name identity remain unchanged; otherwise the user creates another MCPConnection.
-
-## Ownership and Runtime Eligibility
-
-An MCPConnection can be selected by authorized Workspace Agent defaults, direct Run overrides, or exact Account target overrides. Workspace Admin manages its lifecycle and credentials. Workspace membership alone does not grant management authority.
-
-Every call checks the Run execution Principal and current Workspace and source eligibility. Inbound Runs use the configured Service Account, never an external sender. Connection identity and accepted tool scope remain exact.
-
-An MCPConnection does not store mutable Agent or AccountTarget assignment lists. Agent authoring and the common [`RunCapabilityOverlay`](../28-agent-management.md#run-capability-overlay) reference the MCPConnection ID and choose tool scope and deferred loading. Authorized reads can derive reverse-use projections without creating another assignment authority.
-
-The model never receives the endpoint URL, MCPConnection ID, authorization metadata, remote account identifiers, access token, refresh token, client registration credential, or setup handle.
+The model never receives endpoint URLs, Connection IDs, authorization metadata, upstream account identifiers, tokens, registration credentials, or browser capabilities. Service Accounts with current Connection-management authority can configure and complete OAuth without a Console identity. The application owns its customer-to-Connection mapping.
 
 ## Authentication Modes
 
 `none` sends no credential and is valid only when the Remote MCP endpoint permits anonymous access.
 
-`bearer` accepts one opaque bearer value through the MCPConnection setup or replacement operation. Service stores it in the MCPConnection-owned encrypted bundle and sends it only in the standard authorization header to the exact endpoint. The value is never returned after acceptance.
+`bearer` accepts one opaque bearer value through the Connection setup or replacement operation. Service stores it in the Connection-owned encrypted bundle and sends it only in the standard authorization header to the exact endpoint. The value is never returned after acceptance.
 
-`static_headers` accepts a bounded non-empty map of static application header names and secret values during setup. It supports endpoints that use `X-API-Key`, a custom authorization scheme, or another fixed application header. Names are ASCII, case-insensitively unique, and fixed for the MCPConnection identity; values are bounded, reject control characters and line breaks, remain write-only, and can be replaced together for rotation. Service rejects hop-by-hop, proxy, routing, cookie, content framing, origin-forwarding, and MCP protocol or session control headers. It sends accepted headers only to the exact validated endpoint origin and never forwards them across an origin-changing redirect. One MCPConnection has exactly one authentication mode, so `static_headers`, `bearer`, and `oauth` cannot be combined.
+`static_headers` accepts a bounded non-empty map of static application header names and secret values during setup. It supports endpoints that use `X-API-Key`, a custom authorization scheme, or another fixed application header. Names are ASCII, case-insensitively unique, and fixed for the Connection identity; values are bounded, reject control characters and line breaks, remain write-only, and can be replaced together for rotation. Service rejects hop-by-hop, proxy, routing, cookie, content framing, origin-forwarding, and MCP protocol or session control headers. It sends accepted headers only to the exact validated endpoint origin and never forwards them across an origin-changing redirect. One Connection has exactly one authentication mode, so `static_headers`, `bearer`, and `oauth` cannot be combined.
 
 Query-string credentials, cookies, shell environment, endpoint-embedded credentials, and model- or caller-supplied per-call headers are not supported.
 
@@ -75,21 +30,21 @@ Query-string credentials, cookies, shell environment, endpoint-embedded credenti
 
 Service uses the Harness and upstream MCP client to initialize sessions, negotiate the supported protocol revision, discover tools, process notifications, invoke tools, and close transports. The client handles MCP session IDs, protocol headers, JSON-RPC correlation, pagination, JSON or SSE responses, and cancellation. Service adds connection-specific authorization, outbound endpoint validation, and the [discovery and result bounds](04-agent-facing-tools.md#discovery-and-result-bounds) through supported client hooks; it does not implement another JSON-RPC dispatcher, SSE parser, or session manager.
 
-Setup and reconnect can perform bounded discovery to verify compatibility and expose safe management metadata. Runtime clients independently discover current tools under the accepted source selection. Invalid framing, unsupported protocol negotiation, authorization failures, or exceeded bounds fail explicitly. Remote notifications and caches never expand the accepted tool scope or cross authorization identities. Cancellation closes active responses and the logical session; it is not an ordinary retry.
+Authorization and explicit checks can perform bounded discovery to verify compatibility and expose safe management metadata. Runtime clients independently discover current tools under the accepted source selection. Invalid framing, unsupported protocol negotiation, authorization failures, or exceeded bounds fail explicitly. Remote notifications and caches never expand the accepted tool scope or cross authorization identities. Cancellation closes active responses and the logical session; it is not an ordinary retry.
 
 Every discovery completion, including management tool queries and OAuth callbacks, rechecks the initiating actor's current management authority before publishing readiness. Revoked authority leaves readiness unchanged.
 
-Anonymous creation, credential replacement, and reconnect return the connection snapshot produced by successful discovery completion. Completion rechecks current management authority, connection version, and credential generation, and publishes the ready state and final idempotency receipt atomically. A completed command replays that original snapshot even if the connection later changes. While discovery has not completed, including after a failed or interrupted discovery, repeating its key returns `409 mcp_discovery_incomplete` rather than a successful pending snapshot. The caller reads the connection and can start a new reconnect command against its current version; replay never reapplies a credential replacement. Creation that requires credentials or OAuth still returns a pending connection without discovery.
+Connection creation is local and returns pending. Explicit checks discover tools and may publish readiness; authorization persists the confirmed credential before bounded discovery. Temporary discovery failure leaves the confirmed authorization queryable and requests a check. Check completion revalidates current authority, version, and credential generation. Authorization replay never reapplies credentials or repeats a consumed code exchange.
 
 ## OAuth Client Flow
 
 ```mermaid
 sequenceDiagram
-    participant User
+    participant User as Application customer
     participant Control as Service control
     participant MCP as Remote MCP endpoint
     participant AS as Authorization server
-    participant Credentials as MCPConnection persistence
+    participant Credentials as Connection persistence
 
     User->>Control: connect MCP endpoint
     Control->>MCP: protected request and metadata discovery
@@ -100,15 +55,15 @@ sequenceDiagram
     User->>AS: authenticate and authorize
     AS-->>Control: issuer-specific callback with code, state, and issuer
     Control->>Control: validate callback and store encrypted code
-    Control-->>User: same-tab completion receipt
-    User->>Control: authenticated, CSRF-protected completion
+    Control-->>User: browser-bound application return
+    User->>Control: application backend completes with receipt and verifier
     Control->>Control: reserve receipt and validate current authority
     Control->>AS: exchange code
     AS-->>Control: access token and optional refresh token
     Control->>Credentials: encrypt current credential bundle
     Control->>MCP: authenticated discovery
     alt discovery succeeds
-        Control-->>User: MCPConnection ready
+        Control-->>User: Connection ready
     else discovery is temporarily unavailable
         Control-->>User: authorization saved; retry verification
     end
@@ -118,13 +73,13 @@ A public origin is required when interactive OAuth is used; Control can manage n
 
 Client selection uses a connection-owned app when configured, then Client ID Metadata when advertised and public-client authentication is supported, then Dynamic Client Registration when available. Both a Workspace-administered app and an automatically selected or registered app are persisted independently from access tokens. A valid automatic client is reused for later authorization attempts instead of registering again. DCR selects an advertised token authentication method, preferring `none`, then `client_secret_basic`, then `client_secret_post`; omitted metadata defaults to Basic authentication. The registration response must use a supported method and supply a secret for confidential authentication. A server supporting none of these choices requires manual client configuration rather than being reported as a generic protocol incompatibility.
 
-Workspace administrators can discover the exact issuer, supported authorization-code and client-credentials grants, supported token authentication methods, automatic-registration availability, and redirect URI. They can then save a registered client ID, explicit grant, method, and write-only secret. Console chooses the only applicable method automatically and shows the callback URI only for the browser grant. Service revalidates the discovered issuer, grant, and authentication method before the version-fenced write. Configuration is an internal record owned by the MCPConnection, with its secret and any DCR management credential protected under the shared resource-credential contract. It survives token expiry and failed authorization. Replacing or clearing it atomically increments the connection version, clears active credentials, and invalidates setup and refresh claims. Replacing a Service-owned DCR client makes one bounded cleanup attempt; deletion does the same and records the result. Service never deletes a user-owned provider app and accepts no caller-defined authorization, token, registration, or resource endpoints.
+Workspace administrators can discover the exact issuer, supported authorization-code and client-credentials grants, supported token authentication methods, automatic-registration availability, and redirect URI. They can then save a registered client ID, explicit grant, method, and write-only secret. Console chooses the only applicable method automatically and shows the callback URI only for the browser grant. Service revalidates the discovered issuer, grant, and authentication method before the version-fenced write. Configuration is an internal record owned by the Connection, with its secret and any DCR management credential protected under the shared resource-credential contract. It survives token expiry and failed authorization. Replacing or clearing it atomically increments the connection version, clears active credentials, and invalidates setup and refresh claims. Replacing a Service-owned DCR client makes one bounded cleanup attempt; deletion does the same and records the result. Service never deletes a user-owned provider app and accepts no caller-defined authorization, token, registration, or resource endpoints.
 
-The `client_credentials` grant is an explicit machine-account choice, never inferred from the presence of a secret. It has no browser redirect, callback, state, PKCE, or DCR step, and does not require an authorization endpoint in issuer metadata. Initial authentication and renewal request a token directly from the token endpoint saved during client configuration, using the saved resource as the audience rather than as an MCP request address. They do not rediscover metadata or initialize MCP while acquiring the token. Provider endpoint changes require explicit client reconfiguration, which reruns discovery and validation. An authenticated management operation obtains a token, persists it under the same connection credential boundary, and then verifies the MCP endpoint; temporary verification failure leaves the token available for reconnect. Expiry claims the same distributed refresh fence used by authorization-code credentials, but obtains a new client-credentials token because no refresh token is required. Invalid machine credentials or an explicit authorization rejection require the administrator to repair the configured client; they do not start an interactive flow.
+The `client_credentials` grant is an explicit machine-account choice, never inferred from the presence of a secret. It has no browser redirect, callback, state, PKCE, or DCR step, and does not require an authorization endpoint in issuer metadata. Initial authentication and renewal request a token directly from the token endpoint saved during client configuration, using the saved resource as the audience rather than as an MCP request address. They do not rediscover metadata or initialize MCP while acquiring the token. Provider endpoint changes require explicit client reconfiguration, which reruns discovery and validation. An authenticated management operation obtains a token, persists it under the same connection credential boundary, and then verifies the MCP endpoint; temporary verification failure leaves the token available for an explicit check. Expiry claims the same distributed refresh fence used by authorization-code credentials, but obtains a new client-credentials token because no refresh token is required. Invalid machine credentials or an explicit authorization rejection require the administrator to repair the configured client; they do not start an interactive flow.
 
-Management reads the safe connection-owned client projection from `GET /api/v1/mcp-connections/{connection_id}/oauth-client` and discovers setup capabilities through `POST /api/v1/mcp-connections/{connection_id}/oauth-discovery`. The discovery projection contains the issuer, callback URI, supported grants and token authentication methods, automatic-registration strategy, and issuer-response support; it contains no token endpoint or secret. A version-fenced `PUT` replaces or clears the client configuration. `POST .../authorize` begins only the browser grant, while `POST .../authenticate` obtains and verifies only the configured client-credentials grant. The operations reject a grant mismatch rather than guessing from stored fields.
+Management reads the safe client projection from `GET /api/v1/connections/{connection_id}/mcp/oauth-client` and discovers setup capabilities through `POST /api/v1/connections/{connection_id}/mcp/oauth-discovery`. A version-fenced `PUT` replaces or clears client configuration. The shared authorization endpoint accepts method `browser` for authorization-code clients or `client_credentials` for the configured machine grant. A grant mismatch fails explicitly.
 
-Short-lived unpredictable state binds the Organization, Workspace, connection, initiating User, exact resource, issuer, redirect URI, and PKCE verifier. The public GET callback validates state, the actual issuer-specific route, and issuer policy, then stores the code and a receipt digest in the encrypted setup bundle and moves `pending` to `received` without extending expiry. It redirects to Console with state and an unpredictable receipt in the URL fragment. A repeated callback cannot replace the code. Authenticated, CSRF-protected completion reserves that receipt once, rechecks the initiating User and current management authority, and exchanges only the stored code using the persisted redirect URI. Any eligible control replica can complete it.
+Short-lived unpredictable OAuth state binds the Organization, Workspace, Connection, initiating principal, exact resource, issuer, redirect URI, and PKCE verifier. The issuer-specific public callback validates this binding and stores the code once without extending expiry. It redirects to the Service browser handoff, which enforces the per-tab binding and returns to the registered application URL. The shared authenticated completion operation verifies the initiating principal, receipt, and application-held verifier before exchanging the stored code. Any eligible control replica can finish the operation.
 
 Authorization responses may omit `iss`, including when discovery advertises issuer-response support, for compatibility with existing Remote MCP providers. This is an intentional compatibility exception to RFC 9207's advertised-support requirement. Service binds each flow to the discovered issuer, uses that issuer's distinct registered callback URI, and rejects a callback received on any other issuer's route. Any supplied `iss` must match exactly; an empty or conflicting issuer is never treated as absent. This policy applies equally to automatic and configured clients, without a per-connection opt-in. PKCE, authenticated completion, expiry, and one-time receipt checks remain mandatory.
 
@@ -136,7 +91,7 @@ Access and refresh tokens form the encrypted connection credential bundle. Clien
 
 Service uses the MCP Python SDK's public helpers and models for protected-resource and authorization-server discovery, challenge parsing, Client ID Metadata, Dynamic Client Registration. Authlib performs authorization-code exchange, refresh-token exchange, and client-credentials token acquisition through the same bounded transport. Service persists browser continuation because the SDK provider keeps continuation and locking in one process and cannot resume the ceremony on another replica. Service owns exact resource/issuer binding, PostgreSQL coordination, encrypted persistence, and bounded endpoint-policy HTTP transport for both libraries. This is one lifecycle implementation with a narrow library boundary, not parallel authorization flows. The process owns a cookie-free HTTP pool; credentials are explicit request values and are never client defaults.
 
-Authenticated completion atomically reserves shared single-use callback receipt state before token exchange. Any control replica can complete it. Current connection version, credential generation, state claim owner/generation, deadline, and initiating User authority are checked again at commit. Expired or interrupted exchange claims become `action_required`; they never replay a possibly consumed authorization code. Failed setup requires an explicit new authorization.
+Authenticated completion atomically reserves shared single-use callback receipt state before token exchange. Any control replica can complete it. Current connection version, credential generation, state claim owner/generation, deadline, and initiating principal authority are checked again at commit. Expired or interrupted exchange claims become `action_required`; they never replay a possibly consumed authorization code. Failed setup requires an explicit new authorization.
 
 Management discovery and Worker execution obtain current credentials through the same demand-driven refresh boundary. Discovery can refresh a pending connection after reconnect or OAuth completion; it does not require discovery to have already established readiness. Each handshake and paginated discovery request obtains current credentials. Discovery completion checks the latest credential generation used by its requests while retaining the original endpoint and management-version fence. Refresh occurs before authenticated use, never through a refresh-candidate scanner. A short connection transaction checks credential expiry and claims one credential generation. Claim acquisition is atomic for concurrent requests in the SQLite single-process profile and across PostgreSQL Pods; only the winner can exchange the claimed rotating refresh token. Exchange runs outside the transaction and success commits only under the same valid claim, eligible ready or pending connection, Workspace, and credential generation. Replacement, disablement, deletion, or new authorization fences late results.
 
@@ -144,28 +99,15 @@ A live competing claim causes a bounded exponential-backoff wait with jitter out
 
 ## Credential Boundary
 
-MCPConnection records store ciphertext, nonce, key identifier, and credential generation under the [shared protection contract](../27-secret-management.md#protection-boundary). OAuth client configuration separately protects registered application secrets. OAuth sessions protect PKCE, registration setup material, received authorization codes, and receipt digests. Completion, expiration, and terminal failure clear session material. Generic Secret routes cannot enumerate or mutate these bundles. Local deletion clears all encryption fields in its initial transaction.
+Connection records store ciphertext, nonce, key identifier, and credential generation under the [shared protection contract](../27-secret-management.md#protection-boundary). OAuth client configuration separately protects registered application secrets. OAuth sessions protect PKCE, registration setup material, received authorization codes, and receipt digests. Completion, expiration, and terminal failure clear session material. Generic Secret routes cannot enumerate or mutate these bundles. Local deletion clears all encryption fields in its initial transaction.
 
 No plaintext credential enters Agent configuration, Run state, discovered tool definitions, model context, Tool arguments, events, Items, errors, logs, traces, or tool results. The Worker resolves only the exact credential required for the current fenced RunAttempt and endpoint request.
 
-## Tool Discovery and Run Selection
+## Tool discovery and Run selection
 
-Tool discovery is authorization-dependent: two MCPConnections for the same endpoint can expose different tools. Management discovery is advisory and isolated by exact connection and current authorization. Run acceptance checks the configured resource and policy without remote discovery or a mandatory durable catalog. The executing Worker constructs a fresh Harness MCP client for each selected MCPConnection and discovers current tools directly from that endpoint.
+The [common selection contract](03-connectors-and-connections.md#assignment-and-effective-selection) owns `connection_tools` and the accepted Connection authorization generation. Each selected MCP source produces an independent remote client. Tools are discovered under the accepted scope; server notifications cannot expand authority. Before every call, Service checks current Attempt authority and the retained authorization generation, obtains current credentials, and rechecks the version and credential generation used for dispatch. Token refresh keeps the accepted authorization generation; explicit reauthorization invalidates old selections.
 
-`POST /api/v1/mcp-connections/{connection_id}/discover` accepts `expected_version` and returns `items` containing the current tool names, descriptions, input and output schemas, and annotations. It requires current MCPConnection management authority before remote I/O and rechecks authority and the exact management version before returning. Discovery runs outside database sessions, uses the same bounded client and credential path as setup, and invokes no tool. Its result is advisory rather than a durable command receipt or frozen Run catalog; an explicit later discovery can return different tools.
-
-The conceptual accepted selection is:
-
-```python
-class MCPConnectionToolSelection:
-    mcp_connection_id: MCPConnectionId
-    tools: tuple[str, ...] | None
-    defer_loading: bool
-```
-
-This selection is the authority for the exact MCPConnection, tool scope, and deferred-loading policy. `tools` retains the all-tools or explicit-name semantics of [Agent selection](../28-agent-management.md#agentconfig), not a frozen discovered list. Identity-defining connection fields are immutable; a mutable management CAS version is not a Run compatibility input. The [common runtime contract](04-agent-facing-tools.md#discovery-and-recovery) owns discovery, filtering, invocation guards, namespacing, and reconstruction without external schema snapshots.
-
-The Run stores no OAuth scope string or token snapshot. Each remote operation checks the [Attempt IAM snapshot](../33-identity-and-access-management.md#attempt-iam-snapshot), accepted tool scope, current Attempt and connection eligibility, and resolves eligible authentication for the bound endpoint. The client uses supported authentication hooks for refresh; resolving headers once at logical-run creation cannot by itself satisfy per-call upstream credential revocation and refresh requirements. Remote server and model-provider execution are distinct: these clients run inside Service, and credentials are never forwarded to the model provider to let it execute MCP calls.
+Remote clients run inside Service. Endpoint credentials never go to the model provider for delegated execution. The [Agent-facing tools contract](04-agent-facing-tools.md) owns namespaces, result limits, runtime discovery, and reconstruction.
 
 ## Failure Semantics
 
@@ -177,7 +119,7 @@ The Run stores no OAuth scope string or token snapshot. Each remote operation ch
 | State, issuer, redirect, resource, or PKCE validation fails            | Callback is rejected and no credential or ready transition commits                                                       |
 | Callback or token response is lost after a possible commit             | A completed receipt remains authoritative; an interrupted exchange requires new authorization without replaying the code |
 | Authorization succeeds and verification is temporarily unavailable     | Credential remains durable and `pending`; Console offers Retry verification without another consent flow                 |
-| Authorization-code refresh token is absent or refresh fails            | Current call fails; the MCPConnection becomes `action_required` with `reauthorization_required`                          |
+| Authorization-code refresh token is absent or refresh fails            | Current call fails; the Connection becomes `action_required` with `reauthorization_required`                             |
 | Client-credentials token expires                                       | Service reacquires once under the distributed refresh claim; no browser flow or refresh token is required                |
 | Static header name or value violates the bounded policy                | Setup or replacement fails before any credential is stored or sent                                                       |
 | Tool definitions change after Run acceptance                           | Current discovery stays within the accepted scope; missing tools or invalid arguments fail explicitly                    |
@@ -187,12 +129,12 @@ The Run stores no OAuth scope string or token snapshot. Each remote operation ch
 
 Service validates negotiated MCP protocol compatibility through its supported upstream client. Supporting another remote MCP protocol revision preserves authorization isolation, accepted source identity and tool scope, and failure behavior; it does not require schema equality with earlier discovery. A user-supplied `stdio` process, arbitrary transport, per-call header map, or manual OAuth endpoint is outside the a13n Service contract.
 
-1. One MCPConnection combines one Streamable HTTP endpoint and one authorization identity; Service defines no separate MCPServer resource.
+1. One Connection combines one Streamable HTTP endpoint and one authorization identity; Service defines no separate MCPServer resource.
 2. a13n Service never launches user-configured MCP processes.
 3. Service implements one standards-based MCP OAuth client using a configured app, Client ID Metadata Document, or DCR, without provider-specific branches.
-4. Workspace MCPConnections require execution Principal and Workspace permissions from the Attempt IAM snapshot, current resource eligibility, and live Attempt authority; external actors cannot confer authority.
-5. OAuth, bearer, and bounded static-header credentials are MCPConnection-owned encrypted bundles and never model-visible data.
-6. Discovery and authenticated clients are isolated by MCPConnection identity; accepted Runs retain source selections, not immutable tool catalogs.
+4. Workspace Connections require execution Principal and Workspace permissions from the Attempt IAM snapshot, current resource eligibility, and live Attempt authority; external actors cannot confer authority.
+5. OAuth, bearer, and bounded static-header credentials are Connection-owned encrypted bundles and never model-visible data.
+6. Discovery and authenticated clients are isolated by Connection identity; accepted Runs retain source selections, not immutable tool catalogs.
 
 ## Transport and Maintenance Bounds
 
@@ -200,4 +142,4 @@ Control and Worker construct remote MCP clients with the same configured HTTP ph
 
 Expired setup records are processed in bounded short transactions. A productive maintenance pass yields to other tasks and continues draining eligible work; the normal poll delay applies when there is no eligible work. No transaction spans a poll wait or network operation.
 
-Console receives state and receipt through `/mcp-setup/callback`, removes query and fragment material before authentication requests, checks same-tab state, and POSTs only `state` and `receipt` to `/api/v1/oauth/mcp/complete` with its authenticated browser session and CSRF proof. It never receives the authorization code. Service access logs omit request query strings; ingress operators must apply equivalent query redaction.
+The Service browser handoff enforces the common application and per-tab completion proof; Console is one application client of that contract. The authorization code remains encrypted in Service and never reaches the application return URL. Service access logs omit request query strings; ingress operators apply equivalent query redaction.

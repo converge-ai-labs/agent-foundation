@@ -328,6 +328,267 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
+## connections
+
+### `GET /api/v1/connection-authorizations/{authorization_id}`
+
+Get Connection Authorization.
+
+| Parameter          | Location | Required | Type / schema | Constraints and default |
+| ------------------ | -------- | -------- | ------------- | ----------------------- |
+| `authorization_id` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: Authorization`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/connection-authorizations/{authorization_id}/cancel`
+
+Cancel Connection Authorization.
+
+| Parameter          | Location | Required | Type / schema | Constraints and default |
+| ------------------ | -------- | -------- | ------------- | ----------------------- |
+| `authorization_id` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: Authorization`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/connection-authorizations/{authorization_id}/complete`
+
+Complete Connection Authorization.
+
+| Parameter          | Location | Required | Type / schema | Constraints and default |
+| ------------------ | -------- | -------- | ------------- | ----------------------- |
+| `authorization_id` | path     | true     | string        | —                       |
+
+Request body: required.
+
+- `application/json`: `CompleteAuthorizationRequest`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: Authorization`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/connection-authorizations/{authorization_id}/launch`
+
+Launch Connection Authorization.
+
+| Parameter          | Location | Required | Type / schema | Constraints and default |
+| ------------------ | -------- | -------- | ------------- | ----------------------- |
+| `authorization_id` | path     | true     | string        | —                       |
+
+Request body: required.
+
+- `application/json`: `LaunchAuthorizationRequest`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: AuthorizationRedirect`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/connection-authorizations/{authorization_id}/receive`
+
+Receive Connection Authorization.
+
+| Parameter          | Location | Required | Type / schema | Constraints and default |
+| ------------------ | -------- | -------- | ------------- | ----------------------- |
+| `authorization_id` | path     | true     | string        | —                       |
+
+Request body: required.
+
+- `application/json`: `ReceiveAuthorizationRequest`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: AuthorizationRedirect`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `DELETE /api/v1/connections/{connection_id}`
+
+Delete Connection.
+
+| Parameter          | Location | Required | Type / schema | Constraints and default    |
+| ------------------ | -------- | -------- | ------------- | -------------------------- |
+| `connection_id`    | path     | true     | string        | —                          |
+| `expected_version` | query    | true     | integer       | minimum=1                  |
+| `Idempotency-Key`  | header   | true     | string        | minLength=1; maxLength=512 |
+
+Responses:
+
+- **200** — Successful Response (`application/json: ConnectionCleanupReceipt`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/connections/{connection_id}`
+
+Get Connection.
+
+| Parameter       | Location | Required | Type / schema | Constraints and default |
+| --------------- | -------- | -------- | ------------- | ----------------------- |
+| `connection_id` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: Connection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `PATCH /api/v1/connections/{connection_id}`
+
+Update Connection.
+
+| Parameter       | Location | Required | Type / schema | Constraints and default |
+| --------------- | -------- | -------- | ------------- | ----------------------- |
+| `connection_id` | path     | true     | string        | —                       |
+
+Request body: required.
+
+- `application/json`: `UpdateConnectionRequest`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: Connection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/connections/{connection_id}/authorizations`
+
+Create Connection Authorization.
+
+| Parameter         | Location | Required | Type / schema | Constraints and default    |
+| ----------------- | -------- | -------- | ------------- | -------------------------- |
+| `connection_id`   | path     | true     | string        | —                          |
+| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
+
+Request body: required.
+
+- `application/json`: `CreateAuthorizationRequest`.
+
+Responses:
+
+- **201** — Successful Response (`application/json: Authorization`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/connections/{connection_id}/check`
+
+Check Connection.
+
+| Parameter       | Location | Required | Type / schema | Constraints and default |
+| --------------- | -------- | -------- | ------------- | ----------------------- |
+| `connection_id` | path     | true     | string        | —                       |
+
+Request body: required.
+
+- `application/json`: `ConnectionCommandRequest`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: Connection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/connections/{connection_id}/connector/revoke`
+
+Revoke Connector Authorization.
+
+| Parameter         | Location | Required | Type / schema | Constraints and default    |
+| ----------------- | -------- | -------- | ------------- | -------------------------- |
+| `connection_id`   | path     | true     | string        | —                          |
+| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
+
+Request body: required.
+
+- `application/json`: `ConnectionCommandRequest`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: ConnectionCleanupReceipt`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/connections/{connection_id}/disable`
+
+Disable Connection.
+
+| Parameter         | Location | Required | Type / schema | Constraints and default    |
+| ----------------- | -------- | -------- | ------------- | -------------------------- |
+| `connection_id`   | path     | true     | string        | —                          |
+| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
+
+Request body: required.
+
+- `application/json`: `ConnectionCommandRequest`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: Connection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/connections/{connection_id}/enable`
+
+Enable Connection.
+
+| Parameter         | Location | Required | Type / schema | Constraints and default    |
+| ----------------- | -------- | -------- | ------------- | -------------------------- |
+| `connection_id`   | path     | true     | string        | —                          |
+| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
+
+Request body: required.
+
+- `application/json`: `ConnectionCommandRequest`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: Connection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/connections`
+
+List Connections.
+
+| Parameter   | Location | Required | Type / schema  | Constraints and default            |
+| ----------- | -------- | -------- | -------------- | ---------------------------------- |
+| `workspace` | path     | true     | string         | —                                  |
+| `limit`     | query    | false    | integer        | minimum=1; maximum=100; default=50 |
+| `cursor`    | query    | false    | string or null | —                                  |
+
+Responses:
+
+- **200** — Successful Response (`application/json: ConnectionCollection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/workspaces/{workspace}/connections`
+
+Create Connection.
+
+| Parameter         | Location | Required | Type / schema | Constraints and default    |
+| ----------------- | -------- | -------- | ------------- | -------------------------- |
+| `workspace`       | path     | true     | string        | —                          |
+| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
+
+Request body: required.
+
+- `application/json`: `CreateConnectionRequest`.
+
+Responses:
+
+- **201** — Successful Response (`application/json: Connection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ## connectivity-management
 
 ### `DELETE /api/v1/application-accounts/{account_id}`
@@ -501,39 +762,9 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
-### `DELETE /api/v1/connector-connections/{connection_id}`
+### `POST /api/v1/connections/{connection_id}/mcp/discover`
 
-Delete Connector Connection.
-
-| Parameter          | Location | Required | Type / schema | Constraints and default    |
-| ------------------ | -------- | -------- | ------------- | -------------------------- |
-| `connection_id`    | path     | true     | string        | —                          |
-| `expected_version` | query    | true     | integer       | minimum=1                  |
-| `Idempotency-Key`  | header   | true     | string        | minLength=1; maxLength=512 |
-
-Responses:
-
-- **200** — Successful Response (`application/json: ConnectionCleanupReceipt`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `GET /api/v1/connector-connections/{connection_id}`
-
-Get Connector Connection.
-
-| Parameter       | Location | Required | Type / schema | Constraints and default |
-| --------------- | -------- | -------- | ------------- | ----------------------- |
-| `connection_id` | path     | true     | string        | —                       |
-
-Responses:
-
-- **200** — Successful Response (`application/json: ConnectorConnection`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `PATCH /api/v1/connector-connections/{connection_id}`
-
-Update Connector Connection.
+Discover Mcp Tools.
 
 | Parameter       | Location | Required | Type / schema | Constraints and default |
 | --------------- | -------- | -------- | ------------- | ----------------------- |
@@ -541,88 +772,57 @@ Update Connector Connection.
 
 Request body: required.
 
-- `application/json`: `UpdateConnectorConnectionRequest`.
+- `application/json`: `ConnectionCommandRequest`.
 
 Responses:
 
-- **200** — Successful Response (`application/json: ConnectorConnection`).
+- **200** — Successful Response (`application/json: MCPToolCollection`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
-### `POST /api/v1/connector-connections/{connection_id}/reconnect`
+### `GET /api/v1/connections/{connection_id}/mcp/oauth-client`
 
-Reconnect Connector Connection.
+Get Mcp Oauth Client.
 
-| Parameter         | Location | Required | Type / schema | Constraints and default    |
-| ----------------- | -------- | -------- | ------------- | -------------------------- |
-| `connection_id`   | path     | true     | string        | —                          |
-| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
-
-Request body: required.
-
-- `application/json`: `ReconnectConnectorConnectionRequest`.
+| Parameter       | Location | Required | Type / schema | Constraints and default |
+| --------------- | -------- | -------- | ------------- | ----------------------- |
+| `connection_id` | path     | true     | string        | —                       |
 
 Responses:
 
-- **200** — Successful Response (`application/json: ConnectorSetupLaunch`).
+- **200** — Successful Response (`application/json: MCPOAuthClientConfiguration or null`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
-### `POST /api/v1/connector-connections/{connection_id}/revoke`
+### `PUT /api/v1/connections/{connection_id}/mcp/oauth-client`
 
-Revoke Connector Connection.
+Configure Mcp Oauth Client.
 
-| Parameter         | Location | Required | Type / schema | Constraints and default    |
-| ----------------- | -------- | -------- | ------------- | -------------------------- |
-| `connection_id`   | path     | true     | string        | —                          |
-| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
+| Parameter       | Location | Required | Type / schema | Constraints and default |
+| --------------- | -------- | -------- | ------------- | ----------------------- |
+| `connection_id` | path     | true     | string        | —                       |
 
 Request body: required.
 
-- `application/json`: `ConnectorConnectionCommandRequest`.
+- `application/json`: `ConfigureMCPOAuthClientRequest`.
 
 Responses:
 
-- **200** — Successful Response (`application/json: ConnectionCleanupReceipt`).
+- **200** — Successful Response (`application/json: Connection`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
-### `POST /api/v1/connector-connections/{connection_id}/setup`
+### `POST /api/v1/connections/{connection_id}/mcp/oauth-discovery`
 
-Start Connector Connection Setup.
+Discover Mcp Oauth.
 
-| Parameter         | Location | Required | Type / schema | Constraints and default    |
-| ----------------- | -------- | -------- | ------------- | -------------------------- |
-| `connection_id`   | path     | true     | string        | —                          |
-| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
-
-Request body: required.
-
-- `application/json`: `StartConnectorConnectionSetupRequest`.
+| Parameter       | Location | Required | Type / schema | Constraints and default |
+| --------------- | -------- | -------- | ------------- | ----------------------- |
+| `connection_id` | path     | true     | string        | —                       |
 
 Responses:
 
-- **200** — Successful Response (`application/json: ConnectorSetupLaunch`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `POST /api/v1/connector-connections/{connection_id}/{action}`
-
-Change Connector Connection Lifecycle.
-
-| Parameter         | Location | Required | Type / schema       | Constraints and default    |
-| ----------------- | -------- | -------- | ------------------- | -------------------------- |
-| `connection_id`   | path     | true     | string              | —                          |
-| `action`          | path     | true     | "enable", "disable" | —                          |
-| `Idempotency-Key` | header   | true     | string              | minLength=1; maxLength=512 |
-
-Request body: required.
-
-- `application/json`: `ConnectorConnectionCommandRequest`.
-
-Responses:
-
-- **200** — Successful Response (`application/json: ConnectorConnection`).
+- **200** — Successful Response (`application/json: MCPOAuthDiscovery`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -773,228 +973,6 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
-### `POST /api/v1/connector-setup/complete`
-
-Complete Connector Setup.
-
-Request body: required.
-
-- `application/json`: `CompleteConnectorSetupRequest`.
-
-Responses:
-
-- **200** — Successful Response (`application/json: ConnectorSetupCompletion`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `DELETE /api/v1/mcp-connections/{connection_id}`
-
-Delete Mcp Connection.
-
-| Parameter          | Location | Required | Type / schema | Constraints and default    |
-| ------------------ | -------- | -------- | ------------- | -------------------------- |
-| `connection_id`    | path     | true     | string        | —                          |
-| `expected_version` | query    | true     | integer       | minimum=1                  |
-| `Idempotency-Key`  | header   | true     | string        | minLength=1; maxLength=512 |
-
-Responses:
-
-- **200** — Successful Response (`application/json: ConnectionCleanupReceipt`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `GET /api/v1/mcp-connections/{connection_id}`
-
-Get Mcp Connection.
-
-| Parameter       | Location | Required | Type / schema | Constraints and default |
-| --------------- | -------- | -------- | ------------- | ----------------------- |
-| `connection_id` | path     | true     | string        | —                       |
-
-Responses:
-
-- **200** — Successful Response (`application/json: MCPConnection`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `PATCH /api/v1/mcp-connections/{connection_id}`
-
-Update Mcp Connection.
-
-| Parameter       | Location | Required | Type / schema | Constraints and default |
-| --------------- | -------- | -------- | ------------- | ----------------------- |
-| `connection_id` | path     | true     | string        | —                       |
-
-Request body: required.
-
-- `application/json`: `UpdateMCPConnectionRequest`.
-
-Responses:
-
-- **200** — Successful Response (`application/json: MCPConnection`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `POST /api/v1/mcp-connections/{connection_id}/authenticate`
-
-Authenticate Mcp Connection.
-
-| Parameter         | Location | Required | Type / schema | Constraints and default    |
-| ----------------- | -------- | -------- | ------------- | -------------------------- |
-| `connection_id`   | path     | true     | string        | —                          |
-| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
-
-Request body: required.
-
-- `application/json`: `MCPConnectionCommandRequest`.
-
-Responses:
-
-- **200** — Successful Response (`application/json: MCPConnection`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `POST /api/v1/mcp-connections/{connection_id}/authorize`
-
-Authorize Mcp Connection.
-
-| Parameter         | Location | Required | Type / schema | Constraints and default    |
-| ----------------- | -------- | -------- | ------------- | -------------------------- |
-| `connection_id`   | path     | true     | string        | —                          |
-| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
-
-Request body: required.
-
-- `application/json`: `MCPConnectionCommandRequest`.
-
-Responses:
-
-- **200** — Successful Response (`application/json: MCPAuthorizationLaunch`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `POST /api/v1/mcp-connections/{connection_id}/credentials`
-
-Replace Mcp Credentials.
-
-| Parameter         | Location | Required | Type / schema | Constraints and default    |
-| ----------------- | -------- | -------- | ------------- | -------------------------- |
-| `connection_id`   | path     | true     | string        | —                          |
-| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
-
-Request body: required.
-
-- `application/json`: `ReplaceMCPCredentialsRequest`.
-
-Responses:
-
-- **200** — Successful Response (`application/json: MCPConnection`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `POST /api/v1/mcp-connections/{connection_id}/discover`
-
-Discover Mcp Tools.
-
-| Parameter       | Location | Required | Type / schema | Constraints and default |
-| --------------- | -------- | -------- | ------------- | ----------------------- |
-| `connection_id` | path     | true     | string        | —                       |
-
-Request body: required.
-
-- `application/json`: `MCPConnectionCommandRequest`.
-
-Responses:
-
-- **200** — Successful Response (`application/json: MCPToolCollection`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `GET /api/v1/mcp-connections/{connection_id}/oauth-client`
-
-Get Mcp Oauth Client.
-
-| Parameter       | Location | Required | Type / schema | Constraints and default |
-| --------------- | -------- | -------- | ------------- | ----------------------- |
-| `connection_id` | path     | true     | string        | —                       |
-
-Responses:
-
-- **200** — Successful Response (`application/json: MCPOAuthClientConfiguration or null`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `PUT /api/v1/mcp-connections/{connection_id}/oauth-client`
-
-Configure Mcp Oauth Client.
-
-| Parameter       | Location | Required | Type / schema | Constraints and default |
-| --------------- | -------- | -------- | ------------- | ----------------------- |
-| `connection_id` | path     | true     | string        | —                       |
-
-Request body: required.
-
-- `application/json`: `ConfigureMCPOAuthClientRequest`.
-
-Responses:
-
-- **200** — Successful Response (`application/json: MCPConnection`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `POST /api/v1/mcp-connections/{connection_id}/oauth-discovery`
-
-Discover Mcp Oauth.
-
-| Parameter       | Location | Required | Type / schema | Constraints and default |
-| --------------- | -------- | -------- | ------------- | ----------------------- |
-| `connection_id` | path     | true     | string        | —                       |
-
-Responses:
-
-- **200** — Successful Response (`application/json: MCPOAuthDiscovery`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `POST /api/v1/mcp-connections/{connection_id}/reconnect`
-
-Reconnect Mcp Connection.
-
-| Parameter         | Location | Required | Type / schema | Constraints and default    |
-| ----------------- | -------- | -------- | ------------- | -------------------------- |
-| `connection_id`   | path     | true     | string        | —                          |
-| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
-
-Request body: required.
-
-- `application/json`: `MCPConnectionCommandRequest`.
-
-Responses:
-
-- **200** — Successful Response (`application/json: MCPConnection`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `POST /api/v1/mcp-connections/{connection_id}/{action}`
-
-Change Mcp Connection Lifecycle.
-
-| Parameter         | Location | Required | Type / schema       | Constraints and default    |
-| ----------------- | -------- | -------- | ------------------- | -------------------------- |
-| `connection_id`   | path     | true     | string              | —                          |
-| `action`          | path     | true     | "enable", "disable" | —                          |
-| `Idempotency-Key` | header   | true     | string              | minLength=1; maxLength=512 |
-
-Request body: required.
-
-- `application/json`: `MCPConnectionCommandRequest`.
-
-Responses:
-
-- **200** — Successful Response (`application/json: MCPConnection`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
 ### `GET /api/v1/oauth/mcp/client-metadata/{issuer_key}.json`
 
 Mcp Client Metadata.
@@ -1006,20 +984,6 @@ Mcp Client Metadata.
 Responses:
 
 - **200** — Successful Response (`application/json: MCPClientMetadata`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `POST /api/v1/oauth/mcp/complete`
-
-Complete Mcp Oauth.
-
-Request body: required.
-
-- `application/json`: `CompleteMCPOAuthRequest`.
-
-Responses:
-
-- **200** — Successful Response (`application/json: MCPConnection`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -1107,41 +1071,6 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
-### `GET /api/v1/workspaces/{workspace}/connector-connections`
-
-List Connector Connections.
-
-| Parameter   | Location | Required | Type / schema  | Constraints and default            |
-| ----------- | -------- | -------- | -------------- | ---------------------------------- |
-| `workspace` | path     | true     | string         | —                                  |
-| `limit`     | query    | false    | integer        | minimum=1; maximum=100; default=50 |
-| `cursor`    | query    | false    | string or null | —                                  |
-
-Responses:
-
-- **200** — Successful Response (`application/json: ConnectorConnectionCollection`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `POST /api/v1/workspaces/{workspace}/connector-connections`
-
-Create Connector Connection.
-
-| Parameter         | Location | Required | Type / schema | Constraints and default    |
-| ----------------- | -------- | -------- | ------------- | -------------------------- |
-| `workspace`       | path     | true     | string        | —                          |
-| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
-
-Request body: required.
-
-- `application/json`: `CreateConnectorConnectionRequest`.
-
-Responses:
-
-- **201** — Successful Response (`application/json: ConnectorConnection`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
 ### `GET /api/v1/workspaces/{workspace}/connector-providers`
 
 List Connector Providers.
@@ -1174,41 +1103,6 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: ConnectorProvider`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `GET /api/v1/workspaces/{workspace}/mcp-connections`
-
-List Mcp Connections.
-
-| Parameter   | Location | Required | Type / schema  | Constraints and default            |
-| ----------- | -------- | -------- | -------------- | ---------------------------------- |
-| `workspace` | path     | true     | string         | —                                  |
-| `limit`     | query    | false    | integer        | minimum=1; maximum=100; default=50 |
-| `cursor`    | query    | false    | string or null | —                                  |
-
-Responses:
-
-- **200** — Successful Response (`application/json: MCPConnectionCollection`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `POST /api/v1/workspaces/{workspace}/mcp-connections`
-
-Create Mcp Connection.
-
-| Parameter         | Location | Required | Type / schema | Constraints and default    |
-| ----------------- | -------- | -------- | ------------- | -------------------------- |
-| `workspace`       | path     | true     | string        | —                          |
-| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
-
-Request body: required.
-
-- `application/json`: `CreateMCPConnectionRequest`.
-
-Responses:
-
-- **201** — Successful Response (`application/json: MCPConnection`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 

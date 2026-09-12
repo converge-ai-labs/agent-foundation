@@ -192,6 +192,14 @@
           "default": null,
           "title": "Public Origin"
         },
+        "authorization_return_urls": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Authorization Return Urls",
+          "type": "array"
+        },
         "oauth_client_name": {
           "default": "Agent Foundation",
           "maxLength": 128,

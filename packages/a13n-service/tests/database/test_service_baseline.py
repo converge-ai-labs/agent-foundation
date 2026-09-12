@@ -100,8 +100,8 @@ def test_service_baseline_matches_postgresql_metadata(pg_url: str) -> None:
                 "model_providers",
                 "connector_providers",
                 "application_accounts",
-                "mcp_connections",
-                "mcp_oauth_sessions",
+                "connections",
+                "connection_authorizations",
             ):
                 columns = {item["name"] for item in inspector.get_columns(name)}
                 assert {"ciphertext", "nonce", "encryption_key_id", "credential_generation"} <= columns

@@ -395,10 +395,8 @@ def _validate_new_child_parent(
         or parent_state.prepared_plugins is None
         or digest_request(prepared.state.prepared_plugins)
         != digest_request(parent_state.prepared_plugins.children[prepared.run.agent_revision_id])
-        or prepared.run.connector_connection_selections
-        != tuple(item.model_dump(mode="json") for item in accepted.connector_connection_selections)
-        or prepared.run.mcp_connection_selections
-        != tuple(item.model_dump(mode="json") for item in accepted.mcp_connection_selections)
+        or prepared.run.connection_selections
+        != tuple(item.model_dump(mode="json") for item in accepted.connection_selections)
     ):
         raise ChildRunAcceptanceError("child_run_config_conflict", "Child Run changed the accepted execution snapshot")
 
@@ -455,8 +453,7 @@ def _validate_locked_resume_source(
         or prepared.run.agent_revision_id != source.agent_revision_id
         or prepared.state.effective_agent_config != source_state.envelope.effective_agent_config
         or digest_request(prepared.state.prepared_plugins) != digest_request(source_state.envelope.prepared_plugins)
-        or prepared.run.connector_connection_selections != source.connector_connection_selections
-        or prepared.run.mcp_connection_selections != source.mcp_connection_selections
+        or prepared.run.connection_selections != source.connection_selections
         or intersect_usage_limits(prepared.state.usage_limits, source_state.envelope.usage_limits)
         != prepared.state.usage_limits
     ):

@@ -142,8 +142,7 @@ class AgentInvocationFreezer:
                 agent_id=child.agent_id,
                 revision_content_digest=child.revision_content_digest,
                 effective_config=frozen_child.effective_config,
-                connector_connection_selections=frozen_child.connector_connection_selections,
-                mcp_connection_selections=frozen_child.mcp_connection_selections,
+                connection_selections=frozen_child.connection_selections,
             )
         config_payload = {
             "subagent_mode": prepared.merged.subagent_mode,
@@ -158,8 +157,7 @@ class AgentInvocationFreezer:
             ),
             "plugins": prepared.merged.plugins,
             "skills": skills,
-            "connector_tools": prepared.merged.connector_tools,
-            "mcp_tools": prepared.merged.mcp_tools,
+            "connection_tools": prepared.merged.connection_tools,
             "resolved_subagents": resolved_subagents,
             "instructions": prepared.merged.instructions,
             "input_adapter": prepared.merged.input_adapter,
@@ -189,6 +187,5 @@ class AgentInvocationFreezer:
             agent_revision_id=prepared.agent_revision_id,
             selector_kind=prepared.selector_kind,
             effective_config=effective,
-            connector_connection_selections=connectivity.connector_connection_selections,
-            mcp_connection_selections=connectivity.mcp_connection_selections,
+            connection_selections=connectivity.connection_selections,
         )

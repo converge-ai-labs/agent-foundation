@@ -4,7 +4,7 @@ import pytest
 from a13n_service.connectivity.connectors.connections import ConnectorConnectionService
 from a13n_service.connectivity.connectors.models import ConnectorConnectionRecord, ConnectorProviderRecord
 from a13n_service.connectivity.connectors.service import ConnectorProviderService
-from a13n_service.connectivity.selection_domain import ConnectorConnectionToolSelection
+from a13n_service.connectivity.selection_domain import ConnectionToolSelection
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
 from a13n_service.storage import transaction
 from sqlalchemy import select, text
@@ -40,7 +40,7 @@ async def test_connector_snapshot_readers_overlap_while_provider_and_account_edi
         expected_version=connection.version,
         setup={"scopes": ["read"]},
         browser_nonce="b" * 64,
-        return_path="/",
+        return_url="/",
     )
     await connections.complete_callback(
         actor=actor(),
@@ -53,8 +53,7 @@ async def test_connector_snapshot_readers_overlap_while_provider_and_account_edi
         actor=actor(),
         organization_id=ORG_ID,
         workspace_id=WORKSPACE_ID,
-        connector_tools=(ConnectorConnectionToolSelection(connector_connection_id=connection.id),),
-        mcp_tools=(),
+        connection_tools=(ConnectionToolSelection(connection_id=connection.id),),
     )
     async with transaction(sessions) as first:
         expected = await resolver.freeze(first, prepared=prepared)

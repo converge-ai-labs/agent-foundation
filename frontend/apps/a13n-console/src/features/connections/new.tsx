@@ -91,7 +91,7 @@ function ConnectionChoice({
       keywords: [connector.key],
       icon: <BrandIcon alias={connector.key} logo={connector.logo_url} />,
     })),
-    ...(can("mcp_connection.manage")
+    ...(can("connection.manage")
       ? mcpPresets.map((preset) => ({
           value: `mcp:${preset.id}`,
           label: preset.name,
@@ -269,7 +269,7 @@ function ConnectionChoice({
             </Button>
           )}
         </div>
-        {can("mcp_connection.manage") && (
+        {can("connection.manage") && (
           <Button
             type="button"
             variant="outline"

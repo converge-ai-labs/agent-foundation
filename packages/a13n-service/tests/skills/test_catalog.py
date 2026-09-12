@@ -439,8 +439,7 @@ async def test_references_include_disabled_unarchived_current_agents_and_block_d
                         "version": None,
                     }
                 ],
-                connector_tools=[],
-                mcp_tools=[],
+                connection_tools=(),
                 resolved_subagents=[],
                 content_digest="3" * 64,
                 source_revision_id=None,

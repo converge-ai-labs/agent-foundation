@@ -22,8 +22,8 @@ pub struct AgentRevision {
     #[serde(rename = "config_digest")]
     pub config_digest: String,
 
-    #[serde(rename = "connector_tools", skip_serializing_if = "Option::is_none")]
-    pub connector_tools: Option<Vec<models::ConnectorConnectionToolSelection>>,
+    #[serde(rename = "connection_tools", skip_serializing_if = "Option::is_none")]
+    pub connection_tools: Option<Vec<models::ConnectionToolSelection>>,
 
     #[serde(rename = "content_digest")]
     pub content_digest: String,
@@ -36,9 +36,6 @@ pub struct AgentRevision {
 
     #[serde(rename = "id")]
     pub id: String,
-
-    #[serde(rename = "mcp_tools", skip_serializing_if = "Option::is_none")]
-    pub mcp_tools: Option<Vec<models::McpConnectionToolSelection>>,
 
     #[serde(rename = "organization_id")]
     pub organization_id: String,
@@ -86,12 +83,11 @@ impl AgentRevision {
             agent_id,
             config: Box::new(config),
             config_digest,
-            connector_tools: None,
+            connection_tools: None,
             content_digest,
             created_at,
             created_by: Box::new(created_by),
             id,
-            mcp_tools: None,
             organization_id,
             resolved_model: Box::new(resolved_model),
             resolved_skills,

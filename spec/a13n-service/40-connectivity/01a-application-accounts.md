@@ -12,7 +12,7 @@ An Application Account is one concrete external identity operated directly by Se
 | Reception, default Agent, execution Service Account and default input policy | Application Account |
 | Exact provider object Agent and narrow configuration override                | AccountTarget       |
 
-A reusable provider application definition is not an Account. Each concrete provider-tenant installation or authorization is a separate Account. Provider adapters own exact identity meaning and credential schemas. ConnectorProvider, ConnectorConnection, and MCPConnection retain their independent contracts.
+A reusable provider application definition is not an Account. Each concrete provider-tenant installation or authorization is a separate Account. Provider adapters own exact identity meaning and credential schemas. ConnectorProvider, Connection retain their independent contracts.
 
 ## Account Resource
 

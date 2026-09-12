@@ -7,15 +7,17 @@ from urllib.parse import parse_qs, urlsplit
 
 import httpx2
 import pytest
-from a13n_service.connectivity.mcp.domain import CreateMCPConnectionRequest, MCPAuthMode
+from a13n_service.connectivity.connections.access import ConnectionError
+from a13n_service.connectivity.connections.domain import CreateConnectionRequest, MCPSource
+from a13n_service.connectivity.mcp.domain import MCPAuthMode
 from a13n_service.connectivity.mcp.errors import MCPConnectionError
 from a13n_service.connectivity.mcp.management import require_connection
-from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.storage import transaction
-from sqlalchemy import select, update
+from sqlalchemy import update
 
 from .conftest import NOW, WORKSPACE_ID, actor
+from .connection_helpers import management, mcp_checks
 from .test_mcp_refresh import _expired_connection
 from .test_mcp_service import MCP_ENDPOINT, RemoteServer, _rpc, capture_receipt
 from .test_mcp_service import mcp_services as mcp_services
@@ -81,14 +83,13 @@ async def test_discovery_refreshes_across_handshake_and_pages(
         return _rpc(body["id"], result)
 
     monkeypatch.setattr(RemoteServer, "__call__", respond)
-    result = await connections.reconnect(
+    result = await mcp_checks(connections).check(
         actor=actor(),
         connection_id=ready.id,
         expected_version=ready.version,
-        idempotency_key="reconnect-pages",
     )
     assert result.status == "ready"
-    assert await connections.get(actor=actor(), connection_id=result.id) == result
+    assert await management(connections).get(actor=actor(), connection_id=result.id) == result
     assert len(tokens) == 2
     before = next(token for method, cursor, token in requests if method == expiration_boundary and cursor is None)
     after = next(
@@ -139,18 +140,15 @@ async def test_discovery_completion_rejects_concurrent_invalidation(
                 connection.clear_credential()
 
     monkeypatch.setattr(transport, "connect", invalidate_after_transport)
-    with pytest.raises(MCPConnectionError):
-        await connections.reconnect(
-            actor=actor(),
-            connection_id=ready.id,
-            expected_version=ready.version,
-            idempotency_key="reconnect-race",
+    if change in {"endpoint", "credential"}:
+        checked = await mcp_checks(connections).check(
+            actor=actor(), connection_id=ready.id, expected_version=ready.version
         )
-    async with connectivity_sessions() as session:
-        evidence = await session.scalar(
-            select(IdempotencyEvidenceRecord).where(IdempotencyEvidenceRecord.operation == "mcp_connection.reconnect")
-        )
-        assert evidence.receipt_json["resource"] is None
+        assert checked.last_check is not None
+        assert checked.last_check.status == "unavailable" and checked.last_check.error_code == "connection_changed"
+    else:
+        with pytest.raises(ConnectionError):
+            await mcp_checks(connections).check(actor=actor(), connection_id=ready.id, expected_version=ready.version)
 
 
 @pytest.mark.parametrize("protocol_version", ["2024-11-05", "2025-03-26"])
@@ -194,12 +192,13 @@ async def test_discovery_without_receipt_rechecks_authority_before_ready(
             record.status = "pending"
         state = None
     else:
-        connection = await connections.create(
+        connection = await management(connections).create(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
             idempotency_key="create-authority-test",
-            request=CreateMCPConnectionRequest(
-                name="OAuth authority test", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.oauth
+            request=CreateConnectionRequest(
+                name="OAuth authority test",
+                source=MCPSource(kind="mcp", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.oauth),
             ),
         )
         launch = await oauth.authorize(

@@ -260,6 +260,7 @@ The complete machine-readable validation schema, including named enum/union defi
 | `connectivity.max_redirects`                             | `A13N_SERVICE_CONNECTIVITY_MAX_REDIRECTS`                             | integer         | minimum=0; maximum=3; default=3                            |
 | `connectivity.oauth_setup_ttl_seconds`                   | `A13N_SERVICE_CONNECTIVITY_OAUTH_SETUP_TTL_SECONDS`                   | integer         | minimum=60; maximum=900; default=600                       |
 | `connectivity.public_origin`                             | `A13N_SERVICE_CONNECTIVITY_PUBLIC_ORIGIN`                             | string or null  | default=null                                               |
+| `connectivity.authorization_return_urls`                 | `A13N_SERVICE_CONNECTIVITY_AUTHORIZATION_RETURN_URLS`                 | array of string | default=[]                                                 |
 | `connectivity.oauth_client_name`                         | `A13N_SERVICE_CONNECTIVITY_OAUTH_CLIENT_NAME`                         | string          | minLength=1; maxLength=128; default="Agent Foundation"     |
 | `connectivity.private_endpoint_domains`                  | `A13N_SERVICE_CONNECTIVITY_PRIVATE_ENDPOINT_DOMAINS`                  | array of string | default=[]                                                 |
 | `connectivity.private_endpoint_cidrs`                    | `A13N_SERVICE_CONNECTIVITY_PRIVATE_ENDPOINT_CIDRS`                    | array of string | default=[]                                                 |

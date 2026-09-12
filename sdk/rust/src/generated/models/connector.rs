@@ -19,6 +19,11 @@ pub struct Connector {
     #[serde(rename = "connector_provider_id")]
     pub connector_provider_id: String,
 
+    #[serde(rename = "credential_schemas", skip_serializing_if = "Option::is_none")]
+    pub credential_schemas: Option<
+        std::collections::HashMap<String, std::collections::HashMap<String, serde_json::Value>>,
+    >,
+
     #[serde(
         rename = "description",
         default,
@@ -64,6 +69,7 @@ impl Connector {
         Connector {
             authentication_methods,
             connector_provider_id,
+            credential_schemas: None,
             description: None,
             key,
             logo_url: None,

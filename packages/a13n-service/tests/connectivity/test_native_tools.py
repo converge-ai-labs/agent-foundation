@@ -147,7 +147,7 @@ async def test_native_runtime_observes_unknown_without_repeating_effect(
         replace(actor(), auth_method="internal"),
         ORG_ID,
         WORKSPACE_ID,
-        FrozenRunConnectivity((), ()),
+        FrozenRunConnectivity(()),
         (context,),
         authorization=await execution_authorization(),
     )

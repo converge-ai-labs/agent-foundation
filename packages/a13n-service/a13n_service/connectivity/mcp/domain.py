@@ -9,8 +9,6 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, model_validator
 
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.iam.domain import PrincipalRef
-from a13n_service.names import DisplayName
 
 MCP_PROTOCOL_REVISION = "2025-11-25"
 Endpoint = Annotated[str, StringConstraints(min_length=1, max_length=2048)]
@@ -26,69 +24,6 @@ class MCPAuthMode(StrEnum):
     bearer = "bearer"
     oauth = "oauth"
     static_headers = "static_headers"
-
-
-class MCPConnectionStatus(StrEnum):
-    pending = "pending"
-    ready = "ready"
-    action_required = "action_required"
-    disabled = "disabled"
-
-
-class MCPConnectionStatusReason(StrEnum):
-    reauthorization_required = "reauthorization_required"
-    incompatible = "incompatible"
-
-
-class MCPConnection(StrictModel):
-    id: str
-    organization_id: str
-    workspace_id: str
-    name: DisplayName
-    endpoint_url: Endpoint
-    auth_mode: MCPAuthMode
-    static_header_names: tuple[HeaderName, ...] = Field(max_length=16)
-    status: MCPConnectionStatus
-    status_reason: MCPConnectionStatusReason | None
-    version: int = Field(ge=1)
-    credential_configured: bool
-    credential_generation: int = Field(ge=0)
-    created_by: PrincipalRef
-    created_at: datetime
-    updated_at: datetime
-
-    @model_validator(mode="after")
-    def valid_status(self) -> MCPConnection:
-        if (self.status is MCPConnectionStatus.action_required) != (self.status_reason is not None):
-            raise ValueError("status_reason is required exactly for action_required")
-        if self.auth_mode is MCPAuthMode.static_headers:
-            if not self.static_header_names:
-                raise ValueError("static_headers requires header names")
-        elif self.static_header_names:
-            raise ValueError("static header names require static_headers auth mode")
-        return self
-
-
-class MCPConnectionCollection(StrictModel):
-    items: tuple[MCPConnection, ...]
-    next_cursor: str | None = None
-
-
-class CreateMCPConnectionRequest(StrictModel):
-    name: DisplayName
-    endpoint_url: Endpoint
-    auth_mode: MCPAuthMode
-    static_header_names: tuple[HeaderName, ...] = Field(default=(), max_length=16)
-
-
-class UpdateMCPConnectionRequest(StrictModel):
-    expected_version: int = Field(ge=1)
-    name: DisplayName
-
-
-class CompleteMCPOAuthRequest(StrictModel):
-    state: str = Field(min_length=32, max_length=512, repr=False)
-    receipt: str = Field(min_length=32, max_length=512, repr=False)
 
 
 OAuthTokenAuthMethod = Literal["none", "client_secret_basic", "client_secret_post"]
@@ -151,9 +86,9 @@ class ReplaceMCPCredentialsRequest(MCPConnectionCommandRequest):
 
 
 class MCPAuthorizationLaunch(StrictModel):
-    id: str = Field(pattern=r"^mos_[0-9A-Za-z]+$")
-    status: Literal["pending"] = "pending"
-    authorization_url: str = Field(max_length=8192, repr=False)
+    id: str = Field(pattern=r"^authz_[0-9A-Za-z]+$")
+    status: str = "pending"
+    authorization_url: str | None = Field(max_length=8192, repr=False)
     expires_at: datetime
 
 

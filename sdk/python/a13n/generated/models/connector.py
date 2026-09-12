@@ -8,6 +8,7 @@ from attrs import define as _attrs_define
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.connector_credential_schemas import ConnectorCredentialSchemas
     from ..models.connector_setup_schema import ConnectorSetupSchema
 
 
@@ -23,6 +24,7 @@ class Connector:
         key (str):
         name (str):
         setup_schema (ConnectorSetupSchema):
+        credential_schemas (ConnectorCredentialSchemas | Unset):
         description (None | str | Unset):
         logo_url (None | str | Unset):
         unavailable_reason (None | str | Unset):
@@ -33,6 +35,7 @@ class Connector:
     key: str
     name: str
     setup_schema: ConnectorSetupSchema
+    credential_schemas: ConnectorCredentialSchemas | Unset = UNSET
     description: str | Unset | None = UNSET
     logo_url: str | Unset | None = UNSET
     unavailable_reason: str | Unset | None = UNSET
@@ -47,6 +50,10 @@ class Connector:
         name = self.name
 
         setup_schema = self.setup_schema.to_dict()
+
+        credential_schemas: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.credential_schemas, Unset):
+            credential_schemas = self.credential_schemas.to_dict()
 
         description: str | Unset | None
         if isinstance(self.description, Unset):
@@ -77,6 +84,8 @@ class Connector:
                 "setup_schema": setup_schema,
             }
         )
+        if credential_schemas is not UNSET:
+            field_dict["credential_schemas"] = credential_schemas
         if description is not UNSET:
             field_dict["description"] = description
         if logo_url is not UNSET:
@@ -88,6 +97,7 @@ class Connector:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        from ..models.connector_credential_schemas import ConnectorCredentialSchemas
         from ..models.connector_setup_schema import ConnectorSetupSchema
 
         d = dict(src_dict)
@@ -100,6 +110,13 @@ class Connector:
         name = d.pop("name")
 
         setup_schema = ConnectorSetupSchema.from_dict(d.pop("setup_schema"))
+
+        _credential_schemas = d.pop("credential_schemas", UNSET)
+        credential_schemas: ConnectorCredentialSchemas | Unset
+        if isinstance(_credential_schemas, Unset):
+            credential_schemas = UNSET
+        else:
+            credential_schemas = ConnectorCredentialSchemas.from_dict(_credential_schemas)
 
         def _parse_description(data: object) -> str | Unset | None:
             if data is None:
@@ -134,6 +151,7 @@ class Connector:
             key=key,
             name=name,
             setup_schema=setup_schema,
+            credential_schemas=credential_schemas,
             description=description,
             logo_url=logo_url,
             unavailable_reason=unavailable_reason,

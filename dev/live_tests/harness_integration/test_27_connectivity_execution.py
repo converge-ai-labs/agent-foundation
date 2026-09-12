@@ -3,6 +3,7 @@
 import hashlib
 import json
 import secrets
+from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
 import pytest
@@ -21,25 +22,28 @@ def requests(journey, kind):
 async def connection(journey, kind):
     if kind == "mcp":
         resource = await journey.post(
-            journey.base + "/mcp-connections",
+            journey.base + "/connections",
             {
                 "name": "Live MCP",
-                "endpoint_url": journey.live.config["control_url"] + "/__live__/mcp",
-                "auth_mode": "bearer",
+                "source": {
+                    "kind": "mcp",
+                    "endpoint_url": journey.live.config["control_url"] + "/__live__/mcp",
+                    "auth_mode": "bearer",
+                },
             },
         )
-        resource = await journey.post(
-            f"/api/v1/mcp-connections/{resource['id']}/credentials",
+        auth = await journey.post(
+            f"/api/v1/connections/{resource['id']}/authorizations",
             {
                 "expected_version": resource["version"],
-                "bearer": journey.live.config["token"],
+                "method": "credentials",
+                "credentials": {"bearer": journey.live.config["token"]},
             },
-            expected=200,
         )
+        assert auth["status"] == "completed"
+        current = await journey.live.request("GET", f"/api/v1/connections/{resource['id']}")
         return await journey.post(
-            f"/api/v1/mcp-connections/{resource['id']}/reconnect",
-            {"expected_version": resource["version"]},
-            expected=200,
+            f"/api/v1/connections/{resource['id']}/check", {"expected_version": current["version"]}, expected=200
         )
     provider = await journey.post(
         journey.base + "/connector-providers",
@@ -51,35 +55,38 @@ async def connection(journey, kind):
         },
     )
     resource = await journey.post(
-        journey.base + "/connector-connections",
+        journey.base + "/connections",
         {
             "name": "Live account",
-            "connector_provider_id": provider["id"],
-            "connector_key": "live",
+            "source": {"kind": "connector", "provider_id": provider["id"], "connector_key": "live"},
         },
     )
-    nonce = secrets.token_hex(32)
-    launch = await journey.post(
-        f"/api/v1/connector-connections/{resource['id']}/setup",
+    nonce, verifier, state = secrets.token_hex(32), secrets.token_hex(32), secrets.token_hex(32)
+    auth = await journey.post(
+        f"/api/v1/connections/{resource['id']}/authorizations",
         {
             "expected_version": resource["version"],
-            "setup": {"auth_config_id": "live-auth", "toolkit_version": TOOLKIT_VERSION},
-            "return_path": "/",
-            "browser_nonce": nonce,
+            "method": "browser",
+            "options": {"auth_config_id": "live-auth", "toolkit_version": TOOLKIT_VERSION},
+            "return_url": "https://live.example/complete",
+            "state": state,
+            "completion_challenge": hashlib.sha256(verifier.encode()).hexdigest(),
         },
-        expected=200,
     )
-    assert launch["completion_method"] == "oauth_verifier" and launch["connection"]["status"] != "ready"
-    await journey.post(
-        "/api/v1/connector-setup/complete",
-        {"attempt_id": launch["attempt_id"], "browser_nonce": nonce, "session_uri": "live-session"},
-        expected=200,
+    assert auth["status"] == "awaiting_user"
+    path = f"/api/v1/connection-authorizations/{auth['id']}"
+    token = parse_qs(urlsplit(auth["next_action"]["url"]).fragment)["token"][0]
+    await journey.post(path + "/launch", {"token": token, "browser_nonce": nonce}, expected=200)
+    received = await journey.post(
+        path + "/receive", {"browser_nonce": nonce, "session_uri": "live-session"}, expected=200
     )
-    return await journey.live.wait(
-        lambda: journey.live.request("GET", f"/api/v1/connector-connections/{resource['id']}"),
-        lambda value: value["status"] == "ready",
-        "Connector setup reconciliation",
+    query = parse_qs(urlsplit(received["url"]).query)
+    assert query["state"] == [state] and query["authorization_id"] == [auth["id"]]
+    completed = await journey.post(
+        path + "/complete", {"receipt": query["receipt"][0], "completion_verifier": verifier}, expected=200
     )
+    assert completed["status"] == "completed"
+    return await journey.live.request("GET", f"/api/v1/connections/{resource['id']}")
 
 
 @pytest.mark.parametrize("kind", ["mcp", "connector"])
@@ -87,7 +94,7 @@ async def test_managed_connection_calls_selected_tool_and_revocation_blocks_disp
     journey, live = management, management.live
     resource = await connection(journey, kind)
     assert resource["status"] == "ready"
-    config = {kind + "_tools": [{kind + "_connection_id": resource["id"], "tools": ["live_echo"]}]}
+    config = {"connection_tools": [{"connection_id": resource["id"], "tools": ["live_echo"]}]}
     agent = await journey.agent(**config)
     value = uuid4().hex
     case = await journey.case(steps=[{"tool": "live_echo", "arguments": {"value": value}}])
@@ -109,26 +116,15 @@ async def test_managed_connection_calls_selected_tool_and_revocation_blocks_disp
     assert dispatched["credential_sha256"] == hashlib.sha256(expected_credential.encode()).hexdigest()
     assert live.config["token"] not in json.dumps(journey.observations(case))
 
-    path = f"/api/v1/{kind}-connections/{resource['id']}"
+    path = f"/api/v1/connections/{resource['id']}"
     current = await live.request("GET", path)
     cleanup = await journey.post(
-        path + ("/disable" if kind == "mcp" else "/revoke"), {"expected_version": current["version"]}, expected=200
+        path + ("/disable" if kind == "mcp" else "/connector/revoke"),
+        {"expected_version": current["version"]},
+        expected=200,
     )
     if kind == "connector":
         assert cleanup["local_status"] == "disabled" and cleanup["remote_status"] == "succeeded"
-        current = await live.request("GET", path)
-        reconnect = await live.http.post(
-            path + "/reconnect",
-            headers={"Idempotency-Key": uuid4().hex},
-            json={
-                "expected_version": current["version"],
-                "setup": {"auth_config_id": "live-auth", "toolkit_version": TOOLKIT_VERSION},
-                "return_path": "/",
-                "browser_nonce": secrets.token_hex(32),
-            },
-        )
-        assert reconnect.status_code == 409
-        assert reconnect.json()["error"]["code"] == "reconnect_unsupported"
     # New invocations must be denied before any external dispatch. This does not test IAM grant revocation (case 29).
     rejected = await live.http.post(
         journey.base + "/runs",

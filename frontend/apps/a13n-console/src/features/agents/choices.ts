@@ -10,7 +10,7 @@ export function useAgentChoices() {
     queryKey: ["agent-choices", workspace.id],
     queryFn: async ({ signal }) => {
       const path = { workspace: workspace.id };
-      const [models, skills, mcp, connectors] = await Promise.all([
+      const [models, skills, connections] = await Promise.all([
         allPages((cursor) =>
           client.http
             .GET("/api/v1/workspaces/{workspace}/models", {
@@ -29,22 +29,14 @@ export function useAgentChoices() {
         ),
         allPages((cursor) =>
           client.http
-            .GET("/api/v1/workspaces/{workspace}/mcp-connections", {
-              params: { path, query: { cursor, limit: 100 } },
-              signal,
-            })
-            .then(data),
-        ),
-        allPages((cursor) =>
-          client.http
-            .GET("/api/v1/workspaces/{workspace}/connector-connections", {
+            .GET("/api/v1/workspaces/{workspace}/connections", {
               params: { path, query: { cursor, limit: 100 } },
               signal,
             })
             .then(data),
         ),
       ]);
-      return { models, skills, mcp, connectors };
+      return { models, skills, connections };
     },
   });
 }

@@ -1,3 +1,4 @@
+import { requireCompletedAuthorization } from "../connections/authorization-context";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
 import { MCPCredentialFields } from "./credentials";
@@ -17,9 +18,9 @@ export function MCPAuthorization({
   reload,
   onConnectionChange,
 }: {
-  initial: Schema["MCPConnection"];
+  initial: Schema["Connection"];
   reload: () => Promise<void>;
-  onConnectionChange: (connection: Schema["MCPConnection"]) => void;
+  onConnectionChange: (connection: Schema["Connection"]) => void;
 }) {
   const client = useClient(),
     cache = useQueryClient(),
@@ -29,29 +30,33 @@ export function MCPAuthorization({
     basis = initial,
     [bearer, setBearer] = useState(""),
     [headers, setHeaders] = useState<Record<string, string>>({});
+  const source = basis.source;
   const credentials = useMutation({
     gcTime: 0,
     mutationFn: () => {
       const body = {
         expected_version: basis.version,
-        ...(basis.auth_mode === "bearer"
-          ? { bearer }
-          : { static_headers: headers }),
+        method: "credentials" as const,
+        credentials:
+          source.kind === "mcp" && source.auth_mode === "bearer"
+            ? { bearer }
+            : headers,
       };
       return client.http
-        .POST("/api/v1/mcp-connections/{connection_id}/credentials", {
+        .POST("/api/v1/connections/{connection_id}/authorizations", {
           params: {
             path: { connection_id: basis.id },
             header: commandHeaders(workspace.id, key.forBody(body)),
           },
           body,
         })
-        .then(data);
+        .then(data)
+        .then(requireCompletedAuthorization);
     },
     onSuccess: () => {
       setBearer("");
       setHeaders({});
-      void cache.invalidateQueries({ queryKey: ["mcp-connections"] });
+      void cache.invalidateQueries({ queryKey: ["connections"] });
       void reload();
     },
   });
@@ -59,42 +64,40 @@ export function MCPAuthorization({
     mutationFn: () => {
       const body = { expected_version: basis.version };
       return client.http
-        .POST("/api/v1/mcp-connections/{connection_id}/reconnect", {
+        .POST("/api/v1/connections/{connection_id}/check", {
           params: {
             path: { connection_id: basis.id },
-            header: commandHeaders(
-              workspace.id,
-              key.forBody({ reconnect: basis.id, ...body }),
-            ),
           },
           body,
         })
         .then(data);
     },
     onSuccess: () => {
-      void cache.invalidateQueries({ queryKey: ["mcp-connections"] });
+      void cache.invalidateQueries({ queryKey: ["connections"] });
       void reload();
     },
   });
   return (
     <div className="grid justify-items-start gap-4">
       <div className="grid gap-1">
-        <h3 className="text-sm font-medium">{t(`auth.${basis.auth_mode}`)}</h3>
+        <h3 className="text-sm font-medium">
+          {t(`auth.${source.kind === "mcp" ? source.auth_mode : "none"}`)}
+        </h3>
         <p className="text-sm text-muted-foreground">
           {t(
-            basis.auth_mode === "none"
+            (source.kind === "mcp" ? source.auth_mode : "none") === "none"
               ? "This server does not require credentials. Verify the connection to refresh its available tools."
               : "Manage the credentials used to access this server.",
           )}
         </p>
       </div>
-      {basis.auth_mode === "oauth" ? (
+      {(source.kind === "mcp" ? source.auth_mode : "none") === "oauth" ? (
         <MCPOAuthSetup
           connection={basis}
           onConnectionChange={onConnectionChange}
         />
       ) : (
-        basis.auth_mode !== "none" && (
+        (source.kind === "mcp" ? source.auth_mode : "none") !== "none" && (
           <form
             className={styles.form}
             onSubmit={(event) => {
@@ -109,8 +112,10 @@ export function MCPAuthorization({
               )}
             </p>
             <MCPCredentialFields
-              mode={basis.auth_mode}
-              names={basis.static_header_names}
+              mode={source.kind === "mcp" ? source.auth_mode : "none"}
+              names={
+                source.kind === "mcp" ? (source.static_header_names ?? []) : []
+              }
               bearer={bearer}
               onBearer={setBearer}
               headers={headers}
@@ -123,7 +128,7 @@ export function MCPAuthorization({
           </form>
         )
       )}
-      {basis.auth_mode !== "oauth" && (
+      {(source.kind === "mcp" ? source.auth_mode : "none") !== "oauth" && (
         <Button
           variant="outline"
           loading={reconnect.isPending}

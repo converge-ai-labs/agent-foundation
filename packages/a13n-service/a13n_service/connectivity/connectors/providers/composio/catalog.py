@@ -93,6 +93,29 @@ class ComposioCatalog:
             key, configured.auth_config_id, before_shared_setup, configurations=configurations
         )
 
+    async def prepare_credentials(
+        self, key: str, setup: JsonObject, credentials: JsonObject, before_shared_setup: BeforeSharedSetup | None
+    ) -> AuthConfiguration:
+        configured = ComposioSetup.model_validate(setup)
+        item = await self._toolkit(key)
+        configurations = await self.configurations()
+        connector = connector_metadata(item, configurations)
+        if connector.unavailable_reason or not Draft202012Validator(connector.setup_schema).is_valid(setup):
+            raise ConnectorProviderError("invalid_setup_options")
+        selected = next(
+            (config for config in configurations if config.id == configured.auth_config_id and config.toolkit == key),
+            None,
+        )
+        scheme = selected.scheme if selected is not None else configured.auth_config_id.removeprefix("create:")
+        if scheme not in {"API_KEY", "BEARER_TOKEN", "BASIC"}:
+            raise ConnectorProviderError("invalid_setup_options")
+        schema = _credential_schema(item, scheme)
+        if not schema["properties"] or not Draft202012Validator(schema).is_valid(credentials):
+            raise ConnectorProviderError("invalid_credentials")
+        return await self.resolve_auth_config(
+            key, configured.auth_config_id, before_shared_setup, configurations=configurations
+        )
+
     async def _toolkit(self, key: str) -> JsonObject:
         item = required_object(
             await self._http.request(
@@ -248,6 +271,7 @@ def connector_metadata(item: JsonObject, configurations: tuple[AuthConfiguration
         unavailable_reason=reason,
         setup_schema=schema,
         authentication_methods=methods if item.get("no_auth") is not True else (),
+        credential_schemas={scheme: _credential_schema(item, scheme) for scheme in methods if scheme != "OAUTH2"},
     )
 
 
@@ -318,3 +342,25 @@ def _connection_data_schema(item: JsonObject, scheme: str) -> JsonObject:
         "properties": properties,
         "additionalProperties": False,
     }
+
+
+def _credential_schema(item: JsonObject, scheme: str) -> JsonObject:
+    properties: JsonObject = {}
+    required: list[JsonValue] = []
+    for detail in _auth_details(item):
+        if detail.get("mode") != scheme:
+            continue
+        fields = required_object(required_object(detail.get("fields")).get("connected_account_initiation", {}))
+        for group in ("required", "optional"):
+            entries = fields.get(group, [])
+            if not isinstance(entries, list):
+                raise ConnectorProviderError("invalid_provider_response")
+            for entry in entries:
+                field = required_object(entry)
+                name = required_string(field, "name", max_length=128)
+                if not is_credential_field(name) and field.get("is_secret") is not True:
+                    continue
+                properties[name] = {"type": "string", "minLength": 1, "writeOnly": True}
+                if group == "required":
+                    required.append(name)
+    return {"type": "object", "properties": properties, "required": required, "additionalProperties": False}

@@ -26,10 +26,10 @@ export function MCPOAuthClientEditor({
   onSaved,
   onCancel,
 }: {
-  connection: Schema["MCPConnection"];
+  connection: Schema["Connection"];
   configuration: Schema["MCPOAuthClientConfiguration"] | null;
   discovery: Schema["MCPOAuthDiscovery"];
-  onSaved: (connection: Schema["MCPConnection"], grant: GrantType) => void;
+  onSaved: (connection: Schema["Connection"], grant: GrantType) => void;
   onCancel?: () => void;
 }) {
   const client = useClient(),
@@ -54,7 +54,7 @@ export function MCPOAuthClientEditor({
     gcTime: 0,
     mutationFn: (remove: boolean) =>
       client.http
-        .PUT("/api/v1/mcp-connections/{connection_id}/oauth-client", {
+        .PUT("/api/v1/connections/{connection_id}/mcp/oauth-client", {
           params: { path: { connection_id: connection.id } },
           body: {
             expected_version: connection.version,
@@ -72,7 +72,7 @@ export function MCPOAuthClientEditor({
         .then(data),
     onSuccess: (updated, remove) => {
       setSecret("");
-      void cache.invalidateQueries({ queryKey: ["mcp-connections"] });
+      void cache.invalidateQueries({ queryKey: ["connections"] });
       void cache.invalidateQueries({
         queryKey: ["mcp-oauth-setup", connection.id],
       });

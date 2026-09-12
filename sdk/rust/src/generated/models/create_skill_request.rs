@@ -22,11 +22,11 @@ pub struct CreateSkillRequest {
     pub name: Option<Option<String>>,
 
     #[serde(rename = "source")]
-    pub source: Box<models::Source3>,
+    pub source: Box<models::Source4>,
 }
 
 impl CreateSkillRequest {
-    pub fn new(source: models::Source3) -> CreateSkillRequest {
+    pub fn new(source: models::Source4) -> CreateSkillRequest {
         CreateSkillRequest {
             name: None,
             source: Box::new(source),

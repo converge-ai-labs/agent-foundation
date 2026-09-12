@@ -372,7 +372,7 @@ function ProviderForm({
               </p>
               <p>
                 {t(
-                  "For OAuth, open that project's Settings → OAuth user verification and set the callback URL to your Service public HTTPS origin followed by /connector-setup/callback. Local development needs a public HTTPS tunnel.",
+                  "For OAuth, open that project's Settings → OAuth user verification and set the callback URL to your Service public HTTPS origin followed by /connection-authorizations/browser. Local development needs a public HTTPS tunnel.",
                 )}
               </p>
               <p>

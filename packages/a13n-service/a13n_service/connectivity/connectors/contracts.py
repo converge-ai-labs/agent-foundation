@@ -177,6 +177,7 @@ class ConnectorProviderRuntime(Protocol):
         context: SetupContext,
         resume_ref: str | None = None,
         before_shared_setup: BeforeSharedSetup | None = None,
+        credentials: JsonObject | None = None,
     ) -> SetupStarted: ...
 
     async def complete_setup(
@@ -200,3 +201,4 @@ class DiscoveredConnector(StrictModel):
     unavailable_reason: str | None = Field(default=None, max_length=512)
     setup_schema: JsonObject
     authentication_methods: tuple[str, ...] = Field(max_length=32)
+    credential_schemas: dict[str, JsonObject] = Field(default_factory=dict)

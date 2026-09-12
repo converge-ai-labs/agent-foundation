@@ -264,7 +264,7 @@ Service-owned resource-oriented JSON APIs and their first-party SDKs follow [Pla
 
 a13n Service additionally exposes the [Protocol Gateway](a13n-service/15-protocol-gateway.md): Native APIs and streams, Hosted AG-UI, and A2A are separate public protocols over common application authority. Upstream AG-UI and A2A wire contracts do not inherit Service JSON naming or `/api/v1` error semantics.
 
-Service composes the [Agent-facing a13n MCP](a13n-service/40-connectivity/04-agent-facing-tools.md) as per-source in-process tool groups for Application Account actions, protected inbound replies, and Connector tools. They bind existing RunAttempt authority and require no network listener or internal MCP credential. Harness clients in the executing process directly connect user Remote MCP endpoints selected through [`MCPConnection`](a13n-service/40-connectivity/06-remote-mcp-connections.md). Harness owns MCP discovery and loading; Service retains source selections and permissions rather than frozen external tool schemas.
+Service composes the [Agent-facing a13n MCP](a13n-service/40-connectivity/04-agent-facing-tools.md) as per-source in-process tool groups for Application Account actions, protected inbound replies, and Connector tools. They bind existing RunAttempt authority and require no network listener or internal MCP credential. Harness clients in the executing process directly connect user Remote MCP endpoints selected through [`Connection`](a13n-service/40-connectivity/06-remote-mcp-connections.md). Harness owns MCP discovery and loading; Service retains source selections and permissions rather than frozen external tool schemas.
 
 ## Extension Model
 

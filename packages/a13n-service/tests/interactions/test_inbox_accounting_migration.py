@@ -16,7 +16,7 @@ from .conftest import NOW, ORGANIZATION_ID, _seed_interaction_database
 from .test_attempt_execution import _accept_root
 from .test_inbox import _input
 
-PREVIOUS_REVISION = "f6ec04da96ed"
+PREVIOUS_REVISION = "ec86f1da8c98"
 ACCOUNTING_REVISION = "56b4ee866468"
 
 

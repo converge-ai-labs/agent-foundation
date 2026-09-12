@@ -24,17 +24,14 @@ pub struct AgentConfigOutput {
     #[serde(rename = "client_tools", skip_serializing_if = "Option::is_none")]
     pub client_tools: Option<Vec<models::ClientToolDefinition>>,
 
-    #[serde(rename = "connector_tools", skip_serializing_if = "Option::is_none")]
-    pub connector_tools: Option<Vec<models::ConnectorConnectionToolSelection>>,
+    #[serde(rename = "connection_tools", skip_serializing_if = "Option::is_none")]
+    pub connection_tools: Option<Vec<models::ConnectionToolSelection>>,
 
     #[serde(rename = "input_adapter")]
     pub input_adapter: Box<models::InputAdapterConfig>,
 
     #[serde(rename = "instructions", skip_serializing_if = "Option::is_none")]
     pub instructions: Option<String>,
-
-    #[serde(rename = "mcp_tools", skip_serializing_if = "Option::is_none")]
-    pub mcp_tools: Option<Vec<models::McpConnectionToolSelection>>,
 
     #[serde(rename = "model")]
     pub model: Box<models::AgentModel>,
@@ -94,10 +91,9 @@ impl AgentConfigOutput {
         AgentConfigOutput {
             asset_publication: None,
             client_tools: None,
-            connector_tools: None,
+            connection_tools: None,
             input_adapter: Box::new(input_adapter),
             instructions: None,
-            mcp_tools: None,
             model: Box::new(model),
             output_spec: None,
             plugins: None,

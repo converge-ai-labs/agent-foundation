@@ -4,47 +4,35 @@ from asyncio import create_task
 from contextlib import asynccontextmanager
 
 import pytest
-from a13n_service.connectivity.mcp.domain import CreateMCPConnectionRequest, MCPAuthMode, ReplaceMCPCredentialsRequest
+from a13n_service.connectivity.connections.domain import CreateConnectionRequest, MCPSource
+from a13n_service.connectivity.mcp.domain import MCPAuthMode, ReplaceMCPCredentialsRequest
 from a13n_service.connectivity.mcp.errors import MCPConnectionError
 from anyio import Event, fail_after
 
 from .conftest import WORKSPACE_ID, actor
+from .connection_helpers import management, mcp_checks
 from .test_mcp_service import MCP_ENDPOINT
 from .test_mcp_service import mcp_services as mcp_services
 
 pytestmark = pytest.mark.anyio
 
 
-@pytest.mark.parametrize("operation", ["create", "credentials", "reconnect"])
-async def test_discovery_command_replays_completed_snapshot_without_repeating_io(mcp_services, monkeypatch, operation):
+async def test_credential_command_replays_completed_snapshot_without_repeating_io(mcp_services, monkeypatch):
     connections, _, remote = mcp_services
     remote.allow_anonymous = True
-    creation = CreateMCPConnectionRequest(
-        name="Command MCP",
-        endpoint_url=MCP_ENDPOINT,
-        auth_mode=MCPAuthMode.bearer if operation == "credentials" else MCPAuthMode.none,
+    creation = CreateConnectionRequest(
+        name="Command MCP", source=MCPSource(kind="mcp", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.bearer)
     )
-    created = None
-    if operation != "create":
-        created = await connections.create(
-            actor=actor(), workspace_id=WORKSPACE_ID, idempotency_key="setup", request=creation
-        )
+    created = await management(connections).create(
+        actor=actor(), workspace_id=WORKSPACE_ID, idempotency_key="setup", request=creation
+    )
 
     async def invoke():
-        if operation == "create":
-            return await connections.create(
-                actor=actor(), workspace_id=WORKSPACE_ID, idempotency_key="command", request=creation
-            )
-        assert created is not None
-        if operation == "credentials":
-            return await connections.replace_credentials(
-                actor=actor(),
-                connection_id=created.id,
-                idempotency_key="command",
-                request=ReplaceMCPCredentialsRequest(expected_version=created.version, bearer="bearer-secret"),
-            )
-        return await connections.reconnect(
-            actor=actor(), connection_id=created.id, idempotency_key="command", expected_version=created.version
+        return await connections.replace_credentials(
+            actor=actor(),
+            connection_id=created.id,
+            idempotency_key="command",
+            request=ReplaceMCPCredentialsRequest(expected_version=created.version, bearer="bearer-secret"),
         )
 
     arrived, release = Event(), Event()
@@ -73,11 +61,11 @@ async def test_discovery_command_replays_completed_snapshot_without_repeating_io
             result = await first
 
         assert result.status == "ready"
-        assert await connections.get(actor=actor(), connection_id=result.id) == result
+        assert await management(connections).get(actor=actor(), connection_id=result.id) == result
         assert await invoke() == result
         assert len(remote.requests) == request_count
 
-        disabled = await connections.set_enabled(
+        disabled = await management(connections).set_enabled(
             actor=actor(),
             connection_id=result.id,
             idempotency_key="disable",
@@ -89,14 +77,16 @@ async def test_discovery_command_replays_completed_snapshot_without_repeating_io
         assert len(remote.requests) == request_count
 
 
-async def test_failed_discovery_has_no_success_receipt_and_new_reconnect_can_recover(mcp_services, monkeypatch):
+async def test_failed_check_records_unavailability_and_an_explicit_check_can_recover(mcp_services, monkeypatch):
     connections, _, remote = mcp_services
     remote.allow_anonymous = True
-    created = await connections.create(
+    created = await management(connections).create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="setup",
-        request=CreateMCPConnectionRequest(name="Failure MCP", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.none),
+        request=CreateConnectionRequest(
+            name="Failure MCP", source=MCPSource(kind="mcp", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.none)
+        ),
     )
     transport = connections._discovery._transport
     original = transport.connect
@@ -108,22 +98,14 @@ async def test_failed_discovery_has_no_success_receipt_and_new_reconnect_can_rec
         raise OSError("discovery interrupted")
 
     monkeypatch.setattr(transport, "connect", failed_discovery)
-    with pytest.raises(MCPConnectionError) as failed:
-        await connections.reconnect(
-            actor=actor(), connection_id=created.id, idempotency_key="failed", expected_version=created.version
-        )
-    assert failed.value.code == "mcp_discovery_unavailable"
-    request_count = len(remote.requests)
-    with pytest.raises(MCPConnectionError) as replay:
-        await connections.reconnect(
-            actor=actor(), connection_id=created.id, idempotency_key="failed", expected_version=created.version
-        )
-    assert replay.value.code == "mcp_discovery_incomplete"
-    assert len(remote.requests) == request_count
-    pending = await connections.get(actor=actor(), connection_id=created.id)
+    pending = await mcp_checks(connections).check(
+        actor=actor(), connection_id=created.id, expected_version=created.version
+    )
     assert pending.status == "pending"
+    assert pending.last_check is not None
+    assert pending.last_check.status == "unavailable" and pending.last_check.error_code == "mcp_discovery_unavailable"
     monkeypatch.setattr(transport, "connect", original)
-    recovered = await connections.reconnect(
-        actor=actor(), connection_id=created.id, idempotency_key="recover", expected_version=pending.version
+    recovered = await mcp_checks(connections).check(
+        actor=actor(), connection_id=created.id, expected_version=pending.version
     )
     assert recovered.status == "ready"

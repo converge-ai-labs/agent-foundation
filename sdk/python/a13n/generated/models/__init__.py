@@ -51,6 +51,11 @@ from .assistant_message import AssistantMessage
 from .audio_input_content import AudioInputContent
 from .auth_configuration import AuthConfiguration
 from .auth_session import AuthSession
+from .authorization import Authorization
+from .authorization_action import AuthorizationAction
+from .authorization_action_type import AuthorizationActionType
+from .authorization_redirect import AuthorizationRedirect
+from .authorization_status import AuthorizationStatus
 from .binary_content import BinaryContent
 from .binary_content_delivery import BinaryContentDelivery
 from .binary_input_content import BinaryInputContent
@@ -68,24 +73,28 @@ from .collection_environment_provider import CollectionEnvironmentProvider
 from .collection_environment_provider_definition import CollectionEnvironmentProviderDefinition
 from .collection_environment_template import CollectionEnvironmentTemplate
 from .collection_environment_template_revision import CollectionEnvironmentTemplateRevision
-from .complete_connector_setup_request import CompleteConnectorSetupRequest
+from .complete_authorization_request import CompleteAuthorizationRequest
 from .complete_email_change_request import CompleteEmailChangeRequest
-from .complete_mcpo_auth_request import CompleteMCPOAuthRequest
 from .complete_password_reset_request import CompletePasswordResetRequest
 from .complete_pending_resolution import CompletePendingResolution
 from .configure_mcpo_auth_client_request import ConfigureMCPOAuthClientRequest
+from .connection import Connection
+from .connection_check import ConnectionCheck
+from .connection_check_scope import ConnectionCheckScope
+from .connection_check_status import ConnectionCheckStatus
 from .connection_cleanup_receipt import ConnectionCleanupReceipt
 from .connection_cleanup_receipt_local_status import ConnectionCleanupReceiptLocalStatus
 from .connection_cleanup_receipt_remote_status import ConnectionCleanupReceiptRemoteStatus
+from .connection_collection import ConnectionCollection
+from .connection_command_request import ConnectionCommandRequest
+from .connection_safe_metadata import ConnectionSafeMetadata
+from .connection_status import ConnectionStatus
+from .connection_status_reason import ConnectionStatusReason
+from .connection_tool_selection import ConnectionToolSelection
 from .connector import Connector
 from .connector_collection import ConnectorCollection
-from .connector_connection import ConnectorConnection
-from .connector_connection_collection import ConnectorConnectionCollection
-from .connector_connection_command_request import ConnectorConnectionCommandRequest
-from .connector_connection_safe_metadata import ConnectorConnectionSafeMetadata
-from .connector_connection_status import ConnectorConnectionStatus
-from .connector_connection_status_reason import ConnectorConnectionStatusReason
-from .connector_connection_tool_selection import ConnectorConnectionToolSelection
+from .connector_credential_schemas import ConnectorCredentialSchemas
+from .connector_credential_schemas_additional_property import ConnectorCredentialSchemasAdditionalProperty
 from .connector_provider import ConnectorProvider
 from .connector_provider_collection import ConnectorProviderCollection
 from .connector_provider_command_request import ConnectorProviderCommandRequest
@@ -97,10 +106,8 @@ from .connector_provider_definition_credential_schema import ConnectorProviderDe
 from .connector_provider_status import ConnectorProviderStatus
 from .connector_provider_test_result import ConnectorProviderTestResult
 from .connector_provider_test_result_verified_access_item import ConnectorProviderTestResultVerifiedAccessItem
-from .connector_setup_completion import ConnectorSetupCompletion
-from .connector_setup_launch import ConnectorSetupLaunch
-from .connector_setup_launch_status import ConnectorSetupLaunchStatus
 from .connector_setup_schema import ConnectorSetupSchema
+from .connector_source import ConnectorSource
 from .connector_tool import ConnectorTool
 from .connector_tool_annotations import ConnectorToolAnnotations
 from .connector_tool_input_schema import ConnectorToolInputSchema
@@ -116,14 +123,17 @@ from .create_account_request_provider_config import CreateAccountRequestProvider
 from .create_account_request_provider_policy_type_0 import CreateAccountRequestProviderPolicyType0
 from .create_agent_request import CreateAgentRequest
 from .create_agent_revision_request import CreateAgentRevisionRequest
-from .create_connector_connection_request import CreateConnectorConnectionRequest
+from .create_authorization_request import CreateAuthorizationRequest
+from .create_authorization_request_credentials_type_0 import CreateAuthorizationRequestCredentialsType0
+from .create_authorization_request_method import CreateAuthorizationRequestMethod
+from .create_authorization_request_options import CreateAuthorizationRequestOptions
+from .create_connection_request import CreateConnectionRequest
 from .create_connector_provider_request import CreateConnectorProviderRequest
 from .create_connector_provider_request_configuration import CreateConnectorProviderRequestConfiguration
 from .create_connector_provider_request_credentials import CreateConnectorProviderRequestCredentials
 from .create_hook_subscription_request import CreateHookSubscriptionRequest
 from .create_invitation_request import CreateInvitationRequest
 from .create_key_request import CreateKeyRequest
-from .create_mcp_connection_request import CreateMCPConnectionRequest
 from .create_model_provider_request import CreateModelProviderRequest
 from .create_model_provider_request_configuration import CreateModelProviderRequestConfiguration
 from .create_model_provider_request_extra_headers import CreateModelProviderRequestExtraHeaders
@@ -218,21 +228,16 @@ from .invite_workspace_request_role import InviteWorkspaceRequestRole
 from .invoking_user_secret_credential import InvokingUserSecretCredential
 from .item_collection import ItemCollection
 from .item_resource import ItemResource
+from .launch_authorization_request import LaunchAuthorizationRequest
 from .lifecycle_entity_type import LifecycleEntityType
 from .lifecycle_event import LifecycleEvent
 from .lifecycle_event_payload import LifecycleEventPayload
 from .lifecycle_projection_state import LifecycleProjectionState
 from .login_request import LoginRequest
 from .login_result import LoginResult
-from .mcp_auth_mode import MCPAuthMode
-from .mcp_authorization_launch import MCPAuthorizationLaunch
 from .mcp_client_metadata import MCPClientMetadata
-from .mcp_connection import MCPConnection
-from .mcp_connection_collection import MCPConnectionCollection
-from .mcp_connection_command_request import MCPConnectionCommandRequest
-from .mcp_connection_status import MCPConnectionStatus
-from .mcp_connection_status_reason import MCPConnectionStatusReason
-from .mcp_connection_tool_selection import MCPConnectionToolSelection
+from .mcp_source import MCPSource
+from .mcp_source_auth_mode import MCPSourceAuthMode
 from .mcp_tool import MCPTool
 from .mcp_tool_annotations import MCPToolAnnotations
 from .mcp_tool_collection import MCPToolCollection
@@ -323,11 +328,9 @@ from .permissions import Permissions
 from .plugin_selection import PluginSelection
 from .plugin_selection_config import PluginSelectionConfig
 from .post_application_accounts_account_id_action_action import PostApplicationAccountsAccountIdActionAction
-from .post_connector_connections_connection_id_action_action import PostConnectorConnectionsConnectionIdActionAction
 from .post_connector_providers_connector_provider_id_action_action import (
     PostConnectorProvidersConnectorProviderIdActionAction,
 )
-from .post_mcp_connections_connection_id_action_action import PostMcpConnectionsConnectionIdActionAction
 from .post_workspaces_workspace_agents_agent_action_action import PostWorkspacesWorkspaceAgentsAgentActionAction
 from .principal_ref import PrincipalRef
 from .principal_type import PrincipalType
@@ -344,8 +347,7 @@ from .queued_submission_failure import QueuedSubmissionFailure
 from .queued_submission_mutation_receipt import QueuedSubmissionMutationReceipt
 from .queued_submission_state import QueuedSubmissionState
 from .reasoning_message import ReasoningMessage
-from .reconnect_connector_connection_request import ReconnectConnectorConnectionRequest
-from .reconnect_connector_connection_request_setup import ReconnectConnectorConnectionRequestSetup
+from .receive_authorization_request import ReceiveAuthorizationRequest
 from .register_environment_request import RegisterEnvironmentRequest
 from .register_environment_request_configuration import RegisterEnvironmentRequestConfiguration
 from .reject_pending_resolution import RejectPendingResolution
@@ -358,8 +360,6 @@ from .replace_connector_provider_credentials_request_credentials import (
 )
 from .replace_credential_request import ReplaceCredentialRequest
 from .replace_credential_request_credential_type_0 import ReplaceCredentialRequestCredentialType0
-from .replace_mcp_credentials_request import ReplaceMCPCredentialsRequest
-from .replace_mcp_credentials_request_static_headers_type_0 import ReplaceMCPCredentialsRequestStaticHeadersType0
 from .replace_target_request import ReplaceTargetRequest
 from .replace_target_request_provider_policy_type_0 import ReplaceTargetRequestProviderPolicyType0
 from .replace_target_request_target_kind import ReplaceTargetRequestTargetKind
@@ -416,7 +416,6 @@ from .session_preview import SessionPreview
 from .session_resource import SessionResource
 from .set_role_request import SetRoleRequest
 from .set_role_request_role import SetRoleRequestRole
-from .setup_completion_method import SetupCompletionMethod
 from .skill import Skill
 from .skill_agent_reference import SkillAgentReference
 from .skill_agent_reference_collection import SkillAgentReferenceCollection
@@ -431,8 +430,6 @@ from .skill_revision import SkillRevision
 from .skill_revision_collection import SkillRevisionCollection
 from .skill_selection import SkillSelection
 from .skill_upload_receipt import SkillUploadReceipt
-from .start_connector_connection_setup_request import StartConnectorConnectionSetupRequest
-from .start_connector_connection_setup_request_setup import StartConnectorConnectionSetupRequestSetup
 from .start_run_request import StartRunRequest
 from .steer_receipt import SteerReceipt
 from .steer_status import SteerStatus
@@ -472,12 +469,11 @@ from .update_account_request import UpdateAccountRequest
 from .update_account_request_provider_config_type_0 import UpdateAccountRequestProviderConfigType0
 from .update_account_request_provider_policy_type_0 import UpdateAccountRequestProviderPolicyType0
 from .update_agent_request import UpdateAgentRequest
-from .update_connector_connection_request import UpdateConnectorConnectionRequest
+from .update_connection_request import UpdateConnectionRequest
 from .update_connector_provider_request import UpdateConnectorProviderRequest
 from .update_connector_provider_request_credentials_type_0 import UpdateConnectorProviderRequestCredentialsType0
 from .update_hook_subscription_request import UpdateHookSubscriptionRequest
 from .update_hook_subscription_state_request import UpdateHookSubscriptionStateRequest
-from .update_mcp_connection_request import UpdateMCPConnectionRequest
 from .update_model_provider_request import UpdateModelProviderRequest
 from .update_model_provider_request_configuration_type_0 import UpdateModelProviderRequestConfigurationType0
 from .update_model_provider_request_extra_headers import UpdateModelProviderRequestExtraHeaders
@@ -564,6 +560,11 @@ __all__ = (
     "AudioInputContent",
     "AuthConfiguration",
     "AuthSession",
+    "Authorization",
+    "AuthorizationAction",
+    "AuthorizationActionType",
+    "AuthorizationRedirect",
+    "AuthorizationStatus",
     "BinaryContent",
     "BinaryContentDelivery",
     "BinaryInputContent",
@@ -581,24 +582,28 @@ __all__ = (
     "CollectionEnvironmentProviderDefinition",
     "CollectionEnvironmentTemplate",
     "CollectionEnvironmentTemplateRevision",
-    "CompleteConnectorSetupRequest",
+    "CompleteAuthorizationRequest",
     "CompleteEmailChangeRequest",
-    "CompleteMCPOAuthRequest",
     "CompletePasswordResetRequest",
     "CompletePendingResolution",
     "ConfigureMCPOAuthClientRequest",
+    "Connection",
+    "ConnectionCheck",
+    "ConnectionCheckScope",
+    "ConnectionCheckStatus",
     "ConnectionCleanupReceipt",
     "ConnectionCleanupReceiptLocalStatus",
     "ConnectionCleanupReceiptRemoteStatus",
+    "ConnectionCollection",
+    "ConnectionCommandRequest",
+    "ConnectionSafeMetadata",
+    "ConnectionStatus",
+    "ConnectionStatusReason",
+    "ConnectionToolSelection",
     "Connector",
     "ConnectorCollection",
-    "ConnectorConnection",
-    "ConnectorConnectionCollection",
-    "ConnectorConnectionCommandRequest",
-    "ConnectorConnectionSafeMetadata",
-    "ConnectorConnectionStatus",
-    "ConnectorConnectionStatusReason",
-    "ConnectorConnectionToolSelection",
+    "ConnectorCredentialSchemas",
+    "ConnectorCredentialSchemasAdditionalProperty",
     "ConnectorProvider",
     "ConnectorProviderCollection",
     "ConnectorProviderCommandRequest",
@@ -610,10 +615,8 @@ __all__ = (
     "ConnectorProviderStatus",
     "ConnectorProviderTestResult",
     "ConnectorProviderTestResultVerifiedAccessItem",
-    "ConnectorSetupCompletion",
-    "ConnectorSetupLaunch",
-    "ConnectorSetupLaunchStatus",
     "ConnectorSetupSchema",
+    "ConnectorSource",
     "ConnectorTool",
     "ConnectorToolAnnotations",
     "ConnectorToolInputSchema",
@@ -629,14 +632,17 @@ __all__ = (
     "CreateAccountRequestProviderPolicyType0",
     "CreateAgentRequest",
     "CreateAgentRevisionRequest",
-    "CreateConnectorConnectionRequest",
+    "CreateAuthorizationRequest",
+    "CreateAuthorizationRequestCredentialsType0",
+    "CreateAuthorizationRequestMethod",
+    "CreateAuthorizationRequestOptions",
+    "CreateConnectionRequest",
     "CreateConnectorProviderRequest",
     "CreateConnectorProviderRequestConfiguration",
     "CreateConnectorProviderRequestCredentials",
     "CreateHookSubscriptionRequest",
     "CreateInvitationRequest",
     "CreateKeyRequest",
-    "CreateMCPConnectionRequest",
     "CreateModelProviderRequest",
     "CreateModelProviderRequestConfiguration",
     "CreateModelProviderRequestExtraHeaders",
@@ -731,21 +737,14 @@ __all__ = (
     "InvokingUserSecretCredential",
     "ItemCollection",
     "ItemResource",
+    "LaunchAuthorizationRequest",
     "LifecycleEntityType",
     "LifecycleEvent",
     "LifecycleEventPayload",
     "LifecycleProjectionState",
     "LoginRequest",
     "LoginResult",
-    "MCPAuthMode",
-    "MCPAuthorizationLaunch",
     "MCPClientMetadata",
-    "MCPConnection",
-    "MCPConnectionCollection",
-    "MCPConnectionCommandRequest",
-    "MCPConnectionStatus",
-    "MCPConnectionStatusReason",
-    "MCPConnectionToolSelection",
     "MCPOAuthClientConfiguration",
     "MCPOAuthClientConfigurationGrantType",
     "MCPOAuthClientConfigurationSource",
@@ -757,6 +756,8 @@ __all__ = (
     "MCPOAuthDiscoveryClientRegistration",
     "MCPOAuthDiscoveryGrantTypesSupportedItem",
     "MCPOAuthDiscoveryTokenEndpointAuthMethodsSupportedItem",
+    "MCPSource",
+    "MCPSourceAuthMode",
     "MCPTool",
     "MCPToolAnnotations",
     "MCPToolCollection",
@@ -832,9 +833,7 @@ __all__ = (
     "PluginSelection",
     "PluginSelectionConfig",
     "PostApplicationAccountsAccountIdActionAction",
-    "PostConnectorConnectionsConnectionIdActionAction",
     "PostConnectorProvidersConnectorProviderIdActionAction",
-    "PostMcpConnectionsConnectionIdActionAction",
     "PostWorkspacesWorkspaceAgentsAgentActionAction",
     "PrincipalRef",
     "PrincipalType",
@@ -851,8 +850,7 @@ __all__ = (
     "QueuedSubmissionMutationReceipt",
     "QueuedSubmissionState",
     "ReasoningMessage",
-    "ReconnectConnectorConnectionRequest",
-    "ReconnectConnectorConnectionRequestSetup",
+    "ReceiveAuthorizationRequest",
     "RegisterEnvironmentRequest",
     "RegisterEnvironmentRequestConfiguration",
     "RejectPendingResolution",
@@ -863,8 +861,6 @@ __all__ = (
     "ReplaceConnectorProviderCredentialsRequestCredentials",
     "ReplaceCredentialRequest",
     "ReplaceCredentialRequestCredentialType0",
-    "ReplaceMCPCredentialsRequest",
-    "ReplaceMCPCredentialsRequestStaticHeadersType0",
     "ReplaceTargetRequest",
     "ReplaceTargetRequestProviderPolicyType0",
     "ReplaceTargetRequestTargetKind",
@@ -921,7 +917,6 @@ __all__ = (
     "SessionResource",
     "SetRoleRequest",
     "SetRoleRequestRole",
-    "SetupCompletionMethod",
     "Skill",
     "SkillAgentReference",
     "SkillAgentReferenceCollection",
@@ -936,8 +931,6 @@ __all__ = (
     "SkillRevisionCollection",
     "SkillSelection",
     "SkillUploadReceipt",
-    "StartConnectorConnectionSetupRequest",
-    "StartConnectorConnectionSetupRequestSetup",
     "StartRunRequest",
     "SteerReceipt",
     "SteerStatus",
@@ -977,12 +970,11 @@ __all__ = (
     "UpdateAccountRequestProviderConfigType0",
     "UpdateAccountRequestProviderPolicyType0",
     "UpdateAgentRequest",
-    "UpdateConnectorConnectionRequest",
+    "UpdateConnectionRequest",
     "UpdateConnectorProviderRequest",
     "UpdateConnectorProviderRequestCredentialsType0",
     "UpdateHookSubscriptionRequest",
     "UpdateHookSubscriptionStateRequest",
-    "UpdateMCPConnectionRequest",
     "UpdateModelProviderRequest",
     "UpdateModelProviderRequestConfigurationType0",
     "UpdateModelProviderRequestExtraHeaders",

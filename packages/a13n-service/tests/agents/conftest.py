@@ -50,8 +50,7 @@ def agent_config(
     instructions: str = "Be helpful.",
     plugins: list[object] | None = None,
     skills: list[object] | None = None,
-    connector_tools: tuple[dict[str, object], ...] | None = None,
-    mcp_tools: tuple[dict[str, object], ...] | None = None,
+    connection_tools: tuple[dict[str, object], ...] | None = None,
     subagents: dict[str, object] | None = None,
 ) -> AgentConfig:
     return AgentConfig.model_validate(
@@ -65,8 +64,7 @@ def agent_config(
             "input_adapter": {"adapter_key": "native", "config": {}},
             "plugins": plugins or [],
             "skills": skills or [],
-            "connector_tools": connector_tools or (),
-            "mcp_tools": mcp_tools or (),
+            "connection_tools": connection_tools or (),
             "subagents": subagents or {},
             "client_tools": [],
             "output_spec": None,

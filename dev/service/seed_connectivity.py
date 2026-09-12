@@ -11,17 +11,22 @@ async def connectivity(client: Client, base: str, catalog: dict, identity: dict,
     for state, auth in (("pending", "bearer"), ("disabled", "none"), ("ready", "none")):
         connection = await client.request(
             "POST",
-            base + "/mcp-connections",
+            base + "/connections",
             expected=201,
-            json={"name": f"Local review MCP · {state}", "endpoint_url": endpoint + "/mcp", "auth_mode": auth},
+            json={
+                "name": f"Local review MCP · {state}",
+                "source": {"kind": "mcp", "endpoint_url": endpoint + "/mcp", "auth_mode": auth},
+            },
         )
-        path = f"/api/v1/mcp-connections/{connection['id']}"
+        path = f"/api/v1/connections/{connection['id']}"
         if state == "disabled":
             connection = await client.request(
                 "POST", path + "/disable", json={"expected_version": connection["version"]}
             )
         elif state == "ready":
-            tools = await client.request("POST", path + "/discover", json={"expected_version": connection["version"]})
+            tools = await client.request(
+                "POST", path + "/mcp/discover", json={"expected_version": connection["version"]}
+            )
             if len(tools["items"]) != 2:
                 raise RuntimeError("Local MCP discovery did not return the two fixture tools")
             connection = await client.request("GET", path)
@@ -31,8 +36,8 @@ async def connectivity(client: Client, base: str, catalog: dict, identity: dict,
     config = {
         **agent_config("Local MCP review"),
         "instructions": "Use the local review fixture for fictional lookups.",
-        "mcp_tools": [
-            {"mcp_connection_id": scenarios["mcp_ready"], "tools": ["lookup_local_review", "fail_local_review"]}
+        "connection_tools": [
+            {"connection_id": scenarios["mcp_ready"], "tools": ["lookup_local_review", "fail_local_review"]}
         ],
     }
     created = await client.request(
@@ -65,18 +70,17 @@ async def connectivity(client: Client, base: str, catalog: dict, identity: dict,
         )
         connection = await client.request(
             "POST",
-            base + "/connector-connections",
+            base + "/connections",
             expected=201,
             json={
-                "connector_provider_id": provider["id"],
-                "connector_key": "github",
+                "source": {"kind": "connector", "provider_id": provider["id"], "connector_key": "github"},
                 "name": f"Fictional repository · {state}",
             },
         )
         if state == "disabled":
             connection = await client.request(
                 "POST",
-                f"/api/v1/connector-connections/{connection['id']}/disable",
+                f"/api/v1/connections/{connection['id']}/disable",
                 json={"expected_version": connection["version"]},
             )
             provider = await client.request(

@@ -14,14 +14,33 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum Source3 {
-    #[serde(rename = "zip_upload")]
-    ZipUpload(Box<models::ZipUploadSkillSource>),
-    #[serde(rename = "github")]
-    Github(Box<models::GitHubRevisionSource>),
+    #[serde(rename = "connector")]
+    Connector(Box<models::ConnectorSource>),
+    #[serde(rename = "mcp")]
+    Mcp(Box<models::McpSource>),
 }
 
 impl Default for Source3 {
     fn default() -> Self {
-        Self::ZipUpload(Default::default())
+        Self::Connector(Default::default())
+    }
+}
+
+///
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum AuthMode {
+    #[serde(rename = "none")]
+    None,
+    #[serde(rename = "bearer")]
+    Bearer,
+    #[serde(rename = "oauth")]
+    Oauth,
+    #[serde(rename = "static_headers")]
+    StaticHeaders,
+}
+
+impl Default for AuthMode {
+    fn default() -> AuthMode {
+        Self::None
     }
 }

@@ -90,9 +90,14 @@ class ComposioProvider:
         context: SetupContext,
         resume_ref: str | None = None,
         before_shared_setup: BeforeSharedSetup | None = None,
+        credentials: JsonObject | None = None,
     ) -> SetupStarted:
         if resume_ref is not None:
             raise ConnectorProviderError("setup_replay_unavailable")
+        if credentials is not None:
+            return await self._create_with_credentials(
+                setup=setup, credentials=credentials, context=context, before_shared_setup=before_shared_setup
+            )
         if context.callback_url is None:
             raise ConnectorProviderError("callback_unavailable")
         auth_config = await self._catalog.prepare_setup(context.connector_key, setup, before_shared_setup)
@@ -122,6 +127,42 @@ class ComposioProvider:
             )
         except ValueError as error:
             raise ConnectorProviderError("invalid_provider_response", outcome_unknown=True) from error
+
+    async def _create_with_credentials(
+        self,
+        *,
+        setup: JsonObject,
+        credentials: JsonObject,
+        context: SetupContext,
+        before_shared_setup: BeforeSharedSetup | None,
+    ) -> SetupStarted:
+        auth_config = await self._catalog.prepare_credentials(
+            context.connector_key, setup, credentials, before_shared_setup
+        )
+        data = setup.get("connection_data", {})
+        if not isinstance(data, dict):
+            raise ConnectorProviderError("invalid_setup_options")
+        value = await self._http.request(
+            "POST",
+            endpoint=COMPOSIO_ENDPOINT,
+            path="/api/v3.1/connected_accounts",
+            api_key=self._credentials.api_key,
+            json_body={
+                "auth_config": {"id": auth_config.id},
+                "connection": {
+                    "user_id": context.external_user_correlation,
+                    "state": {"authScheme": auth_config.scheme, "val": {**data, **credentials, "status": "ACTIVE"}},
+                },
+            },
+            write=True,
+        )
+        try:
+            identifier = required_string(required_object(value), "id")
+        except ValueError as error:
+            raise ConnectorProviderError("invalid_provider_response", outcome_unknown=True) from error
+        return SetupStarted(
+            setup_ref=identifier, external_ref=identifier, completion_method=SetupCompletionMethod.polling
+        )
 
     async def complete_setup(
         self,

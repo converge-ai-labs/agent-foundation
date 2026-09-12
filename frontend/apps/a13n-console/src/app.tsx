@@ -12,8 +12,7 @@ import {
 import "./app.css";
 import { AuthProvider, useAuth } from "./auth/context";
 import { AuthPage } from "./auth/pages";
-import { MCPSetupCallback } from "./features/mcp/callback";
-import { ConnectorSetupCallback } from "./features/connectors/callback";
+import { ConnectionAuthorizationCallback } from "./features/connections/callback";
 import { AppearanceProvider } from "./layout/appearance";
 import { Shell } from "./layout/shell";
 import { WorkspaceProvider } from "./layout/workspace";
@@ -184,12 +183,8 @@ function AppContent() {
             <Suspense fallback={<Loading />}>
               <Routes>
                 <Route
-                  path="/connector-setup/callback"
-                  element={<ConnectorSetupCallback />}
-                />
-                <Route
-                  path="/mcp-setup/callback"
-                  element={<MCPSetupCallback />}
+                  path="/connections/callback"
+                  element={<ConnectionAuthorizationCallback />}
                 />
                 {[
                   "/login",

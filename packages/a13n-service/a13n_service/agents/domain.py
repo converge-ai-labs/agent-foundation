@@ -22,9 +22,8 @@ from pydantic import (
 from pydantic_ai.usage import UsageLimits
 
 from a13n_service.connectivity.selection_domain import (
-    ConnectorConnectionRunSelection,
-    ConnectorConnectionToolSelection,
-    MCPConnectionToolSelection,
+    ConnectionRunSelection,
+    ConnectionToolSelection,
 )
 from a13n_service.digests import Sha256Digest
 from a13n_service.iam.domain import ActorRef
@@ -223,8 +222,7 @@ class AgentConfig(StrictModel):
     input_adapter: InputAdapterConfig
     plugins: tuple[PluginSelection, ...] = Field(default=(), max_length=128)
     skills: tuple[SkillSelection, ...] = Field(default=(), max_length=512)
-    connector_tools: tuple[ConnectorConnectionToolSelection, ...] = Field(default=(), max_length=128)
-    mcp_tools: tuple[MCPConnectionToolSelection, ...] = Field(default=(), max_length=128)
+    connection_tools: tuple[ConnectionToolSelection, ...] = Field(default=(), max_length=128)
     subagents: dict[BoundedKey, SubagentSelection] = Field(default_factory=dict, max_length=128)
     client_tools: tuple[ClientToolDefinition, ...] = Field(default=(), max_length=128)
     output_spec: OutputSpec | None = None
@@ -244,8 +242,7 @@ class AgentConfig(StrictModel):
             ("Skill keys", skill_keys),
             ("client tool names", client_tool_names),
             ("Secret requirement keys", secret_keys),
-            ("Connector connections", tuple(item.connector_connection_id for item in self.connector_tools)),
-            ("MCP connections", tuple(item.mcp_connection_id for item in self.mcp_tools)),
+            ("Connector connections", tuple(item.connection_id for item in self.connection_tools)),
         ):
             if len(values) != len(set(values)):
                 raise ValueError(f"{label} must be unique")
@@ -278,11 +275,10 @@ class AgentRunOverride(StrictModel):
     instructions: Annotated[str, StringConstraints(max_length=256 * 1024)] | None = None
     plugins: tuple[PluginSelection, ...] | None = Field(default=None, max_length=128)
     skills: tuple[SkillSelection, ...] | None = Field(default=None, max_length=512)
-    connector_tools: tuple[ConnectorConnectionToolSelection, ...] | None = Field(
+    connection_tools: tuple[ConnectionToolSelection, ...] | None = Field(
         default=None,
         max_length=128,
     )
-    mcp_tools: tuple[MCPConnectionToolSelection, ...] | None = Field(default=None, max_length=128)
     subagents: dict[BoundedKey, SubagentOverride | None] | None = Field(default=None, max_length=128)
     client_tools: tuple[ClientToolDefinition, ...] | None = Field(default=None, max_length=128)
     output_spec: OutputSpec | None = None
@@ -320,8 +316,7 @@ class ResolvedSubagentEdge(StrictModel):
 
 class _ResolvedContent[ResolvedModelT: BaseModel](StrictModel):
     resolved_model: ResolvedModelT
-    connector_tools: tuple[ConnectorConnectionToolSelection, ...] = ()
-    mcp_tools: tuple[MCPConnectionToolSelection, ...] = ()
+    connection_tools: tuple[ConnectionToolSelection, ...] = ()
     resolved_subagents: tuple[ResolvedSubagentEdge, ...] = ()
 
 
@@ -333,8 +328,7 @@ class ChildAgentExecution(StrictModel):
     agent_id: ObjectId
     revision_content_digest: Sha256Digest
     effective_config: EffectiveAgentConfig
-    connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...] = ()
-    mcp_connection_selections: tuple[MCPConnectionToolSelection, ...] = ()
+    connection_selections: tuple[ConnectionRunSelection, ...] = ()
 
 
 class EffectiveAgentConfig(_ResolvedContent[EffectiveAgentModel]):
@@ -405,8 +399,7 @@ class AgentRevision(StrictModel):
     config_digest: Sha256Digest
     resolved_model: ResolvedAgentModel
     resolved_skills: tuple[ResolvedSkillBinding, ...]
-    connector_tools: tuple[ConnectorConnectionToolSelection, ...] = ()
-    mcp_tools: tuple[MCPConnectionToolSelection, ...] = ()
+    connection_tools: tuple[ConnectionToolSelection, ...] = ()
     resolved_subagents: tuple[ResolvedSubagentEdge, ...]
     content_digest: Sha256Digest
     source_revision_id: ObjectId | None

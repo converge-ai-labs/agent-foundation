@@ -66,8 +66,7 @@ async def validate_override(
             actor=actor,
             organization_id=organization_id,
             workspace_id=workspace_id,
-            connector_tools=override.connector_tools or (),
-            mcp_tools=override.mcp_tools or (),
+            connection_tools=override.connection_tools or (),
         )
     except (SkillSelectionInvalid, ConnectivitySelectionError) as error:
         raise NativeError(

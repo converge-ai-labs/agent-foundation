@@ -44,7 +44,7 @@ async def native_runtime(
         replace(actor(), auth_method="internal"),
         ORG_ID,
         WORKSPACE_ID,
-        FrozenRunConnectivity((), ()),
+        FrozenRunConnectivity(()),
         (context,),
         authorization=await execution_authorization(),
     )
@@ -217,7 +217,7 @@ async def test_lark_attempt_reuses_token_and_rotation_replaces_scope(
         replace(actor(), auth_method="internal"),
         ORG_ID,
         WORKSPACE_ID,
-        FrozenRunConnectivity((), ()),
+        FrozenRunConnectivity(()),
         (context,),
         authorization=await execution_authorization(),
     )

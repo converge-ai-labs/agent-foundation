@@ -1,8 +1,8 @@
 """Declared and accepted connection selections, independent of live tool definitions."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from a13n_service.ids import ObjectId
 
@@ -18,19 +18,20 @@ def _unique_tool_keys(value: tuple[str, ...] | None) -> tuple[str, ...] | None:
 ToolSelection = Annotated[tuple[ToolKey, ...] | None, Field(max_length=2048), AfterValidator(_unique_tool_keys)]
 
 
-class ConnectorConnectionToolSelection(BaseModel):
+class ConnectionToolSelection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    connector_connection_id: ObjectId
+    connection_id: ObjectId
     tools: ToolSelection = None
     defer_loading: bool = False
 
 
-class MCPConnectionToolSelection(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    mcp_connection_id: ObjectId
-    tools: ToolSelection = None
-    defer_loading: bool = False
+class ConnectionRunSelection(ConnectionToolSelection):
+    kind: Literal["connector", "mcp"]
+    authorization_generation: int = Field(ge=1)
+    connector_provider_id: ObjectId | None = None
 
-
-class ConnectorConnectionRunSelection(ConnectorConnectionToolSelection):
-    connector_provider_id: ObjectId
+    @model_validator(mode="after")
+    def validate_provider(self) -> "ConnectionRunSelection":
+        if (self.kind == "connector") != (self.connector_provider_id is not None):
+            raise ValueError("Only connector selections require a provider")
+        return self

@@ -14,20 +14,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct InputOverride {
     #[serde(
-        rename = "connector_tools",
+        rename = "connection_tools",
         default,
         with = "::serde_with::rust::double_option",
         skip_serializing_if = "Option::is_none"
     )]
-    pub connector_tools: Option<Option<Vec<models::ConnectorConnectionToolSelection>>>,
-
-    #[serde(
-        rename = "mcp_tools",
-        default,
-        with = "::serde_with::rust::double_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub mcp_tools: Option<Option<Vec<models::McpConnectionToolSelection>>>,
+    pub connection_tools: Option<Option<Vec<models::ConnectionToolSelection>>>,
 
     #[serde(
         rename = "model",
@@ -49,8 +41,7 @@ pub struct InputOverride {
 impl InputOverride {
     pub fn new() -> InputOverride {
         InputOverride {
-            connector_tools: None,
-            mcp_tools: None,
+            connection_tools: None,
             model: None,
             skills: None,
         }

@@ -30,7 +30,7 @@ def test_authentication_is_described_on_protected_not_public_operations() -> Non
         {"SessionAuth": []},
     ]
     assert (
-        schema["paths"]["/api/v1/oauth/mcp/complete"]["post"]["security"]
+        schema["paths"]["/api/v1/connection-authorizations/{authorization_id}/complete"]["post"]["security"]
         == schema["paths"]["/api/v1/auth/context"]["get"]["security"]
     )
     assert "security" not in schema["paths"]["/api/v1/auth/login"]["post"]

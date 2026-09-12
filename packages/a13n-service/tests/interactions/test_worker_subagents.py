@@ -13,7 +13,7 @@ from a13n_service.connectivity.connectors.contracts import ConnectorToolOutcome
 from a13n_service.connectivity.connectors.models import ConnectorProviderRecord
 from a13n_service.connectivity.mcp.models import MCPConnectionRecord
 from a13n_service.connectivity.mcp.transport import RemoteTransport
-from a13n_service.connectivity.selection_domain import ConnectorConnectionRunSelection, MCPConnectionToolSelection
+from a13n_service.connectivity.selection_domain import ConnectionRunSelection, ConnectionToolSelection
 from a13n_service.digests import digest_request
 from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.interactions.control_models import ThreadInboxRecord
@@ -58,12 +58,16 @@ def rehash(config: EffectiveAgentConfig) -> EffectiveAgentConfig:
 
 
 def frozen_graph(mode, request_limit=None):
-    connector = ConnectorConnectionRunSelection(
-        connector_connection_id=CONNECTOR_CONNECTION_ID,
+    connector = ConnectionRunSelection(
+        kind="connector",
+        authorization_generation=1,
+        connection_id=CONNECTOR_CONNECTION_ID,
         connector_provider_id=CONNECTOR_ID,
         tools=("issues.create",),
     )
-    mcp = MCPConnectionToolSelection(mcp_connection_id=MCP_CONNECTION_ID, tools=("search",))
+    mcp = ConnectionRunSelection(
+        kind="mcp", authorization_generation=1, connection_id=MCP_CONNECTION_ID, tools=("search",)
+    )
     base = effective_agent_config()
     child = rehash(
         base.model_copy(
@@ -80,8 +84,10 @@ def frozen_graph(mode, request_limit=None):
                         "settings": {"temperature": 0.7},
                     }
                 ),
-                "connector_tools": (connector,),
-                "mcp_tools": (mcp,),
+                "connection_tools": tuple(
+                    ConnectionToolSelection(connection_id=item.connection_id, tools=item.tools)
+                    for item in (connector, mcp)
+                ),
             }
         )
     )
@@ -103,8 +109,7 @@ def frozen_graph(mode, request_limit=None):
                         agent_id=CHILD_AGENT_ID,
                         revision_content_digest="3" * 64,
                         effective_config=child,
-                        connector_connection_selections=(connector,),
-                        mcp_connection_selections=(mcp,),
+                        connection_selections=(connector, mcp),
                     )
                 },
             }
@@ -320,10 +325,9 @@ async def test_inline_and_root_share_ten_loop_iam_refresh(
                     CHILD_REVISION_ID: child.model_copy(
                         update={
                             "effective_config": rehash(
-                                child.effective_config.model_copy(update={"connector_tools": (), "mcp_tools": ()})
+                                child.effective_config.model_copy(update={"connection_tools": ()})
                             ),
-                            "connector_connection_selections": (),
-                            "mcp_connection_selections": (),
+                            "connection_selections": (),
                         }
                     )
                 }

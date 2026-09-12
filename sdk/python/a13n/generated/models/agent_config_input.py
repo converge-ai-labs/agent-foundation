@@ -13,9 +13,8 @@ if TYPE_CHECKING:
     from ..models.agent_model import AgentModel
     from ..models.asset_publication_config import AssetPublicationConfig
     from ..models.client_tool_definition import ClientToolDefinition
-    from ..models.connector_connection_tool_selection import ConnectorConnectionToolSelection
+    from ..models.connection_tool_selection import ConnectionToolSelection
     from ..models.input_adapter_config import InputAdapterConfig
-    from ..models.mcp_connection_tool_selection import MCPConnectionToolSelection
     from ..models.output_spec import OutputSpec
     from ..models.plugin_selection import PluginSelection
     from ..models.protocol_config import ProtocolConfig
@@ -37,9 +36,8 @@ class AgentConfigInput:
         protocol (ProtocolConfig):
         asset_publication (AssetPublicationConfig | None | Unset):
         client_tools (list[ClientToolDefinition] | Unset):
-        connector_tools (list[ConnectorConnectionToolSelection] | Unset):
+        connection_tools (list[ConnectionToolSelection] | Unset):
         instructions (str | Unset):
-        mcp_tools (list[MCPConnectionToolSelection] | Unset):
         output_spec (None | OutputSpec | Unset):
         plugins (list[PluginSelection] | Unset):
         retries (None | RetryConfig | Unset):
@@ -55,9 +53,8 @@ class AgentConfigInput:
     protocol: ProtocolConfig
     asset_publication: AssetPublicationConfig | Unset | None = UNSET
     client_tools: list[ClientToolDefinition] | Unset = UNSET
-    connector_tools: list[ConnectorConnectionToolSelection] | Unset = UNSET
+    connection_tools: list[ConnectionToolSelection] | Unset = UNSET
     instructions: str | Unset = UNSET
-    mcp_tools: list[MCPConnectionToolSelection] | Unset = UNSET
     output_spec: OutputSpec | Unset | None = UNSET
     plugins: list[PluginSelection] | Unset = UNSET
     retries: RetryConfig | Unset | None = UNSET
@@ -94,21 +91,14 @@ class AgentConfigInput:
                 client_tools_item = client_tools_item_data.to_dict()
                 client_tools.append(client_tools_item)
 
-        connector_tools: list[dict[str, Any]] | Unset = UNSET
-        if not isinstance(self.connector_tools, Unset):
-            connector_tools = []
-            for connector_tools_item_data in self.connector_tools:
-                connector_tools_item = connector_tools_item_data.to_dict()
-                connector_tools.append(connector_tools_item)
+        connection_tools: list[dict[str, Any]] | Unset = UNSET
+        if not isinstance(self.connection_tools, Unset):
+            connection_tools = []
+            for connection_tools_item_data in self.connection_tools:
+                connection_tools_item = connection_tools_item_data.to_dict()
+                connection_tools.append(connection_tools_item)
 
         instructions = self.instructions
-
-        mcp_tools: list[dict[str, Any]] | Unset = UNSET
-        if not isinstance(self.mcp_tools, Unset):
-            mcp_tools = []
-            for mcp_tools_item_data in self.mcp_tools:
-                mcp_tools_item = mcp_tools_item_data.to_dict()
-                mcp_tools.append(mcp_tools_item)
 
         output_spec: dict[str, Any] | Unset | None
         if isinstance(self.output_spec, Unset):
@@ -176,12 +166,10 @@ class AgentConfigInput:
             field_dict["asset_publication"] = asset_publication
         if client_tools is not UNSET:
             field_dict["client_tools"] = client_tools
-        if connector_tools is not UNSET:
-            field_dict["connector_tools"] = connector_tools
+        if connection_tools is not UNSET:
+            field_dict["connection_tools"] = connection_tools
         if instructions is not UNSET:
             field_dict["instructions"] = instructions
-        if mcp_tools is not UNSET:
-            field_dict["mcp_tools"] = mcp_tools
         if output_spec is not UNSET:
             field_dict["output_spec"] = output_spec
         if plugins is not UNSET:
@@ -207,9 +195,8 @@ class AgentConfigInput:
         from ..models.agent_model import AgentModel
         from ..models.asset_publication_config import AssetPublicationConfig
         from ..models.client_tool_definition import ClientToolDefinition
-        from ..models.connector_connection_tool_selection import ConnectorConnectionToolSelection
+        from ..models.connection_tool_selection import ConnectionToolSelection
         from ..models.input_adapter_config import InputAdapterConfig
-        from ..models.mcp_connection_tool_selection import MCPConnectionToolSelection
         from ..models.output_spec import OutputSpec
         from ..models.plugin_selection import PluginSelection
         from ..models.protocol_config import ProtocolConfig
@@ -251,25 +238,16 @@ class AgentConfigInput:
 
                 client_tools.append(client_tools_item)
 
-        _connector_tools = d.pop("connector_tools", UNSET)
-        connector_tools: list[ConnectorConnectionToolSelection] | Unset = UNSET
-        if _connector_tools is not UNSET:
-            connector_tools = []
-            for connector_tools_item_data in _connector_tools:
-                connector_tools_item = ConnectorConnectionToolSelection.from_dict(connector_tools_item_data)
+        _connection_tools = d.pop("connection_tools", UNSET)
+        connection_tools: list[ConnectionToolSelection] | Unset = UNSET
+        if _connection_tools is not UNSET:
+            connection_tools = []
+            for connection_tools_item_data in _connection_tools:
+                connection_tools_item = ConnectionToolSelection.from_dict(connection_tools_item_data)
 
-                connector_tools.append(connector_tools_item)
+                connection_tools.append(connection_tools_item)
 
         instructions = d.pop("instructions", UNSET)
-
-        _mcp_tools = d.pop("mcp_tools", UNSET)
-        mcp_tools: list[MCPConnectionToolSelection] | Unset = UNSET
-        if _mcp_tools is not UNSET:
-            mcp_tools = []
-            for mcp_tools_item_data in _mcp_tools:
-                mcp_tools_item = MCPConnectionToolSelection.from_dict(mcp_tools_item_data)
-
-                mcp_tools.append(mcp_tools_item)
 
         def _parse_output_spec(data: object) -> OutputSpec | Unset | None:
             if data is None:
@@ -369,9 +347,8 @@ class AgentConfigInput:
             protocol=protocol,
             asset_publication=asset_publication,
             client_tools=client_tools,
-            connector_tools=connector_tools,
+            connection_tools=connection_tools,
             instructions=instructions,
-            mcp_tools=mcp_tools,
             output_spec=output_spec,
             plugins=plugins,
             retries=retries,

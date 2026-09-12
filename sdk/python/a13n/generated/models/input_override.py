@@ -8,8 +8,7 @@ from attrs import define as _attrs_define
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
-    from ..models.connector_connection_tool_selection import ConnectorConnectionToolSelection
-    from ..models.mcp_connection_tool_selection import MCPConnectionToolSelection
+    from ..models.connection_tool_selection import ConnectionToolSelection
     from ..models.model_override import ModelOverride
     from ..models.skill_selection import SkillSelection
 
@@ -21,43 +20,29 @@ T = TypeVar("T", bound="InputOverride")
 class InputOverride:
     """
     Attributes:
-        connector_tools (list[ConnectorConnectionToolSelection] | None | Unset):
-        mcp_tools (list[MCPConnectionToolSelection] | None | Unset):
+        connection_tools (list[ConnectionToolSelection] | None | Unset):
         model (ModelOverride | None | Unset):
         skills (list[SkillSelection] | None | Unset):
     """
 
-    connector_tools: list[ConnectorConnectionToolSelection] | Unset | None = UNSET
-    mcp_tools: list[MCPConnectionToolSelection] | Unset | None = UNSET
+    connection_tools: list[ConnectionToolSelection] | Unset | None = UNSET
     model: ModelOverride | Unset | None = UNSET
     skills: list[SkillSelection] | Unset | None = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.model_override import ModelOverride
 
-        connector_tools: list[dict[str, Any]] | Unset | None
-        if isinstance(self.connector_tools, Unset):
-            connector_tools = UNSET
-        elif isinstance(self.connector_tools, list):
-            connector_tools = []
-            for connector_tools_type_0_item_data in self.connector_tools:
-                connector_tools_type_0_item = connector_tools_type_0_item_data.to_dict()
-                connector_tools.append(connector_tools_type_0_item)
+        connection_tools: list[dict[str, Any]] | Unset | None
+        if isinstance(self.connection_tools, Unset):
+            connection_tools = UNSET
+        elif isinstance(self.connection_tools, list):
+            connection_tools = []
+            for connection_tools_type_0_item_data in self.connection_tools:
+                connection_tools_type_0_item = connection_tools_type_0_item_data.to_dict()
+                connection_tools.append(connection_tools_type_0_item)
 
         else:
-            connector_tools = self.connector_tools
-
-        mcp_tools: list[dict[str, Any]] | Unset | None
-        if isinstance(self.mcp_tools, Unset):
-            mcp_tools = UNSET
-        elif isinstance(self.mcp_tools, list):
-            mcp_tools = []
-            for mcp_tools_type_0_item_data in self.mcp_tools:
-                mcp_tools_type_0_item = mcp_tools_type_0_item_data.to_dict()
-                mcp_tools.append(mcp_tools_type_0_item)
-
-        else:
-            mcp_tools = self.mcp_tools
+            connection_tools = self.connection_tools
 
         model: dict[str, Any] | Unset | None
         if isinstance(self.model, Unset):
@@ -82,10 +67,8 @@ class InputOverride:
         field_dict: dict[str, Any] = {}
 
         field_dict.update({})
-        if connector_tools is not UNSET:
-            field_dict["connector_tools"] = connector_tools
-        if mcp_tools is not UNSET:
-            field_dict["mcp_tools"] = mcp_tools
+        if connection_tools is not UNSET:
+            field_dict["connection_tools"] = connection_tools
         if model is not UNSET:
             field_dict["model"] = model
         if skills is not UNSET:
@@ -95,14 +78,13 @@ class InputOverride:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.connector_connection_tool_selection import ConnectorConnectionToolSelection
-        from ..models.mcp_connection_tool_selection import MCPConnectionToolSelection
+        from ..models.connection_tool_selection import ConnectionToolSelection
         from ..models.model_override import ModelOverride
         from ..models.skill_selection import SkillSelection
 
         d = dict(src_dict)
 
-        def _parse_connector_tools(data: object) -> list[ConnectorConnectionToolSelection] | Unset | None:
+        def _parse_connection_tools(data: object) -> list[ConnectionToolSelection] | Unset | None:
             if data is None:
                 return data
             if isinstance(data, Unset):
@@ -110,43 +92,19 @@ class InputOverride:
             try:
                 if not isinstance(data, list):
                     raise TypeError()
-                connector_tools_type_0 = []
-                _connector_tools_type_0 = data
-                for connector_tools_type_0_item_data in _connector_tools_type_0:
-                    connector_tools_type_0_item = ConnectorConnectionToolSelection.from_dict(
-                        connector_tools_type_0_item_data
-                    )
+                connection_tools_type_0 = []
+                _connection_tools_type_0 = data
+                for connection_tools_type_0_item_data in _connection_tools_type_0:
+                    connection_tools_type_0_item = ConnectionToolSelection.from_dict(connection_tools_type_0_item_data)
 
-                    connector_tools_type_0.append(connector_tools_type_0_item)
+                    connection_tools_type_0.append(connection_tools_type_0_item)
 
-                return connector_tools_type_0
+                return connection_tools_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
-            return cast(list[ConnectorConnectionToolSelection] | Unset | None, data)
+            return cast(list[ConnectionToolSelection] | Unset | None, data)
 
-        connector_tools = _parse_connector_tools(d.pop("connector_tools", UNSET))
-
-        def _parse_mcp_tools(data: object) -> list[MCPConnectionToolSelection] | Unset | None:
-            if data is None:
-                return data
-            if isinstance(data, Unset):
-                return data
-            try:
-                if not isinstance(data, list):
-                    raise TypeError()
-                mcp_tools_type_0 = []
-                _mcp_tools_type_0 = data
-                for mcp_tools_type_0_item_data in _mcp_tools_type_0:
-                    mcp_tools_type_0_item = MCPConnectionToolSelection.from_dict(mcp_tools_type_0_item_data)
-
-                    mcp_tools_type_0.append(mcp_tools_type_0_item)
-
-                return mcp_tools_type_0
-            except (TypeError, ValueError, AttributeError, KeyError):
-                pass
-            return cast(list[MCPConnectionToolSelection] | Unset | None, data)
-
-        mcp_tools = _parse_mcp_tools(d.pop("mcp_tools", UNSET))
+        connection_tools = _parse_connection_tools(d.pop("connection_tools", UNSET))
 
         def _parse_model(data: object) -> ModelOverride | Unset | None:
             if data is None:
@@ -188,8 +146,7 @@ class InputOverride:
         skills = _parse_skills(d.pop("skills", UNSET))
 
         input_override = cls(
-            connector_tools=connector_tools,
-            mcp_tools=mcp_tools,
+            connection_tools=connection_tools,
             model=model,
             skills=skills,
         )

@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from a13n_service.agents.domain import AgentRunOverride, ModelOverride, SkillSelection
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.connectivity.selection_domain import ConnectorConnectionToolSelection, MCPConnectionToolSelection
+from a13n_service.connectivity.selection_domain import ConnectionToolSelection
 
 
 class InputBatchingPolicy(BaseModel):
@@ -17,12 +17,11 @@ class InputOverride(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     model: ModelOverride | None = None
     skills: tuple[SkillSelection, ...] | None = Field(default=None, max_length=512)
-    connector_tools: tuple[ConnectorConnectionToolSelection, ...] | None = Field(default=None, max_length=128)
-    mcp_tools: tuple[MCPConnectionToolSelection, ...] | None = Field(default=None, max_length=128)
+    connection_tools: tuple[ConnectionToolSelection, ...] | None = Field(default=None, max_length=128)
 
     @model_validator(mode="after")
     def validate_canonical_override(self) -> "InputOverride":
-        for field in ("skills", "connector_tools", "mcp_tools"):
+        for field in ("skills", "connection_tools"):
             if field in self.model_fields_set and getattr(self, field) is None:
                 raise ValueError(f"{field} must be omitted or a collection, not null")
         self.invocation_override()

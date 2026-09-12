@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.connectivity.connections.domain import Connection
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.secrets import SecretProtector
 from a13n_service.storage import transaction
@@ -17,7 +18,6 @@ from a13n_service.temporal import Clock
 
 from .domain import (
     ConfigureMCPOAuthClientRequest,
-    MCPConnection,
     MCPOAuthClientConfiguration,
     MCPOAuthClientInput,
     MCPOAuthDiscovery,
@@ -26,7 +26,7 @@ from .domain import (
 )
 from .errors import MCPConnectionError
 from .management import audit, authorize_connection, invalidate_refresh_claim, require_connection, require_version
-from .models import MCPConnectionOAuthClientRecord, MCPConnectionRecord, MCPOAuthSessionRecord
+from .models import MCPAuthorizationRecord, MCPConnectionOAuthClientRecord, MCPConnectionRecord
 from .oauth_client import (
     MCPOAuthClient,
     MCPOAuthError,
@@ -39,9 +39,7 @@ from .oauth_client import (
 
 def require_oauth(connection: MCPConnectionRecord) -> None:
     if connection.auth_mode != "oauth":
-        raise MCPConnectionError(
-            "invalid_auth_mode", "MCPConnection does not use OAuth.", category=ErrorCategory.conflict
-        )
+        raise MCPConnectionError("invalid_auth_mode", "Connection does not use OAuth.", category=ErrorCategory.conflict)
 
 
 def configured_client(record: MCPConnectionOAuthClientRecord, protector: SecretProtector) -> MCPOAuthClientInput:
@@ -248,7 +246,7 @@ class OAuthConfiguration:
 
     async def configure(
         self, *, actor: AuthenticatedActor, connection_id: str, request: ConfigureMCPOAuthClientRequest
-    ) -> MCPConnection:
+    ) -> Connection:
         # Discovery is outside the transaction; the version fence prevents a
         # concurrent configuration change from being overwritten afterwards.
         client = request.client
@@ -284,9 +282,9 @@ class OAuthConfiguration:
                 connection.status_reason = None
             invalidate_refresh_claim(connection, now=now)
             setups = await session.scalars(
-                select(MCPOAuthSessionRecord).where(
-                    MCPOAuthSessionRecord.mcp_connection_id == connection_id,
-                    MCPOAuthSessionRecord.status.in_(("pending", "received", "exchanging")),
+                select(MCPAuthorizationRecord).where(
+                    MCPAuthorizationRecord.connection_id == connection_id,
+                    MCPAuthorizationRecord.status.in_(("pending", "received", "exchanging")),
                 )
             )
             for setup in setups:

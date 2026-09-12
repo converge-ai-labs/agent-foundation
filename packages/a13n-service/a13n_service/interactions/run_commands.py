@@ -15,7 +15,7 @@ from a13n_service.agents.invocation_resolution import (
 )
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.assets import Asset
-from a13n_service.connectivity.selection_domain import ConnectorConnectionRunSelection, MCPConnectionToolSelection
+from a13n_service.connectivity.selection_domain import ConnectionRunSelection
 from a13n_service.environments.selection import Omitted
 from a13n_service.iam import (
     AuthenticatedActor,
@@ -481,12 +481,8 @@ class RunCommands:
                 agent_revision_id=source.agent_revision_id,
                 selector_kind=AgentSelectorKind.exact,
                 effective_config=source_state.envelope.effective_agent_config,
-                connector_connection_selections=tuple(
-                    ConnectorConnectionRunSelection.model_validate(item)
-                    for item in source.connector_connection_selections
-                ),
-                mcp_connection_selections=tuple(
-                    MCPConnectionToolSelection.model_validate(item) for item in source.mcp_connection_selections
+                connection_selections=tuple(
+                    ConnectionRunSelection.model_validate(item) for item in source.connection_selections
                 ),
             )
         else:

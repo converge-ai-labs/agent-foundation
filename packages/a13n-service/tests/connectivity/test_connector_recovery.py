@@ -8,14 +8,14 @@ import httpx2
 import pytest
 from a13n_service.connectivity.connectors.errors import ConnectorError
 from a13n_service.connectivity.connectors.models import (
+    ConnectorAuthorizationRecord,
     ConnectorConnectionRecord,
     ConnectorProviderRecord,
-    ConnectorSetupAttemptRecord,
 )
 from a13n_service.connectivity.connectors.reconciler import ConnectorReconciler
 from a13n_service.connectivity.execution import AttemptToolScope
 from a13n_service.connectivity.mcp.transport import RemoteTransport
-from a13n_service.connectivity.selection_domain import ConnectorConnectionRunSelection
+from a13n_service.connectivity.selection_domain import ConnectionRunSelection
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionError, FrozenRunConnectivity
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.storage import short_session, transaction
@@ -24,6 +24,7 @@ from pydantic_ai.models.test import TestModel
 from sqlalchemy import select
 
 from .conftest import NOW, ORG_ID, WORKSPACE_ID, actor
+from .connection_helpers import management
 from .connector_helpers import FakeConnectorProvider
 from .test_composio_setup import complete, launch
 from .test_composio_setup import composio_sessions as composio_sessions
@@ -58,7 +59,7 @@ async def test_pending_setup_has_one_sender_across_http_replay_and_reconciliatio
         assert replay.status == "pending" and replay.redirect_url is None
         assert not await reconciler.reconcile_once()
         async with short_session(connectivity_sessions) as session:
-            attempt = await session.get(ConnectorSetupAttemptRecord, replay.attempt_id)
+            attempt = await session.get(ConnectorAuthorizationRecord, replay.attempt_id)
             assert attempt.status == "starting" and attempt.claim_owner is not None
     finally:
         release.set()
@@ -106,13 +107,13 @@ async def test_interrupted_non_idempotent_setup_is_never_resent(
     assert await reconciler.reconcile_once()
     assert not await reconciler.reconcile_once()
     async with short_session(connectivity_sessions) as session:
-        attempt = await session.scalar(select(ConnectorSetupAttemptRecord))
+        attempt = await session.scalar(select(ConnectorAuthorizationRecord))
         assert attempt.status == "failed" and attempt.last_error_code == "setup_outcome_unknown"
         assert attempt.setup_ref is None
         assert (await session.get(ConnectorConnectionRecord, connection.id)).status == "action_required"
     assert (await launch(connections, connection)).status == "failed"
     assert sum(r.url.path.endswith("/link") for r in requests) == 1
-    current = await connections.get(actor=actor(), connection_id=connection.id)
+    current = await management(connections).get(actor=actor(), connection_id=connection.id)
     receipt = await connections.delete(
         actor=actor(), connection_id=connection.id, expected_version=current.version, idempotency_key="delete"
     )
@@ -140,7 +141,7 @@ async def test_known_retryable_rejection_can_retry_after_backoff(composio_setup,
     now[0] += timedelta(seconds=5)
     assert await reconciler.reconcile_once()
     async with short_session(connectivity_sessions) as session:
-        attempt = await session.scalar(select(ConnectorSetupAttemptRecord))
+        attempt = await session.scalar(select(ConnectorAuthorizationRecord))
         assert attempt.status == "attached" and attempt.setup_ref == "ca_test"
     assert sum(r.url.path.endswith("/link") for r in requests) == 3
 
@@ -166,7 +167,7 @@ async def test_expired_start_owner_cannot_publish_a_late_response(composio_setup
         with pytest.raises(ConnectorError, match="changed concurrently"):
             await first
     async with short_session(connectivity_sessions) as session:
-        attempt = await session.scalar(select(ConnectorSetupAttemptRecord))
+        attempt = await session.scalar(select(ConnectorAuthorizationRecord))
         assert attempt.status == "failed" and attempt.setup_ref is None
         assert attempt.last_error_code == "setup_outcome_unknown"
     assert sum(r.url.path.endswith("/link") for r in requests) == 1
@@ -196,7 +197,7 @@ async def test_idempotent_provider_recovers_interrupted_start(
             expected_version=connection.version,
             idempotency_key="setup",
             setup={"scopes": ["read"]},
-            return_path="/connections",
+            return_url="/connections",
         )
     )
     try:
@@ -217,7 +218,7 @@ async def test_idempotent_provider_recovers_interrupted_start(
     assert await reconciler.reconcile_once()
     assert connector_backend.started == 2 and len(connector_backend.external_accounts) == 1
     async with short_session(connectivity_sessions) as session:
-        attempt = await session.scalar(select(ConnectorSetupAttemptRecord))
+        attempt = await session.scalar(select(ConnectorAuthorizationRecord))
         assert attempt.status == "attached" and attempt.external_ref == "external-1"
 
 
@@ -238,9 +239,13 @@ async def test_authority_change_after_discovery_blocks_action(
     policy = EndpointPolicy()
     runtime = external_runtime_factory(registry, RemoteTransport(policy), policy)
     capability = await runtime._connector(
-        ConnectorConnectionRunSelection(
-            connector_connection_id=connection.id,
-            connector_provider_id=connection.connector_provider_id,
+        ConnectionRunSelection(
+            kind="connector",
+            authorization_generation=(
+                await management(connections).get(actor=actor(), connection_id=connection.id)
+            ).authorization_generation,
+            connection_id=connection.id,
+            connector_provider_id=connection.source.provider_id,
             tools=("GITHUB_GET_USER",),
         ),
         guard,
@@ -248,7 +253,7 @@ async def test_authority_change_after_discovery_blocks_action(
             replace(actor(), auth_method="internal"),
             ORG_ID,
             WORKSPACE_ID,
-            FrozenRunConnectivity((), ()),
+            FrozenRunConnectivity(()),
             (),
             authorization=await execution_authorization(),
         ),
@@ -260,7 +265,7 @@ async def test_authority_change_after_discovery_blocks_action(
             record.status = "disabled"
             record.version += 1
         elif change in {"provider", "credential"}:
-            record = await session.get(ConnectorProviderRecord, connection.connector_provider_id)
+            record = await session.get(ConnectorProviderRecord, connection.source.provider_id)
             if change == "provider":
                 record.status = "disabled"
             else:

@@ -20,7 +20,6 @@ import {
 
 import {
   ArrowUpRightIcon,
-  TreeStructureIcon,
   PlugIcon,
   PlusIcon,
   PuzzlePieceIcon,
@@ -35,27 +34,22 @@ import type { useAgentChoices } from "./choices";
 import type { AgentConfig } from "./configuration";
 
 type Skills = NonNullable<AgentConfig["skills"]>;
-type MCP = NonNullable<AgentConfig["mcp_tools"]>;
-type Connectors = NonNullable<AgentConfig["connector_tools"]>;
+type Connections = NonNullable<AgentConfig["connection_tools"]>;
 
 export function AgentCapabilities({
   choices,
   skills,
   setSkills,
-  mcp,
-  setMcp,
-  connectors,
-  setConnectors,
+  connections,
+  setConnections,
   readOnly = false,
 }: {
   readOnly?: boolean;
   choices: ReturnType<typeof useAgentChoices>;
   skills: Skills;
   setSkills: Dispatch<SetStateAction<Skills>>;
-  mcp: MCP;
-  setMcp: Dispatch<SetStateAction<MCP>>;
-  connectors: Connectors;
-  setConnectors: Dispatch<SetStateAction<Connectors>>;
+  connections: Connections;
+  setConnections: Dispatch<SetStateAction<Connections>>;
 }) {
   const { t } = useTranslation(),
     { basePath } = useWorkspace();
@@ -116,76 +110,30 @@ export function AgentCapabilities({
       />
       <CapabilityGroup
         readOnly={readOnly}
-        title={t("MCP connections")}
-        description={t("Tools provided by your MCP connections.")}
-        icon={<TreeStructureIcon size={15} />}
-        setup={`${base}/connections`}
-        loading={choices.isPending}
-        choices={availableChoices(
-          (choices.data?.mcp ?? []).map((item) => ({
-            key: item.id,
-            name: item.name,
-          })),
-          mcp.map((item) => item.mcp_connection_id),
-        ).map((connection) => {
-          const selected = mcp.find(
-            (item) => item.mcp_connection_id === connection.key,
-          );
-          return {
-            ...connection,
-            checked: !!selected,
-            onChange: (checked) =>
-              setMcp((previous) =>
-                checked
-                  ? [...previous, { mcp_connection_id: connection.key }]
-                  : previous.filter(
-                      (item) => item.mcp_connection_id !== connection.key,
-                    ),
-              ),
-            settings: selected && (
-              <ToolNames
-                readOnly={readOnly}
-                tools={selected.tools}
-                onChange={(tools) =>
-                  setMcp((previous) =>
-                    previous.map((item) =>
-                      item.mcp_connection_id === connection.key
-                        ? { ...item, tools }
-                        : item,
-                    ),
-                  )
-                }
-              />
-            ),
-          };
-        })}
-      />
-      <CapabilityGroup
-        readOnly={readOnly}
-        title={t("Connectors")}
+        title={t("Connections")}
         description={t("Connected services this agent can use.")}
         icon={<PlugIcon size={15} />}
         setup={`${base}/connections`}
         loading={choices.isPending}
         choices={availableChoices(
-          (choices.data?.connectors ?? []).map((item) => ({
+          (choices.data?.connections ?? []).map((item) => ({
             key: item.id,
             name: item.name,
           })),
-          connectors.map((item) => item.connector_connection_id),
+          connections.map((item) => item.connection_id),
         ).map((connection) => {
-          const selected = connectors.find(
-            (item) => item.connector_connection_id === connection.key,
+          const selected = connections.find(
+            (item) => item.connection_id === connection.key,
           );
           return {
             ...connection,
             checked: !!selected,
             onChange: (checked) =>
-              setConnectors((previous) =>
+              setConnections((previous) =>
                 checked
-                  ? [...previous, { connector_connection_id: connection.key }]
+                  ? [...previous, { connection_id: connection.key }]
                   : previous.filter(
-                      (item) => item.connector_connection_id !== connection.key,
+                      (item) => item.connection_id !== connection.key,
                     ),
               ),
             settings: selected && (
@@ -194,9 +142,9 @@ export function AgentCapabilities({
                   readOnly={readOnly}
                   tools={selected.tools}
                   onChange={(tools) =>
-                    setConnectors((previous) =>
+                    setConnections((previous) =>
                       previous.map((item) =>
-                        item.connector_connection_id === connection.key
+                        item.connection_id === connection.key
                           ? { ...item, tools }
                           : item,
                       ),
@@ -208,9 +156,9 @@ export function AgentCapabilities({
                     disabled={readOnly}
                     checked={selected.defer_loading ?? false}
                     onCheckedChange={(checked) =>
-                      setConnectors((previous) =>
+                      setConnections((previous) =>
                         previous.map((item) =>
-                          item.connector_connection_id === connection.key
+                          item.connection_id === connection.key
                             ? { ...item, defer_loading: checked === true }
                             : item,
                         ),

@@ -108,7 +108,7 @@ def test_managed_upload_and_agent_payloads_match_current_contracts():
                 "schema": {"type": "object", "properties": {"answer": {"type": "string"}}, "required": ["answer"]},
             }
         ),
-        agent_config(mcp_tools=[{"mcp_connection_id": "mcpc_" + "a" * 24, "tools": ["live_echo"]}]),
+        agent_config(connection_tools=[{"connection_id": "mcpc_" + "a" * 24, "tools": ["live_echo"]}]),
     ):
         AgentConfig.model_validate(definition)
 

@@ -434,8 +434,7 @@ class RunRecord(Base):
     )
     effective_agent_config_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     model_execution_observation_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    connector_connection_selections_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
-    mcp_connection_selections_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    connection_selections_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     native_tool_contexts_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     priority: Mapped[int] = mapped_column(Integer, nullable=False)
     queue_name: Mapped[str] = mapped_column(String(256), nullable=False)
@@ -514,10 +513,7 @@ class RunRecord(Base):
             "model_execution_observation": _MODEL_OBSERVATION_ADAPTER.validate_python(
                 self.model_execution_observation_json
             ),
-            "connector_connection_selections": _JSON_OBJECTS_ADAPTER.validate_python(
-                self.connector_connection_selections_json
-            ),
-            "mcp_connection_selections": _JSON_OBJECTS_ADAPTER.validate_python(self.mcp_connection_selections_json),
+            "connection_selections": _JSON_OBJECTS_ADAPTER.validate_python(self.connection_selections_json),
             "native_tool_contexts": _JSON_OBJECTS_ADAPTER.validate_python(self.native_tool_contexts_json),
             "priority": self.priority,
             "queue_name": self.queue_name,

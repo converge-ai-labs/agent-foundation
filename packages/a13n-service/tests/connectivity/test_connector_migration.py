@@ -7,8 +7,8 @@ from a13n_service.storage.relational import sync_database_url
 from sqlalchemy import MetaData, create_engine, inspect, select, text
 
 TABLES = {
-    "connector_connections",
-    "connector_setup_attempts",
+    "connections",
+    "connection_authorizations",
     "connector_providers",
 }
 
@@ -22,14 +22,14 @@ def _exercise(configuration: PostgreSQLConfig | SQLiteConfig) -> None:
         inspector = inspect(engine)
         assert {"connector_tool_catalogs", "connector_connection_operations"}.isdisjoint(inspector.get_table_names())
         assert TABLES <= set(inspector.get_table_names())
-        connection_columns = {column["name"] for column in inspector.get_columns("connector_connections")}
+        connection_columns = {column["name"] for column in inspector.get_columns("connections")}
         assert {
             "external_ref",
             "setup_generation",
             "deleted_at",
         } <= connection_columns
         assert {"owner_type", "owner_id", "revoke_generation"}.isdisjoint(connection_columns)
-        attempt_columns = {column["name"] for column in inspector.get_columns("connector_setup_attempts")}
+        attempt_columns = {column["name"] for column in inspector.get_columns("connection_authorizations")}
         assert "external_user_correlation" in attempt_columns
         assert "redirect_url" not in attempt_columns
     finally:
@@ -55,10 +55,9 @@ def _exercise_populated_upgrade(configuration: PostgreSQLConfig | SQLiteConfig) 
     migrator.upgrade("2999349e6c69")
     engine = create_engine(sync_database_url(configuration))
     metadata = MetaData()
-    metadata.reflect(engine, only=["organizations", "workspaces", "connector_providers", "connector_connections"])
+    metadata.reflect(engine, only=["organizations", "workspaces", "connector_providers", "connections"])
     organizations, workspaces, providers, connections = (
-        metadata.tables[name]
-        for name in ("organizations", "workspaces", "connector_providers", "connector_connections")
+        metadata.tables[name] for name in ("organizations", "workspaces", "connector_providers", "connections")
     )
     now = datetime.now(UTC)
     identity = {"created_at": now, "updated_at": now}
@@ -98,6 +97,7 @@ def _exercise_populated_upgrade(configuration: PostgreSQLConfig | SQLiteConfig) 
             connection.execute(
                 connections.insert().values(
                     id="connection_migration",
+                    kind="connector",
                     connector_provider_id="provider_migration",
                     connector_key="github",
                     name="Retained connection",
@@ -111,10 +111,10 @@ def _exercise_populated_upgrade(configuration: PostgreSQLConfig | SQLiteConfig) 
         migrator.upgrade()
         migrator.upgrade()  # Retrying startup must not change retained identities.
         current = MetaData()
-        current.reflect(engine, only=["connector_providers", "connector_connections"])
+        current.reflect(engine, only=["connector_providers", "connections"])
         with engine.connect() as connection:
             provider = connection.execute(select(current.tables["connector_providers"])).mappings().one()
-            child = connection.execute(select(current.tables["connector_connections"])).mappings().one()
+            child = connection.execute(select(current.tables["connections"])).mappings().one()
             assert provider["setup_claims_json"] == {}
             assert provider["directory_json"] is None
             assert provider["directory_updated_at"] is None

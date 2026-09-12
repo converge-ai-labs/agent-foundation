@@ -8,21 +8,21 @@ from urllib.parse import parse_qs, urlsplit
 import httpx2
 import pytest
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.connectivity.connections.access import ConnectionError
+from a13n_service.connectivity.connections.domain import CreateConnectionRequest, MCPSource, UpdateConnectionRequest
 from a13n_service.connectivity.mcp.discovery import MCPDiscoveryService
 from a13n_service.connectivity.mcp.domain import (
     ConfigureMCPOAuthClientRequest,
-    CreateMCPConnectionRequest,
     MCPAuthMode,
     MCPOAuthClientInput,
     ReplaceMCPCredentialsRequest,
-    UpdateMCPConnectionRequest,
 )
 from a13n_service.connectivity.mcp.errors import MCPConnectionError
 from a13n_service.connectivity.mcp.management import invalidate_refresh_claim, require_connection
 from a13n_service.connectivity.mcp.models import (
+    MCPAuthorizationRecord,
     MCPConnectionOAuthClientRecord,
     MCPConnectionRecord,
-    MCPOAuthSessionRecord,
 )
 from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient, issuer_key
 from a13n_service.connectivity.mcp.oauth_service import MCPOAuthService
@@ -38,6 +38,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .conftest import NOW, SERVICE_ACCOUNT_ID, WORKSPACE_ID, actor
+from .connection_helpers import management, mcp_checks
 
 MCP_ENDPOINT = "https://8.8.8.8/mcp"
 ISSUER = "https://8.8.4.4"
@@ -45,8 +46,21 @@ PUBLIC_ORIGIN = "https://1.1.1.1"
 
 
 async def capture_receipt(oauth: MCPOAuthService, state: str, *, issuer: str | None = ISSUER) -> str:
-    target = await oauth.receive_callback(callback_key=issuer_key(ISSUER), state=state, code="code", issuer=issuer)
-    return parse_qs(urlsplit(target).fragment)["receipt"][0]
+    from a13n_service.connectivity.connections.handoff import digest, secret_bundle
+
+    await oauth.receive_callback(callback_key=issuer_key(ISSUER), state=state, code="code", issuer=issuer)
+    async with transaction(oauth._sessions) as session:
+        attempt = await session.scalar(
+            select(MCPAuthorizationRecord).where(MCPAuthorizationRecord.state_digest == digest(state))
+        )
+        assert attempt is not None
+        return secret_bundle(attempt, oauth._protector)["protocol_receipt"]
+
+
+async def stored_generation(service, connection_id):
+    async with transaction(service._sessions) as session:
+        record = await require_connection(session, connection_id)
+        return record.credential_generation
 
 
 class RemoteServer:
@@ -261,14 +275,12 @@ async def mcp_services(connectivity_sessions, credential_protector):
 @pytest.mark.anyio
 async def test_bearer_connection_is_pending_until_credentials_then_becomes_ready(mcp_services) -> None:
     connections, _oauth, _remote = mcp_services
-    created = await connections.create(
+    created = await management(connections).create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-bearer",
-        request=CreateMCPConnectionRequest(
-            name="Bearer MCP",
-            endpoint_url=MCP_ENDPOINT,
-            auth_mode=MCPAuthMode.bearer,
+        request=CreateConnectionRequest(
+            name="Bearer MCP", source=MCPSource(kind="mcp", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.bearer)
         ),
     )
     assert created.status == "pending"
@@ -281,7 +293,7 @@ async def test_bearer_connection_is_pending_until_credentials_then_becomes_ready
         request=ReplaceMCPCredentialsRequest(expected_version=1, bearer="bearer-secret"),
     )
     assert ready.status == "ready"
-    assert (await connections.get(actor=actor(), connection_id=ready.id)).status == "ready"
+    assert (await management(connections).get(actor=actor(), connection_id=ready.id)).status == "ready"
     assert ready.credential_configured is True
     assert "bearer-secret" not in repr(ready)
 
@@ -300,11 +312,13 @@ async def test_management_tool_preview_rechecks_version_and_authority(
 ) -> None:
     connections, _oauth, remote = mcp_services
     remote.allow_anonymous = True
-    created = await connections.create(
+    created = await management(connections).create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="preview-connection",
-        request=CreateMCPConnectionRequest(name="Preview", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.none),
+        request=CreateConnectionRequest(
+            name="Preview", source=MCPSource(kind="mcp", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.none)
+        ),
     )
     tools = await connections.discover_tools(actor=actor(), connection_id=created.id, expected_version=1)
     assert [tool.name for tool in tools.items] == ["search"]
@@ -312,10 +326,10 @@ async def test_management_tool_preview_rechecks_version_and_authority(
 
     async def changed_during_discovery(connection_id, **kwargs):
         result = await original(connection_id, **kwargs)
-        await connections.update(
+        await management(connections).update(
             actor=actor(),
             connection_id=connection_id,
-            request=UpdateMCPConnectionRequest(name="Changed", expected_version=1),
+            request=UpdateConnectionRequest(name="Changed", expected_version=1),
         )
         return result
 
@@ -345,14 +359,12 @@ async def test_management_tool_preview_rechecks_version_and_authority(
 @pytest.mark.anyio
 async def test_personal_connection_is_concealed_from_another_principal(mcp_services) -> None:
     connections, _oauth, _remote = mcp_services
-    created = await connections.create(
+    created = await management(connections).create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-private",
-        request=CreateMCPConnectionRequest(
-            name="Private MCP",
-            endpoint_url=MCP_ENDPOINT,
-            auth_mode=MCPAuthMode.bearer,
+        request=CreateConnectionRequest(
+            name="Private MCP", source=MCPSource(kind="mcp", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.bearer)
         ),
     )
     other = AuthenticatedActor(
@@ -361,7 +373,7 @@ async def test_personal_connection_is_concealed_from_another_principal(mcp_servi
         credential_id="token-test",
         boundary_workspace_id=WORKSPACE_ID,
     )
-    assert (await connections.get(actor=other, connection_id=created.id)).id == created.id
+    assert (await management(connections).get(actor=other, connection_id=created.id)).id == created.id
 
 
 @pytest.mark.anyio
@@ -371,13 +383,13 @@ async def test_viewer_cannot_manage_workspace_connections(mcp_services, connecti
         await session.execute(
             update(RoleBindingRecord).where(RoleBindingRecord.id == "rb_connectivity_admin").values(role_key="viewer")
         )
-    with pytest.raises(MCPConnectionError):
-        await connections.create(
+    with pytest.raises(ConnectionError):
+        await management(connections).create(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
             idempotency_key="viewer",
-            request=CreateMCPConnectionRequest(
-                name="Unauthorized", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.none
+            request=CreateConnectionRequest(
+                name="Unauthorized", source=MCPSource(kind="mcp", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.none)
             ),
         )
 
@@ -385,15 +397,18 @@ async def test_viewer_cannot_manage_workspace_connections(mcp_services, connecti
 @pytest.mark.anyio
 async def test_static_headers_require_the_complete_immutable_name_set(mcp_services) -> None:
     connections, _oauth, remote = mcp_services
-    created = await connections.create(
+    created = await management(connections).create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-static",
-        request=CreateMCPConnectionRequest(
+        request=CreateConnectionRequest(
             name="Static MCP",
-            endpoint_url=MCP_ENDPOINT,
-            auth_mode=MCPAuthMode.static_headers,
-            static_header_names=("X-API-Key",),
+            source=MCPSource(
+                kind="mcp",
+                endpoint_url=MCP_ENDPOINT,
+                auth_mode=MCPAuthMode.static_headers,
+                static_header_names=("X-API-Key",),
+            ),
         ),
     )
     with pytest.raises(MCPConnectionError, match="invalid"):
@@ -416,7 +431,7 @@ async def test_static_headers_require_the_complete_immutable_name_set(mcp_servic
         ),
     )
     assert ready.status == "ready"
-    assert (await connections.get(actor=actor(), connection_id=ready.id)).status == "ready"
+    assert (await management(connections).get(actor=actor(), connection_id=ready.id)).status == "ready"
     assert any(request.headers.get("x-api-key") == "static-secret" for request in remote.requests)
     assert "static-secret" not in repr(ready)
 
@@ -424,14 +439,12 @@ async def test_static_headers_require_the_complete_immutable_name_set(mcp_servic
 @pytest.mark.anyio
 async def test_oauth_state_is_bound_single_use_and_callback_validates_connection(mcp_services) -> None:
     connections, oauth, _remote = mcp_services
-    created = await connections.create(
+    created = await management(connections).create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-oauth",
-        request=CreateMCPConnectionRequest(
-            name="OAuth MCP",
-            endpoint_url=MCP_ENDPOINT,
-            auth_mode=MCPAuthMode.oauth,
+        request=CreateConnectionRequest(
+            name="OAuth MCP", source=MCPSource(kind="mcp", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.oauth)
         ),
     )
     launch = await oauth.authorize(
@@ -474,14 +487,13 @@ async def test_oauth_callback_preserves_credentials_when_verification_is_tempora
     mcp_services, monkeypatch
 ) -> None:
     connections, oauth, remote = mcp_services
-    created = await connections.create(
+    created = await management(connections).create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-verification-retry",
-        request=CreateMCPConnectionRequest(
+        request=CreateConnectionRequest(
             name="OAuth verification retry",
-            endpoint_url=MCP_ENDPOINT,
-            auth_mode=MCPAuthMode.oauth,
+            source=MCPSource(kind="mcp", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.oauth),
         ),
     )
     launch = await oauth.authorize(
@@ -508,10 +520,9 @@ async def test_oauth_callback_preserves_credentials_when_verification_is_tempora
     assert sum(request.url.path == "/token" for request in remote.requests) == 1
 
     monkeypatch.setattr(oauth._discovery, "discover", original)
-    ready = await connections.reconnect(
+    ready = await mcp_checks(connections).check(
         actor=actor(),
         connection_id=pending.id,
-        idempotency_key="retry-verification",
         expected_version=pending.version,
     )
     assert ready.status == "ready"
@@ -519,22 +530,25 @@ async def test_oauth_callback_preserves_credentials_when_verification_is_tempora
 
 
 @pytest.mark.anyio
-async def test_none_connection_discovers_immediately_and_lifecycle_is_versioned(mcp_services) -> None:
+async def test_none_connection_requires_check_and_lifecycle_is_versioned(mcp_services) -> None:
     connections, _oauth, remote = mcp_services
     remote.allow_anonymous = True
-    created = await connections.create(
+    created = await management(connections).create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-none",
-        request=CreateMCPConnectionRequest(
-            name="Anonymous MCP",
-            endpoint_url=MCP_ENDPOINT,
-            auth_mode=MCPAuthMode.none,
+        request=CreateConnectionRequest(
+            name="Anonymous MCP", source=MCPSource(kind="mcp", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.none)
         ),
     )
+    assert created.status == "pending"
+    assert remote.requests == []
+    created = await mcp_checks(connections).check(
+        actor=actor(), connection_id=created.id, expected_version=created.version
+    )
     assert created.status == "ready"
-    assert await connections.get(actor=actor(), connection_id=created.id) == created
-    disabled = await connections.set_enabled(
+    assert await management(connections).get(actor=actor(), connection_id=created.id) == created
+    disabled = await management(connections).set_enabled(
         actor=actor(),
         connection_id=created.id,
         idempotency_key="disable-none",
@@ -542,14 +556,18 @@ async def test_none_connection_discovers_immediately_and_lifecycle_is_versioned(
         enabled=False,
     )
     assert disabled.status == "disabled"
-    enabled = await connections.set_enabled(
+    enabled = await management(connections).set_enabled(
         actor=actor(),
         connection_id=created.id,
         idempotency_key="enable-none",
         expected_version=2,
         enabled=True,
     )
-    assert enabled.status == "ready"
+    assert enabled.status == "pending"
+    checked = await mcp_checks(connections).check(
+        actor=actor(), connection_id=enabled.id, expected_version=enabled.version
+    )
+    assert checked.status == "ready"
 
 
 @pytest.mark.anyio
@@ -559,14 +577,12 @@ async def test_delete_fences_connection_and_cleans_exact_dcr_registration(
 ) -> None:
     connections, oauth, remote = mcp_services
     remote.use_dcr = True
-    created = await connections.create(
+    created = await management(connections).create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-dcr",
-        request=CreateMCPConnectionRequest(
-            name="DCR MCP",
-            endpoint_url=MCP_ENDPOINT,
-            auth_mode=MCPAuthMode.oauth,
+        request=CreateConnectionRequest(
+            name="DCR MCP", source=MCPSource(kind="mcp", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.oauth)
         ),
     )
     launch = await oauth.authorize(
@@ -586,15 +602,15 @@ async def test_delete_fences_connection_and_cleans_exact_dcr_registration(
     )
 
     assert remote.registration_deleted is True
-    with pytest.raises(MCPConnectionError, match="requested resource"):
-        await connections.get(actor=actor(), connection_id=ready.id)
+    with pytest.raises(ConnectionError, match="requested resource"):
+        await management(connections).get(actor=actor(), connection_id=ready.id)
     async with connectivity_sessions() as session:
         deleted = await session.get(MCPConnectionRecord, ready.id)
     assert deleted is not None
     assert deleted.deleted_at is not None
     assert deleted.ciphertext is deleted.nonce is deleted.encryption_key_id is None
     async with connectivity_sessions() as session:
-        completed = await session.get(MCPOAuthSessionRecord, launch.id)
+        completed = await session.get(MCPAuthorizationRecord, launch.id)
     assert completed is not None
     assert completed.ciphertext is completed.nonce is completed.encryption_key_id is None
 
@@ -604,14 +620,12 @@ async def test_oauth_refresh_rotates_bundle_without_coupling_readiness_to_discov
     mcp_services, oauth_refresh
 ) -> None:
     connections, oauth, remote = mcp_services
-    created = await connections.create(
+    created = await management(connections).create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-refresh",
-        request=CreateMCPConnectionRequest(
-            name="Refresh MCP",
-            endpoint_url=MCP_ENDPOINT,
-            auth_mode=MCPAuthMode.oauth,
+        request=CreateConnectionRequest(
+            name="Refresh MCP", source=MCPSource(kind="mcp", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.oauth)
         ),
     )
     launch = await oauth.authorize(
@@ -623,15 +637,19 @@ async def test_oauth_refresh_rotates_bundle_without_coupling_readiness_to_discov
     state = parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
     receipt = await capture_receipt(oauth, state)
     ready = await oauth.callback(actor=actor(), state=state, receipt=receipt)
+    original_generation = await stored_generation(connections, ready.id)
 
     requests_before = len(remote.requests)
     assert await oauth_refresh.ensure_current(ready.id) is True
-    refreshed = await connections.get(actor=actor(), connection_id=ready.id)
+    refreshed = await management(connections).get(actor=actor(), connection_id=ready.id)
     assert refreshed.status == "ready"
-    assert refreshed.credential_generation == ready.credential_generation + 1
+    assert refreshed.authorization_generation == ready.authorization_generation
+    assert await stored_generation(connections, ready.id) == original_generation + 1
     assert all(request.url.path == "/token" for request in remote.requests[requests_before:])
-    await connections.reconnect(
-        actor=actor(), connection_id=ready.id, expected_version=refreshed.version, idempotency_key="reconnect-refreshed"
+    await mcp_checks(connections).check(
+        actor=actor(),
+        connection_id=ready.id,
+        expected_version=refreshed.version,
     )
     assert any(request.headers.get("authorization") == "Bearer refreshed-oauth-secret" for request in remote.requests)
 
@@ -652,14 +670,13 @@ async def test_client_credentials_acquires_and_renews_without_browser_authorizat
         instance_id="machine-test",
         clock=lambda: NOW,
     )
-    created = await connections.create(
+    created = await management(connections).create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-machine-oauth",
-        request=CreateMCPConnectionRequest(
+        request=CreateConnectionRequest(
             name="Machine OAuth MCP",
-            endpoint_url=MCP_ENDPOINT,
-            auth_mode=MCPAuthMode.oauth,
+            source=MCPSource(kind="mcp", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.oauth),
         ),
     )
     machine_client = MCPOAuthClientInput(
@@ -691,10 +708,9 @@ async def test_client_credentials_acquires_and_renews_without_browser_authorizat
     if verification_unavailable:
         assert authenticated.status == "pending"
         remote.verification_unavailable = False
-        ready = await connections.reconnect(
+        ready = await mcp_checks(connections).check(
             actor=actor(),
             connection_id=authenticated.id,
-            idempotency_key="verify-machine-oauth",
             expected_version=authenticated.version,
         )
     else:
@@ -724,10 +740,12 @@ async def test_client_credentials_acquires_and_renews_without_browser_authorizat
     assert replayed == authenticated
     assert remote.machine_token_count == 1
 
+    original_generation = await stored_generation(connections, ready.id)
     assert await oauth_refresh.ensure_current(ready.id) is True
-    renewed = await connections.get(actor=actor(), connection_id=ready.id)
+    renewed = await management(connections).get(actor=actor(), connection_id=ready.id)
     assert renewed.status == "ready"
-    assert renewed.credential_generation == ready.credential_generation + 1
+    assert renewed.authorization_generation == ready.authorization_generation
+    assert await stored_generation(connections, ready.id) == original_generation + 1
     assert remote.machine_token_count == 2
 
     reconfigured = await machine_oauth.configuration.configure(
@@ -752,14 +770,13 @@ async def test_client_credentials_acquires_and_renews_without_browser_authorizat
 @pytest.mark.anyio
 async def test_oauth_invalid_grant_requires_reauthorization(mcp_services, oauth_refresh) -> None:
     connections, oauth, remote = mcp_services
-    created = await connections.create(
+    created = await management(connections).create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-invalid-grant",
-        request=CreateMCPConnectionRequest(
+        request=CreateConnectionRequest(
             name="Invalid Grant MCP",
-            endpoint_url=MCP_ENDPOINT,
-            auth_mode=MCPAuthMode.oauth,
+            source=MCPSource(kind="mcp", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.oauth),
         ),
     )
     launch = await oauth.authorize(
@@ -771,13 +788,15 @@ async def test_oauth_invalid_grant_requires_reauthorization(mcp_services, oauth_
     state = parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
     receipt = await capture_receipt(oauth, state)
     ready = await oauth.callback(actor=actor(), state=state, receipt=receipt)
+    original_generation = await stored_generation(connections, ready.id)
     remote.refresh_error = "invalid_grant"
 
     assert await oauth_refresh.ensure_current(ready.id) is False
-    failed = await connections.get(actor=actor(), connection_id=ready.id)
+    failed = await management(connections).get(actor=actor(), connection_id=ready.id)
     assert failed.status == "action_required"
     assert failed.status_reason == "reauthorization_required"
-    assert failed.credential_generation == ready.credential_generation
+    assert failed.authorization_generation == ready.authorization_generation
+    assert await stored_generation(connections, ready.id) == original_generation
 
 
 @pytest.mark.anyio
@@ -789,14 +808,13 @@ async def test_oauth_refresh_lost_race_does_not_replace_newer_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     connections, oauth, _remote = mcp_services
-    created = await connections.create(
+    created = await management(connections).create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-refresh-race",
-        request=CreateMCPConnectionRequest(
+        request=CreateConnectionRequest(
             name="Refresh Race MCP",
-            endpoint_url=MCP_ENDPOINT,
-            auth_mode=MCPAuthMode.oauth,
+            source=MCPSource(kind="mcp", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.oauth),
         ),
     )
     launch = await oauth.authorize(
@@ -808,6 +826,7 @@ async def test_oauth_refresh_lost_race_does_not_replace_newer_credentials(
     state = parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
     receipt = await capture_receipt(oauth, state)
     ready = await oauth.callback(actor=actor(), state=state, receipt=receipt)
+    original_generation = await stored_generation(connections, ready.id)
     started = Event()
     proceed = Event()
 
@@ -836,8 +855,9 @@ async def test_oauth_refresh_lost_race_does_not_replace_newer_credentials(
     proceed.set()
 
     assert await refresh_task is False
-    current = await connections.get(actor=actor(), connection_id=ready.id)
-    assert current.credential_generation == ready.credential_generation + 1
+    current = await management(connections).get(actor=actor(), connection_id=ready.id)
+    assert current.authorization_generation == ready.authorization_generation
+    assert await stored_generation(connections, ready.id) == original_generation + 1
 
 
 @pytest.mark.anyio
@@ -847,14 +867,13 @@ async def test_new_oauth_authorization_expires_and_cleans_prior_dcr_session(
 ) -> None:
     connections, oauth, remote = mcp_services
     remote.use_dcr = True
-    created = await connections.create(
+    created = await management(connections).create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-oauth-restart",
-        request=CreateMCPConnectionRequest(
+        request=CreateConnectionRequest(
             name="OAuth Restart MCP",
-            endpoint_url=MCP_ENDPOINT,
-            auth_mode=MCPAuthMode.oauth,
+            source=MCPSource(kind="mcp", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.oauth),
         ),
     )
     first = await oauth.authorize(
@@ -872,12 +891,12 @@ async def test_new_oauth_authorization_expires_and_cleans_prior_dcr_session(
     assert sum(request.url.path == "/register" for request in remote.requests) == 1
     async with connectivity_sessions() as session:
         expired = await session.scalar(
-            select(MCPOAuthSessionRecord)
+            select(MCPAuthorizationRecord)
             .where(
-                MCPOAuthSessionRecord.mcp_connection_id == created.id,
-                MCPOAuthSessionRecord.status == "expired",
+                MCPAuthorizationRecord.connection_id == created.id,
+                MCPAuthorizationRecord.status == "expired",
             )
-            .order_by(MCPOAuthSessionRecord.created_at, MCPOAuthSessionRecord.id)
+            .order_by(MCPAuthorizationRecord.created_at, MCPAuthorizationRecord.id)
         )
     assert expired is not None
     assert expired.ciphertext is expired.nonce is expired.encryption_key_id is None
@@ -907,12 +926,12 @@ async def test_postgresql_cross_pod_authorization_and_single_refresh(
 
     sessions = postgres_connectivity_sessions
     async with service_bundle(sessions, credential_protector) as (connections, pod_a, remote):
-        created = await connections.create(
+        created = await management(connections).create(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
             idempotency_key="cross-pod",
-            request=CreateMCPConnectionRequest(
-                name="Cross Pod", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.oauth
+            request=CreateConnectionRequest(
+                name="Cross Pod", source=MCPSource(kind="mcp", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.oauth)
             ),
         )
         pod_b = MCPOAuthService(
@@ -1004,7 +1023,7 @@ async def test_postgresql_cross_pod_authorization_and_single_refresh(
             running = create_task(first.ensure_current(ready.id))
             await entered.wait()
             if invalidation == "disabled":
-                await connections.set_enabled(
+                await management(connections).set_enabled(
                     actor=actor(),
                     connection_id=ready.id,
                     idempotency_key="disable-refresh",
@@ -1030,4 +1049,4 @@ async def test_postgresql_cross_pod_authorization_and_single_refresh(
             connection.refresh_claim_expires_at = NOW - timedelta(seconds=1)
         assert await second.ensure_current(ready.id) is False
         assert len(calls) == 1
-        assert (await connections.get(actor=actor(), connection_id=ready.id)).status == "action_required"
+        assert (await management(connections).get(actor=actor(), connection_id=ready.id)).status == "action_required"

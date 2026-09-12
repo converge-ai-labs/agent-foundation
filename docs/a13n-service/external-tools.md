@@ -1,130 +1,98 @@
 # External tools
 
-a13n Service selects external tools by managed ConnectorConnection or MCPConnection. Create the connection resource in the same Workspace before selecting it in an Agent configuration. Its ConnectorProvider may belong to that Workspace or its parent Organization. Organization Providers are automatically available to child Workspaces, while connections and authorized external accounts remain isolated by Workspace.
+A Connection is a Workspace resource for an authorized external account or a remote MCP server. Create it before selecting its tools in an Agent. Its immutable `source` identifies either a Connector Provider and application, or an MCP endpoint and authentication mode. A Connector Provider can belong to the Workspace or its parent Organization; Connections remain isolated by Workspace.
 
 ```json
 {
-  "connector_tools": [
+  "connection_tools": [
     {
-      "connector_connection_id": "cconn_1234567890abcdef",
+      "connection_id": "conn_1234567890abcdef",
       "tools": ["search"],
       "defer_loading": false
-    }
-  ],
-  "mcp_tools": [
+    },
     {
-      "mcp_connection_id": "mcpc_1234567890abcdef",
+      "connection_id": "conn_fedcba0987654321",
       "defer_loading": true
     }
   ]
 }
 ```
 
-Tool names in `tools` are exact source names. Omit `tools` or use `null` to allow all tools from that source. Use `[]` to allow none. A connection can appear only once in each list. Source aliases, inline URLs or credentials, and `exposure` are rejected.
+Tool names are exact source names. Omit `tools` or use `null` to allow all authorized tools from that source; `[]` selects none. Each Connection can appear only once. Run overrides inherit an omitted `connection_tools` list; a supplied list replaces the whole selection, and `[]` clears it. A null list, aliases, inline endpoints, and credentials are rejected.
 
-`defer_loading` defaults to `false`, which makes selected definitions immediately visible. With `true`, the Harness exposes the group through its built-in `load_capability` tool. This changes model visibility; discovery and authorization still run during preparation.
+`defer_loading` defaults to `false`, which makes selected definitions immediately visible. With `true`, the Harness exposes the group through `load_capability`. Discovery and authorization still run during preparation. Tools execute only inside an accepted Agent Run; there is no standalone connection execute endpoint.
 
-A Run override inherits an omitted `connector_tools` or `mcp_tools` list. A supplied list replaces that entire category, and `[]` clears it. A null category is invalid. For example, `{"mcp_tools": []}` removes remote MCP selections while inheriting Connector selections.
+Run acceptance freezes each selected Connection's authorization generation. Reauthorizing the same Connection, even as a different upstream account, keeps its ID and advances that generation. Earlier Runs cannot use the replacement authorization. Routine OAuth token refresh preserves the generation.
 
-## Connector Providers: Composio
+## Create and authorize a Connection
 
-Create a Provider under `/api/v1/workspaces/{workspace}/connector-providers` or the parent Organization, supply its service credentials, discover its Connectors, and create a Workspace ConnectorConnection. Complete external authorization before selecting that connection in `connector_tools`. Connector connections support the same tool selection and deferred-loading fields shown above.
-
-Add a Composio Provider with a name and its write-only project `api_key`. Provider configuration is `{}`; Service uses the official Composio endpoint. All available applications appear in **Connections → New connection**; choose the Provider instance when several offer the same application. Service caches the directory for search and paging. Refresh replaces the complete directory only after a successful read; replacing the Provider key invalidates it.
-
-Choose an authentication configuration for the application. OAuth 2.0, API key, bearer token, and basic authentication are supported through Composio's hosted page. Each existing configuration shows its name, method, OAuth management mode, and scopes. A single choice is preselected; when several exist, choose the intended application and permissions explicitly.
-
-For an application with no existing configuration, choose Composio managed OAuth when available, or the offered API key, bearer, or basic method. Service creates a reusable auth config at connection time if no application-level credentials are required. The hosted page collects the account credentials and required instance fields, such as subdomain or region. Account credentials never pass through Service. API clients may optionally prefill non-secret instance fields as described below.
-
-To use your own OAuth app or different scopes:
-
-1. Open **Auth Configs → Create Auth Config** in [Composio Dashboard](https://dashboard.composio.dev) and select the application.
-2. Select OAuth and custom credentials. Enter the client ID, client secret, and scopes there; register the redirect URI shown by Composio with your OAuth app.
-3. Return to Console and click **Refresh configurations**, then select the new config. Each new Connection authorizes its own account, so multiple accounts can share a configuration.
-
-If shared configuration creation has an uncertain result, Service does not send another creation request. Check Composio Dashboard and ensure an enabled configuration exists before retrying. Replacing the project API key does not clear that uncertainty.
-
-Set a stable `A13N_SERVICE_CONNECTIVITY_SETUP_CORRELATION_SECRET` of at least 32 bytes, shared by replicas and preserved across restarts. Configure `A13N_SERVICE_CONNECTIVITY_PUBLIC_ORIGIN` and the IAM public origin to the same public HTTPS Console/API ingress. For OAuth, open the Composio project's **Settings → General → OAuth user verification** and set the verifier URL to `https://<your-public-origin>/connector-setup/callback`. A connection-specific return URL does not configure the OAuth verifier. Local testing requires a public HTTPS tunnel; open Console through that tunnel before signing in and starting authorization. For the built-in browser flow, start from Console. See [Composio callback identity verification](https://docs.composio.dev/reference/api-reference/connected-accounts).
-
-Complete authorization in the same browser tab. Console retains an expiring nonce in tab storage. OAuth returns are verified automatically. After an API key, bearer token, or basic authentication form, explicitly confirm the named connection and workspace in Console. Only confirm credentials you entered yourself: Composio cannot verify which browser submitted these forms, so forwarding a link and confirming another person’s submission can bind their account. Service requires the original authenticated User, tab nonce, and CSRF proof and checks the fixed upstream account. The reverse proxy serves `/connector-setup/callback` from Console, routes `/api` to Service, and must omit callback query strings from access logs. If the tab context or login expires, sign in and start again.
-
-**Check connection** verifies that the project API key can read connected accounts. It does not verify OAuth callback configuration or third-party credentials. A ready Connection means Composio accepted the account; some API key and token forms store credentials without testing them against the target service. A later tool call may report invalid credentials.
-
-An uncertain initial link request is not automatically repeated. A lost completion response is reconciled by reading the exact upstream account, never by replaying the single-use session. Check connection status before starting another authorization. If the authorization URL was lost, explicitly restart the unbound connection setup. An already verified Composio account cannot use this adapter's reconnect operation; create a new Connection instead of replacing its account identity.
-
-### Create a connection through the API
-
-API clients use the same creation and setup endpoints as Console. Authenticate as a User with the relevant workspace permissions, using a User API key or browser session. Service Accounts cannot initiate interactive setup. API keys belong in the client backend; browser session writes use the normal Origin and CSRF checks.
-
-1. Create the Provider with `POST /api/v1/workspaces/{workspace}/connector-providers`: supply `name`, `type: "composio"`, `configuration: {}`, and `credentials: {"api_key": "..."}`. Alternatively, use an existing Provider.
-2. Discover applications with `POST /api/v1/connector-providers/{provider_id}/discover-connectors`. Read the application's `setup_schema` to select an exact `auth_config_id` and `toolkit_version`. A `create:<METHOD>` choice is valid only when offered by discovery.
-3. Create the local Connection with `POST /api/v1/workspaces/{workspace}/connector-connections`, supplying `connector_provider_id`, `connector_key`, and `name`.
-4. Start authorization with `POST /api/v1/connector-connections/{connection_id}/setup`. Include the Connection's `expected_version`, a cryptographically random `browser_nonce` of 64 hexadecimal characters retained in the initiating tab, a local `return_path`, and `setup`. Creation and setup requests require distinct `Idempotency-Key` headers.
-
-For an application whose selected method advertises a non-secret `subdomain` field, `setup` can be:
+Create either source with `POST /api/v1/workspaces/{workspace}/connections` and an `Idempotency-Key`:
 
 ```json
 {
-  "auth_config_id": "ac_selected",
-  "toolkit_version": "20260903_01",
-  "connection_data": {"subdomain": "team"}
+  "name": "Work GitHub",
+  "source": {
+    "kind": "connector",
+    "provider_id": "cnr_1234567890abcdef",
+    "connector_key": "github"
+  }
 }
 ```
-
-Use values from current discovery rather than these illustrative identifiers. `connection_data` is optional. Its allowed fields are described in the setup schema's method-specific `allOf` conditions; Service checks them against current metadata before creating an upstream config or link. Unknown fields, secrets, and incorrect types are rejected. Omitted fields are collected on Composio's hosted page.
-
-Open the returned `redirect_url` in the initiating browser tab and retain `attempt_id` and `completion_method`. A custom client must implement the same browser ceremony: serve its callback at the configured public origin's `/connector-setup/callback`, preserve the tab nonce, and complete as the same User. The built-in Console callback requires Console's own stored tab context; opening an API-created link alone does not establish that context. There is no per-request external callback URL override.
-
-Call `POST /api/v1/connector-setup/complete` with `attempt_id` and `browser_nonce`. For `oauth_verifier`, also pass the returned single-use `session_uri`. For `browser_confirmation`, require the initiating user's explicit confirmation of the named connection and workspace before completing; do not auto-confirm a hosted return. Then read `GET /api/v1/connector-connections/{connection_id}` to check status. This API supports programmatic orchestration of hosted authorization; it does not accept third-party account secrets or import an arbitrary existing Composio account for unattended binding.
-
-The pre-public setup schema replaces the old callback flag and digest with an explicit completion method. Recreate disposable development databases and deploy Console and Service together; generated clients expose the completion method and require an OAuth session only for OAuth completion. Remote test accounts remain owned by Composio and are not automatically deleted.
-
-Preview tool definitions before linking an account with `GET /api/v1/connector-providers/{provider_id}/connectors/{connector_key}/tools`. Preview does not grant execution access. A verified Connection keeps its own account binding, so clearing completed setup history does not break tool calls or re-enabling a disabled connection.
-
-## Remote MCP connections
-
-Service manages remote MCP endpoints, not Harness UI's local stdio server files. Configure endpoint policy and credential encryption before creating a connection. This example uses an HTTPS server that deliberately needs no authentication; replace the endpoint with your authorized server and choose the authentication mode it requires.
-
-Save as `mcp-connection.json`:
 
 ```json
 {
-  "name": "Documentation tools",
-  "endpoint_url": "https://mcp.example.com/mcp",
-  "auth_mode": "none"
+  "name": "Research tools",
+  "source": {
+    "kind": "mcp",
+    "endpoint_url": "https://tools.example/mcp",
+    "auth_mode": "oauth"
+  }
 }
 ```
 
-```bash
-curl --fail-with-body "$SERVICE_URL/api/v1/workspaces/$WORKSPACE/mcp-connections" \
-  -H "Authorization: Bearer $A13N_API_KEY" \
-  -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: docs-create-mcp-001' \
-  --data-binary @mcp-connection.json
-```
+Creation is local and returns a pending Connection. Read or rename it through `/api/v1/connections/{connection_id}`. Enable, disable, check, and delete use the same resource for both source kinds. Enabling permits verification; it does not prove remote eligibility.
 
-Save the returned connection `id` and `version`. Creation is not proof that the endpoint is reachable or its tools are usable. The authentication modes are `none`, `bearer`, `static_headers`, and `oauth`:
+Create an Authorization with `POST /api/v1/connections/{connection_id}/authorizations`, an `Idempotency-Key`, and the Connection's `expected_version`. The returned operation has its own ID, status, expiry, safe error code, and `next_action`. Query it at `/api/v1/connection-authorizations/{authorization_id}`. A completed authorization may still require an explicit `POST /api/v1/connections/{connection_id}/check`; inspect the Connection's status and `last_check`. A failed or unavailable check reports what was checked without promising that every upstream action will succeed.
 
-| Mode             | Next step                                                                                                                                         |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `none`           | Discover using the current resource version                                                                                                       |
-| `bearer`         | POST write-only `bearer` plus `expected_version` to `/mcp-connections/{connection_id}/credentials` with an idempotency key                        |
-| `static_headers` | Declare up to 16 `static_header_names` at creation; replace credentials with matching `static_headers` values and current version                 |
-| `oauth`          | POST current `expected_version` to `/mcp-connections/{connection_id}/authorize` with an idempotency key; follow its expiring authorization launch |
+### Application-owned users
 
-All table paths are under `/api/v1`. Credential replacement does not expose stored values in reads; keep source credentials outside committed JSON files. OAuth has [browser callback constraints](identity.md#browser-oauth-callbacks): a provider redirect alone does not satisfy local session/CSRF checks.
+Your application owns its customer identities and maps them to Connection IDs. Service does not require an a13n User for each customer. Your backend can use a Service Account API key with Workspace Builder authority to create Connections and authorize them. Keep that API key in the backend.
 
-To discover tools, POST `{"expected_version": VERSION_FROM_READ}` to `/api/v1/mcp-connections/{connection_id}/discover`. This performs remote work. Use returned source-native names in the Agent's `mcp_tools` selection, not generated model-facing aliases. The returned collection contains tool names, descriptions, input/output schemas, and annotations.
+For browser authorization:
 
-Resource states are `pending`, `ready`, `action_required`, and `disabled`; `action_required` includes its reason, such as reauthorization or incompatibility. PATCH updates the supported display name with an expected version, not arbitrary endpoint/auth fields. Reconnect, enable, disable, and delete are separate versioned commands. Delete returns cleanup evidence; it is not proof that remote revocation succeeded. Read the [Native operation reference](api-reference.md#connectivity-management) for each command's body and header requirements.
+1. Register the exact HTTPS application callback in `A13N_SERVICE_CONNECTIVITY_AUTHORIZATION_RETURN_URLS`. Configure a public HTTPS `A13N_SERVICE_CONNECTIVITY_PUBLIC_ORIGIN` for the Service browser handoff.
+2. Generate unpredictable application `state` and a completion verifier. Retain them in the initiating application session. Send `method: "browser"`, `return_url`, `state`, `completion_challenge` (the lowercase hexadecimal SHA-256 digest of the verifier), `expected_version`, and source-specific `options`.
+3. Open the returned `next_action.url` in the customer's browser. Service binds the link to that tab and handles the provider flow.
+4. At your callback, remove the query parameters from browser navigation state, validate `state` and `authorization_id`, and send `receipt` plus `completion_verifier` from the same authenticated backend principal to `POST /api/v1/connection-authorizations/{authorization_id}/complete`.
+5. Query the operation and Connection after an uncertain response. Start a new authorization only when needed. Customers do not log in to Console.
 
-Remote MCP presets prefill endpoints, authentication modes, and required header names, and link to setup instructions. The catalog includes services with compatible public discovery or a documented token/header setup path; missing OAuth `iss` advertisements are not an exclusion. Listing a preset does not certify authorization or tool execution with your account. Required subscriptions, administrator permissions, regional endpoints, and provider app registration still apply. Services restricted to approved clients, or without an available supported setup path, are omitted.
+Serve callbacks without caching or referrer forwarding, and exclude callback query strings from access logs. Console uses this same contract at `/connections/callback`; its browser session already authenticates the initiating user. Route `/connection-authorizations/browser` and its script to Service and `/api` to Service. The application callback can be hosted separately.
 
-For Google Cloud BigQuery and Compute Engine, the presets use static headers: `Authorization` contains `Bearer ` followed by a Google access token, and `x-goog-user-project` contains the project ID. Enable the relevant API and grant MCP Tool User plus resource permissions. Tokens require manual replacement when they expire. Jentic prefills `x-jentic-api-key` for a Live Capabilities agent key. The monday.com preset uses a personal API token; shared integrations follow its registered-app and distribution requirements.
+### Direct credentials
 
-For automatic OAuth setup, Service tries client metadata documents and then dynamic registration. If the provider requires your own app, choose **Use your own OAuth app**, create the connection, and copy the displayed **Redirect URI** into the provider's app settings. Enter its client ID, supported client authentication method, and secret. For Asana use an MCP app distributed to your workspace; for HubSpot use an MCP Auth App and client secret in request body; for Zoom use a General app with the required product scopes and client secret in Basic header. Each preset links to its provider's current instructions.
+For API key, bearer, or basic credentials, use `method: "credentials"` with the selected source's write-only `credentials` object and setup `options`. Connector discovery returns `credential_schemas` keyed by authentication method. For MCP bearer mode, credentials are `{"bearer": "..."}`. For MCP static headers, set `source.static_header_names` at creation and supply a complete map of those header names to values as `credentials`. Credentials never appear in Connection or Authorization reads.
 
-Providers may omit the OAuth callback `iss` parameter. Service accepts those callbacks through the issuer-specific redirect URI; any supplied issuer must match. No compatibility checkbox or private OAuth app is required solely because a provider omits `iss`. Saving or removing app configuration clears active tokens and requires authorization again; stored secrets are never returned. Configuration remains available after an authorization failure.
+## Connector Provider: Composio
+
+Create a Provider under `/api/v1/workspaces/{workspace}/connector-providers` or the parent Organization with `type: "composio"`, `configuration: {}`, and its write-only project `api_key`. The Provider owns this project credential; each Connection owns one customer account binding. **Connections → New connection** lists available applications and Provider instances. Directory refresh publishes a complete snapshot only after a successful read; replacing the Provider key invalidates it.
+
+Select an authentication configuration and the toolkit version from the application's setup schema. OAuth 2.0, API key, bearer token, and basic authentication are supported. Browser setup uses Composio's hosted form. API clients can supply non-OAuth credentials directly, along with required instance fields such as subdomain or region. Composio stores the account credential; Service does not retain the plaintext submission.
+
+If no configuration exists, Service can create a reusable configuration for managed OAuth or an offered non-OAuth method that requires no application-level credentials. To use your own OAuth app or scopes, create the auth config in [Composio Dashboard](https://dashboard.composio.dev), configure its client credentials and redirect URI there, then refresh configurations in Console. If configuration creation has an uncertain outcome, inspect Composio before retrying; Service does not repeat an uncertain remote creation automatically.
+
+Set a stable `A13N_SERVICE_CONNECTIVITY_SETUP_CORRELATION_SECRET` of at least 32 bytes, shared by replicas. Set Composio's **OAuth user verification** callback to `https://<service-public-origin>/connection-authorizations/browser`. Connection return URLs do not replace this project setting. Local browser testing requires a public HTTPS ingress.
+
+Complete hosted authorization in the same tab. Service verifies the fixed upstream account, Provider, application, and correlation before binding it. A ready Connection means Composio accepted that account; some non-OAuth forms do not test credentials against the target service. The Connection check therefore reports `provider_account` scope. Later tool calls may report missing permissions or invalid credentials.
+
+Reauthorization uses the existing Connection's `/authorizations` endpoint. Its ID remains stable when the upstream account changes. A lost completion response is reconciled by reading the exact account, never by resending a consumed provider session. Explicit Connector revocation is `/api/v1/connections/{connection_id}/connector/revoke`; deletion and revocation report local invalidation separately from remote cleanup success or uncertainty.
+
+## Remote MCP
+
+MCP sources support `none`, `bearer`, `static_headers`, and `oauth`. A `none` connection becomes ready through an explicit check. Other modes require credentials or OAuth before checking. MCP checks report `mcp_discovery` scope; they establish protocol and tool-discovery eligibility, not successful execution of every tool.
+
+OAuth uses discovered authorization-server metadata. Automatic registration is preferred where supported. Manage a connection-owned OAuth app through `/api/v1/connections/{connection_id}/mcp/oauth-client` and inspect discovery through `/api/v1/connections/{connection_id}/mcp/oauth-discovery`. The app configuration contains its issuer, client ID, grant type, token authentication method, and write-only client secret. Replacing or removing it clears active tokens and requires authorization again. Failed authorization retains the app configuration for correction.
+
+Authorization-code clients use the common browser handoff. Machine clients use `method: "client_credentials"` at the common Authorization endpoint after their app configuration is saved. Refresh uses the current configured client and does not change the Connection's authorization generation.
 
 ## Application Accounts and event reception
 
@@ -132,11 +100,11 @@ An Application Account represents one provider account, Bot, or concrete applica
 
 Reception is disabled by default. To receive events, set `receive_enabled: true`, `default_agent_id`, and a same-Workspace `execution_service_account_id` on the Account. Configure the provider webhook at `/connectivity/v1/accounts/{account_id}/events`. A tool-only Account needs neither an Agent nor an execution Service Account.
 
-Use `/api/v1/application-accounts/{account_id}/targets` to configure an exact Slack channel, Lark chat, or GitHub repository ID. Targets can override the Agent and only `model`, `skills`, `connector_tools`, and `mcp_tools`. Omitted categories inherit and empty lists clear. Optional batching and provider policy inherit Account defaults. Target updates replace the full configuration; disabled targets do not fall through to defaults.
+Use `/api/v1/application-accounts/{account_id}/targets` to configure an exact Slack channel, Lark chat, or GitHub repository ID. Targets can override the Agent and only `model`, `skills`, `connection_tools`. Omitted categories inherit and empty lists clear. Optional batching and provider policy inherit Account defaults. Target updates replace the full configuration; disabled targets do not fall through to defaults.
 
 The first event is submitted immediately; subsequent ordered batches obey the configured interval. An active or selected waiting Run receives Steer without changing its tools. The next ordinary Run uses the current Agent and override while retaining the same Thread. Closing reception stops new admission while already acknowledged batches continue processing. Disabling or deleting the Account also blocks pending execution and subsequent outbound calls.
 
-Account tools are injected automatically from the Run's trusted execution context. There is no Account selection in Agent configuration or Run overrides. Inbound admission supplies only its admitted reply actions and target. A trusted independent entry can supply explicit proactive actions and destinations. With no such context, the Run gets no Account tools; creating an Account alone does not expose it to every Agent. Clearing `connector_tools` or `mcp_tools` does not remove these default tools.
+Account tools are injected automatically from the Run's trusted execution context. There is no Account selection in Agent configuration or Run overrides. Inbound admission supplies only its admitted reply actions and target. A trusted independent entry can supply explicit proactive actions and destinations. With no such context, the Run gets no Account tools; creating an Account alone does not expose it to every Agent. Clearing `connection_tools` does not remove these default tools.
 
 For proactive sends, Slack accepts `channel_id` and `text` within the entry-authorized `channel_ids`; Lark accepts `chat_id` and typed `content` within `chat_ids`. GitHub scope contains exact repositories, and its tools accept a permitted repository ID, issue/PR number, and target kind. Tools cannot choose another Account or credential. Proactive sends do not automatically create an external Thread binding.
 
@@ -168,4 +136,4 @@ The initial migrations create the current schema directly, without persisted too
 
 Use an `Idempotency-Key` containing 1–512 visible ASCII bytes for retryable management commands. If a response is lost, repeat the same key and request. For 24 hours from the original successful commit, an authorized replay returns the original accepted result, even if the resource has since advanced. Changing the request while reusing that key returns a conflict. Replay does not renew the window.
 
-Read an MCP connection after a mutation to observe current discovery status; the mutation receipt records its accepted state. Supply credentials through the owning Account, Provider, or MCP connection. Run configuration selects those managed resources and does not accept direct credential overrides.
+Read the Connection after a mutation to observe current discovery status; the mutation receipt records its accepted state. Supply credentials through the owning Account, Provider, or MCP connection. Run configuration selects those managed resources and does not accept direct credential overrides.

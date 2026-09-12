@@ -263,8 +263,7 @@ class Run(StrictModel):
     environment_use_started_at: UtcDateTime | None = None
     effective_agent_config_digest: Sha256Digest
     model_execution_observation: ModelExecutionObservation
-    connector_connection_selections: tuple[JsonObject, ...] = Field(default=(), max_length=512)
-    mcp_connection_selections: tuple[JsonObject, ...] = Field(default=(), max_length=512)
+    connection_selections: tuple[JsonObject, ...] = Field(default=(), max_length=512)
     native_tool_contexts: tuple[JsonObject, ...] = Field(default=(), max_length=128, repr=False)
     priority: int
     queue_name: BoundedText
@@ -488,8 +487,7 @@ def accepted_run(
     environment_access: Literal["read_only", "read_write", "full"] | None = None,
     effective_agent_config_digest: Sha256Digest,
     model_execution_observation: ModelExecutionObservation,
-    connector_connection_selections: tuple[JsonObject, ...] = (),
-    mcp_connection_selections: tuple[JsonObject, ...] = (),
+    connection_selections: tuple[JsonObject, ...] = (),
     native_tool_contexts: tuple[JsonObject, ...] = (),
     priority: int,
     queue_name: BoundedText,
@@ -523,8 +521,7 @@ def accepted_run(
         environment_access=environment_access,
         effective_agent_config_digest=effective_agent_config_digest,
         model_execution_observation=model_execution_observation,
-        connector_connection_selections=connector_connection_selections,
-        mcp_connection_selections=mcp_connection_selections,
+        connection_selections=connection_selections,
         native_tool_contexts=native_tool_contexts,
         priority=priority,
         queue_name=queue_name,

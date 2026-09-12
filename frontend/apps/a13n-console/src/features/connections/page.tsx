@@ -14,17 +14,11 @@ import {
   Page,
   StateBadge,
 } from "../../shared/feedback";
-import { ConnectionDetails } from "../connectors/connections";
-import { MCPEditor } from "../mcp/editor";
-import { MCPStatusBadge } from "../mcp/status";
+import { ConnectionDetails } from "./editor";
 import { ManageProvidersLink } from "../providers/manage-link";
 import { connectorApi } from "../connectors/api";
 import { NewConnection } from "./new";
 
-type Row = { id: string } & (
-  | { kind: "connector"; connection: Schema["ConnectorConnection"] }
-  | { kind: "mcp"; connection: Schema["MCPConnection"] }
-);
 export function ConnectionsPage() {
   const client = useClient(),
     { workspace, can } = useWorkspace(),
@@ -32,13 +26,13 @@ export function ConnectionsPage() {
   const [search, setSearch] = useSearchParams();
   const finalFocus = useRef<HTMLElement | null>(null);
   const [cleanup, setCleanup] = useState<Schema["ConnectionCleanupReceipt"]>();
-  const connectors = useInfiniteQuery({
-    queryKey: ["connector-connections", workspace.id, "list"],
-    enabled: can("connector_connection.read"),
+  const connections = useInfiniteQuery({
+    queryKey: ["connections", workspace.id, "list"],
+    enabled: can("connection.read"),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ signal, pageParam }) =>
       client.http
-        .GET("/api/v1/workspaces/{workspace}/connector-connections", {
+        .GET("/api/v1/workspaces/{workspace}/connections", {
           params: {
             path: { workspace: workspace.id },
             query: { cursor: pageParam },
@@ -48,38 +42,7 @@ export function ConnectionsPage() {
         .then(data),
     getNextPageParam: (page) => page.next_cursor ?? undefined,
   });
-  const mcp = useInfiniteQuery({
-    queryKey: ["mcp-connections", workspace.id, "list"],
-    enabled: can("mcp_connection.read"),
-    initialPageParam: undefined as string | undefined,
-    queryFn: ({ signal, pageParam }) =>
-      client.http
-        .GET("/api/v1/workspaces/{workspace}/mcp-connections", {
-          params: {
-            path: { workspace: workspace.id },
-            query: { cursor: pageParam },
-          },
-          signal,
-        })
-        .then(data),
-    getNextPageParam: (page) => page.next_cursor ?? undefined,
-  });
-  const rows: Row[] = [
-    ...(connectors.data?.pages.flatMap((page) => page.items) ?? []).map(
-      (connection) => ({
-        id: connection.id,
-        kind: "connector" as const,
-        connection,
-      }),
-    ),
-    ...(mcp.data?.pages.flatMap((page) => page.items) ?? []).map(
-      (connection) => ({ id: connection.id, kind: "mcp" as const, connection }),
-    ),
-  ].sort(
-    (a, b) =>
-      b.connection.created_at.localeCompare(a.connection.created_at) ||
-      a.id.localeCompare(b.id),
-  );
+  const rows = connections.data?.pages.flatMap((page) => page.items) ?? [];
   const focused = search.get("connection");
   const providers = useQuery({
     queryKey: ["connector-providers", "workspace", workspace.id, "picker"],
@@ -109,10 +72,7 @@ export function ConnectionsPage() {
       actions={
         <>
           <ManageProvidersLink category="connectors" scope="workspace" />
-          {(can("connector_connection.manage") ||
-            can("mcp_connection.manage")) && (
-            <NewConnection onConnected={select} />
-          )}
+          {can("connection.manage") && <NewConnection onConnected={select} />}
         </>
       }
     >
@@ -148,8 +108,8 @@ export function ConnectionsPage() {
           </Button>
         </div>
       )}
-      <ErrorNotice error={connectors.error ?? mcp.error} />
-      {connectors.isLoading || mcp.isLoading ? (
+      <ErrorNotice error={connections.error} />
+      {connections.isLoading ? (
         <Loading />
       ) : rows.length ? (
         <ResourceTable
@@ -164,18 +124,18 @@ export function ConnectionsPage() {
               tone: "primary",
               render: (row) => (
                 <ResourceIdentity
-                  name={row.connection.name}
-                  resourceId={row.connection.id}
+                  name={row.name}
+                  resourceId={row.id}
                   description={
-                    row.kind === "connector"
-                      ? row.connection.connector_key
-                      : row.connection.endpoint_url
+                    row.source.kind === "connector"
+                      ? row.source.connector_key
+                      : row.source.endpoint_url
                   }
                   icon={
-                    row.kind === "connector" ? (
-                      <BrandIcon alias={row.connection.connector_key} />
+                    row.source.kind === "connector" ? (
+                      <BrandIcon alias={row.source.connector_key} />
                     ) : (
-                      <BrandIcon endpoint={row.connection.endpoint_url} />
+                      <BrandIcon endpoint={row.source.endpoint_url} />
                     )
                   }
                 />
@@ -184,27 +144,22 @@ export function ConnectionsPage() {
             {
               label: t("Source"),
               render: (row) =>
-                row.kind === "mcp"
+                row.source.kind === "mcp"
                   ? t("Remote MCP")
                   : (providers.data?.find(
                       (provider) =>
-                        provider.id === row.connection.connector_provider_id,
+                        row.source.kind === "connector" &&
+                        provider.id === row.source.provider_id,
                     )?.name ?? t("Connected account")),
             },
             {
               label: t("Status"),
-              render: ({ connection }) =>
-                "endpoint_url" in connection ? (
-                  <MCPStatusBadge connection={connection} />
-                ) : (
-                  <StateBadge state={connection.status} />
-                ),
+              render: (connection) => <StateBadge state={connection.status} />,
             },
           ]}
         />
       ) : (
-        !connectors.error &&
-        !mcp.error && (
+        !connections.error && (
           <Empty
             title={t("No connections yet")}
             description={t(
@@ -213,30 +168,17 @@ export function ConnectionsPage() {
           />
         )
       )}
-      {(connectors.hasNextPage || mcp.hasNextPage) && (
+      {connections.hasNextPage && (
         <Button
           variant="outline"
-          loading={connectors.isFetchingNextPage || mcp.isFetchingNextPage}
-          onClick={() => {
-            if (connectors.hasNextPage) void connectors.fetchNextPage();
-            if (mcp.hasNextPage) void mcp.fetchNextPage();
-          }}
+          loading={connections.isFetchingNextPage}
+          onClick={() => void connections.fetchNextPage()}
         >
           {t("Load more")}
         </Button>
       )}
-      {focused?.startsWith("cconn_") && can("connector_connection.read") && (
+      {focused && can("connection.read") && (
         <ConnectionDetails
-          key={focused}
-          connectionId={focused}
-          finalFocus={finalFocus}
-          controlledOpen
-          onClose={() => select()}
-          onCleanup={setCleanup}
-        />
-      )}
-      {focused?.startsWith("mcpc_") && can("mcp_connection.read") && (
-        <MCPEditor
           key={focused}
           connectionId={focused}
           finalFocus={finalFocus}

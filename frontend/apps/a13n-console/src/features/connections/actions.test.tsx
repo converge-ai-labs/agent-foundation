@@ -3,8 +3,7 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
-import { ConnectionDetails } from "../connectors/connections";
-import { MCPEditor } from "../mcp/editor";
+import { ConnectionDetails } from "./editor";
 
 const http = vi.hoisted(() => ({
   GET: vi.fn(),
@@ -44,11 +43,13 @@ for (const kind of ["connector", "mcp"] as const) {
         status: "disabled",
         version: 2,
         safe_metadata: {},
-        connector_key: "github",
-        auth_mode: "none",
+        source:
+          kind === "connector"
+            ? { kind, provider_id: "cnr_test", connector_key: "github" }
+            : { kind, auth_mode: "none", endpoint_url: "https://mcp.example" },
         credential_configured: false,
       };
-      const queryKey = [`${kind}-connections`, "ws_test", resource.id];
+      const queryKey = ["connections", "ws_test", resource.id];
       cache.setQueryData(queryKey, resource);
       http.GET.mockResolvedValue({
         data: { ...resource, version: 3 },
@@ -76,7 +77,7 @@ for (const kind of ["connector", "mcp"] as const) {
               onCleanup={vi.fn()}
             />
           ) : (
-            <MCPEditor
+            <ConnectionDetails
               connectionId={resource.id}
               controlledOpen
               onClose={vi.fn()}
@@ -107,15 +108,13 @@ for (const kind of ["connector", "mcp"] as const) {
           name:
             action === "Revoke"
               ? "Revoke authorization"
-              : kind === "mcp" && action === "Delete"
-                ? "Delete MCP connection"
-                : `${action} connection`,
+              : `${action} connection`,
         }),
       );
       await waitFor(() => {
         if (action === "Delete")
           expect(http.DELETE).toHaveBeenCalledWith(
-            `/api/v1/${kind}-connections/{connection_id}`,
+            "/api/v1/connections/{connection_id}",
             expect.objectContaining({
               params: expect.objectContaining({
                 query: { expected_version: 3 },
@@ -124,7 +123,7 @@ for (const kind of ["connector", "mcp"] as const) {
           );
         else
           expect(http.POST).toHaveBeenCalledWith(
-            `/api/v1/${kind}-connections/{connection_id}/${action === "Revoke" ? "revoke" : "{action}"}`,
+            `/api/v1/connections/{connection_id}/${action === "Revoke" ? "connector/revoke" : "enable"}`,
             expect.objectContaining({ body: { expected_version: 3 } }),
           );
       });

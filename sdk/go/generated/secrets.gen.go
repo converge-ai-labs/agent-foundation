@@ -11,6 +11,8 @@ func (CompletePasswordResetRequest) String() string   { return "CompletePassword
 func (CompletePasswordResetRequest) GoString() string { return "CompletePasswordResetRequest { .. }" }
 func (CreateAccountRequest) String() string           { return "CreateAccountRequest { .. }" }
 func (CreateAccountRequest) GoString() string         { return "CreateAccountRequest { .. }" }
+func (CreateAuthorizationRequest) String() string     { return "CreateAuthorizationRequest { .. }" }
+func (CreateAuthorizationRequest) GoString() string   { return "CreateAuthorizationRequest { .. }" }
 func (CreateConnectorProviderRequest) String() string { return "CreateConnectorProviderRequest { .. }" }
 func (CreateConnectorProviderRequest) GoString() string {
 	return "CreateConnectorProviderRequest { .. }"
@@ -35,8 +37,6 @@ func (ReplaceConnectorProviderCredentialsRequest) String() string {
 func (ReplaceConnectorProviderCredentialsRequest) GoString() string {
 	return "ReplaceConnectorProviderCredentialsRequest { .. }"
 }
-func (ReplaceMCPCredentialsRequest) String() string   { return "ReplaceMCPCredentialsRequest { .. }" }
-func (ReplaceMCPCredentialsRequest) GoString() string { return "ReplaceMCPCredentialsRequest { .. }" }
 func (UpdateConnectorProviderRequest) String() string { return "UpdateConnectorProviderRequest { .. }" }
 func (UpdateConnectorProviderRequest) GoString() string {
 	return "UpdateConnectorProviderRequest { .. }"

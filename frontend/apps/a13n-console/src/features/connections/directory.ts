@@ -15,8 +15,7 @@ export function useConnectionDirectory(search: string) {
     { workspace, can } = useWorkspace();
   const providers = useQuery({
     queryKey: ["connector-providers", "workspace", workspace.id, "picker"],
-    enabled:
-      can("connector_provider.read") && can("connector_connection.manage"),
+    enabled: can("connector_provider.read") && can("connection.manage"),
     queryFn: ({ signal }) =>
       allPages((cursor) =>
         connectorApi(client, { kind: "workspace", id: workspace.id }).providers(

@@ -36,7 +36,7 @@ Keep the wire distinctions intact:
 
 - An omitted Run override normally inherits the accepted Agent selection.
 - `search: null` explicitly disables inherited search.
-- Supplied `connector_tools` or `mcp_tools` arrays replace the corresponding category; `[]` clears it. Category-level `null` is invalid.
+- Supplied `connection_tools` arrays replace the corresponding category; `[]` clears it. Category-level `null` is invalid.
 - Within one external-tool selection, omitted/null `tools` means all tools; `tools: []` means none.
 
 Do not serialize every absent optional field as `null`. The [SDK guide](sdks.md) shows the language-specific representations, and [external tools](external-tools.md) owns those selection semantics.

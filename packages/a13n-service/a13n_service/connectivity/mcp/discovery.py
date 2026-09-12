@@ -7,11 +7,12 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.connectivity.connections.domain import Connection
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.storage import transaction
 
-from .domain import MCPConnection, MCPTool
+from .domain import MCPTool
 from .errors import MCPConnectionError
 from .management import authorize_connection, require_connection
 from .refresh import OAuthCredentialRefresh
@@ -20,7 +21,7 @@ from .transport import RemoteTransport
 
 @dataclass(frozen=True, slots=True)
 class DiscoveryResult:
-    connection: MCPConnection
+    connection: Connection
     tools: tuple[MCPTool, ...]
 
 
@@ -46,7 +47,7 @@ class MCPDiscoveryService:
             current = await self._credentials.current(connection_id)
             if current.endpoint != snapshot.endpoint or current.version != snapshot.version:
                 raise MCPConnectionError(
-                    "connection_changed", "MCPConnection changed during discovery.", category=ErrorCategory.conflict
+                    "connection_changed", "Connection changed during discovery.", category=ErrorCategory.conflict
                 )
             generation = current.credential_generation
             return current.headers
@@ -80,7 +81,7 @@ class MCPDiscoveryService:
                 or current.status not in {"pending", "ready"}
             ):
                 raise MCPConnectionError(
-                    "connection_changed", "MCPConnection changed during discovery.", category=ErrorCategory.conflict
+                    "connection_changed", "Connection changed during discovery.", category=ErrorCategory.conflict
                 )
             await authorize_connection(session, actor, current, mode="manage")
             evidence = None
@@ -94,7 +95,7 @@ class MCPDiscoveryService:
                 ):
                     raise MCPConnectionError(
                         "connection_changed",
-                        "MCPConnection command changed during discovery.",
+                        "Connection command changed during discovery.",
                         category=ErrorCategory.conflict,
                     )
             current.status = "ready"

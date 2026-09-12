@@ -149,21 +149,32 @@ async def test_composio_invalid_execution_evidence_remains_unknown_without_retry
 
 
 @pytest.mark.parametrize(
-    "path", ["//outside.invalid/", "https://outside.invalid", "/\\outside.invalid/", "/path?redirect=outside"]
+    "target",
+    [
+        "/",
+        "//outside.invalid/",
+        "http://outside.invalid",
+        "https://user:password@outside.invalid",
+        "https://outside.invalid/#fragment",
+    ],
 )
-def test_setup_rejects_nonlocal_return_targets(path):
-    from a13n_service.connectivity.connectors.domain import StartConnectorConnectionSetupRequest
+def test_authorization_requires_a_credential_free_https_return_url(target):
+    from a13n_service.connectivity.connections.domain import CreateAuthorizationRequest
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
-        StartConnectorConnectionSetupRequest(expected_version=1, setup={}, return_path=path)
+        CreateAuthorizationRequest(
+            expected_version=1, method="browser", return_url=target, state="s" * 32, completion_challenge="a" * 64
+        )
 
 
-@pytest.mark.parametrize(
-    "path",
-    ["/", "/workspaces/ws_test/connectors", "/path%20name/", pytest.param("/" + "a" * 2047, id="max-length-path")],
-)
-def test_setup_accepts_local_return_paths(path):
-    from a13n_service.connectivity.connectors.domain import StartConnectorConnectionSetupRequest
+def test_authorization_accepts_an_application_https_return_url():
+    from a13n_service.connectivity.connections.domain import CreateAuthorizationRequest
 
-    assert StartConnectorConnectionSetupRequest(expected_version=1, setup={}, return_path=path).return_path == path
+    target = "https://customer.example/oauth/complete"
+    assert (
+        CreateAuthorizationRequest(
+            expected_version=1, method="browser", return_url=target, state="s" * 32, completion_challenge="a" * 64
+        ).return_url
+        == target
+    )

@@ -9,6 +9,10 @@ const http = vi.hoisted(() => ({
   GET: vi.fn(),
   POST: vi.fn(),
   PUT: vi.fn(),
+  start: vi.fn(),
+}));
+vi.mock("../connections/authorization-context", () => ({
+  startBrowserAuthorization: http.start,
 }));
 vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
 vi.mock("../../layout/workspace", () => ({
@@ -21,19 +25,21 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-const connection: Schema["MCPConnection"] = {
+const connection: Schema["Connection"] = {
   id: "mcpc_test",
   organization_id: "org_test",
   workspace_id: "ws_test",
   name: "OAuth connection",
-  endpoint_url: "https://mcp.example/mcp",
-  auth_mode: "oauth",
+  source: {
+    kind: "mcp",
+    endpoint_url: "https://mcp.example/mcp",
+    auth_mode: "oauth",
+  },
   status: "pending",
   status_reason: null,
   version: 1,
   credential_configured: false,
-  credential_generation: 0,
-  static_header_names: [],
+  authorization_generation: 1,
   created_by: { principal_id: "usr_test", principal_type: "user" },
   created_at: "2026-09-12T00:00:00Z",
   updated_at: "2026-09-12T00:00:00Z",
@@ -83,7 +89,7 @@ it("offers verification retry without repeating OAuth metadata discovery", async
   );
 
   expect(http.GET).not.toHaveBeenCalled();
-  expect(http.POST.mock.calls[0][0]).toMatch(/reconnect$/);
+  expect(http.POST.mock.calls[0][0]).toMatch(/check$/);
 });
 
 it("continues automatic browser authorization without asking for client details", async () => {
@@ -102,9 +108,11 @@ it("continues automatic browser authorization without asking for client details"
   renderSetup();
 
   await waitFor(() =>
-    expect(
-      http.POST.mock.calls.some(([path]) => path.endsWith("authorize")),
-    ).toBe(true),
+    expect(http.start).toHaveBeenCalledWith(
+      expect.anything(),
+      connection,
+      "/workspace/test",
+    ),
   );
   expect(screen.queryByLabelText("Client ID")).toBeNull();
 });
@@ -153,12 +161,10 @@ it("connects a saved machine client without starting browser authorization", asy
 
   await waitFor(() =>
     expect(
-      http.POST.mock.calls.some(([path]) => path.endsWith("authenticate")),
+      http.POST.mock.calls.some(([path]) => path.endsWith("authorizations")),
     ).toBe(true),
   );
-  expect(
-    http.POST.mock.calls.some(([path]) => path.endsWith("authorize")),
-  ).toBe(false);
+  expect(http.start).not.toHaveBeenCalled();
 });
 
 it("opens machine-only discovery as client setup and connects without a callback", async () => {
@@ -193,10 +199,8 @@ it("opens machine-only discovery as client setup and connects without a callback
   );
   await waitFor(() =>
     expect(
-      http.POST.mock.calls.some(([path]) => path.endsWith("authenticate")),
+      http.POST.mock.calls.some(([path]) => path.endsWith("authorizations")),
     ).toBe(true),
   );
-  expect(
-    http.POST.mock.calls.some(([path]) => path.endsWith("authorize")),
-  ).toBe(false);
+  expect(http.start).not.toHaveBeenCalled();
 });

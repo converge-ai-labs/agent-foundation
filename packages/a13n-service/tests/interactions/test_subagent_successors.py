@@ -108,8 +108,8 @@ async def test_completed_parent_result_accepts_exact_checkpoint_zero_successor(
         assert accepted.input == result.payload
         assert "newly available asynchronous subagent result" in project_accepted_async_subagent_result(accepted)
         assert accepted.effective_agent_config_digest == completed_parent.effective_agent_config_digest
-        assert accepted.connector_connection_selections == completed_parent.connector_connection_selections
-        assert accepted.mcp_connection_selections == completed_parent.mcp_connection_selections
+        assert accepted.connection_selections == completed_parent.connection_selections
+        assert accepted.connection_selections == completed_parent.connection_selections
         assert successor_state.envelope.checkpoint_seq == 0
         assert (
             entry.status,
@@ -363,8 +363,7 @@ async def _accept_another_child(
         child_agent_id=CHILD_AGENT_ID,
         child_agent_revision_id=CHILD_REVISION_ID,
         child_effective_config=child_config,
-        connector_connection_selections=(),
-        mcp_connection_selections=(),
+        connection_selections=(),
         child_thread_id="thread-12121212121212121212121212121212",
         child_run_id="run_1212121212121212",
         relationship_id="crr_1212121212121212",

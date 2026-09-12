@@ -7,30 +7,32 @@ from datetime import timedelta
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
+from a13n_service.connectivity.connections.domain import CreateConnectionRequest, MCPSource
 from a13n_service.connectivity.mcp.domain import (
     ConfigureMCPOAuthClientRequest,
-    CreateMCPConnectionRequest,
     MCPAuthMode,
     MCPOAuthClientInput,
 )
 from a13n_service.connectivity.mcp.errors import MCPConnectionError
-from a13n_service.connectivity.mcp.models import MCPConnectionOAuthClientRecord, MCPOAuthSessionRecord
+from a13n_service.connectivity.mcp.models import MCPAuthorizationRecord, MCPConnectionOAuthClientRecord
 from a13n_service.connectivity.mcp.oauth_client import issuer_key
 from a13n_service.storage import transaction
 from pydantic import SecretStr, ValidationError
 
 from .conftest import NOW, WORKSPACE_ID, actor
+from .connection_helpers import management
 from .test_mcp_service import ISSUER, MCP_ENDPOINT, RemoteServer, capture_receipt
 from .test_mcp_service import mcp_services as mcp_services
 
 
 async def create_connection(connections):
-    return await connections.create(
+    return await management(connections).create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="create-client-test",
-        request=CreateMCPConnectionRequest(
-            name="Configured client", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.oauth
+        request=CreateConnectionRequest(
+            name="Configured client",
+            source=MCPSource(kind="mcp", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.oauth),
         ),
     )
 
@@ -107,7 +109,7 @@ async def test_replacing_service_registered_client_cleans_only_the_owned_registr
         idempotency_key="authorize-owned-client",
         expected_version=created.version,
     )
-    current = await connections.get(actor=actor(), connection_id=created.id)
+    current = await management(connections).get(actor=actor(), connection_id=created.id)
 
     replaced = await oauth.configuration.configure(
         actor=actor(),
@@ -131,7 +133,7 @@ async def test_reconfiguration_invalidates_existing_authorization_and_clears_tok
     created = await create_connection(connections)
     launch, state = await launch_for(oauth, created)
     receipt = await capture_receipt(oauth, state) if received else "not-received"
-    current = await connections.get(actor=actor(), connection_id=created.id)
+    current = await management(connections).get(actor=actor(), connection_id=created.id)
     configured = await oauth.configuration.configure(
         actor=actor(),
         connection_id=created.id,
@@ -142,7 +144,7 @@ async def test_reconfiguration_invalidates_existing_authorization_and_clears_tok
     with pytest.raises(MCPConnectionError, match="unavailable"):
         await oauth.callback(actor=actor(), state=state, receipt=receipt)
     async with connectivity_sessions() as session:
-        setup = await session.get(MCPOAuthSessionRecord, launch.id)
+        setup = await session.get(MCPAuthorizationRecord, launch.id)
         assert setup.status == "expired"
         assert setup.ciphertext is None
 
@@ -219,7 +221,7 @@ async def test_received_response_keeps_original_expiry(mcp_services, connectivit
     launch, state = await launch_for(oauth, connection)
     receipt = await capture_receipt(oauth, state)
     async with transaction(connectivity_sessions) as session:
-        setup = await session.get(MCPOAuthSessionRecord, launch.id)
+        setup = await session.get(MCPAuthorizationRecord, launch.id)
         setup.expires_at = NOW - timedelta(seconds=1)
     with pytest.raises(MCPConnectionError) as failure:
         await oauth.callback(actor=actor(), state=state, receipt=receipt)

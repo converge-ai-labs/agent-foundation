@@ -12,6 +12,9 @@ from a13n_service.connectivity.accounts.service import AccountService
 from a13n_service.connectivity.accounts.target_service import AccountTargetService
 from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.composition import AdapterRegistry
+from a13n_service.connectivity.connections.authorization import AuthorizationService
+from a13n_service.connectivity.connections.checks import ConnectionChecks
+from a13n_service.connectivity.connections.service import ConnectionService
 from a13n_service.connectivity.connectors.connections import ConnectorConnectionService
 from a13n_service.connectivity.connectors.providers import built_in_connector_provider_registry
 from a13n_service.connectivity.connectors.reconciler import ConnectorReconciler
@@ -169,6 +172,17 @@ async def _build_control_runtime(
         connector_connections=connector.connections,
         mcp_connections=mcp.connections,
         mcp_oauth=mcp.oauth,
+        checks=ConnectionChecks(storage.sessions, connector_providers, secret_protector, mcp.connections),
+        connections=ConnectionService(storage.sessions, endpoint_policy),
+        authorizations=AuthorizationService(
+            storage.sessions,
+            secret_protector,
+            connector.connections,
+            mcp.oauth,
+            mcp.connections,
+            public_origin=public_origin,
+            return_urls=settings.connectivity.authorization_return_urls,
+        ),
     )
     background_components = (
         BackgroundTask("connector reconciler", connector.reconciler.run),

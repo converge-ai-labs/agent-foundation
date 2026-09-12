@@ -6,7 +6,7 @@ Service selects authorized external resources and binds their current execution 
 
 The a13n MCP is an in-process implementation for Application Account actions, protected inbound replies, and Connector-backed tools. Each executing Worker binds a separate local Toolset for each authorized source in its RunAttempt and exposes it through Harness `MCP(local=Toolset)`. The Toolset calls the bound adapter directly: they require no listening port, subprocess, network MCP deployment, internal service credential, or persisted MCP invocation grant.
 
-Each selected [`MCPConnection`](06-remote-mcp-connections.md) produces a separate Harness MCP client that connects directly from the executing process to that Remote MCP endpoint. The a13n MCP does not proxy those servers. Remote execution remains Worker-controlled rather than delegated to a model provider's native MCP facility.
+Each selected [`Connection`](06-remote-mcp-connections.md) produces a separate Harness MCP client that connects directly from the executing process to that Remote MCP endpoint. The a13n MCP does not proxy those servers. Remote execution remains Worker-controlled rather than delegated to a model provider's native MCP facility.
 
 ## Boundaries
 
@@ -42,13 +42,13 @@ flowchart LR
 | MCP protocol and tool presentation      | Harness and upstream MCP primitives                       | Discover, filter, namespace, load, invoke, and close the composed toolsets               |
 | Native or Connector action meaning      | Trusted source adapter                                    | Preserve provider-specific schemas, results, receipts, and failure semantics             |
 
-One reusable a13n MCP implementation does not imply one combined capability. A Run with an Ingress action set, two ConnectorConnections, and one MCPConnection has four external MCP capabilities: three in-process groups and one remote client. Empty selections create no capability. Independent connections to the same remote URL remain independent authenticated clients.
+One reusable a13n MCP implementation does not imply one combined capability. A Run with an Ingress action set, two Connections, and one Connection has four external MCP capabilities: three in-process groups and one remote client. Empty selections create no capability. Independent connections to the same remote URL remain independent authenticated clients.
 
 MCP is the integration boundary for these external tool sources. Environment file, shell, and process tools, Subagent, user interactions and client tools, Asset publication, ordinary Plugin tools, and Skill instructions retain their existing Harness contracts; they are not routed through a13n MCP merely to make every capability use the same transport.
 
 ## Source Selection and Tool Identity
 
-The [Agent selection contract](../28-agent-management.md#agentconfig) owns the public `connector_tools` and `mcp_tools` lists. Each entry names one managed connection, its tool selection, and `defer_loading`. There are no caller-defined source aliases or inline endpoint and credential definitions. Omitted or null `tools` means all currently available authorized tools; an empty list selects none. Explicit names are exact source-native tool names, not fuzzy queries or model-visible prefixed names. Default native tools are independent of these lists: clearing either or both lists does not remove host-injected tools.
+The [Agent selection contract](../28-agent-management.md#agentconfig) owns the public `connection_tools` lists. Each entry names one managed connection, its tool selection, and `defer_loading`. There are no caller-defined source aliases or inline endpoint and credential definitions. Omitted or null `tools` means all currently available authorized tools; an empty list selects none. Explicit names are exact source-native tool names, not fuzzy queries or model-visible prefixed names. Default native tools are independent of these lists: clearing either or both lists does not remove host-injected tools.
 
 Run acceptance retains the effective source selections after overrides, trusted overlays, and authorization. It performs no synchronous remote discovery and requires no durable tool catalog to accept the Run. Agent Revision and Run validation check selection structure, managed resource identity, eligibility, and policy; current tool availability is checked during execution preparation. An explicit name absent from successful discovery fails preparation with a safe unavailable-tool error. Service never silently drops an explicit selection or substitutes another source or account.
 
@@ -72,7 +72,7 @@ class AccountRunContext:
 
 The [Account contract](01a-application-accounts.md#built-in-proactive-scopes) owns exact target shapes. Model-supplied destinations must belong to that frozen scope. Target schema validation alone is not authorization: the trusted entry supplies actions and targets from its authorized policy, never directly from public overrides, event text, or model arguments. No public Agent or Run override can create these contexts.
 
-Account and Ingress contexts produce separate, directly visible native capabilities even when they reference the same Account. Their schemas and scopes cannot replace or expand each other. The runtime binds them through Harness `RunBindings.capabilities` using in-process MCP; it creates no synthetic ConnectorConnection or MCPConnection.
+Account and Ingress contexts produce separate, directly visible native capabilities even when they reference the same Account. Their schemas and scopes cannot replace or expand each other. The runtime binds them through Harness `RunBindings.capabilities` using in-process MCP; it creates no synthetic Connection.
 
 Replacement Attempts and continuations that inherit execution preserve the exact contexts. New child Runs receive none by default; resuming a child does not inherit its parent's contexts. Any explicit delegation is a fresh trusted-entry authorization under the child's execution Principal. Proactive actions do not automatically create or change an Ingress Thread binding. Unknown write outcomes retain provider-specific reconciliation semantics.
 
@@ -120,7 +120,7 @@ The Attempt preparation scope owns these live objects together with its input so
 
 Default native actions are always directly visible. Connector and Remote MCP selections independently set `defer_loading`, defaulting to `false`. With `false`, Harness exposes the selected tool definitions directly. With `true`, Harness advertises the capability through its built-in `load_capability` mechanism and exposes that group's allowed tools when loaded.
 
-Deferred loading operates at capability granularity. It reduces initially model-visible definitions; it does not promise delayed network initialization, per-tool search, or reduced upstream discovery. It does not change connection identity, tool scope, authorization, or dispatch. Service provides no separate `direct`/`catalog` mode and no `list_mcp_tools`, `describe_mcp_tools`, or `call_mcp_tool` facade. A Harness tool-search feature has its own contract and is not implied by `defer_loading`.
+Deferred loading operates at capability granularity. It reduces initially model-visible definitions; it does not promise delayed network initialization, per-tool search, or reduced upstream discovery. It does not change connection identity, tool scope, authorization, or dispatch. Service provides no separate `direct`/`catalog` mode and no `list_connection_tools`, `describe_connection_tools`, or `call_mcp_tool` facade. A Harness tool-search feature has its own contract and is not implied by `defer_loading`.
 
 ## Discovery and Recovery
 

@@ -16,6 +16,8 @@ from a13n_service.api import api_error_response, install_api_conventions
 from a13n_service.assets.router import router as asset_router
 from a13n_service.connectivity.accounts.router import router as account_router
 from a13n_service.connectivity.accounts.target_router import router as target_router
+from a13n_service.connectivity.connections.browser import router as authorization_browser_router
+from a13n_service.connectivity.connections.router import router as connection_router
 from a13n_service.connectivity.connectors.router import router as connector_router
 from a13n_service.connectivity.ingress.data_router import router as ingress_data_router
 from a13n_service.connectivity.mcp.router import router as mcp_router
@@ -175,6 +177,8 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
         app.include_router(account_router)
         app.include_router(connector_router)
         app.include_router(mcp_router)
+        app.include_router(connection_router)
+        app.include_router(authorization_browser_router)
         app.include_router(hook_router)
         app.include_router(lifecycle_router)
         app.include_router(gateway_router)

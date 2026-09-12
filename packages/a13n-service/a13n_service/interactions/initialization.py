@@ -188,8 +188,7 @@ class FrozenRunFields(TypedDict):
     agent_revision_id: str
     effective_agent_config_digest: str
     model_execution_observation: ModelExecutionObservation
-    connector_connection_selections: tuple[JsonObject, ...]
-    mcp_connection_selections: tuple[JsonObject, ...]
+    connection_selections: tuple[JsonObject, ...]
 
 
 def frozen_run_fields(invocation: FrozenAgentInvocation) -> FrozenRunFields:
@@ -200,10 +199,7 @@ def frozen_run_fields(invocation: FrozenAgentInvocation) -> FrozenRunFields:
         agent_revision_id=invocation.agent_revision_id,
         effective_agent_config_digest=config.content_digest,
         model_execution_observation=config.resolved_model.execution.observation(),
-        connector_connection_selections=tuple(
-            item.model_dump(mode="json") for item in invocation.connector_connection_selections
-        ),
-        mcp_connection_selections=tuple(item.model_dump(mode="json") for item in invocation.mcp_connection_selections),
+        connection_selections=tuple(item.model_dump(mode="json") for item in invocation.connection_selections),
     )
 
 

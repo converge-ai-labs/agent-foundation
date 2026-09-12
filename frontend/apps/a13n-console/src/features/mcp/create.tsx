@@ -1,3 +1,4 @@
+import { requireCompletedAuthorization } from "../connections/authorization-context";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChoiceField, FormField, Input } from "a13n-ui";
 import { useRef, useState } from "react";
@@ -28,7 +29,7 @@ export function CreateMCP({
   preset?: MCPPreset;
   endpoint?: string;
   onStarted: () => void;
-  onSuccess: (value: Schema["MCPConnection"]) => void;
+  onSuccess: (value: Schema["Connection"]) => void;
   onCancel: () => void;
 }) {
   const client = useClient(),
@@ -36,10 +37,12 @@ export function CreateMCP({
     { workspace } = useWorkspace(),
     { t } = useTranslation(),
     key = useIdempotency();
-  const created = useRef<Schema["MCPConnection"]>(undefined);
+  const created = useRef<Schema["Connection"]>(undefined);
   const [name, setName] = useState(preset?.name ?? ""),
     [endpoint, setEndpoint] = useState(preset?.endpoint ?? initialEndpoint),
-    [mode, setMode] = useState<Schema["MCPAuthMode"]>(preset?.auth ?? "oauth"),
+    [mode, setMode] = useState<Schema["MCPSource"]["auth_mode"]>(
+      preset?.auth ?? "oauth",
+    ),
     [headerRows, setHeaderRows] = useState<HeaderDraft[]>(() =>
       (preset?.headerNames ?? [""]).map((name) => ({
         id: crypto.randomUUID(),
@@ -49,7 +52,7 @@ export function CreateMCP({
     ),
     [bearer, setBearer] = useState(""),
     [started, setStarted] = useState(false),
-    [oauthConnection, setOAuthConnection] = useState<Schema["MCPConnection"]>();
+    [oauthConnection, setOAuthConnection] = useState<Schema["Connection"]>();
   const connect = useMutation({
     gcTime: 0,
     mutationFn: async () => {
@@ -69,26 +72,26 @@ export function CreateMCP({
       onStarted();
       let connection = created.current;
       if (!connection) {
-        const body = {
+        const body: Schema["CreateConnectionRequest"] = {
           name,
-          endpoint_url: endpoint,
-          auth_mode: mode,
-          static_header_names: mode === "static_headers" ? headerNames : [],
+          source: {
+            kind: "mcp",
+            endpoint_url: endpoint,
+            auth_mode: mode,
+            static_header_names: mode === "static_headers" ? headerNames : [],
+          },
         };
         connection = data(
-          await client.http.POST(
-            "/api/v1/workspaces/{workspace}/mcp-connections",
-            {
-              params: {
-                path: { workspace: workspace.id },
-                header: commandHeaders(workspace.id, key.forBody(body)),
-              },
-              body,
+          await client.http.POST("/api/v1/workspaces/{workspace}/connections", {
+            params: {
+              path: { workspace: workspace.id },
+              header: commandHeaders(workspace.id, key.forBody(body)),
             },
-          ),
+            body,
+          }),
         );
         created.current = connection;
-        void cache.invalidateQueries({ queryKey: ["mcp-connections"] });
+        void cache.invalidateQueries({ queryKey: ["connections"] });
       }
       const path = { connection_id: connection.id };
       if (mode === "oauth") {
@@ -98,19 +101,27 @@ export function CreateMCP({
       if (mode !== "none" && !connection.credential_configured) {
         const body = {
           expected_version: connection.version,
-          ...(mode === "bearer" ? { bearer } : { static_headers: headers }),
+          method: "credentials" as const,
+          credentials: mode === "bearer" ? { bearer } : headers,
         };
-        connection = data(
-          await client.http.POST(
-            "/api/v1/mcp-connections/{connection_id}/credentials",
-            {
-              params: {
-                path,
-                header: commandHeaders(workspace.id, key.forBody(body)),
+        requireCompletedAuthorization(
+          data(
+            await client.http.POST(
+              "/api/v1/connections/{connection_id}/authorizations",
+              {
+                params: {
+                  path,
+                  header: commandHeaders(workspace.id, key.forBody(body)),
+                },
+                body,
               },
-              body,
-            },
+            ),
           ),
+        );
+        connection = data(
+          await client.http.GET("/api/v1/connections/{connection_id}", {
+            params: { path },
+          }),
         );
         created.current = connection;
         setBearer("");
@@ -124,24 +135,17 @@ export function CreateMCP({
       }
       const body = { expected_version: connection.version };
       const result = data(
-        await client.http.POST(
-          "/api/v1/mcp-connections/{connection_id}/reconnect",
-          {
-            params: {
-              path,
-              header: commandHeaders(
-                workspace.id,
-                key.forBody({ reconnect: connection.id, ...body }),
-              ),
-            },
-            body,
+        await client.http.POST("/api/v1/connections/{connection_id}/check", {
+          params: {
+            path,
           },
-        ),
+          body,
+        }),
       );
       onSuccess(result);
     },
     onSettled: () => {
-      void cache.invalidateQueries({ queryKey: ["mcp-connections"] });
+      void cache.invalidateQueries({ queryKey: ["connections"] });
     },
   });
   return oauthConnection ? (

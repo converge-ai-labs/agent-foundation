@@ -31,24 +31,6 @@ pub enum DeleteApplicationAccountsAccountIdTargetsTargetIdError {
     UnknownValue(serde_json::Value),
 }
 
-/// struct for typed errors of method [`delete_connector_connections_connection_id`]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum DeleteConnectorConnectionsConnectionIdError {
-    Status400(models::ErrorResponse),
-    DefaultResponse(models::ErrorResponse),
-    UnknownValue(serde_json::Value),
-}
-
-/// struct for typed errors of method [`delete_mcp_connections_connection_id`]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum DeleteMcpConnectionsConnectionIdError {
-    Status400(models::ErrorResponse),
-    DefaultResponse(models::ErrorResponse),
-    UnknownValue(serde_json::Value),
-}
-
 /// struct for typed errors of method [`get_application_accounts_account_id`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -76,10 +58,10 @@ pub enum GetApplicationAccountsAccountIdTargetsTargetIdError {
     UnknownValue(serde_json::Value),
 }
 
-/// struct for typed errors of method [`get_connector_connections_connection_id`]
+/// struct for typed errors of method [`get_connections_connection_id_mcp_oauth_client`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum GetConnectorConnectionsConnectionIdError {
+pub enum GetConnectionsConnectionIdMcpOauthClientError {
     Status400(models::ErrorResponse),
     DefaultResponse(models::ErrorResponse),
     UnknownValue(serde_json::Value),
@@ -115,24 +97,6 @@ pub enum GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyToolsError {
-    Status400(models::ErrorResponse),
-    DefaultResponse(models::ErrorResponse),
-    UnknownValue(serde_json::Value),
-}
-
-/// struct for typed errors of method [`get_mcp_connections_connection_id`]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum GetMcpConnectionsConnectionIdError {
-    Status400(models::ErrorResponse),
-    DefaultResponse(models::ErrorResponse),
-    UnknownValue(serde_json::Value),
-}
-
-/// struct for typed errors of method [`get_mcp_connections_connection_id_oauth_client`]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum GetMcpConnectionsConnectionIdOauthClientError {
     Status400(models::ErrorResponse),
     DefaultResponse(models::ErrorResponse),
     UnknownValue(serde_json::Value),
@@ -174,28 +138,10 @@ pub enum GetWorkspacesWorkspaceApplicationAccountsError {
     UnknownValue(serde_json::Value),
 }
 
-/// struct for typed errors of method [`get_workspaces_workspace_connector_connections`]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum GetWorkspacesWorkspaceConnectorConnectionsError {
-    Status400(models::ErrorResponse),
-    DefaultResponse(models::ErrorResponse),
-    UnknownValue(serde_json::Value),
-}
-
 /// struct for typed errors of method [`get_workspaces_workspace_connector_providers`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum GetWorkspacesWorkspaceConnectorProvidersError {
-    Status400(models::ErrorResponse),
-    DefaultResponse(models::ErrorResponse),
-    UnknownValue(serde_json::Value),
-}
-
-/// struct for typed errors of method [`get_workspaces_workspace_mcp_connections`]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum GetWorkspacesWorkspaceMcpConnectionsError {
     Status400(models::ErrorResponse),
     DefaultResponse(models::ErrorResponse),
     UnknownValue(serde_json::Value),
@@ -210,28 +156,10 @@ pub enum PatchApplicationAccountsAccountIdError {
     UnknownValue(serde_json::Value),
 }
 
-/// struct for typed errors of method [`patch_connector_connections_connection_id`]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum PatchConnectorConnectionsConnectionIdError {
-    Status400(models::ErrorResponse),
-    DefaultResponse(models::ErrorResponse),
-    UnknownValue(serde_json::Value),
-}
-
 /// struct for typed errors of method [`patch_connector_providers_connector_provider_id`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum PatchConnectorProvidersConnectorProviderIdError {
-    Status400(models::ErrorResponse),
-    DefaultResponse(models::ErrorResponse),
-    UnknownValue(serde_json::Value),
-}
-
-/// struct for typed errors of method [`patch_mcp_connections_connection_id`]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum PatchMcpConnectionsConnectionIdError {
     Status400(models::ErrorResponse),
     DefaultResponse(models::ErrorResponse),
     UnknownValue(serde_json::Value),
@@ -255,37 +183,19 @@ pub enum PostApplicationAccountsAccountIdTargetsError {
     UnknownValue(serde_json::Value),
 }
 
-/// struct for typed errors of method [`post_connector_connections_connection_id_action`]
+/// struct for typed errors of method [`post_connections_connection_id_mcp_discover`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum PostConnectorConnectionsConnectionIdActionError {
+pub enum PostConnectionsConnectionIdMcpDiscoverError {
     Status400(models::ErrorResponse),
     DefaultResponse(models::ErrorResponse),
     UnknownValue(serde_json::Value),
 }
 
-/// struct for typed errors of method [`post_connector_connections_connection_id_reconnect`]
+/// struct for typed errors of method [`post_connections_connection_id_mcp_oauth_discovery`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum PostConnectorConnectionsConnectionIdReconnectError {
-    Status400(models::ErrorResponse),
-    DefaultResponse(models::ErrorResponse),
-    UnknownValue(serde_json::Value),
-}
-
-/// struct for typed errors of method [`post_connector_connections_connection_id_revoke`]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum PostConnectorConnectionsConnectionIdRevokeError {
-    Status400(models::ErrorResponse),
-    DefaultResponse(models::ErrorResponse),
-    UnknownValue(serde_json::Value),
-}
-
-/// struct for typed errors of method [`post_connector_connections_connection_id_setup`]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum PostConnectorConnectionsConnectionIdSetupError {
+pub enum PostConnectionsConnectionIdMcpOauthDiscoveryError {
     Status400(models::ErrorResponse),
     DefaultResponse(models::ErrorResponse),
     UnknownValue(serde_json::Value),
@@ -327,87 +237,6 @@ pub enum PostConnectorProvidersConnectorProviderIdTestError {
     UnknownValue(serde_json::Value),
 }
 
-/// struct for typed errors of method [`post_connector_setup_complete`]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum PostConnectorSetupCompleteError {
-    Status400(models::ErrorResponse),
-    DefaultResponse(models::ErrorResponse),
-    UnknownValue(serde_json::Value),
-}
-
-/// struct for typed errors of method [`post_mcp_connections_connection_id_action`]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum PostMcpConnectionsConnectionIdActionError {
-    Status400(models::ErrorResponse),
-    DefaultResponse(models::ErrorResponse),
-    UnknownValue(serde_json::Value),
-}
-
-/// struct for typed errors of method [`post_mcp_connections_connection_id_authenticate`]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum PostMcpConnectionsConnectionIdAuthenticateError {
-    Status400(models::ErrorResponse),
-    DefaultResponse(models::ErrorResponse),
-    UnknownValue(serde_json::Value),
-}
-
-/// struct for typed errors of method [`post_mcp_connections_connection_id_authorize`]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum PostMcpConnectionsConnectionIdAuthorizeError {
-    Status400(models::ErrorResponse),
-    DefaultResponse(models::ErrorResponse),
-    UnknownValue(serde_json::Value),
-}
-
-/// struct for typed errors of method [`post_mcp_connections_connection_id_credentials`]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum PostMcpConnectionsConnectionIdCredentialsError {
-    Status400(models::ErrorResponse),
-    DefaultResponse(models::ErrorResponse),
-    UnknownValue(serde_json::Value),
-}
-
-/// struct for typed errors of method [`post_mcp_connections_connection_id_discover`]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum PostMcpConnectionsConnectionIdDiscoverError {
-    Status400(models::ErrorResponse),
-    DefaultResponse(models::ErrorResponse),
-    UnknownValue(serde_json::Value),
-}
-
-/// struct for typed errors of method [`post_mcp_connections_connection_id_oauth_discovery`]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum PostMcpConnectionsConnectionIdOauthDiscoveryError {
-    Status400(models::ErrorResponse),
-    DefaultResponse(models::ErrorResponse),
-    UnknownValue(serde_json::Value),
-}
-
-/// struct for typed errors of method [`post_mcp_connections_connection_id_reconnect`]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum PostMcpConnectionsConnectionIdReconnectError {
-    Status400(models::ErrorResponse),
-    DefaultResponse(models::ErrorResponse),
-    UnknownValue(serde_json::Value),
-}
-
-/// struct for typed errors of method [`post_oauth_mcp_complete`]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum PostOauthMcpCompleteError {
-    Status400(models::ErrorResponse),
-    DefaultResponse(models::ErrorResponse),
-    UnknownValue(serde_json::Value),
-}
-
 /// struct for typed errors of method [`post_organizations_organization_connector_providers`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -426,28 +255,10 @@ pub enum PostWorkspacesWorkspaceApplicationAccountsError {
     UnknownValue(serde_json::Value),
 }
 
-/// struct for typed errors of method [`post_workspaces_workspace_connector_connections`]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum PostWorkspacesWorkspaceConnectorConnectionsError {
-    Status400(models::ErrorResponse),
-    DefaultResponse(models::ErrorResponse),
-    UnknownValue(serde_json::Value),
-}
-
 /// struct for typed errors of method [`post_workspaces_workspace_connector_providers`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum PostWorkspacesWorkspaceConnectorProvidersError {
-    Status400(models::ErrorResponse),
-    DefaultResponse(models::ErrorResponse),
-    UnknownValue(serde_json::Value),
-}
-
-/// struct for typed errors of method [`post_workspaces_workspace_mcp_connections`]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum PostWorkspacesWorkspaceMcpConnectionsError {
     Status400(models::ErrorResponse),
     DefaultResponse(models::ErrorResponse),
     UnknownValue(serde_json::Value),
@@ -471,10 +282,10 @@ pub enum PutApplicationAccountsAccountIdTargetsTargetIdError {
     UnknownValue(serde_json::Value),
 }
 
-/// struct for typed errors of method [`put_mcp_connections_connection_id_oauth_client`]
+/// struct for typed errors of method [`put_connections_connection_id_mcp_oauth_client`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum PutMcpConnectionsConnectionIdOauthClientError {
+pub enum PutConnectionsConnectionIdMcpOauthClientError {
     Status400(models::ErrorResponse),
     DefaultResponse(models::ErrorResponse),
     UnknownValue(serde_json::Value),
@@ -575,160 +386,6 @@ pub async fn delete_application_accounts_account_id_targets_target_id(
     } else {
         let content = resp.text().await?;
         let entity: Option<DeleteApplicationAccountsAccountIdTargetsTargetIdError> =
-            serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(Box::new(ResponseContent {
-            status,
-            headers,
-            content,
-            entity,
-        })))
-    }
-}
-
-pub async fn delete_connector_connections_connection_id(
-    configuration: &configuration::Configuration,
-    connection_id: &str,
-    expected_version: i32,
-    idempotency_key: &str,
-) -> Result<
-    Response<models::ConnectionCleanupReceipt>,
-    Error<DeleteConnectorConnectionsConnectionIdError>,
-> {
-    // add a prefix to parameters to efficiently prevent name collisions
-    let p_path_connection_id = connection_id;
-    let p_query_expected_version = expected_version;
-    let p_header_idempotency_key = idempotency_key;
-
-    let uri_str = format!(
-        "{}/api/v1/connector-connections/{connection_id}",
-        configuration.base_path,
-        connection_id = crate::generated::apis::urlencode(p_path_connection_id)
-    );
-    let mut req_builder = configuration
-        .client
-        .request(reqwest::Method::DELETE, &uri_str);
-
-    req_builder = req_builder.query(&[("expected_version", &p_query_expected_version.to_string())]);
-    if let Some(ref user_agent) = configuration.user_agent {
-        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
-    }
-    req_builder = req_builder.header("Idempotency-Key", p_header_idempotency_key.to_string());
-    if let Some(ref token) = configuration.bearer_access_token {
-        req_builder = req_builder.bearer_auth(token.to_owned());
-    };
-
-    let req = req_builder.build()?;
-    let resp = configuration.client.execute(req).await?;
-
-    let status = resp.status();
-    let headers = resp.headers().clone();
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/octet-stream");
-    let content_type = super::ContentType::from(content_type);
-
-    if !status.is_client_error() && !status.is_server_error() {
-        let content = resp.text().await?;
-        match content_type {
-            ContentType::Json => serde_json::from_str(&content)
-                .map(|data| Response {
-                    data,
-                    status,
-                    headers,
-                })
-                .map_err(Error::from),
-            ContentType::Text => {
-                return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::ConnectionCleanupReceipt`",
-                )));
-            }
-            ContentType::Unsupported(unknown_type) => {
-                return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::ConnectionCleanupReceipt`"
-                ))));
-            }
-        }
-    } else {
-        let content = resp.text().await?;
-        let entity: Option<DeleteConnectorConnectionsConnectionIdError> =
-            serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(Box::new(ResponseContent {
-            status,
-            headers,
-            content,
-            entity,
-        })))
-    }
-}
-
-pub async fn delete_mcp_connections_connection_id(
-    configuration: &configuration::Configuration,
-    connection_id: &str,
-    expected_version: i32,
-    idempotency_key: &str,
-) -> Result<Response<models::ConnectionCleanupReceipt>, Error<DeleteMcpConnectionsConnectionIdError>>
-{
-    // add a prefix to parameters to efficiently prevent name collisions
-    let p_path_connection_id = connection_id;
-    let p_query_expected_version = expected_version;
-    let p_header_idempotency_key = idempotency_key;
-
-    let uri_str = format!(
-        "{}/api/v1/mcp-connections/{connection_id}",
-        configuration.base_path,
-        connection_id = crate::generated::apis::urlencode(p_path_connection_id)
-    );
-    let mut req_builder = configuration
-        .client
-        .request(reqwest::Method::DELETE, &uri_str);
-
-    req_builder = req_builder.query(&[("expected_version", &p_query_expected_version.to_string())]);
-    if let Some(ref user_agent) = configuration.user_agent {
-        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
-    }
-    req_builder = req_builder.header("Idempotency-Key", p_header_idempotency_key.to_string());
-    if let Some(ref token) = configuration.bearer_access_token {
-        req_builder = req_builder.bearer_auth(token.to_owned());
-    };
-
-    let req = req_builder.build()?;
-    let resp = configuration.client.execute(req).await?;
-
-    let status = resp.status();
-    let headers = resp.headers().clone();
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/octet-stream");
-    let content_type = super::ContentType::from(content_type);
-
-    if !status.is_client_error() && !status.is_server_error() {
-        let content = resp.text().await?;
-        match content_type {
-            ContentType::Json => serde_json::from_str(&content)
-                .map(|data| Response {
-                    data,
-                    status,
-                    headers,
-                })
-                .map_err(Error::from),
-            ContentType::Text => {
-                return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::ConnectionCleanupReceipt`",
-                )));
-            }
-            ContentType::Unsupported(unknown_type) => {
-                return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::ConnectionCleanupReceipt`"
-                ))));
-            }
-        }
-    } else {
-        let content = resp.text().await?;
-        let entity: Option<DeleteMcpConnectionsConnectionIdError> =
             serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,
@@ -957,16 +614,18 @@ pub async fn get_application_accounts_account_id_targets_target_id(
     }
 }
 
-pub async fn get_connector_connections_connection_id(
+pub async fn get_connections_connection_id_mcp_oauth_client(
     configuration: &configuration::Configuration,
     connection_id: &str,
-) -> Result<Response<models::ConnectorConnection>, Error<GetConnectorConnectionsConnectionIdError>>
-{
+) -> Result<
+    Response<models::McpoAuthClientConfiguration>,
+    Error<GetConnectionsConnectionIdMcpOauthClientError>,
+> {
     // add a prefix to parameters to efficiently prevent name collisions
     let p_path_connection_id = connection_id;
 
     let uri_str = format!(
-        "{}/api/v1/connector-connections/{connection_id}",
+        "{}/api/v1/connections/{connection_id}/mcp/oauth-client",
         configuration.base_path,
         connection_id = crate::generated::apis::urlencode(p_path_connection_id)
     );
@@ -1003,18 +662,18 @@ pub async fn get_connector_connections_connection_id(
                 .map_err(Error::from),
             ContentType::Text => {
                 return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::ConnectorConnection`",
+                    "Received `text/plain` content type response that cannot be converted to `models::McpoAuthClientConfiguration`",
                 )));
             }
             ContentType::Unsupported(unknown_type) => {
                 return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::ConnectorConnection`"
+                    "Received `{unknown_type}` content type response that cannot be converted to `models::McpoAuthClientConfiguration`"
                 ))));
             }
         }
     } else {
         let content = resp.text().await?;
-        let entity: Option<GetConnectorConnectionsConnectionIdError> =
+        let entity: Option<GetConnectionsConnectionIdMcpOauthClientError> =
             serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,
@@ -1295,143 +954,6 @@ pub async fn get_connector_providers_connector_provider_id_connectors_connector_
         let entity: Option<
             GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyToolsError,
         > = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(Box::new(ResponseContent {
-            status,
-            headers,
-            content,
-            entity,
-        })))
-    }
-}
-
-pub async fn get_mcp_connections_connection_id(
-    configuration: &configuration::Configuration,
-    connection_id: &str,
-) -> Result<Response<models::McpConnection>, Error<GetMcpConnectionsConnectionIdError>> {
-    // add a prefix to parameters to efficiently prevent name collisions
-    let p_path_connection_id = connection_id;
-
-    let uri_str = format!(
-        "{}/api/v1/mcp-connections/{connection_id}",
-        configuration.base_path,
-        connection_id = crate::generated::apis::urlencode(p_path_connection_id)
-    );
-    let mut req_builder = configuration.client.request(reqwest::Method::GET, &uri_str);
-
-    if let Some(ref user_agent) = configuration.user_agent {
-        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
-    }
-    if let Some(ref token) = configuration.bearer_access_token {
-        req_builder = req_builder.bearer_auth(token.to_owned());
-    };
-
-    let req = req_builder.build()?;
-    let resp = configuration.client.execute(req).await?;
-
-    let status = resp.status();
-    let headers = resp.headers().clone();
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/octet-stream");
-    let content_type = super::ContentType::from(content_type);
-
-    if !status.is_client_error() && !status.is_server_error() {
-        let content = resp.text().await?;
-        match content_type {
-            ContentType::Json => serde_json::from_str(&content)
-                .map(|data| Response {
-                    data,
-                    status,
-                    headers,
-                })
-                .map_err(Error::from),
-            ContentType::Text => {
-                return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::McpConnection`",
-                )));
-            }
-            ContentType::Unsupported(unknown_type) => {
-                return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::McpConnection`"
-                ))));
-            }
-        }
-    } else {
-        let content = resp.text().await?;
-        let entity: Option<GetMcpConnectionsConnectionIdError> =
-            serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(Box::new(ResponseContent {
-            status,
-            headers,
-            content,
-            entity,
-        })))
-    }
-}
-
-pub async fn get_mcp_connections_connection_id_oauth_client(
-    configuration: &configuration::Configuration,
-    connection_id: &str,
-) -> Result<
-    Response<models::McpoAuthClientConfiguration>,
-    Error<GetMcpConnectionsConnectionIdOauthClientError>,
-> {
-    // add a prefix to parameters to efficiently prevent name collisions
-    let p_path_connection_id = connection_id;
-
-    let uri_str = format!(
-        "{}/api/v1/mcp-connections/{connection_id}/oauth-client",
-        configuration.base_path,
-        connection_id = crate::generated::apis::urlencode(p_path_connection_id)
-    );
-    let mut req_builder = configuration.client.request(reqwest::Method::GET, &uri_str);
-
-    if let Some(ref user_agent) = configuration.user_agent {
-        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
-    }
-    if let Some(ref token) = configuration.bearer_access_token {
-        req_builder = req_builder.bearer_auth(token.to_owned());
-    };
-
-    let req = req_builder.build()?;
-    let resp = configuration.client.execute(req).await?;
-
-    let status = resp.status();
-    let headers = resp.headers().clone();
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/octet-stream");
-    let content_type = super::ContentType::from(content_type);
-
-    if !status.is_client_error() && !status.is_server_error() {
-        let content = resp.text().await?;
-        match content_type {
-            ContentType::Json => serde_json::from_str(&content)
-                .map(|data| Response {
-                    data,
-                    status,
-                    headers,
-                })
-                .map_err(Error::from),
-            ContentType::Text => {
-                return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::McpoAuthClientConfiguration`",
-                )));
-            }
-            ContentType::Unsupported(unknown_type) => {
-                return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::McpoAuthClientConfiguration`"
-                ))));
-            }
-        }
-    } else {
-        let content = resp.text().await?;
-        let entity: Option<GetMcpConnectionsConnectionIdOauthClientError> =
-            serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
@@ -1736,86 +1258,6 @@ pub async fn get_workspaces_workspace_application_accounts(
     }
 }
 
-pub async fn get_workspaces_workspace_connector_connections(
-    configuration: &configuration::Configuration,
-    workspace: &str,
-    limit: Option<i32>,
-    cursor: Option<&str>,
-) -> Result<
-    Response<models::ConnectorConnectionCollection>,
-    Error<GetWorkspacesWorkspaceConnectorConnectionsError>,
-> {
-    // add a prefix to parameters to efficiently prevent name collisions
-    let p_path_workspace = workspace;
-    let p_query_limit = limit;
-    let p_query_cursor = cursor;
-
-    let uri_str = format!(
-        "{}/api/v1/workspaces/{workspace}/connector-connections",
-        configuration.base_path,
-        workspace = crate::generated::apis::urlencode(p_path_workspace)
-    );
-    let mut req_builder = configuration.client.request(reqwest::Method::GET, &uri_str);
-
-    if let Some(ref param_value) = p_query_limit {
-        req_builder = req_builder.query(&[("limit", &param_value.to_string())]);
-    }
-    if let Some(ref param_value) = p_query_cursor {
-        req_builder = req_builder.query(&[("cursor", &param_value.to_string())]);
-    }
-    if let Some(ref user_agent) = configuration.user_agent {
-        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
-    }
-    if let Some(ref token) = configuration.bearer_access_token {
-        req_builder = req_builder.bearer_auth(token.to_owned());
-    };
-
-    let req = req_builder.build()?;
-    let resp = configuration.client.execute(req).await?;
-
-    let status = resp.status();
-    let headers = resp.headers().clone();
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/octet-stream");
-    let content_type = super::ContentType::from(content_type);
-
-    if !status.is_client_error() && !status.is_server_error() {
-        let content = resp.text().await?;
-        match content_type {
-            ContentType::Json => serde_json::from_str(&content)
-                .map(|data| Response {
-                    data,
-                    status,
-                    headers,
-                })
-                .map_err(Error::from),
-            ContentType::Text => {
-                return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::ConnectorConnectionCollection`",
-                )));
-            }
-            ContentType::Unsupported(unknown_type) => {
-                return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::ConnectorConnectionCollection`"
-                ))));
-            }
-        }
-    } else {
-        let content = resp.text().await?;
-        let entity: Option<GetWorkspacesWorkspaceConnectorConnectionsError> =
-            serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(Box::new(ResponseContent {
-            status,
-            headers,
-            content,
-            entity,
-        })))
-    }
-}
-
 pub async fn get_workspaces_workspace_connector_providers(
     configuration: &configuration::Configuration,
     workspace: &str,
@@ -1886,86 +1328,6 @@ pub async fn get_workspaces_workspace_connector_providers(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceConnectorProvidersError> =
-            serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(Box::new(ResponseContent {
-            status,
-            headers,
-            content,
-            entity,
-        })))
-    }
-}
-
-pub async fn get_workspaces_workspace_mcp_connections(
-    configuration: &configuration::Configuration,
-    workspace: &str,
-    limit: Option<i32>,
-    cursor: Option<&str>,
-) -> Result<
-    Response<models::McpConnectionCollection>,
-    Error<GetWorkspacesWorkspaceMcpConnectionsError>,
-> {
-    // add a prefix to parameters to efficiently prevent name collisions
-    let p_path_workspace = workspace;
-    let p_query_limit = limit;
-    let p_query_cursor = cursor;
-
-    let uri_str = format!(
-        "{}/api/v1/workspaces/{workspace}/mcp-connections",
-        configuration.base_path,
-        workspace = crate::generated::apis::urlencode(p_path_workspace)
-    );
-    let mut req_builder = configuration.client.request(reqwest::Method::GET, &uri_str);
-
-    if let Some(ref param_value) = p_query_limit {
-        req_builder = req_builder.query(&[("limit", &param_value.to_string())]);
-    }
-    if let Some(ref param_value) = p_query_cursor {
-        req_builder = req_builder.query(&[("cursor", &param_value.to_string())]);
-    }
-    if let Some(ref user_agent) = configuration.user_agent {
-        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
-    }
-    if let Some(ref token) = configuration.bearer_access_token {
-        req_builder = req_builder.bearer_auth(token.to_owned());
-    };
-
-    let req = req_builder.build()?;
-    let resp = configuration.client.execute(req).await?;
-
-    let status = resp.status();
-    let headers = resp.headers().clone();
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/octet-stream");
-    let content_type = super::ContentType::from(content_type);
-
-    if !status.is_client_error() && !status.is_server_error() {
-        let content = resp.text().await?;
-        match content_type {
-            ContentType::Json => serde_json::from_str(&content)
-                .map(|data| Response {
-                    data,
-                    status,
-                    headers,
-                })
-                .map_err(Error::from),
-            ContentType::Text => {
-                return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::McpConnectionCollection`",
-                )));
-            }
-            ContentType::Unsupported(unknown_type) => {
-                return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::McpConnectionCollection`"
-                ))));
-            }
-        }
-    } else {
-        let content = resp.text().await?;
-        let entity: Option<GetWorkspacesWorkspaceMcpConnectionsError> =
             serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,
@@ -2048,79 +1410,6 @@ pub async fn patch_application_accounts_account_id(
     }
 }
 
-pub async fn patch_connector_connections_connection_id(
-    configuration: &configuration::Configuration,
-    connection_id: &str,
-    update_connector_connection_request: models::UpdateConnectorConnectionRequest,
-) -> Result<Response<models::ConnectorConnection>, Error<PatchConnectorConnectionsConnectionIdError>>
-{
-    // add a prefix to parameters to efficiently prevent name collisions
-    let p_path_connection_id = connection_id;
-    let p_body_update_connector_connection_request = update_connector_connection_request;
-
-    let uri_str = format!(
-        "{}/api/v1/connector-connections/{connection_id}",
-        configuration.base_path,
-        connection_id = crate::generated::apis::urlencode(p_path_connection_id)
-    );
-    let mut req_builder = configuration
-        .client
-        .request(reqwest::Method::PATCH, &uri_str);
-
-    if let Some(ref user_agent) = configuration.user_agent {
-        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
-    }
-    if let Some(ref token) = configuration.bearer_access_token {
-        req_builder = req_builder.bearer_auth(token.to_owned());
-    };
-    req_builder = req_builder.json(&p_body_update_connector_connection_request);
-
-    let req = req_builder.build()?;
-    let resp = configuration.client.execute(req).await?;
-
-    let status = resp.status();
-    let headers = resp.headers().clone();
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/octet-stream");
-    let content_type = super::ContentType::from(content_type);
-
-    if !status.is_client_error() && !status.is_server_error() {
-        let content = resp.text().await?;
-        match content_type {
-            ContentType::Json => serde_json::from_str(&content)
-                .map(|data| Response {
-                    data,
-                    status,
-                    headers,
-                })
-                .map_err(Error::from),
-            ContentType::Text => {
-                return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::ConnectorConnection`",
-                )));
-            }
-            ContentType::Unsupported(unknown_type) => {
-                return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::ConnectorConnection`"
-                ))));
-            }
-        }
-    } else {
-        let content = resp.text().await?;
-        let entity: Option<PatchConnectorConnectionsConnectionIdError> =
-            serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(Box::new(ResponseContent {
-            status,
-            headers,
-            content,
-            entity,
-        })))
-    }
-}
-
 pub async fn patch_connector_providers_connector_provider_id(
     configuration: &configuration::Configuration,
     connector_provider_id: &str,
@@ -2186,78 +1475,6 @@ pub async fn patch_connector_providers_connector_provider_id(
     } else {
         let content = resp.text().await?;
         let entity: Option<PatchConnectorProvidersConnectorProviderIdError> =
-            serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(Box::new(ResponseContent {
-            status,
-            headers,
-            content,
-            entity,
-        })))
-    }
-}
-
-pub async fn patch_mcp_connections_connection_id(
-    configuration: &configuration::Configuration,
-    connection_id: &str,
-    update_mcp_connection_request: models::UpdateMcpConnectionRequest,
-) -> Result<Response<models::McpConnection>, Error<PatchMcpConnectionsConnectionIdError>> {
-    // add a prefix to parameters to efficiently prevent name collisions
-    let p_path_connection_id = connection_id;
-    let p_body_update_mcp_connection_request = update_mcp_connection_request;
-
-    let uri_str = format!(
-        "{}/api/v1/mcp-connections/{connection_id}",
-        configuration.base_path,
-        connection_id = crate::generated::apis::urlencode(p_path_connection_id)
-    );
-    let mut req_builder = configuration
-        .client
-        .request(reqwest::Method::PATCH, &uri_str);
-
-    if let Some(ref user_agent) = configuration.user_agent {
-        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
-    }
-    if let Some(ref token) = configuration.bearer_access_token {
-        req_builder = req_builder.bearer_auth(token.to_owned());
-    };
-    req_builder = req_builder.json(&p_body_update_mcp_connection_request);
-
-    let req = req_builder.build()?;
-    let resp = configuration.client.execute(req).await?;
-
-    let status = resp.status();
-    let headers = resp.headers().clone();
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/octet-stream");
-    let content_type = super::ContentType::from(content_type);
-
-    if !status.is_client_error() && !status.is_server_error() {
-        let content = resp.text().await?;
-        match content_type {
-            ContentType::Json => serde_json::from_str(&content)
-                .map(|data| Response {
-                    data,
-                    status,
-                    headers,
-                })
-                .map_err(Error::from),
-            ContentType::Text => {
-                return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::McpConnection`",
-                )));
-            }
-            ContentType::Unsupported(unknown_type) => {
-                return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::McpConnection`"
-                ))));
-            }
-        }
-    } else {
-        let content = resp.text().await?;
-        let entity: Option<PatchMcpConnectionsConnectionIdError> =
             serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,
@@ -2421,103 +1638,18 @@ pub async fn post_application_accounts_account_id_targets(
     }
 }
 
-pub async fn post_connector_connections_connection_id_action(
+pub async fn post_connections_connection_id_mcp_discover(
     configuration: &configuration::Configuration,
     connection_id: &str,
-    action: &str,
-    idempotency_key: &str,
-    connector_connection_command_request: models::ConnectorConnectionCommandRequest,
-) -> Result<
-    Response<models::ConnectorConnection>,
-    Error<PostConnectorConnectionsConnectionIdActionError>,
-> {
+    connection_command_request: models::ConnectionCommandRequest,
+) -> Result<Response<models::McpToolCollection>, Error<PostConnectionsConnectionIdMcpDiscoverError>>
+{
     // add a prefix to parameters to efficiently prevent name collisions
     let p_path_connection_id = connection_id;
-    let p_path_action = action;
-    let p_header_idempotency_key = idempotency_key;
-    let p_body_connector_connection_command_request = connector_connection_command_request;
+    let p_body_connection_command_request = connection_command_request;
 
     let uri_str = format!(
-        "{}/api/v1/connector-connections/{connection_id}/{action}",
-        configuration.base_path,
-        connection_id = crate::generated::apis::urlencode(p_path_connection_id),
-        action = crate::generated::apis::urlencode(p_path_action)
-    );
-    let mut req_builder = configuration
-        .client
-        .request(reqwest::Method::POST, &uri_str);
-
-    if let Some(ref user_agent) = configuration.user_agent {
-        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
-    }
-    req_builder = req_builder.header("Idempotency-Key", p_header_idempotency_key.to_string());
-    if let Some(ref token) = configuration.bearer_access_token {
-        req_builder = req_builder.bearer_auth(token.to_owned());
-    };
-    req_builder = req_builder.json(&p_body_connector_connection_command_request);
-
-    let req = req_builder.build()?;
-    let resp = configuration.client.execute(req).await?;
-
-    let status = resp.status();
-    let headers = resp.headers().clone();
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/octet-stream");
-    let content_type = super::ContentType::from(content_type);
-
-    if !status.is_client_error() && !status.is_server_error() {
-        let content = resp.text().await?;
-        match content_type {
-            ContentType::Json => serde_json::from_str(&content)
-                .map(|data| Response {
-                    data,
-                    status,
-                    headers,
-                })
-                .map_err(Error::from),
-            ContentType::Text => {
-                return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::ConnectorConnection`",
-                )));
-            }
-            ContentType::Unsupported(unknown_type) => {
-                return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::ConnectorConnection`"
-                ))));
-            }
-        }
-    } else {
-        let content = resp.text().await?;
-        let entity: Option<PostConnectorConnectionsConnectionIdActionError> =
-            serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(Box::new(ResponseContent {
-            status,
-            headers,
-            content,
-            entity,
-        })))
-    }
-}
-
-pub async fn post_connector_connections_connection_id_reconnect(
-    configuration: &configuration::Configuration,
-    connection_id: &str,
-    idempotency_key: &str,
-    reconnect_connector_connection_request: models::ReconnectConnectorConnectionRequest,
-) -> Result<
-    Response<models::ConnectorSetupLaunch>,
-    Error<PostConnectorConnectionsConnectionIdReconnectError>,
-> {
-    // add a prefix to parameters to efficiently prevent name collisions
-    let p_path_connection_id = connection_id;
-    let p_header_idempotency_key = idempotency_key;
-    let p_body_reconnect_connector_connection_request = reconnect_connector_connection_request;
-
-    let uri_str = format!(
-        "{}/api/v1/connector-connections/{connection_id}/reconnect",
+        "{}/api/v1/connections/{connection_id}/mcp/discover",
         configuration.base_path,
         connection_id = crate::generated::apis::urlencode(p_path_connection_id)
     );
@@ -2528,11 +1660,10 @@ pub async fn post_connector_connections_connection_id_reconnect(
     if let Some(ref user_agent) = configuration.user_agent {
         req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
     }
-    req_builder = req_builder.header("Idempotency-Key", p_header_idempotency_key.to_string());
     if let Some(ref token) = configuration.bearer_access_token {
         req_builder = req_builder.bearer_auth(token.to_owned());
     };
-    req_builder = req_builder.json(&p_body_reconnect_connector_connection_request);
+    req_builder = req_builder.json(&p_body_connection_command_request);
 
     let req = req_builder.build()?;
     let resp = configuration.client.execute(req).await?;
@@ -2558,18 +1689,18 @@ pub async fn post_connector_connections_connection_id_reconnect(
                 .map_err(Error::from),
             ContentType::Text => {
                 return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::ConnectorSetupLaunch`",
+                    "Received `text/plain` content type response that cannot be converted to `models::McpToolCollection`",
                 )));
             }
             ContentType::Unsupported(unknown_type) => {
                 return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::ConnectorSetupLaunch`"
+                    "Received `{unknown_type}` content type response that cannot be converted to `models::McpToolCollection`"
                 ))));
             }
         }
     } else {
         let content = resp.text().await?;
-        let entity: Option<PostConnectorConnectionsConnectionIdReconnectError> =
+        let entity: Option<PostConnectionsConnectionIdMcpDiscoverError> =
             serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,
@@ -2580,22 +1711,18 @@ pub async fn post_connector_connections_connection_id_reconnect(
     }
 }
 
-pub async fn post_connector_connections_connection_id_revoke(
+pub async fn post_connections_connection_id_mcp_oauth_discovery(
     configuration: &configuration::Configuration,
     connection_id: &str,
-    idempotency_key: &str,
-    connector_connection_command_request: models::ConnectorConnectionCommandRequest,
 ) -> Result<
-    Response<models::ConnectionCleanupReceipt>,
-    Error<PostConnectorConnectionsConnectionIdRevokeError>,
+    Response<models::McpoAuthDiscovery>,
+    Error<PostConnectionsConnectionIdMcpOauthDiscoveryError>,
 > {
     // add a prefix to parameters to efficiently prevent name collisions
     let p_path_connection_id = connection_id;
-    let p_header_idempotency_key = idempotency_key;
-    let p_body_connector_connection_command_request = connector_connection_command_request;
 
     let uri_str = format!(
-        "{}/api/v1/connector-connections/{connection_id}/revoke",
+        "{}/api/v1/connections/{connection_id}/mcp/oauth-discovery",
         configuration.base_path,
         connection_id = crate::generated::apis::urlencode(p_path_connection_id)
     );
@@ -2606,11 +1733,9 @@ pub async fn post_connector_connections_connection_id_revoke(
     if let Some(ref user_agent) = configuration.user_agent {
         req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
     }
-    req_builder = req_builder.header("Idempotency-Key", p_header_idempotency_key.to_string());
     if let Some(ref token) = configuration.bearer_access_token {
         req_builder = req_builder.bearer_auth(token.to_owned());
     };
-    req_builder = req_builder.json(&p_body_connector_connection_command_request);
 
     let req = req_builder.build()?;
     let resp = configuration.client.execute(req).await?;
@@ -2636,96 +1761,18 @@ pub async fn post_connector_connections_connection_id_revoke(
                 .map_err(Error::from),
             ContentType::Text => {
                 return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::ConnectionCleanupReceipt`",
+                    "Received `text/plain` content type response that cannot be converted to `models::McpoAuthDiscovery`",
                 )));
             }
             ContentType::Unsupported(unknown_type) => {
                 return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::ConnectionCleanupReceipt`"
+                    "Received `{unknown_type}` content type response that cannot be converted to `models::McpoAuthDiscovery`"
                 ))));
             }
         }
     } else {
         let content = resp.text().await?;
-        let entity: Option<PostConnectorConnectionsConnectionIdRevokeError> =
-            serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(Box::new(ResponseContent {
-            status,
-            headers,
-            content,
-            entity,
-        })))
-    }
-}
-
-pub async fn post_connector_connections_connection_id_setup(
-    configuration: &configuration::Configuration,
-    connection_id: &str,
-    idempotency_key: &str,
-    start_connector_connection_setup_request: models::StartConnectorConnectionSetupRequest,
-) -> Result<
-    Response<models::ConnectorSetupLaunch>,
-    Error<PostConnectorConnectionsConnectionIdSetupError>,
-> {
-    // add a prefix to parameters to efficiently prevent name collisions
-    let p_path_connection_id = connection_id;
-    let p_header_idempotency_key = idempotency_key;
-    let p_body_start_connector_connection_setup_request = start_connector_connection_setup_request;
-
-    let uri_str = format!(
-        "{}/api/v1/connector-connections/{connection_id}/setup",
-        configuration.base_path,
-        connection_id = crate::generated::apis::urlencode(p_path_connection_id)
-    );
-    let mut req_builder = configuration
-        .client
-        .request(reqwest::Method::POST, &uri_str);
-
-    if let Some(ref user_agent) = configuration.user_agent {
-        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
-    }
-    req_builder = req_builder.header("Idempotency-Key", p_header_idempotency_key.to_string());
-    if let Some(ref token) = configuration.bearer_access_token {
-        req_builder = req_builder.bearer_auth(token.to_owned());
-    };
-    req_builder = req_builder.json(&p_body_start_connector_connection_setup_request);
-
-    let req = req_builder.build()?;
-    let resp = configuration.client.execute(req).await?;
-
-    let status = resp.status();
-    let headers = resp.headers().clone();
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/octet-stream");
-    let content_type = super::ContentType::from(content_type);
-
-    if !status.is_client_error() && !status.is_server_error() {
-        let content = resp.text().await?;
-        match content_type {
-            ContentType::Json => serde_json::from_str(&content)
-                .map(|data| Response {
-                    data,
-                    status,
-                    headers,
-                })
-                .map_err(Error::from),
-            ContentType::Text => {
-                return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::ConnectorSetupLaunch`",
-                )));
-            }
-            ContentType::Unsupported(unknown_type) => {
-                return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::ConnectorSetupLaunch`"
-                ))));
-            }
-        }
-    } else {
-        let content = resp.text().await?;
-        let entity: Option<PostConnectorConnectionsConnectionIdSetupError> =
+        let entity: Option<PostConnectionsConnectionIdMcpOauthDiscoveryError> =
             serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,
@@ -3066,667 +2113,6 @@ pub async fn post_connector_providers_connector_provider_id_test(
     }
 }
 
-pub async fn post_connector_setup_complete(
-    configuration: &configuration::Configuration,
-    complete_connector_setup_request: models::CompleteConnectorSetupRequest,
-) -> Result<Response<models::ConnectorSetupCompletion>, Error<PostConnectorSetupCompleteError>> {
-    // add a prefix to parameters to efficiently prevent name collisions
-    let p_body_complete_connector_setup_request = complete_connector_setup_request;
-
-    let uri_str = format!(
-        "{}/api/v1/connector-setup/complete",
-        configuration.base_path
-    );
-    let mut req_builder = configuration
-        .client
-        .request(reqwest::Method::POST, &uri_str);
-
-    if let Some(ref user_agent) = configuration.user_agent {
-        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
-    }
-    if let Some(ref token) = configuration.bearer_access_token {
-        req_builder = req_builder.bearer_auth(token.to_owned());
-    };
-    req_builder = req_builder.json(&p_body_complete_connector_setup_request);
-
-    let req = req_builder.build()?;
-    let resp = configuration.client.execute(req).await?;
-
-    let status = resp.status();
-    let headers = resp.headers().clone();
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/octet-stream");
-    let content_type = super::ContentType::from(content_type);
-
-    if !status.is_client_error() && !status.is_server_error() {
-        let content = resp.text().await?;
-        match content_type {
-            ContentType::Json => serde_json::from_str(&content)
-                .map(|data| Response {
-                    data,
-                    status,
-                    headers,
-                })
-                .map_err(Error::from),
-            ContentType::Text => {
-                return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::ConnectorSetupCompletion`",
-                )));
-            }
-            ContentType::Unsupported(unknown_type) => {
-                return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::ConnectorSetupCompletion`"
-                ))));
-            }
-        }
-    } else {
-        let content = resp.text().await?;
-        let entity: Option<PostConnectorSetupCompleteError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(Box::new(ResponseContent {
-            status,
-            headers,
-            content,
-            entity,
-        })))
-    }
-}
-
-pub async fn post_mcp_connections_connection_id_action(
-    configuration: &configuration::Configuration,
-    connection_id: &str,
-    action: &str,
-    idempotency_key: &str,
-    mcp_connection_command_request: models::McpConnectionCommandRequest,
-) -> Result<Response<models::McpConnection>, Error<PostMcpConnectionsConnectionIdActionError>> {
-    // add a prefix to parameters to efficiently prevent name collisions
-    let p_path_connection_id = connection_id;
-    let p_path_action = action;
-    let p_header_idempotency_key = idempotency_key;
-    let p_body_mcp_connection_command_request = mcp_connection_command_request;
-
-    let uri_str = format!(
-        "{}/api/v1/mcp-connections/{connection_id}/{action}",
-        configuration.base_path,
-        connection_id = crate::generated::apis::urlencode(p_path_connection_id),
-        action = crate::generated::apis::urlencode(p_path_action)
-    );
-    let mut req_builder = configuration
-        .client
-        .request(reqwest::Method::POST, &uri_str);
-
-    if let Some(ref user_agent) = configuration.user_agent {
-        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
-    }
-    req_builder = req_builder.header("Idempotency-Key", p_header_idempotency_key.to_string());
-    if let Some(ref token) = configuration.bearer_access_token {
-        req_builder = req_builder.bearer_auth(token.to_owned());
-    };
-    req_builder = req_builder.json(&p_body_mcp_connection_command_request);
-
-    let req = req_builder.build()?;
-    let resp = configuration.client.execute(req).await?;
-
-    let status = resp.status();
-    let headers = resp.headers().clone();
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/octet-stream");
-    let content_type = super::ContentType::from(content_type);
-
-    if !status.is_client_error() && !status.is_server_error() {
-        let content = resp.text().await?;
-        match content_type {
-            ContentType::Json => serde_json::from_str(&content)
-                .map(|data| Response {
-                    data,
-                    status,
-                    headers,
-                })
-                .map_err(Error::from),
-            ContentType::Text => {
-                return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::McpConnection`",
-                )));
-            }
-            ContentType::Unsupported(unknown_type) => {
-                return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::McpConnection`"
-                ))));
-            }
-        }
-    } else {
-        let content = resp.text().await?;
-        let entity: Option<PostMcpConnectionsConnectionIdActionError> =
-            serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(Box::new(ResponseContent {
-            status,
-            headers,
-            content,
-            entity,
-        })))
-    }
-}
-
-pub async fn post_mcp_connections_connection_id_authenticate(
-    configuration: &configuration::Configuration,
-    connection_id: &str,
-    idempotency_key: &str,
-    mcp_connection_command_request: models::McpConnectionCommandRequest,
-) -> Result<Response<models::McpConnection>, Error<PostMcpConnectionsConnectionIdAuthenticateError>>
-{
-    // add a prefix to parameters to efficiently prevent name collisions
-    let p_path_connection_id = connection_id;
-    let p_header_idempotency_key = idempotency_key;
-    let p_body_mcp_connection_command_request = mcp_connection_command_request;
-
-    let uri_str = format!(
-        "{}/api/v1/mcp-connections/{connection_id}/authenticate",
-        configuration.base_path,
-        connection_id = crate::generated::apis::urlencode(p_path_connection_id)
-    );
-    let mut req_builder = configuration
-        .client
-        .request(reqwest::Method::POST, &uri_str);
-
-    if let Some(ref user_agent) = configuration.user_agent {
-        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
-    }
-    req_builder = req_builder.header("Idempotency-Key", p_header_idempotency_key.to_string());
-    if let Some(ref token) = configuration.bearer_access_token {
-        req_builder = req_builder.bearer_auth(token.to_owned());
-    };
-    req_builder = req_builder.json(&p_body_mcp_connection_command_request);
-
-    let req = req_builder.build()?;
-    let resp = configuration.client.execute(req).await?;
-
-    let status = resp.status();
-    let headers = resp.headers().clone();
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/octet-stream");
-    let content_type = super::ContentType::from(content_type);
-
-    if !status.is_client_error() && !status.is_server_error() {
-        let content = resp.text().await?;
-        match content_type {
-            ContentType::Json => serde_json::from_str(&content)
-                .map(|data| Response {
-                    data,
-                    status,
-                    headers,
-                })
-                .map_err(Error::from),
-            ContentType::Text => {
-                return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::McpConnection`",
-                )));
-            }
-            ContentType::Unsupported(unknown_type) => {
-                return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::McpConnection`"
-                ))));
-            }
-        }
-    } else {
-        let content = resp.text().await?;
-        let entity: Option<PostMcpConnectionsConnectionIdAuthenticateError> =
-            serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(Box::new(ResponseContent {
-            status,
-            headers,
-            content,
-            entity,
-        })))
-    }
-}
-
-pub async fn post_mcp_connections_connection_id_authorize(
-    configuration: &configuration::Configuration,
-    connection_id: &str,
-    idempotency_key: &str,
-    mcp_connection_command_request: models::McpConnectionCommandRequest,
-) -> Result<
-    Response<models::McpAuthorizationLaunch>,
-    Error<PostMcpConnectionsConnectionIdAuthorizeError>,
-> {
-    // add a prefix to parameters to efficiently prevent name collisions
-    let p_path_connection_id = connection_id;
-    let p_header_idempotency_key = idempotency_key;
-    let p_body_mcp_connection_command_request = mcp_connection_command_request;
-
-    let uri_str = format!(
-        "{}/api/v1/mcp-connections/{connection_id}/authorize",
-        configuration.base_path,
-        connection_id = crate::generated::apis::urlencode(p_path_connection_id)
-    );
-    let mut req_builder = configuration
-        .client
-        .request(reqwest::Method::POST, &uri_str);
-
-    if let Some(ref user_agent) = configuration.user_agent {
-        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
-    }
-    req_builder = req_builder.header("Idempotency-Key", p_header_idempotency_key.to_string());
-    if let Some(ref token) = configuration.bearer_access_token {
-        req_builder = req_builder.bearer_auth(token.to_owned());
-    };
-    req_builder = req_builder.json(&p_body_mcp_connection_command_request);
-
-    let req = req_builder.build()?;
-    let resp = configuration.client.execute(req).await?;
-
-    let status = resp.status();
-    let headers = resp.headers().clone();
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/octet-stream");
-    let content_type = super::ContentType::from(content_type);
-
-    if !status.is_client_error() && !status.is_server_error() {
-        let content = resp.text().await?;
-        match content_type {
-            ContentType::Json => serde_json::from_str(&content)
-                .map(|data| Response {
-                    data,
-                    status,
-                    headers,
-                })
-                .map_err(Error::from),
-            ContentType::Text => {
-                return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::McpAuthorizationLaunch`",
-                )));
-            }
-            ContentType::Unsupported(unknown_type) => {
-                return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::McpAuthorizationLaunch`"
-                ))));
-            }
-        }
-    } else {
-        let content = resp.text().await?;
-        let entity: Option<PostMcpConnectionsConnectionIdAuthorizeError> =
-            serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(Box::new(ResponseContent {
-            status,
-            headers,
-            content,
-            entity,
-        })))
-    }
-}
-
-pub async fn post_mcp_connections_connection_id_credentials(
-    configuration: &configuration::Configuration,
-    connection_id: &str,
-    idempotency_key: &str,
-    replace_mcp_credentials_request: models::ReplaceMcpCredentialsRequest,
-) -> Result<Response<models::McpConnection>, Error<PostMcpConnectionsConnectionIdCredentialsError>>
-{
-    // add a prefix to parameters to efficiently prevent name collisions
-    let p_path_connection_id = connection_id;
-    let p_header_idempotency_key = idempotency_key;
-    let p_body_replace_mcp_credentials_request = replace_mcp_credentials_request;
-
-    let uri_str = format!(
-        "{}/api/v1/mcp-connections/{connection_id}/credentials",
-        configuration.base_path,
-        connection_id = crate::generated::apis::urlencode(p_path_connection_id)
-    );
-    let mut req_builder = configuration
-        .client
-        .request(reqwest::Method::POST, &uri_str);
-
-    if let Some(ref user_agent) = configuration.user_agent {
-        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
-    }
-    req_builder = req_builder.header("Idempotency-Key", p_header_idempotency_key.to_string());
-    if let Some(ref token) = configuration.bearer_access_token {
-        req_builder = req_builder.bearer_auth(token.to_owned());
-    };
-    req_builder = req_builder.json(&p_body_replace_mcp_credentials_request);
-
-    let req = req_builder.build()?;
-    let resp = configuration.client.execute(req).await?;
-
-    let status = resp.status();
-    let headers = resp.headers().clone();
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/octet-stream");
-    let content_type = super::ContentType::from(content_type);
-
-    if !status.is_client_error() && !status.is_server_error() {
-        let content = resp.text().await?;
-        match content_type {
-            ContentType::Json => serde_json::from_str(&content)
-                .map(|data| Response {
-                    data,
-                    status,
-                    headers,
-                })
-                .map_err(Error::from),
-            ContentType::Text => {
-                return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::McpConnection`",
-                )));
-            }
-            ContentType::Unsupported(unknown_type) => {
-                return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::McpConnection`"
-                ))));
-            }
-        }
-    } else {
-        let content = resp.text().await?;
-        let entity: Option<PostMcpConnectionsConnectionIdCredentialsError> =
-            serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(Box::new(ResponseContent {
-            status,
-            headers,
-            content,
-            entity,
-        })))
-    }
-}
-
-pub async fn post_mcp_connections_connection_id_discover(
-    configuration: &configuration::Configuration,
-    connection_id: &str,
-    mcp_connection_command_request: models::McpConnectionCommandRequest,
-) -> Result<Response<models::McpToolCollection>, Error<PostMcpConnectionsConnectionIdDiscoverError>>
-{
-    // add a prefix to parameters to efficiently prevent name collisions
-    let p_path_connection_id = connection_id;
-    let p_body_mcp_connection_command_request = mcp_connection_command_request;
-
-    let uri_str = format!(
-        "{}/api/v1/mcp-connections/{connection_id}/discover",
-        configuration.base_path,
-        connection_id = crate::generated::apis::urlencode(p_path_connection_id)
-    );
-    let mut req_builder = configuration
-        .client
-        .request(reqwest::Method::POST, &uri_str);
-
-    if let Some(ref user_agent) = configuration.user_agent {
-        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
-    }
-    if let Some(ref token) = configuration.bearer_access_token {
-        req_builder = req_builder.bearer_auth(token.to_owned());
-    };
-    req_builder = req_builder.json(&p_body_mcp_connection_command_request);
-
-    let req = req_builder.build()?;
-    let resp = configuration.client.execute(req).await?;
-
-    let status = resp.status();
-    let headers = resp.headers().clone();
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/octet-stream");
-    let content_type = super::ContentType::from(content_type);
-
-    if !status.is_client_error() && !status.is_server_error() {
-        let content = resp.text().await?;
-        match content_type {
-            ContentType::Json => serde_json::from_str(&content)
-                .map(|data| Response {
-                    data,
-                    status,
-                    headers,
-                })
-                .map_err(Error::from),
-            ContentType::Text => {
-                return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::McpToolCollection`",
-                )));
-            }
-            ContentType::Unsupported(unknown_type) => {
-                return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::McpToolCollection`"
-                ))));
-            }
-        }
-    } else {
-        let content = resp.text().await?;
-        let entity: Option<PostMcpConnectionsConnectionIdDiscoverError> =
-            serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(Box::new(ResponseContent {
-            status,
-            headers,
-            content,
-            entity,
-        })))
-    }
-}
-
-pub async fn post_mcp_connections_connection_id_oauth_discovery(
-    configuration: &configuration::Configuration,
-    connection_id: &str,
-) -> Result<
-    Response<models::McpoAuthDiscovery>,
-    Error<PostMcpConnectionsConnectionIdOauthDiscoveryError>,
-> {
-    // add a prefix to parameters to efficiently prevent name collisions
-    let p_path_connection_id = connection_id;
-
-    let uri_str = format!(
-        "{}/api/v1/mcp-connections/{connection_id}/oauth-discovery",
-        configuration.base_path,
-        connection_id = crate::generated::apis::urlencode(p_path_connection_id)
-    );
-    let mut req_builder = configuration
-        .client
-        .request(reqwest::Method::POST, &uri_str);
-
-    if let Some(ref user_agent) = configuration.user_agent {
-        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
-    }
-    if let Some(ref token) = configuration.bearer_access_token {
-        req_builder = req_builder.bearer_auth(token.to_owned());
-    };
-
-    let req = req_builder.build()?;
-    let resp = configuration.client.execute(req).await?;
-
-    let status = resp.status();
-    let headers = resp.headers().clone();
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/octet-stream");
-    let content_type = super::ContentType::from(content_type);
-
-    if !status.is_client_error() && !status.is_server_error() {
-        let content = resp.text().await?;
-        match content_type {
-            ContentType::Json => serde_json::from_str(&content)
-                .map(|data| Response {
-                    data,
-                    status,
-                    headers,
-                })
-                .map_err(Error::from),
-            ContentType::Text => {
-                return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::McpoAuthDiscovery`",
-                )));
-            }
-            ContentType::Unsupported(unknown_type) => {
-                return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::McpoAuthDiscovery`"
-                ))));
-            }
-        }
-    } else {
-        let content = resp.text().await?;
-        let entity: Option<PostMcpConnectionsConnectionIdOauthDiscoveryError> =
-            serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(Box::new(ResponseContent {
-            status,
-            headers,
-            content,
-            entity,
-        })))
-    }
-}
-
-pub async fn post_mcp_connections_connection_id_reconnect(
-    configuration: &configuration::Configuration,
-    connection_id: &str,
-    idempotency_key: &str,
-    mcp_connection_command_request: models::McpConnectionCommandRequest,
-) -> Result<Response<models::McpConnection>, Error<PostMcpConnectionsConnectionIdReconnectError>> {
-    // add a prefix to parameters to efficiently prevent name collisions
-    let p_path_connection_id = connection_id;
-    let p_header_idempotency_key = idempotency_key;
-    let p_body_mcp_connection_command_request = mcp_connection_command_request;
-
-    let uri_str = format!(
-        "{}/api/v1/mcp-connections/{connection_id}/reconnect",
-        configuration.base_path,
-        connection_id = crate::generated::apis::urlencode(p_path_connection_id)
-    );
-    let mut req_builder = configuration
-        .client
-        .request(reqwest::Method::POST, &uri_str);
-
-    if let Some(ref user_agent) = configuration.user_agent {
-        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
-    }
-    req_builder = req_builder.header("Idempotency-Key", p_header_idempotency_key.to_string());
-    if let Some(ref token) = configuration.bearer_access_token {
-        req_builder = req_builder.bearer_auth(token.to_owned());
-    };
-    req_builder = req_builder.json(&p_body_mcp_connection_command_request);
-
-    let req = req_builder.build()?;
-    let resp = configuration.client.execute(req).await?;
-
-    let status = resp.status();
-    let headers = resp.headers().clone();
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/octet-stream");
-    let content_type = super::ContentType::from(content_type);
-
-    if !status.is_client_error() && !status.is_server_error() {
-        let content = resp.text().await?;
-        match content_type {
-            ContentType::Json => serde_json::from_str(&content)
-                .map(|data| Response {
-                    data,
-                    status,
-                    headers,
-                })
-                .map_err(Error::from),
-            ContentType::Text => {
-                return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::McpConnection`",
-                )));
-            }
-            ContentType::Unsupported(unknown_type) => {
-                return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::McpConnection`"
-                ))));
-            }
-        }
-    } else {
-        let content = resp.text().await?;
-        let entity: Option<PostMcpConnectionsConnectionIdReconnectError> =
-            serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(Box::new(ResponseContent {
-            status,
-            headers,
-            content,
-            entity,
-        })))
-    }
-}
-
-pub async fn post_oauth_mcp_complete(
-    configuration: &configuration::Configuration,
-    complete_mcpo_auth_request: models::CompleteMcpoAuthRequest,
-) -> Result<Response<models::McpConnection>, Error<PostOauthMcpCompleteError>> {
-    // add a prefix to parameters to efficiently prevent name collisions
-    let p_body_complete_mcpo_auth_request = complete_mcpo_auth_request;
-
-    let uri_str = format!("{}/api/v1/oauth/mcp/complete", configuration.base_path);
-    let mut req_builder = configuration
-        .client
-        .request(reqwest::Method::POST, &uri_str);
-
-    if let Some(ref user_agent) = configuration.user_agent {
-        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
-    }
-    if let Some(ref token) = configuration.bearer_access_token {
-        req_builder = req_builder.bearer_auth(token.to_owned());
-    };
-    req_builder = req_builder.json(&p_body_complete_mcpo_auth_request);
-
-    let req = req_builder.build()?;
-    let resp = configuration.client.execute(req).await?;
-
-    let status = resp.status();
-    let headers = resp.headers().clone();
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/octet-stream");
-    let content_type = super::ContentType::from(content_type);
-
-    if !status.is_client_error() && !status.is_server_error() {
-        let content = resp.text().await?;
-        match content_type {
-            ContentType::Json => serde_json::from_str(&content)
-                .map(|data| Response {
-                    data,
-                    status,
-                    headers,
-                })
-                .map_err(Error::from),
-            ContentType::Text => {
-                return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::McpConnection`",
-                )));
-            }
-            ContentType::Unsupported(unknown_type) => {
-                return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::McpConnection`"
-                ))));
-            }
-        }
-    } else {
-        let content = resp.text().await?;
-        let entity: Option<PostOauthMcpCompleteError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(Box::new(ResponseContent {
-            status,
-            headers,
-            content,
-            entity,
-        })))
-    }
-}
-
 pub async fn post_organizations_organization_connector_providers(
     configuration: &configuration::Configuration,
     organization: &str,
@@ -3880,84 +2266,6 @@ pub async fn post_workspaces_workspace_application_accounts(
     }
 }
 
-pub async fn post_workspaces_workspace_connector_connections(
-    configuration: &configuration::Configuration,
-    workspace: &str,
-    idempotency_key: &str,
-    create_connector_connection_request: models::CreateConnectorConnectionRequest,
-) -> Result<
-    Response<models::ConnectorConnection>,
-    Error<PostWorkspacesWorkspaceConnectorConnectionsError>,
-> {
-    // add a prefix to parameters to efficiently prevent name collisions
-    let p_path_workspace = workspace;
-    let p_header_idempotency_key = idempotency_key;
-    let p_body_create_connector_connection_request = create_connector_connection_request;
-
-    let uri_str = format!(
-        "{}/api/v1/workspaces/{workspace}/connector-connections",
-        configuration.base_path,
-        workspace = crate::generated::apis::urlencode(p_path_workspace)
-    );
-    let mut req_builder = configuration
-        .client
-        .request(reqwest::Method::POST, &uri_str);
-
-    if let Some(ref user_agent) = configuration.user_agent {
-        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
-    }
-    req_builder = req_builder.header("Idempotency-Key", p_header_idempotency_key.to_string());
-    if let Some(ref token) = configuration.bearer_access_token {
-        req_builder = req_builder.bearer_auth(token.to_owned());
-    };
-    req_builder = req_builder.json(&p_body_create_connector_connection_request);
-
-    let req = req_builder.build()?;
-    let resp = configuration.client.execute(req).await?;
-
-    let status = resp.status();
-    let headers = resp.headers().clone();
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/octet-stream");
-    let content_type = super::ContentType::from(content_type);
-
-    if !status.is_client_error() && !status.is_server_error() {
-        let content = resp.text().await?;
-        match content_type {
-            ContentType::Json => serde_json::from_str(&content)
-                .map(|data| Response {
-                    data,
-                    status,
-                    headers,
-                })
-                .map_err(Error::from),
-            ContentType::Text => {
-                return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::ConnectorConnection`",
-                )));
-            }
-            ContentType::Unsupported(unknown_type) => {
-                return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::ConnectorConnection`"
-                ))));
-            }
-        }
-    } else {
-        let content = resp.text().await?;
-        let entity: Option<PostWorkspacesWorkspaceConnectorConnectionsError> =
-            serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(Box::new(ResponseContent {
-            status,
-            headers,
-            content,
-            entity,
-        })))
-    }
-}
-
 pub async fn post_workspaces_workspace_connector_providers(
     configuration: &configuration::Configuration,
     workspace: &str,
@@ -4026,81 +2334,6 @@ pub async fn post_workspaces_workspace_connector_providers(
     } else {
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceConnectorProvidersError> =
-            serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(Box::new(ResponseContent {
-            status,
-            headers,
-            content,
-            entity,
-        })))
-    }
-}
-
-pub async fn post_workspaces_workspace_mcp_connections(
-    configuration: &configuration::Configuration,
-    workspace: &str,
-    idempotency_key: &str,
-    create_mcp_connection_request: models::CreateMcpConnectionRequest,
-) -> Result<Response<models::McpConnection>, Error<PostWorkspacesWorkspaceMcpConnectionsError>> {
-    // add a prefix to parameters to efficiently prevent name collisions
-    let p_path_workspace = workspace;
-    let p_header_idempotency_key = idempotency_key;
-    let p_body_create_mcp_connection_request = create_mcp_connection_request;
-
-    let uri_str = format!(
-        "{}/api/v1/workspaces/{workspace}/mcp-connections",
-        configuration.base_path,
-        workspace = crate::generated::apis::urlencode(p_path_workspace)
-    );
-    let mut req_builder = configuration
-        .client
-        .request(reqwest::Method::POST, &uri_str);
-
-    if let Some(ref user_agent) = configuration.user_agent {
-        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
-    }
-    req_builder = req_builder.header("Idempotency-Key", p_header_idempotency_key.to_string());
-    if let Some(ref token) = configuration.bearer_access_token {
-        req_builder = req_builder.bearer_auth(token.to_owned());
-    };
-    req_builder = req_builder.json(&p_body_create_mcp_connection_request);
-
-    let req = req_builder.build()?;
-    let resp = configuration.client.execute(req).await?;
-
-    let status = resp.status();
-    let headers = resp.headers().clone();
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/octet-stream");
-    let content_type = super::ContentType::from(content_type);
-
-    if !status.is_client_error() && !status.is_server_error() {
-        let content = resp.text().await?;
-        match content_type {
-            ContentType::Json => serde_json::from_str(&content)
-                .map(|data| Response {
-                    data,
-                    status,
-                    headers,
-                })
-                .map_err(Error::from),
-            ContentType::Text => {
-                return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::McpConnection`",
-                )));
-            }
-            ContentType::Unsupported(unknown_type) => {
-                return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::McpConnection`"
-                ))));
-            }
-        }
-    } else {
-        let content = resp.text().await?;
-        let entity: Option<PostWorkspacesWorkspaceMcpConnectionsError> =
             serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,
@@ -4260,17 +2493,17 @@ pub async fn put_application_accounts_account_id_targets_target_id(
     }
 }
 
-pub async fn put_mcp_connections_connection_id_oauth_client(
+pub async fn put_connections_connection_id_mcp_oauth_client(
     configuration: &configuration::Configuration,
     connection_id: &str,
     configure_mcpo_auth_client_request: models::ConfigureMcpoAuthClientRequest,
-) -> Result<Response<models::McpConnection>, Error<PutMcpConnectionsConnectionIdOauthClientError>> {
+) -> Result<Response<models::Connection>, Error<PutConnectionsConnectionIdMcpOauthClientError>> {
     // add a prefix to parameters to efficiently prevent name collisions
     let p_path_connection_id = connection_id;
     let p_body_configure_mcpo_auth_client_request = configure_mcpo_auth_client_request;
 
     let uri_str = format!(
-        "{}/api/v1/mcp-connections/{connection_id}/oauth-client",
+        "{}/api/v1/connections/{connection_id}/mcp/oauth-client",
         configuration.base_path,
         connection_id = crate::generated::apis::urlencode(p_path_connection_id)
     );
@@ -4308,18 +2541,18 @@ pub async fn put_mcp_connections_connection_id_oauth_client(
                 .map_err(Error::from),
             ContentType::Text => {
                 return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::McpConnection`",
+                    "Received `text/plain` content type response that cannot be converted to `models::Connection`",
                 )));
             }
             ContentType::Unsupported(unknown_type) => {
                 return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::McpConnection`"
+                    "Received `{unknown_type}` content type response that cannot be converted to `models::Connection`"
                 ))));
             }
         }
     } else {
         let content = resp.text().await?;
-        let entity: Option<PutMcpConnectionsConnectionIdOauthClientError> =
+        let entity: Option<PutConnectionsConnectionIdMcpOauthClientError> =
             serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,

@@ -65,7 +65,7 @@ async def validate_agent_resources(
         await external_tools.validate(
             current_context,
             child_agent_id=edge.child_agent_id,
-            selections=FrozenRunConnectivity(child.connector_connection_selections, child.mcp_connection_selections),
+            selections=FrozenRunConnectivity(child.connection_selections),
         )
         configurations[revision_id] = child.effective_config
     prepared: dict[str, PreparedSkillRuntime] = {}
@@ -100,9 +100,7 @@ async def prepare_agent_resources(
             external_tools.child_capabilities(
                 current_context,
                 agent_id=edge.child_agent_id,
-                selections=FrozenRunConnectivity(
-                    child.connector_connection_selections, child.mcp_connection_selections
-                ),
+                selections=FrozenRunConnectivity(child.connection_selections),
             )
         )
         configurations[revision_id] = child.effective_config

@@ -22,12 +22,12 @@ pub struct AgentRunOverrideInput {
     pub client_tools: Option<Option<Vec<models::ClientToolDefinition>>>,
 
     #[serde(
-        rename = "connector_tools",
+        rename = "connection_tools",
         default,
         with = "::serde_with::rust::double_option",
         skip_serializing_if = "Option::is_none"
     )]
-    pub connector_tools: Option<Option<Vec<models::ConnectorConnectionToolSelection>>>,
+    pub connection_tools: Option<Option<Vec<models::ConnectionToolSelection>>>,
 
     #[serde(
         rename = "instructions",
@@ -36,14 +36,6 @@ pub struct AgentRunOverrideInput {
         skip_serializing_if = "Option::is_none"
     )]
     pub instructions: Option<Option<String>>,
-
-    #[serde(
-        rename = "mcp_tools",
-        default,
-        with = "::serde_with::rust::double_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub mcp_tools: Option<Option<Vec<models::McpConnectionToolSelection>>>,
 
     #[serde(
         rename = "model",
@@ -106,9 +98,8 @@ impl AgentRunOverrideInput {
     pub fn new() -> AgentRunOverrideInput {
         AgentRunOverrideInput {
             client_tools: None,
-            connector_tools: None,
+            connection_tools: None,
             instructions: None,
-            mcp_tools: None,
             model: None,
             output_spec: None,
             plugins: None,

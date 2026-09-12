@@ -5,17 +5,18 @@ from dataclasses import replace
 from datetime import timedelta
 
 import pytest
+from a13n_service.connectivity.connections.access import ConnectionError
+from a13n_service.connectivity.connections.domain import ConnectorSource, CreateConnectionRequest
 from a13n_service.connectivity.connectors.connections import ConnectorConnectionService
 from a13n_service.connectivity.connectors.domain import (
-    CreateConnectorConnectionRequest,
     CreateConnectorProviderRequest,
     ReplaceConnectorProviderCredentialsRequest,
     UpdateConnectorProviderRequest,
 )
 from a13n_service.connectivity.connectors.errors import ConnectorError
 from a13n_service.connectivity.connectors.models import (
+    ConnectorAuthorizationRecord,
     ConnectorConnectionRecord,
-    ConnectorSetupAttemptRecord,
 )
 from a13n_service.connectivity.connectors.reconciler import ConnectorReconciler
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
@@ -25,6 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .conftest import NOW, ORG_ID, WORKSPACE_ID, actor
+from .connection_helpers import management
 from .connector_helpers import FakeConnectorBackend, fake_registry
 
 
@@ -82,14 +84,19 @@ async def create_connection(
     connector_provider_id: str,
     idempotency_key: str,
 ):
-    return await service.create(
+    from a13n_service.connectivity.connections.domain import CreateConnectionRequest
+    from a13n_service.connectivity.connections.service import ConnectionService
+    from a13n_service.endpoint_policy import EndpointPolicy
+
+    return await ConnectionService(service._sessions, EndpointPolicy(), clock=service._clock).create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key=idempotency_key,
-        request=CreateConnectorConnectionRequest(
-            connector_provider_id=connector_provider_id,
-            name="GitHub",
-            connector_key="github",
+        request=CreateConnectionRequest.model_validate(
+            {
+                "name": "GitHub",
+                "source": {"kind": "connector", "provider_id": connector_provider_id, "connector_key": "github"},
+            }
         ),
     )
 
@@ -163,7 +170,7 @@ async def test_connection_setup_is_durable_before_external_work_and_callback_is_
         expected_version=connection.version,
         setup={"scopes": ["read"]},
         browser_nonce="b" * 64,
-        return_path="/settings/connectors",
+        return_url="/settings/connectors",
     )
     assert launch.connection.status == "pending"
     assert launch.redirect_url == "https://connector.example/authorize"
@@ -171,7 +178,7 @@ async def test_connection_setup_is_durable_before_external_work_and_callback_is_
     assert "external-1" not in repr(launch.connection)
 
     async with connectivity_sessions() as session:
-        attempt = await session.scalar(select(ConnectorSetupAttemptRecord))
+        attempt = await session.scalar(select(ConnectorAuthorizationRecord))
     assert attempt is not None
     return_path = await connections.complete_callback(
         actor=actor(),
@@ -180,7 +187,7 @@ async def test_connection_setup_is_durable_before_external_work_and_callback_is_
         session_uri=f"session://{attempt.id}",
     )
     assert return_path == "/settings/connectors"
-    ready = await connections.get(actor=actor(), connection_id=launch.connection.id)
+    ready = await management(connections).get(actor=actor(), connection_id=launch.connection.id)
     assert ready.status == "ready"
     assert ready.safe_metadata == {"account": "safe"}
     replay = await connections.start_setup(
@@ -190,7 +197,7 @@ async def test_connection_setup_is_durable_before_external_work_and_callback_is_
         expected_version=connection.version,
         setup={"scopes": ["read"]},
         browser_nonce="b" * 64,
-        return_path="/settings/connectors",
+        return_url="/settings/connectors",
     )
     assert replay.status == "completed"
     assert replay.redirect_url is None
@@ -222,7 +229,7 @@ async def test_local_delete_and_one_shot_remote_revoke(
         expected_version=connection.version,
         setup={"scopes": ["read"]},
         browser_nonce="b" * 64,
-        return_path="/connections",
+        return_url="/connections",
     )
     receipt = await connections.delete(
         actor=actor(), connection_id=connection.id, expected_version=launch.connection.version, idempotency_key="delete"
@@ -233,8 +240,8 @@ async def test_local_delete_and_one_shot_remote_revoke(
         actor=actor(), connection_id=connection.id, expected_version=launch.connection.version, idempotency_key="delete"
     )
     assert replay == receipt and len(connector_backend.revoked) == 1
-    with pytest.raises(ConnectorError):
-        await connections.get(actor=actor(), connection_id=connection.id)
+    with pytest.raises(ConnectionError):
+        await management(connections).get(actor=actor(), connection_id=connection.id)
 
 
 @pytest.mark.anyio
@@ -260,7 +267,7 @@ async def test_reconciler_completes_attached_setup_by_exact_external_reference(
         expected_version=connection.version,
         setup={"scopes": ["read"]},
         browser_nonce="b" * 64,
-        return_path="/connections",
+        return_url="/connections",
     )
     registry = fake_registry(connector_backend)
     reconciler = ConnectorReconciler(
@@ -274,7 +281,7 @@ async def test_reconciler_completes_attached_setup_by_exact_external_reference(
     )
 
     assert await reconciler.reconcile_once() is True
-    ready = await connections.get(actor=actor(), connection_id=connection.id)
+    ready = await management(connections).get(actor=actor(), connection_id=connection.id)
     assert ready.status == "ready"
 
 
@@ -300,7 +307,7 @@ async def test_unknown_revoke_is_never_retried(
         expected_version=connection.version,
         setup={"scopes": ["read"]},
         browser_nonce="b" * 64,
-        return_path="/connections",
+        return_url="/connections",
     )
     await connections.complete_callback(
         actor=actor(),
@@ -308,7 +315,7 @@ async def test_unknown_revoke_is_never_retried(
         browser_nonce="b" * 64,
         session_uri=f"session://{launch.attempt_id}",
     )
-    ready = await connections.get(actor=actor(), connection_id=connection.id)
+    ready = await management(connections).get(actor=actor(), connection_id=connection.id)
     connector_backend.fail_revoke = True
     receipt = await connections.revoke(
         actor=actor(),
@@ -332,7 +339,7 @@ async def test_unknown_revoke_is_never_retried(
         clock=lambda: NOW + timedelta(seconds=6),
     )
     assert await reconciler.reconcile_once() is False
-    disabled = await connections.get(actor=actor(), connection_id=connection.id)
+    disabled = await management(connections).get(actor=actor(), connection_id=connection.id)
     assert disabled.status == "disabled"
 
 
@@ -363,7 +370,7 @@ async def test_provider_metadata_and_discovery_use_new_routes_without_creating_c
         assert (await client.get(f"/api/v1/connectors/{provider.id}")).status_code == 404
     async with connectivity_sessions() as session:
         assert await session.scalar(select(ConnectorConnectionRecord)) is None
-        assert await session.scalar(select(ConnectorSetupAttemptRecord)) is None
+        assert await session.scalar(select(ConnectorAuthorizationRecord)) is None
     schema = app.openapi()
     assert "ConnectorProvider" in schema["components"]["schemas"]
     properties = schema["components"]["schemas"]["CreateConnectorProviderRequest"]["properties"]
@@ -372,88 +379,91 @@ async def test_provider_metadata_and_discovery_use_new_routes_without_creating_c
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("command", ["reconnect", "revoke"])
+@pytest.mark.parametrize("command", ["revoke", "delete"])
 async def test_connection_http_commands_preserve_lifecycle_and_dispatch(
-    connector_services, connector_backend, monkeypatch, command
+    connector_services, connector_backend, credential_protector, monkeypatch, command
 ) -> None:
+    from types import SimpleNamespace
+
     import httpx2
-    from a13n_service.connectivity.connectors import router
+    from a13n_service.api import install_api_conventions
+    from a13n_service.connectivity.connections import router
+    from a13n_service.connectivity.connections.checks import ConnectionChecks
     from a13n_service.iam import authenticate_request
+    from a13n_service.iam.http.authentication import authenticate_mutation
     from fastapi import FastAPI
+
+    from .test_mcp_service import service_bundle
 
     providers, connections = connector_services
     provider = await create_connector(providers)
     connection = await create_connection(
         connections, connector_provider_id=provider.id, idempotency_key="http-connection"
     )
-    from a13n_service.api import install_api_conventions
-
+    launch = await connections.start_setup(
+        actor=actor(),
+        connection_id=connection.id,
+        expected_version=connection.version,
+        idempotency_key="http-setup",
+        setup={"scopes": ["read"]},
+        browser_nonce="b" * 64,
+        return_url="/connections",
+    )
+    await connections.complete_callback(
+        actor=actor(),
+        attempt_id=launch.attempt_id,
+        browser_nonce="b" * 64,
+        session_uri=f"session://{launch.attempt_id}",
+    )
     app = FastAPI()
     install_api_conventions(app)
     app.include_router(router.router)
     app.dependency_overrides[authenticate_request] = actor
-    monkeypatch.setattr(router, "_connections", lambda request: connections)
-    path = f"/api/v1/connector-connections/{connection.id}"
-    setup = {"setup": {"scopes": ["read"]}, "browser_nonce": "b" * 64, "return_path": "/connections"}
-    async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app), base_url="https://foundation.example") as client:
-        response = await client.post(
-            path + "/setup",
-            headers={"Idempotency-Key": "http-setup"},
-            json={"expected_version": connection.version, **setup},
+    app.dependency_overrides[authenticate_mutation] = actor
+    async with service_bundle(connections._sessions, credential_protector) as (mcp, _, _):
+        runtime = SimpleNamespace(
+            connections=management(connections),
+            connector_connections=connections,
+            mcp_connections=mcp,
+            checks=ConnectionChecks(
+                connections._sessions, connections._adapters, credential_protector, mcp, clock=connections._clock
+            ),
         )
-        assert response.status_code == 200
-        launch = response.json()
-        duplicate = await client.post(
-            path + "/setup",
-            headers={"Idempotency-Key": "http-setup-another-key"},
-            json={"expected_version": connection.version, **setup},
-        )
-        assert duplicate.status_code == 409
-        assert duplicate.json()["error"]["code"] == "setup_already_started"
-        invalid_path = await client.post(
-            path + "/setup",
-            headers={"Idempotency-Key": "http-setup-invalid-path"},
-            json={"expected_version": connection.version, **setup, "return_path": "//outside.invalid/"},
-        )
-        assert invalid_path.status_code == 400
-        assert connector_backend.started == 1
-        response = await client.post(
-            "/api/v1/connector-setup/complete",
-            json={
-                "attempt_id": launch["attempt_id"],
-                "browser_nonce": setup["browser_nonce"],
-                "session_uri": f"session://{launch['attempt_id']}",
-            },
-        )
-        assert response.status_code == 200
-        current = (await client.get(path)).json()
-        assert current["status"] == "ready"
-        for index, (action, expected_status) in enumerate(
-            (("disable", "disabled"), ("enable", "ready"), ("disable", "disabled"))
-        ):
-            response = await client.post(
-                path + "/" + action,
-                headers={"Idempotency-Key": f"{action}-{index}"},
-                json={"expected_version": current["version"]},
-            )
-            assert response.status_code == 200 and response.headers.get("etag")
-            current = response.json()
-            assert current["status"] == expected_status
-
-        body = {"expected_version": current["version"], **(setup if command == "reconnect" else {})}
-        response = await client.post(path + "/" + command, headers={"Idempotency-Key": command}, json=body)
-        assert response.status_code == 200
-        result = response.json()
-        if command == "reconnect":
-            assert result["connection"]["id"] == connection.id
-            assert result["connection"]["status"] == "pending"
-            assert result["attempt_id"] != launch["attempt_id"]
-            assert connector_backend.started == 2 and not connector_backend.revoked
-        else:
-            assert result["local_status"] == "disabled" and result["remote_status"] == "succeeded"
-            assert (await client.get(path)).json()["status"] == "disabled"
-            replay = await client.post(path + "/revoke", headers={"Idempotency-Key": command}, json=body)
-            assert replay.status_code == 200 and replay.json() == result
+        monkeypatch.setattr(router, "_runtime", lambda request: runtime)
+        path = f"/api/v1/connections/{connection.id}"
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app), base_url="https://foundation.example"
+        ) as client:
+            current = (await client.get(path)).json()
+            assert current["status"] == "ready"
+            for action, expected_status in (("disable", "disabled"), ("enable", "pending"), ("check", "ready")):
+                response = await client.post(
+                    path + "/" + action,
+                    headers={"Idempotency-Key": action},
+                    json={"expected_version": current["version"]},
+                )
+                assert response.status_code == 200, response.text
+                assert response.headers.get("etag")
+                current = response.json()
+                assert current["status"] == expected_status
+            if command == "revoke":
+                body = {"expected_version": current["version"]}
+                response = await client.post(
+                    path + "/connector/revoke", headers={"Idempotency-Key": command}, json=body
+                )
+                assert response.status_code == 200, response.text
+                result = response.json()
+                assert result["local_status"] == "disabled" and result["remote_status"] == "succeeded"
+                assert (await client.get(path)).json()["status"] == "disabled"
+                replay = await client.post(path + "/connector/revoke", headers={"Idempotency-Key": command}, json=body)
+                assert replay.json() == result
+            else:
+                response = await client.delete(
+                    path, headers={"Idempotency-Key": command}, params={"expected_version": current["version"]}
+                )
+                assert response.status_code == 200, response.text
+                assert response.json()["local_status"] == "deleted"
+                assert (await client.get(path)).status_code == 404
             assert len(connector_backend.revoked) == 1
 
 
@@ -518,7 +528,7 @@ async def test_disabled_provider_stops_setup_and_releases_callback_reservation(
         expected_version=connection.version,
         setup={"scopes": ["read"]},
         browser_nonce="b" * 64,
-        return_path="/connections",
+        return_url="/connections",
     )
     await providers.set_status(
         actor=actor(),
@@ -539,7 +549,7 @@ async def test_disabled_provider_stops_setup_and_releases_callback_reservation(
             session_uri=f"session://{launch.attempt_id}",
         )
     async with connectivity_sessions() as session:
-        attempt = await session.get(ConnectorSetupAttemptRecord, launch.attempt_id)
+        attempt = await session.get(ConnectorAuthorizationRecord, launch.attempt_id)
         assert attempt is not None and attempt.status == "attached"
         assert attempt.reserved_at is None
 
@@ -573,7 +583,7 @@ async def test_worker_connector_uses_verified_binding_and_preserves_unknown_writ
     from a13n_service.connectivity.connectors.contracts import ConnectorProviderError, ConnectorToolOutcome
     from a13n_service.connectivity.execution import AttemptToolScope
     from a13n_service.connectivity.mcp.transport import RemoteTransport
-    from a13n_service.connectivity.selection_domain import ConnectorConnectionRunSelection
+    from a13n_service.connectivity.selection_domain import ConnectionRunSelection
     from a13n_service.connectivity.selection_resolution import FrozenRunConnectivity
     from a13n_service.endpoint_policy import EndpointPolicy
     from opentelemetry.sdk.trace import TracerProvider
@@ -596,10 +606,10 @@ async def test_worker_connector_uses_verified_binding_and_preserves_unknown_writ
         expected_version=connection.version,
         setup={"scopes": ["read"]},
         browser_nonce="b" * 64,
-        return_path="/settings/connectors",
+        return_url="/settings/connectors",
     )
     async with connectivity_sessions() as session:
-        attempt = await session.scalar(select(ConnectorSetupAttemptRecord))
+        attempt = await session.scalar(select(ConnectorAuthorizationRecord))
     await connections.complete_callback(
         actor=actor(), attempt_id=attempt.id, browser_nonce="b" * 64, session_uri=f"session://{attempt.id}"
     )
@@ -634,15 +644,21 @@ async def test_worker_connector_uses_verified_binding_and_preserves_unknown_writ
     policy = EndpointPolicy()
     runtime = external_runtime_factory(connector_registry, RemoteTransport(policy), policy)
     capability = await runtime._connector(
-        ConnectorConnectionRunSelection(
-            connector_connection_id=connection.id, connector_provider_id=provider.id, tools=("issues.create",)
+        ConnectionRunSelection(
+            kind="connector",
+            authorization_generation=(
+                await management(connections).get(actor=actor(), connection_id=connection.id)
+            ).authorization_generation,
+            connection_id=connection.id,
+            connector_provider_id=provider.id,
+            tools=("issues.create",),
         ),
         guard,
         AttemptToolScope(
             replace(actor(), auth_method="internal"),
             ORG_ID,
             WORKSPACE_ID,
-            FrozenRunConnectivity((), ()),
+            FrozenRunConnectivity(()),
             (),
             authorization=await execution_authorization(),
         ),
@@ -699,14 +715,12 @@ async def test_org_provider_keeps_connections_and_external_correlation_in_worksp
         0
     ].key == "github"
     first = await create_connection(connections, connector_provider_id=provider.id, idempotency_key="first")
-    second = await connections.create(
+    second = await management(connections).create(
         actor=replace(actor(), boundary_workspace_id=sibling),
         workspace_id=sibling,
         idempotency_key="second",
-        request=CreateConnectorConnectionRequest(
-            connector_provider_id=provider.id,
-            name="GitHub",
-            connector_key="github",
+        request=CreateConnectionRequest(
+            name="GitHub", source=ConnectorSource(kind="connector", provider_id=provider.id, connector_key="github")
         ),
     )
     assert first.workspace_id == WORKSPACE_ID
@@ -719,7 +733,7 @@ async def test_org_provider_keeps_connections_and_external_correlation_in_worksp
             expected_version=connection.version,
             setup={"scopes": ["read"]},
             browser_nonce="b" * 64,
-            return_path="/connections",
+            return_url="/connections",
         )
         await connections.complete_callback(
             actor=selected_actor,
@@ -730,8 +744,8 @@ async def test_org_provider_keeps_connections_and_external_correlation_in_worksp
     async with short_session(connectivity_sessions) as session:
         attempts = tuple(
             await session.scalars(
-                select(ConnectorSetupAttemptRecord).where(
-                    ConnectorSetupAttemptRecord.connector_connection_id.in_([first.id, second.id])
+                select(ConnectorAuthorizationRecord).where(
+                    ConnectorAuthorizationRecord.connection_id.in_([first.id, second.id])
                 )
             )
         )
@@ -743,7 +757,7 @@ async def test_org_provider_keeps_connections_and_external_correlation_in_worksp
             request=UpdateConnectorProviderRequest(name="Hijacked", expected_version=provider.version),
         )
 
-    current = await connections.get(actor=actor(), connection_id=first.id)
+    current = await management(connections).get(actor=actor(), connection_id=first.id)
     receipt = await connections.delete(
         actor=actor(),
         connection_id=first.id,
@@ -752,7 +766,9 @@ async def test_org_provider_keeps_connections_and_external_correlation_in_worksp
     )
     assert receipt.local_status == "deleted" and receipt.remote_status == "succeeded"
     assert (
-        await connections.get(actor=replace(actor(), boundary_workspace_id=sibling), connection_id=second.id)
+        await management(connections).get(
+            actor=replace(actor(), boundary_workspace_id=sibling), connection_id=second.id
+        )
     ).status == "ready"
 
 
@@ -769,9 +785,9 @@ async def test_disabled_connection_callback_cannot_restore_readiness(connector_s
         expected_version=connection.version,
         setup={"scopes": ["read"]},
         browser_nonce="b" * 64,
-        return_path="/connections",
+        return_url="/connections",
     )
-    disabled = await connections.set_enabled(
+    disabled = await management(connections).set_enabled(
         actor=actor(),
         connection_id=connection.id,
         expected_version=launch.connection.version,
@@ -785,15 +801,15 @@ async def test_disabled_connection_callback_cannot_restore_readiness(connector_s
             browser_nonce="b" * 64,
             session_uri=f"session://{launch.attempt_id}",
         )
-    assert (await connections.get(actor=actor(), connection_id=connection.id)).status == "disabled"
-    with pytest.raises(ConnectorError):
-        await connections.set_enabled(
-            actor=actor(),
-            connection_id=connection.id,
-            expected_version=disabled.version,
-            idempotency_key="enable-incomplete",
-            enabled=True,
-        )
+    assert (await management(connections).get(actor=actor(), connection_id=connection.id)).status == "disabled"
+    enabled = await management(connections).set_enabled(
+        actor=actor(),
+        connection_id=connection.id,
+        expected_version=disabled.version,
+        idempotency_key="enable-incomplete",
+        enabled=True,
+    )
+    assert enabled.status == "pending"
 
 
 async def test_local_delete_survives_missing_remote_binding(
@@ -811,10 +827,10 @@ async def test_local_delete_survives_missing_remote_binding(
         expected_version=connection.version,
         setup={"scopes": ["read"]},
         browser_nonce="b" * 64,
-        return_path="/connections",
+        return_url="/connections",
     )
     async with transaction(connectivity_sessions) as session:
-        attempt = await session.get(ConnectorSetupAttemptRecord, launch.attempt_id)
+        attempt = await session.get(ConnectorAuthorizationRecord, launch.attempt_id)
         await session.delete(attempt)
         # Legacy partially attached connection whose attempt evidence was lost.
         record = await session.get(ConnectorConnectionRecord, connection.id)
@@ -837,12 +853,13 @@ async def test_connection_listing_query_count_is_constant(connector_services, co
     engine = connectivity_sessions.kw["bind"].sync_engine
     counts = []
     for size in (1, 2, 3):
-        await connections.create(
+        await management(connections).create(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
             idempotency_key=f"list-{size}",
-            request=CreateConnectorConnectionRequest(
-                connector_provider_id=provider.id, name=f"Connection {size}", connector_key="github"
+            request=CreateConnectionRequest(
+                name=f"Connection {size}",
+                source=ConnectorSource(kind="connector", provider_id=provider.id, connector_key="github"),
             ),
         )
         statements = []
@@ -852,7 +869,7 @@ async def test_connection_listing_query_count_is_constant(connector_services, co
 
         event.listen(engine, "before_cursor_execute", record)
         try:
-            page = await connections.list(actor=actor(), workspace_id=WORKSPACE_ID, limit=100, cursor=None)
+            page = await management(connections).list(actor=actor(), workspace_id=WORKSPACE_ID, limit=100, cursor=None)
             assert len(page.items) == size
         finally:
             event.remove(engine, "before_cursor_execute", record)
@@ -876,7 +893,7 @@ async def test_setup_rechecks_initiator_management_authority(
         expected_version=connection.version,
         setup={"scopes": ["read"]},
         browser_nonce="b" * 64,
-        return_path="/connections",
+        return_url="/connections",
     )
     inspection = None
     if completion == "after_inspection":
@@ -918,7 +935,7 @@ async def test_verified_binding_survives_setup_history_removal(connector_service
         expected_version=connection.version,
         setup={"scopes": ["read"]},
         browser_nonce="b" * 64,
-        return_path="/connections",
+        return_url="/connections",
     )
     await connections.complete_callback(
         actor=actor(),
@@ -930,18 +947,18 @@ async def test_verified_binding_survives_setup_history_removal(connector_service
         record = await session.get(ConnectorConnectionRecord, connection.id)
         expected = connection_binding(record)
         version = record.version
-        await session.delete(await session.get(ConnectorSetupAttemptRecord, launch.attempt_id))
-    disabled = await connections.set_enabled(
+        await session.delete(await session.get(ConnectorAuthorizationRecord, launch.attempt_id))
+    disabled = await management(connections).set_enabled(
         actor=actor(), connection_id=connection.id, expected_version=version, idempotency_key="disable", enabled=False
     )
-    enabled = await connections.set_enabled(
+    enabled = await management(connections).set_enabled(
         actor=actor(),
         connection_id=connection.id,
         expected_version=disabled.version,
         idempotency_key="enable",
         enabled=True,
     )
-    assert enabled.status == "ready"
+    assert enabled.status == "pending"
     async with transaction(connectivity_sessions) as session:
         assert connection_binding(await session.get(ConnectorConnectionRecord, connection.id)) == expected
 
@@ -953,7 +970,7 @@ async def test_provider_tool_preview_needs_no_connection(connector_services, con
     assert [tool.key for tool in preview.items] == ["issues.create"]
     async with transaction(connectivity_sessions) as session:
         assert await session.scalar(select(ConnectorConnectionRecord.id)) is None
-        assert await session.scalar(select(ConnectorSetupAttemptRecord.id)) is None
+        assert await session.scalar(select(ConnectorAuthorizationRecord.id)) is None
 
 
 async def test_expired_unattached_setup_requires_action_without_a_binding(
@@ -978,7 +995,7 @@ async def test_expired_unattached_setup_requires_action_without_a_binding(
             idempotency_key="setup",
             setup={"scopes": ["read"]},
             browser_nonce="b" * 64,
-            return_path="/connections",
+            return_url="/connections",
         )
     reconciler = ConnectorReconciler(
         connectivity_sessions,
@@ -994,7 +1011,7 @@ async def test_expired_unattached_setup_requires_action_without_a_binding(
         record = await session.get(ConnectorConnectionRecord, connection.id)
         assert record.status == "action_required" and record.external_ref is None
         assert record.external_user_correlation is None
-        assert (await session.scalar(select(ConnectorSetupAttemptRecord))).status == "expired"
+        assert (await session.scalar(select(ConnectorAuthorizationRecord))).status == "expired"
 
 
 async def test_reconnect_cannot_reenable_a_previous_verified_generation(connector_services):
@@ -1008,7 +1025,7 @@ async def test_reconnect_cannot_reenable_a_previous_verified_generation(connecto
         idempotency_key="setup",
         setup={"scopes": ["read"]},
         browser_nonce="b" * 64,
-        return_path="/connections",
+        return_url="/connections",
     )
     await connections.complete_callback(
         actor=actor(),
@@ -1016,38 +1033,46 @@ async def test_reconnect_cannot_reenable_a_previous_verified_generation(connecto
         browser_nonce="b" * 64,
         session_uri=f"session://{launch.attempt_id}",
     )
-    ready = await connections.get(actor=actor(), connection_id=connection.id)
-    ready = await connections.set_enabled(
+    ready = await management(connections).get(actor=actor(), connection_id=connection.id)
+    ready = await management(connections).set_enabled(
         actor=actor(),
         connection_id=connection.id,
         expected_version=ready.version,
         idempotency_key="disable-before-reconnect",
         enabled=False,
     )
-    reconnect = await connections.reconnect(
+    ready = await management(connections).set_enabled(
+        actor=actor(),
+        connection_id=ready.id,
+        expected_version=ready.version,
+        idempotency_key="allow-reauthorization",
+        enabled=True,
+    )
+    reconnect = await connections.start_setup(
         actor=actor(),
         connection_id=connection.id,
         expected_version=ready.version,
         idempotency_key="reconnect",
         setup={"scopes": ["read"]},
         browser_nonce="b" * 64,
-        return_path="/connections",
+        return_url="/connections",
     )
-    disabled = await connections.set_enabled(
+    disabled = await management(connections).set_enabled(
         actor=actor(),
         connection_id=connection.id,
         expected_version=reconnect.connection.version,
         idempotency_key="disable",
         enabled=False,
     )
-    with pytest.raises(ConnectorError, match="no verified setup"):
-        await connections.set_enabled(
-            actor=actor(),
-            connection_id=connection.id,
-            expected_version=disabled.version,
-            idempotency_key="enable",
-            enabled=True,
-        )
+    enabled = await management(connections).set_enabled(
+        actor=actor(),
+        connection_id=connection.id,
+        expected_version=disabled.version,
+        idempotency_key="enable",
+        enabled=True,
+    )
+    assert enabled.status == "pending"
+    assert enabled.authorization_generation == reconnect.connection.authorization_generation
 
 
 @pytest.mark.anyio

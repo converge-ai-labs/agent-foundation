@@ -53,9 +53,9 @@ Manage existing membership through the Organization or Workspace `role-bindings`
 
 ## Browser OAuth callbacks
 
-Composio returns to the Console page `/connector-setup/callback`. The page removes the callback query from the address bar and posts the OAuth session, or the user’s explicit non-OAuth confirmation, with the exact attempt and original tab nonce to `/api/v1/connector-setup/complete`, using the normal Origin, session cookie, and CSRF token. Follow the [Composio setup guide](external-tools.md#connector-providers-composio) to configure the verifier and shared origin.
+Browser authorization uses the same Connection Authorization API for Console users and application Service Accounts. The initiating principal supplies an exact registered HTTPS return URL, opaque application state, and a SHA-256 completion challenge. The Service browser bridge binds the provider round trip to that tab; the application receives a short-lived receipt and completes it with the original principal and verifier. An application can keep its own user identities and Connection mapping without creating Console users.
 
-MCP providers redirect to `/api/v1/oauth/mcp/callback/{issuer_key}`. Service validates the callback and stores the authorization code, then redirects to `/mcp-setup/callback` with a short-lived receipt in the URL fragment. Console checks the original tab context and completes authorization with the signed-in User and CSRF token. Keep authorization in the same tab. Service omits query strings from its access logs; configure ingress access logs to do the same.
+Composio returns through `/connection-authorizations/browser`; MCP providers return to `/api/v1/oauth/mcp/callback/{issuer_key}` before entering the same bridge. Console receives the application handoff at `/connections/callback`, removes query material immediately, and completes with the signed-in User and CSRF token. Keep authorization in the same tab. Service omits query strings from access logs; configure ingress access logs to do the same. See [external tool authorization](external-tools.md#application-owned-users) for the API flow and return URL configuration.
 
 ## Create application keys
 

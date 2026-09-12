@@ -168,8 +168,7 @@ class AgentResolver:
                 characteristics=prepared.config.model.characteristics,
             ),
             resolved_skills=skills,
-            connector_tools=prepared.config.connector_tools,
-            mcp_tools=prepared.config.mcp_tools,
+            connection_tools=prepared.config.connection_tools,
             resolved_subagents=subagents,
         )
 

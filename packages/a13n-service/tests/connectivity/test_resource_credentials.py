@@ -5,7 +5,7 @@ from dataclasses import replace
 import pytest
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.connectors.models import ConnectorProviderRecord
-from a13n_service.connectivity.mcp.models import MCPConnectionRecord, MCPOAuthSessionRecord
+from a13n_service.connectivity.mcp.models import MCPAuthorizationRecord, MCPConnectionRecord
 from a13n_service.credentials import ResourceCredential
 from a13n_service.models.models import ModelProviderRecord
 from a13n_service.secrets import SecretProtectionError, SecretProtector
@@ -18,7 +18,7 @@ from .conftest import ACCOUNT_ID, ORG_ID, WORKSPACE_ID
 
 @pytest.mark.parametrize(
     "record_type",
-    [ModelProviderRecord, ConnectorProviderRecord, AccountRecord, MCPConnectionRecord, MCPOAuthSessionRecord],
+    [ModelProviderRecord, ConnectorProviderRecord, AccountRecord, MCPConnectionRecord, MCPAuthorizationRecord],
 )
 def test_resource_material_authenticates_owner_organization_generation_and_key(
     record_type: type[ResourceCredential],
@@ -29,8 +29,8 @@ def test_resource_material_authenticates_owner_organization_generation_and_key(
     record.organization_id = ORG_ID
     record.workspace_id = WORKSPACE_ID
     record.credential_generation = 0
-    if isinstance(record, MCPOAuthSessionRecord):
-        record.mcp_connection_id = "connection-one"
+    if isinstance(record, MCPAuthorizationRecord):
+        record.connection_id = "connection-one"
     record.replace_credential("first-secret", protector)
     encrypted = record.credential_snapshot()
     assert encrypted.decrypt(protector) == "first-secret"
@@ -62,15 +62,15 @@ def test_resource_material_authenticates_owner_organization_generation_and_key(
 
 def test_oauth_setup_cannot_move_to_another_connection() -> None:
     protector = SecretProtector(key=b"k" * 32, encryption_key_id="test")
-    record = MCPOAuthSessionRecord(
+    record = MCPAuthorizationRecord(
         id="session-one",
         organization_id=ORG_ID,
         workspace_id=WORKSPACE_ID,
-        mcp_connection_id="connection-one",
+        connection_id="connection-one",
         credential_generation=0,
     )
     record.replace_credential("pkce-verifier", protector)
-    record.mcp_connection_id = "connection-two"
+    record.connection_id = "connection-two"
     with pytest.raises(SecretProtectionError):
         record.credential_snapshot().decrypt(protector)
 

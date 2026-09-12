@@ -11,8 +11,7 @@ const commonFields = new Set([
   "model",
   "instructions",
   "skills",
-  "mcp_tools",
-  "connector_tools",
+  "connection_tools",
   "plugins",
   "secret_requirements",
 ]);
@@ -37,12 +36,7 @@ export function buildConfig(
   original: AgentConfig,
   common: Pick<
     AgentConfig,
-    | "model"
-    | "instructions"
-    | "skills"
-    | "mcp_tools"
-    | "connector_tools"
-    | "search"
+    "model" | "instructions" | "skills" | "connection_tools" | "search"
   >,
   advanced: string,
 ): AgentConfig {

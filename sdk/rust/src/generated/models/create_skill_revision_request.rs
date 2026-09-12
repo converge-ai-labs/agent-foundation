@@ -17,11 +17,11 @@ pub struct CreateSkillRevisionRequest {
     pub expected_version: i32,
 
     #[serde(rename = "source")]
-    pub source: Box<models::Source3>,
+    pub source: Box<models::Source4>,
 }
 
 impl CreateSkillRevisionRequest {
-    pub fn new(expected_version: i32, source: models::Source3) -> CreateSkillRevisionRequest {
+    pub fn new(expected_version: i32, source: models::Source4) -> CreateSkillRevisionRequest {
         CreateSkillRevisionRequest {
             expected_version,
             source: Box::new(source),

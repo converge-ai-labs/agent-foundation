@@ -4,8 +4,7 @@ import pytest
 from a13n_service.agents.domain import (
     AgentModel,
     AgentRunOverride,
-    ConnectorConnectionToolSelection,
-    MCPConnectionToolSelection,
+    ConnectionToolSelection,
     OutputSpec,
     new_agent_id,
     new_agent_revision_id,
@@ -46,8 +45,8 @@ def test_agent_settings_preserve_provider_specific_values_until_selection_valida
 @pytest.mark.parametrize(
     ("selection_type", "id_field", "identifier"),
     [
-        (ConnectorConnectionToolSelection, "connector_connection_id", "cconn_1234567890abcdef"),
-        (MCPConnectionToolSelection, "mcp_connection_id", "mcpc_1234567890abcdef"),
+        (ConnectionToolSelection, "connection_id", "cconn_1234567890abcdef"),
+        (ConnectionToolSelection, "connection_id", "mcpc_1234567890abcdef"),
     ],
 )
 def test_connection_tool_selections_are_bounded_and_unique(selection_type, id_field: str, identifier: str) -> None:

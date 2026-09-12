@@ -294,43 +294,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/connector-connections/{connection_id}": {
+  "/api/v1/connection-authorizations/{authorization_id}": {
     parameters: {
       query?: never;
       header?: never;
       path?: never;
       cookie?: never;
     };
-    /** Get Connector Connection */
-    get: operations["get_connector_connections_connection_id"];
+    /** Get Connection Authorization */
+    get: operations["get_connection_authorizations_authorization_id"];
     put?: never;
     post?: never;
-    /** Delete Connector Connection */
-    delete: operations["delete_connector_connections_connection_id"];
-    options?: never;
-    head?: never;
-    /** Update Connector Connection */
-    patch: operations["patch_connector_connections_connection_id"];
-    trace?: never;
-  };
-  "/api/v1/connector-connections/{connection_id}/reconnect": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Reconnect Connector Connection */
-    post: operations["post_connector_connections_connection_id_reconnect"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/connector-connections/{connection_id}/revoke": {
+  "/api/v1/connection-authorizations/{authorization_id}/cancel": {
     parameters: {
       query?: never;
       header?: never;
@@ -339,15 +320,15 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Revoke Connector Connection */
-    post: operations["post_connector_connections_connection_id_revoke"];
+    /** Cancel Connection Authorization */
+    post: operations["post_connection_authorizations_authorization_id_cancel"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/connector-connections/{connection_id}/setup": {
+  "/api/v1/connection-authorizations/{authorization_id}/complete": {
     parameters: {
       query?: never;
       header?: never;
@@ -356,15 +337,15 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Start Connector Connection Setup */
-    post: operations["post_connector_connections_connection_id_setup"];
+    /** Complete Connection Authorization */
+    post: operations["post_connection_authorizations_authorization_id_complete"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/connector-connections/{connection_id}/{action}": {
+  "/api/v1/connection-authorizations/{authorization_id}/launch": {
     parameters: {
       query?: never;
       header?: never;
@@ -373,8 +354,181 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Change Connector Connection Lifecycle */
-    post: operations["post_connector_connections_connection_id_action"];
+    /** Launch Connection Authorization */
+    post: operations["post_connection_authorizations_authorization_id_launch"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connection-authorizations/{authorization_id}/receive": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Receive Connection Authorization */
+    post: operations["post_connection_authorizations_authorization_id_receive"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connections/{connection_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Connection */
+    get: operations["get_connections_connection_id"];
+    put?: never;
+    post?: never;
+    /** Delete Connection */
+    delete: operations["delete_connections_connection_id"];
+    options?: never;
+    head?: never;
+    /** Update Connection */
+    patch: operations["patch_connections_connection_id"];
+    trace?: never;
+  };
+  "/api/v1/connections/{connection_id}/authorizations": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create Connection Authorization */
+    post: operations["post_connections_connection_id_authorizations"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connections/{connection_id}/check": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Check Connection */
+    post: operations["post_connections_connection_id_check"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connections/{connection_id}/connector/revoke": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Revoke Connector Authorization */
+    post: operations["post_connections_connection_id_connector_revoke"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connections/{connection_id}/disable": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Disable Connection */
+    post: operations["post_connections_connection_id_disable"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connections/{connection_id}/enable": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Enable Connection */
+    post: operations["post_connections_connection_id_enable"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connections/{connection_id}/mcp/discover": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Discover Mcp Tools */
+    post: operations["post_connections_connection_id_mcp_discover"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connections/{connection_id}/mcp/oauth-client": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Mcp Oauth Client */
+    get: operations["get_connections_connection_id_mcp_oauth_client"];
+    /** Configure Mcp Oauth Client */
+    put: operations["put_connections_connection_id_mcp_oauth_client"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connections/{connection_id}/mcp/oauth-discovery": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Discover Mcp Oauth */
+    post: operations["post_connections_connection_id_mcp_oauth_discovery"];
     delete?: never;
     options?: never;
     head?: never;
@@ -512,23 +666,6 @@ export interface paths {
     put?: never;
     /** Change Connector Provider Lifecycle */
     post: operations["post_connector_providers_connector_provider_id_action"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/connector-setup/complete": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Complete Connector Setup */
-    post: operations["post_connector_setup_complete"];
     delete?: never;
     options?: never;
     head?: never;
@@ -845,162 +982,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/mcp-connections/{connection_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Mcp Connection */
-    get: operations["get_mcp_connections_connection_id"];
-    put?: never;
-    post?: never;
-    /** Delete Mcp Connection */
-    delete: operations["delete_mcp_connections_connection_id"];
-    options?: never;
-    head?: never;
-    /** Update Mcp Connection */
-    patch: operations["patch_mcp_connections_connection_id"];
-    trace?: never;
-  };
-  "/api/v1/mcp-connections/{connection_id}/authenticate": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Authenticate Mcp Connection */
-    post: operations["post_mcp_connections_connection_id_authenticate"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/mcp-connections/{connection_id}/authorize": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Authorize Mcp Connection */
-    post: operations["post_mcp_connections_connection_id_authorize"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/mcp-connections/{connection_id}/credentials": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Replace Mcp Credentials */
-    post: operations["post_mcp_connections_connection_id_credentials"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/mcp-connections/{connection_id}/discover": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Discover Mcp Tools */
-    post: operations["post_mcp_connections_connection_id_discover"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/mcp-connections/{connection_id}/oauth-client": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Mcp Oauth Client */
-    get: operations["get_mcp_connections_connection_id_oauth_client"];
-    /** Configure Mcp Oauth Client */
-    put: operations["put_mcp_connections_connection_id_oauth_client"];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/mcp-connections/{connection_id}/oauth-discovery": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Discover Mcp Oauth */
-    post: operations["post_mcp_connections_connection_id_oauth_discovery"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/mcp-connections/{connection_id}/reconnect": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Reconnect Mcp Connection */
-    post: operations["post_mcp_connections_connection_id_reconnect"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/mcp-connections/{connection_id}/{action}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Change Mcp Connection Lifecycle */
-    post: operations["post_mcp_connections_connection_id_action"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/api/v1/model-provider-types": {
     parameters: {
       query?: never;
@@ -1029,23 +1010,6 @@ export interface paths {
     get: operations["get_oauth_mcp_client_metadata_issuer_key_json"];
     put?: never;
     post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/oauth/mcp/complete": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Complete Mcp Oauth */
-    post: operations["post_oauth_mcp_complete"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2465,18 +2429,18 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace}/connector-connections": {
+  "/api/v1/workspaces/{workspace}/connections": {
     parameters: {
       query?: never;
       header?: never;
       path?: never;
       cookie?: never;
     };
-    /** List Connector Connections */
-    get: operations["get_workspaces_workspace_connector_connections"];
+    /** List Connections */
+    get: operations["get_workspaces_workspace_connections"];
     put?: never;
-    /** Create Connector Connection */
-    post: operations["post_workspaces_workspace_connector_connections"];
+    /** Create Connection */
+    post: operations["post_workspaces_workspace_connections"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2637,24 +2601,6 @@ export interface paths {
     put?: never;
     /** Invite To Workspace */
     post: operations["post_workspaces_workspace_invitations"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace}/mcp-connections": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Mcp Connections */
-    get: operations["get_workspaces_workspace_mcp_connections"];
-    put?: never;
-    /** Create Mcp Connection */
-    post: operations["post_workspaces_workspace_mcp_connections"];
     delete?: never;
     options?: never;
     head?: never;
@@ -3400,21 +3346,16 @@ export interface components {
        */
       client_tools?: components["schemas"]["ClientToolDefinition"][];
       /**
-       * Connector Tools
+       * Connection Tools
        * @default []
        */
-      connector_tools?: components["schemas"]["ConnectorConnectionToolSelection"][];
+      connection_tools?: components["schemas"]["ConnectionToolSelection"][];
       input_adapter: components["schemas"]["InputAdapterConfig"];
       /**
        * Instructions
        * @default
        */
       instructions?: string;
-      /**
-       * Mcp Tools
-       * @default []
-       */
-      mcp_tools?: components["schemas"]["MCPConnectionToolSelection"][];
       model: components["schemas"]["AgentModel"];
       output_spec?: components["schemas"]["OutputSpec"] | null;
       /**
@@ -3456,21 +3397,16 @@ export interface components {
        */
       client_tools?: components["schemas"]["ClientToolDefinition"][];
       /**
-       * Connector Tools
+       * Connection Tools
        * @default []
        */
-      connector_tools?: components["schemas"]["ConnectorConnectionToolSelection"][];
+      connection_tools?: components["schemas"]["ConnectionToolSelection"][];
       input_adapter: components["schemas"]["InputAdapterConfig"];
       /**
        * Instructions
        * @default
        */
       instructions?: string;
-      /**
-       * Mcp Tools
-       * @default []
-       */
-      mcp_tools?: components["schemas"]["MCPConnectionToolSelection"][];
       model: components["schemas"]["AgentModel"];
       output_spec?: components["schemas"]["OutputSpec"] | null;
       /**
@@ -3545,10 +3481,10 @@ export interface components {
       /** Config Digest */
       config_digest: string;
       /**
-       * Connector Tools
+       * Connection Tools
        * @default []
        */
-      connector_tools?: components["schemas"]["ConnectorConnectionToolSelection"][];
+      connection_tools?: components["schemas"]["ConnectionToolSelection"][];
       /** Content Digest */
       content_digest: string;
       /**
@@ -3559,11 +3495,6 @@ export interface components {
       created_by: components["schemas"]["ActorRef"];
       /** Id */
       id: string;
-      /**
-       * Mcp Tools
-       * @default []
-       */
-      mcp_tools?: components["schemas"]["MCPConnectionToolSelection"][];
       /** Organization Id */
       organization_id: string;
       resolved_model: components["schemas"]["ResolvedAgentModel"];
@@ -3594,13 +3525,11 @@ export interface components {
     "AgentRunOverride-Input": {
       /** Client Tools */
       client_tools?: components["schemas"]["ClientToolDefinition"][] | null;
-      /** Connector Tools */
-      connector_tools?:
-        components["schemas"]["ConnectorConnectionToolSelection"][] | null;
+      /** Connection Tools */
+      connection_tools?:
+        components["schemas"]["ConnectionToolSelection"][] | null;
       /** Instructions */
       instructions?: string | null;
-      /** Mcp Tools */
-      mcp_tools?: components["schemas"]["MCPConnectionToolSelection"][] | null;
       model?: components["schemas"]["ModelOverride"] | null;
       output_spec?: components["schemas"]["OutputSpec"] | null;
       /** Plugins */
@@ -3618,13 +3547,11 @@ export interface components {
     "AgentRunOverride-Output": {
       /** Client Tools */
       client_tools?: components["schemas"]["ClientToolDefinition"][] | null;
-      /** Connector Tools */
-      connector_tools?:
-        components["schemas"]["ConnectorConnectionToolSelection"][] | null;
+      /** Connection Tools */
+      connection_tools?:
+        components["schemas"]["ConnectionToolSelection"][] | null;
       /** Instructions */
       instructions?: string | null;
-      /** Mcp Tools */
-      mcp_tools?: components["schemas"]["MCPConnectionToolSelection"][] | null;
       model?: components["schemas"]["ModelOverride"] | null;
       output_spec?: components["schemas"]["OutputSpec"] | null;
       /** Plugins */
@@ -3824,6 +3751,59 @@ export interface components {
       /** User Id */
       user_id: string;
     };
+    /** Authorization */
+    Authorization: {
+      /** Connection Id */
+      connection_id: string;
+      /** Error Code */
+      error_code?: string | null;
+      /**
+       * Expires At
+       * Format: date-time
+       */
+      expires_at: string;
+      /** Id */
+      id: string;
+      next_action?: components["schemas"]["AuthorizationAction"] | null;
+      /**
+       * Outcome Unknown
+       * @default false
+       */
+      outcome_unknown?: boolean;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status:
+        | "preparing"
+        | "awaiting_user"
+        | "awaiting_completion"
+        | "processing"
+        | "completed"
+        | "failed"
+        | "expired"
+        | "cancelled";
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+    };
+    /** AuthorizationAction */
+    AuthorizationAction: {
+      /**
+       * Type
+       * @enum {string}
+       */
+      type: "open_url" | "check_connection" | "restart";
+      /** Url */
+      url?: string | null;
+    };
+    /** AuthorizationRedirect */
+    AuthorizationRedirect: {
+      /** Url */
+      url: string;
+    };
     /** BinaryContent */
     BinaryContent: {
       /** @default auto */
@@ -3969,14 +3949,12 @@ export interface components {
       /** Next Cursor */
       next_cursor?: string | null;
     };
-    /** CompleteConnectorSetupRequest */
-    CompleteConnectorSetupRequest: {
-      /** Attempt Id */
-      attempt_id: string;
-      /** Browser Nonce */
-      browser_nonce: string;
-      /** Session Uri */
-      session_uri?: string | null;
+    /** CompleteAuthorizationRequest */
+    CompleteAuthorizationRequest: {
+      /** Completion Verifier */
+      completion_verifier: string;
+      /** Receipt */
+      receipt: string;
     };
     /** CompleteEmailChangeRequest */
     CompleteEmailChangeRequest: {
@@ -3985,13 +3963,6 @@ export interface components {
        * Format: password
        */
       token: string;
-    };
-    /** CompleteMCPOAuthRequest */
-    CompleteMCPOAuthRequest: {
-      /** Receipt */
-      receipt: string;
-      /** State */
-      state: string;
     };
     /** CompletePasswordResetRequest */
     CompletePasswordResetRequest: {
@@ -4023,6 +3994,65 @@ export interface components {
       /** Expected Version */
       expected_version: number;
     };
+    /** Connection */
+    Connection: {
+      /** Authorization Generation */
+      authorization_generation: number;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      created_by: components["schemas"]["PrincipalRef"];
+      /** Credential Configured */
+      credential_configured: boolean;
+      /** Id */
+      id: string;
+      last_check?: components["schemas"]["ConnectionCheck"] | null;
+      /** Name */
+      name: string;
+      /** Organization Id */
+      organization_id: string;
+      /** Safe Metadata */
+      safe_metadata?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+      /** Source */
+      source:
+        | components["schemas"]["ConnectorSource"]
+        | components["schemas"]["MCPSource"];
+      status: components["schemas"]["ConnectionStatus"];
+      status_reason?: components["schemas"]["ConnectionStatusReason"] | null;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /** Version */
+      version: number;
+      /** Workspace Id */
+      workspace_id: string;
+    };
+    /** ConnectionCheck */
+    ConnectionCheck: {
+      /**
+       * Checked At
+       * Format: date-time
+       */
+      checked_at: string;
+      /** Error Code */
+      error_code?: string | null;
+      /**
+       * Scope
+       * @enum {string}
+       */
+      scope: "provider_account" | "mcp_discovery";
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "passed" | "action_required" | "unavailable";
+    };
     /** ConnectionCleanupReceipt */
     ConnectionCleanupReceipt: {
       /** Connection Id */
@@ -4038,12 +4068,52 @@ export interface components {
        */
       remote_status: "not_required" | "succeeded" | "failed" | "unknown";
     };
+    /** ConnectionCollection */
+    ConnectionCollection: {
+      /** Items */
+      items: components["schemas"]["Connection"][];
+      /** Next Cursor */
+      next_cursor?: string | null;
+    };
+    /** ConnectionCommandRequest */
+    ConnectionCommandRequest: {
+      /** Expected Version */
+      expected_version: number;
+    };
+    /**
+     * ConnectionStatus
+     * @enum {string}
+     */
+    ConnectionStatus: "pending" | "ready" | "action_required" | "disabled";
+    /**
+     * ConnectionStatusReason
+     * @enum {string}
+     */
+    ConnectionStatusReason: "reauthorization_required" | "incompatible";
+    /** ConnectionToolSelection */
+    ConnectionToolSelection: {
+      /** Connection Id */
+      connection_id: string;
+      /**
+       * Defer Loading
+       * @default false
+       */
+      defer_loading?: boolean;
+      /** Tools */
+      tools?: string[] | null;
+    };
     /** Connector */
     Connector: {
       /** Authentication Methods */
       authentication_methods: string[];
       /** Connector Provider Id */
       connector_provider_id: string;
+      /** Credential Schemas */
+      credential_schemas?: {
+        [key: string]: {
+          [key: string]: components["schemas"]["JsonValue"];
+        };
+      };
       /** Description */
       description?: string | null;
       /** Key */
@@ -4067,77 +4137,6 @@ export interface components {
       next_cursor?: string | null;
       /** Refreshed At */
       refreshed_at?: string | null;
-    };
-    /** ConnectorConnection */
-    ConnectorConnection: {
-      /** Connector Key */
-      connector_key: string;
-      /** Connector Provider Id */
-      connector_provider_id: string;
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      created_by: components["schemas"]["PrincipalRef"];
-      /** Id */
-      id: string;
-      /** Name */
-      name: string;
-      /** Organization Id */
-      organization_id: string;
-      /** Safe Metadata */
-      safe_metadata: {
-        [key: string]: components["schemas"]["JsonValue"];
-      };
-      status: components["schemas"]["ConnectorConnectionStatus"];
-      status_reason:
-        components["schemas"]["ConnectorConnectionStatusReason"] | null;
-      /**
-       * Updated At
-       * Format: date-time
-       */
-      updated_at: string;
-      /** Version */
-      version: number;
-      /** Workspace Id */
-      workspace_id: string;
-    };
-    /** ConnectorConnectionCollection */
-    ConnectorConnectionCollection: {
-      /** Items */
-      items: components["schemas"]["ConnectorConnection"][];
-      /** Next Cursor */
-      next_cursor?: string | null;
-    };
-    /** ConnectorConnectionCommandRequest */
-    ConnectorConnectionCommandRequest: {
-      /** Expected Version */
-      expected_version: number;
-    };
-    /**
-     * ConnectorConnectionStatus
-     * @enum {string}
-     */
-    ConnectorConnectionStatus:
-      "pending" | "ready" | "action_required" | "disabled";
-    /**
-     * ConnectorConnectionStatusReason
-     * @enum {string}
-     */
-    ConnectorConnectionStatusReason:
-      "reauthorization_required" | "incompatible";
-    /** ConnectorConnectionToolSelection */
-    ConnectorConnectionToolSelection: {
-      /** Connector Connection Id */
-      connector_connection_id: string;
-      /**
-       * Defer Loading
-       * @default false
-       */
-      defer_loading?: boolean;
-      /** Tools */
-      tools?: string[] | null;
     };
     /** ConnectorProvider */
     ConnectorProvider: {
@@ -4233,29 +4232,17 @@ export interface components {
       /** Verified Access */
       verified_access: ("catalog_read" | "account_read")[];
     };
-    /** ConnectorSetupCompletion */
-    ConnectorSetupCompletion: {
-      /** Return Path */
-      return_path: string;
-    };
-    /** ConnectorSetupLaunch */
-    ConnectorSetupLaunch: {
-      /** Attempt Id */
-      attempt_id: string;
-      completion_method: components["schemas"]["SetupCompletionMethod"];
-      connection: components["schemas"]["ConnectorConnection"];
+    /** ConnectorSource */
+    ConnectorSource: {
+      /** Connector Key */
+      connector_key: string;
       /**
-       * Expires At
-       * Format: date-time
-       */
-      expires_at: string;
-      /** Redirect Url */
-      redirect_url?: string | null;
-      /**
-       * Status
+       * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      status: "pending" | "completed" | "failed" | "expired";
+      kind: "connector";
+      /** Provider Id */
+      provider_id: string;
     };
     /** ConnectorTool */
     ConnectorTool: {
@@ -4377,14 +4364,38 @@ export interface components {
       /** Expected Version */
       expected_version: number;
     };
-    /** CreateConnectorConnectionRequest */
-    CreateConnectorConnectionRequest: {
-      /** Connector Key */
-      connector_key: string;
-      /** Connector Provider Id */
-      connector_provider_id: string;
+    /** CreateAuthorizationRequest */
+    CreateAuthorizationRequest: {
+      /** Completion Challenge */
+      completion_challenge?: string | null;
+      /** Credentials */
+      credentials?: {
+        [key: string]: string;
+      } | null;
+      /** Expected Version */
+      expected_version: number;
+      /**
+       * Method
+       * @enum {string}
+       */
+      method: "browser" | "credentials" | "client_credentials";
+      /** Options */
+      options?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+      /** Return Url */
+      return_url?: string | null;
+      /** State */
+      state?: string | null;
+    };
+    /** CreateConnectionRequest */
+    CreateConnectionRequest: {
       /** Name */
       name: string;
+      /** Source */
+      source:
+        | components["schemas"]["ConnectorSource"]
+        | components["schemas"]["MCPSource"];
     };
     /** CreateConnectorProviderRequest */
     CreateConnectorProviderRequest: {
@@ -4429,19 +4440,6 @@ export interface components {
       expires_at?: string | null;
       /** Name */
       name: string;
-    };
-    /** CreateMCPConnectionRequest */
-    CreateMCPConnectionRequest: {
-      auth_mode: components["schemas"]["MCPAuthMode"];
-      /** Endpoint Url */
-      endpoint_url: string;
-      /** Name */
-      name: string;
-      /**
-       * Static Header Names
-       * @default []
-       */
-      static_header_names?: string[];
     };
     /** CreateModelProviderRequest */
     CreateModelProviderRequest: {
@@ -5253,11 +5251,9 @@ export interface components {
     };
     /** InputOverride */
     InputOverride: {
-      /** Connector Tools */
-      connector_tools?:
-        components["schemas"]["ConnectorConnectionToolSelection"][] | null;
-      /** Mcp Tools */
-      mcp_tools?: components["schemas"]["MCPConnectionToolSelection"][] | null;
+      /** Connection Tools */
+      connection_tools?:
+        components["schemas"]["ConnectionToolSelection"][] | null;
       model?: components["schemas"]["ModelOverride"] | null;
       /** Skills */
       skills?: components["schemas"]["SkillSelection"][] | null;
@@ -5397,6 +5393,13 @@ export interface components {
     };
     /** JsonValue */
     JsonValue: unknown;
+    /** LaunchAuthorizationRequest */
+    LaunchAuthorizationRequest: {
+      /** Browser Nonce */
+      browser_nonce: string;
+      /** Token */
+      token: string;
+    };
     /**
      * LifecycleEntityType
      * @enum {string}
@@ -5488,29 +5491,6 @@ export interface components {
       session: components["schemas"]["AuthSession"];
       user: components["schemas"]["User"];
     };
-    /**
-     * MCPAuthMode
-     * @enum {string}
-     */
-    MCPAuthMode: "none" | "bearer" | "oauth" | "static_headers";
-    /** MCPAuthorizationLaunch */
-    MCPAuthorizationLaunch: {
-      /** Authorization Url */
-      authorization_url: string;
-      /**
-       * Expires At
-       * Format: date-time
-       */
-      expires_at: string;
-      /** Id */
-      id: string;
-      /**
-       * Status
-       * @default pending
-       * @constant
-       */
-      status?: "pending";
-    };
     /** MCPClientMetadata */
     MCPClientMetadata: {
       /** Client Id */
@@ -5538,75 +5518,6 @@ export interface components {
        * @default none
        */
       token_endpoint_auth_method?: string;
-    };
-    /** MCPConnection */
-    MCPConnection: {
-      auth_mode: components["schemas"]["MCPAuthMode"];
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      created_by: components["schemas"]["PrincipalRef"];
-      /** Credential Configured */
-      credential_configured: boolean;
-      /** Credential Generation */
-      credential_generation: number;
-      /** Endpoint Url */
-      endpoint_url: string;
-      /** Id */
-      id: string;
-      /** Name */
-      name: string;
-      /** Organization Id */
-      organization_id: string;
-      /** Static Header Names */
-      static_header_names: string[];
-      status: components["schemas"]["MCPConnectionStatus"];
-      status_reason: components["schemas"]["MCPConnectionStatusReason"] | null;
-      /**
-       * Updated At
-       * Format: date-time
-       */
-      updated_at: string;
-      /** Version */
-      version: number;
-      /** Workspace Id */
-      workspace_id: string;
-    };
-    /** MCPConnectionCollection */
-    MCPConnectionCollection: {
-      /** Items */
-      items: components["schemas"]["MCPConnection"][];
-      /** Next Cursor */
-      next_cursor?: string | null;
-    };
-    /** MCPConnectionCommandRequest */
-    MCPConnectionCommandRequest: {
-      /** Expected Version */
-      expected_version: number;
-    };
-    /**
-     * MCPConnectionStatus
-     * @enum {string}
-     */
-    MCPConnectionStatus: "pending" | "ready" | "action_required" | "disabled";
-    /**
-     * MCPConnectionStatusReason
-     * @enum {string}
-     */
-    MCPConnectionStatusReason: "reauthorization_required" | "incompatible";
-    /** MCPConnectionToolSelection */
-    MCPConnectionToolSelection: {
-      /**
-       * Defer Loading
-       * @default false
-       */
-      defer_loading?: boolean;
-      /** Mcp Connection Id */
-      mcp_connection_id: string;
-      /** Tools */
-      tools?: string[] | null;
     };
     /** MCPOAuthClientConfiguration */
     MCPOAuthClientConfiguration: {
@@ -5671,6 +5582,26 @@ export interface components {
       token_endpoint_auth_methods_supported: (
         "none" | "client_secret_basic" | "client_secret_post"
       )[];
+    };
+    /** MCPSource */
+    MCPSource: {
+      /**
+       * Auth Mode
+       * @enum {string}
+       */
+      auth_mode: "none" | "bearer" | "oauth" | "static_headers";
+      /** Endpoint Url */
+      endpoint_url: string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      kind: "mcp";
+      /**
+       * Static Header Names
+       * @default []
+       */
+      static_header_names?: string[];
     };
     /** MCPTool */
     MCPTool: {
@@ -6397,18 +6328,12 @@ export interface components {
     } & {
       [key: string]: unknown;
     };
-    /** ReconnectConnectorConnectionRequest */
-    ReconnectConnectorConnectionRequest: {
+    /** ReceiveAuthorizationRequest */
+    ReceiveAuthorizationRequest: {
       /** Browser Nonce */
-      browser_nonce?: string | null;
-      /** Expected Version */
-      expected_version: number;
-      /** Return Path */
-      return_path: string;
-      /** Setup */
-      setup: {
-        [key: string]: components["schemas"]["JsonValue"];
-      };
+      browser_nonce: string;
+      /** Session Uri */
+      session_uri?: string | null;
     };
     /** RegisterEnvironmentRequest */
     RegisterEnvironmentRequest: {
@@ -6467,17 +6392,6 @@ export interface components {
       /** Credential */
       credential: {
         [key: string]: components["schemas"]["JsonValue"];
-      } | null;
-    };
-    /** ReplaceMCPCredentialsRequest */
-    ReplaceMCPCredentialsRequest: {
-      /** Bearer */
-      bearer?: string | null;
-      /** Expected Version */
-      expected_version: number;
-      /** Static Headers */
-      static_headers?: {
-        [key: string]: string;
       } | null;
     };
     /** ReplaceTargetRequest */
@@ -7192,12 +7106,6 @@ export interface components {
        */
       role: "member" | "viewer" | "runner" | "builder" | "admin";
     };
-    /**
-     * SetupCompletionMethod
-     * @enum {string}
-     */
-    SetupCompletionMethod:
-      "polling" | "oauth_verifier" | "browser_confirmation";
     /** Skill */
     Skill: {
       /**
@@ -7388,19 +7296,6 @@ export interface components {
       upload_id: string;
       /** Workspace Id */
       workspace_id: string;
-    };
-    /** StartConnectorConnectionSetupRequest */
-    StartConnectorConnectionSetupRequest: {
-      /** Browser Nonce */
-      browser_nonce?: string | null;
-      /** Expected Version */
-      expected_version: number;
-      /** Return Path */
-      return_path: string;
-      /** Setup */
-      setup: {
-        [key: string]: components["schemas"]["JsonValue"];
-      };
     };
     /** StartRunRequest */
     StartRunRequest: {
@@ -7913,12 +7808,12 @@ export interface components {
       /** Name */
       name?: string | null;
     };
-    /** UpdateConnectorConnectionRequest */
-    UpdateConnectorConnectionRequest: {
+    /** UpdateConnectionRequest */
+    UpdateConnectionRequest: {
       /** Expected Version */
       expected_version: number;
       /** Name */
-      name?: string | null;
+      name: string;
     };
     /** UpdateConnectorProviderRequest */
     UpdateConnectorProviderRequest: {
@@ -7948,13 +7843,6 @@ export interface components {
     UpdateHookSubscriptionStateRequest: {
       /** Enabled */
       enabled: boolean;
-    };
-    /** UpdateMCPConnectionRequest */
-    UpdateMCPConnectionRequest: {
-      /** Expected Version */
-      expected_version: number;
-      /** Name */
-      name: string;
     };
     /** UpdateModelProviderRequest */
     UpdateModelProviderRequest: {
@@ -9351,12 +9239,12 @@ export interface operations {
       };
     };
   };
-  get_connector_connections_connection_id: {
+  get_connection_authorizations_authorization_id: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        connection_id: string;
+        authorization_id: string;
       };
       cookie?: never;
     };
@@ -9369,7 +9257,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ConnectorConnection"];
+          "application/json": components["schemas"]["Authorization"];
         };
       };
       /** @description Invalid request. */
@@ -9395,7 +9283,239 @@ export interface operations {
       };
     };
   };
-  delete_connector_connections_connection_id: {
+  post_connection_authorizations_authorization_id_cancel: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        authorization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Authorization"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_connection_authorizations_authorization_id_complete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        authorization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CompleteAuthorizationRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Authorization"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_connection_authorizations_authorization_id_launch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        authorization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["LaunchAuthorizationRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuthorizationRedirect"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_connection_authorizations_authorization_id_receive: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        authorization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ReceiveAuthorizationRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuthorizationRedirect"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_connections_connection_id: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Connection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  delete_connections_connection_id: {
     parameters: {
       query: {
         expected_version: number;
@@ -9443,7 +9563,7 @@ export interface operations {
       };
     };
   };
-  patch_connector_connections_connection_id: {
+  patch_connections_connection_id: {
     parameters: {
       query?: never;
       header?: never;
@@ -9454,7 +9574,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["UpdateConnectorConnectionRequest"];
+        "application/json": components["schemas"]["UpdateConnectionRequest"];
       };
     };
     responses: {
@@ -9465,7 +9585,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ConnectorConnection"];
+          "application/json": components["schemas"]["Connection"];
         };
       };
       /** @description Invalid request. */
@@ -9491,7 +9611,7 @@ export interface operations {
       };
     };
   };
-  post_connector_connections_connection_id_reconnect: {
+  post_connections_connection_id_authorizations: {
     parameters: {
       query?: never;
       header: {
@@ -9504,18 +9624,18 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["ReconnectConnectorConnectionRequest"];
+        "application/json": components["schemas"]["CreateAuthorizationRequest"];
       };
     };
     responses: {
       /** @description Successful Response */
-      200: {
+      201: {
         headers: {
           "X-Request-ID"?: string;
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ConnectorSetupLaunch"];
+          "application/json": components["schemas"]["Authorization"];
         };
       };
       /** @description Invalid request. */
@@ -9541,7 +9661,55 @@ export interface operations {
       };
     };
   };
-  post_connector_connections_connection_id_revoke: {
+  post_connections_connection_id_check: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ConnectionCommandRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Connection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_connections_connection_id_connector_revoke: {
     parameters: {
       query?: never;
       header: {
@@ -9554,7 +9722,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["ConnectorConnectionCommandRequest"];
+        "application/json": components["schemas"]["ConnectionCommandRequest"];
       };
     };
     responses: {
@@ -9591,7 +9759,7 @@ export interface operations {
       };
     };
   };
-  post_connector_connections_connection_id_setup: {
+  post_connections_connection_id_disable: {
     parameters: {
       query?: never;
       header: {
@@ -9604,7 +9772,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["StartConnectorConnectionSetupRequest"];
+        "application/json": components["schemas"]["ConnectionCommandRequest"];
       };
     };
     responses: {
@@ -9615,7 +9783,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ConnectorSetupLaunch"];
+          "application/json": components["schemas"]["Connection"];
         };
       };
       /** @description Invalid request. */
@@ -9641,7 +9809,7 @@ export interface operations {
       };
     };
   };
-  post_connector_connections_connection_id_action: {
+  post_connections_connection_id_enable: {
     parameters: {
       query?: never;
       header: {
@@ -9649,13 +9817,12 @@ export interface operations {
       };
       path: {
         connection_id: string;
-        action: "enable" | "disable";
       };
       cookie?: never;
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["ConnectorConnectionCommandRequest"];
+        "application/json": components["schemas"]["ConnectionCommandRequest"];
       };
     };
     responses: {
@@ -9666,7 +9833,192 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ConnectorConnection"];
+          "application/json": components["schemas"]["Connection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_connections_connection_id_mcp_discover: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ConnectionCommandRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MCPToolCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_connections_connection_id_mcp_oauth_client: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json":
+            components["schemas"]["MCPOAuthClientConfiguration"] | null;
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  put_connections_connection_id_mcp_oauth_client: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ConfigureMCPOAuthClientRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Connection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_connections_connection_id_mcp_oauth_discovery: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MCPOAuthDiscovery"];
         };
       };
       /** @description Invalid request. */
@@ -10081,52 +10433,6 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ConnectorProvider"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  post_connector_setup_complete: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CompleteConnectorSetupRequest"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ConnectorSetupCompletion"];
         };
       };
       /** @description Invalid request. */
@@ -11160,582 +11466,6 @@ export interface operations {
       };
     };
   };
-  get_mcp_connections_connection_id: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        connection_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MCPConnection"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  delete_mcp_connections_connection_id: {
-    parameters: {
-      query: {
-        expected_version: number;
-      };
-      header: {
-        "Idempotency-Key": string;
-      };
-      path: {
-        connection_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ConnectionCleanupReceipt"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  patch_mcp_connections_connection_id: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        connection_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["UpdateMCPConnectionRequest"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MCPConnection"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  post_mcp_connections_connection_id_authenticate: {
-    parameters: {
-      query?: never;
-      header: {
-        "Idempotency-Key": string;
-      };
-      path: {
-        connection_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["MCPConnectionCommandRequest"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MCPConnection"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  post_mcp_connections_connection_id_authorize: {
-    parameters: {
-      query?: never;
-      header: {
-        "Idempotency-Key": string;
-      };
-      path: {
-        connection_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["MCPConnectionCommandRequest"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MCPAuthorizationLaunch"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  post_mcp_connections_connection_id_credentials: {
-    parameters: {
-      query?: never;
-      header: {
-        "Idempotency-Key": string;
-      };
-      path: {
-        connection_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ReplaceMCPCredentialsRequest"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MCPConnection"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  post_mcp_connections_connection_id_discover: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        connection_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["MCPConnectionCommandRequest"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MCPToolCollection"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  get_mcp_connections_connection_id_oauth_client: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        connection_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json":
-            components["schemas"]["MCPOAuthClientConfiguration"] | null;
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  put_mcp_connections_connection_id_oauth_client: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        connection_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ConfigureMCPOAuthClientRequest"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MCPConnection"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  post_mcp_connections_connection_id_oauth_discovery: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        connection_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MCPOAuthDiscovery"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  post_mcp_connections_connection_id_reconnect: {
-    parameters: {
-      query?: never;
-      header: {
-        "Idempotency-Key": string;
-      };
-      path: {
-        connection_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["MCPConnectionCommandRequest"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MCPConnection"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  post_mcp_connections_connection_id_action: {
-    parameters: {
-      query?: never;
-      header: {
-        "Idempotency-Key": string;
-      };
-      path: {
-        connection_id: string;
-        action: "enable" | "disable";
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["MCPConnectionCommandRequest"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MCPConnection"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
   get_model_provider_types: {
     parameters: {
       query?: never;
@@ -11787,52 +11517,6 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["MCPClientMetadata"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  post_oauth_mcp_complete: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CompleteMCPOAuthRequest"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MCPConnection"];
         };
       };
       /** @description Invalid request. */
@@ -17349,7 +17033,7 @@ export interface operations {
       };
     };
   };
-  get_workspaces_workspace_connector_connections: {
+  get_workspaces_workspace_connections: {
     parameters: {
       query?: {
         limit?: number;
@@ -17370,7 +17054,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ConnectorConnectionCollection"];
+          "application/json": components["schemas"]["ConnectionCollection"];
         };
       };
       /** @description Invalid request. */
@@ -17396,7 +17080,7 @@ export interface operations {
       };
     };
   };
-  post_workspaces_workspace_connector_connections: {
+  post_workspaces_workspace_connections: {
     parameters: {
       query?: never;
       header: {
@@ -17409,7 +17093,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["CreateConnectorConnectionRequest"];
+        "application/json": components["schemas"]["CreateConnectionRequest"];
       };
     };
     responses: {
@@ -17420,7 +17104,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ConnectorConnection"];
+          "application/json": components["schemas"]["Connection"];
         };
       };
       /** @description Invalid request. */
@@ -18187,103 +17871,6 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["InvitationDelivery"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  get_workspaces_workspace_mcp_connections: {
-    parameters: {
-      query?: {
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        workspace: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MCPConnectionCollection"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  post_workspaces_workspace_mcp_connections: {
-    parameters: {
-      query?: never;
-      header: {
-        "Idempotency-Key": string;
-      };
-      path: {
-        workspace: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CreateMCPConnectionRequest"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MCPConnection"];
         };
       };
       /** @description Invalid request. */

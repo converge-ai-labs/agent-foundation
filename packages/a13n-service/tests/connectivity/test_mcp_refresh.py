@@ -6,16 +6,18 @@ from urllib.parse import parse_qs, urlsplit
 
 import httpx2
 import pytest
+from a13n_service.connectivity.connections.domain import CreateConnectionRequest, MCPSource
 from a13n_service.connectivity.mcp.management import require_connection
 from a13n_service.storage import transaction
 
 from .conftest import NOW, WORKSPACE_ID, actor
+from .connection_helpers import management, mcp_checks
 from .test_mcp_service import (
     MCP_ENDPOINT,
-    CreateMCPConnectionRequest,
     MCPAuthMode,
     RemoteServer,
     capture_receipt,
+    stored_generation,
 )
 from .test_mcp_service import (
     mcp_services as mcp_services,
@@ -27,11 +29,13 @@ from .test_mcp_service import (
 
 async def _authorize_connection(mcp_services):
     connections, oauth, _ = mcp_services
-    created = await connections.create(
+    created = await management(connections).create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="expired",
-        request=CreateMCPConnectionRequest(name="Expired", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.oauth),
+        request=CreateConnectionRequest(
+            name="Expired", source=MCPSource(kind="mcp", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.oauth)
+        ),
     )
     launch = await oauth.authorize(
         actor=actor(),
@@ -61,14 +65,13 @@ async def test_reconnect_refreshes_expired_credentials_before_pending_discovery(
 ):
     ready = await _expired_connection(mcp_services, connectivity_sessions, credential_protector)
     connections, _, remote = mcp_services
-    result = await connections.reconnect(
+    result = await mcp_checks(connections).check(
         actor=actor(),
         connection_id=ready.id,
         expected_version=ready.version,
-        idempotency_key="reconnect",
     )
     assert result.status == "ready"
-    assert await connections.get(actor=actor(), connection_id=result.id) == result
+    assert await management(connections).get(actor=actor(), connection_id=result.id) == result
     assert sum(request.url.path == "/token" for request in remote.requests) == 1
     assert all(request.headers.get("authorization") != "Bearer expired-token" for request in remote.requests)
     assert (await oauth_refresh.current(ready.id)).headers == {"Authorization": "Bearer refreshed-oauth-secret"}
@@ -90,12 +93,14 @@ async def test_refresh_transport_failure_preserves_only_definitely_unsent_creden
         return original(self, request)
 
     monkeypatch.setattr(RemoteServer, "__call__", fail_token)
-    before = await connections.get(actor=actor(), connection_id=ready.id)
+    before = await management(connections).get(actor=actor(), connection_id=ready.id)
+    before_generation = await stored_generation(connections, before.id)
     assert await oauth_refresh.ensure_current(ready.id) is False
-    current = await connections.get(actor=actor(), connection_id=ready.id)
+    current = await management(connections).get(actor=actor(), connection_id=ready.id)
     unsent = failure in {httpx2.ConnectError, httpx2.ConnectTimeout, httpx2.PoolTimeout}
     assert current.status == ("ready" if unsent else "action_required")
-    assert current.credential_generation == before.credential_generation
+    assert current.authorization_generation == before.authorization_generation
+    assert await stored_generation(connections, before.id) == before_generation
     async with connectivity_sessions() as session:
         connection = await require_connection(session, ready.id)
         assert connection.refresh_claim_owner is None

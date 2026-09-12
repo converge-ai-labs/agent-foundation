@@ -6,6 +6,9 @@ from dataclasses import dataclass
 
 from a13n_service.connectivity.accounts.service import AccountService
 from a13n_service.connectivity.accounts.target_service import AccountTargetService
+from a13n_service.connectivity.connections.authorization import AuthorizationService
+from a13n_service.connectivity.connections.checks import ConnectionChecks
+from a13n_service.connectivity.connections.service import ConnectionService
 from a13n_service.connectivity.connectors.connections import ConnectorConnectionService
 from a13n_service.connectivity.connectors.service import ConnectorProviderService
 from a13n_service.connectivity.ingress.admission import IngressEventService
@@ -24,6 +27,9 @@ class ConnectivityControlRuntime:
     connector_connections: ConnectorConnectionService
     mcp_connections: MCPConnectionService
     mcp_oauth: MCPOAuthService
+    checks: ConnectionChecks
+    connections: ConnectionService
+    authorizations: AuthorizationService
 
 
 @dataclass(frozen=True, slots=True)

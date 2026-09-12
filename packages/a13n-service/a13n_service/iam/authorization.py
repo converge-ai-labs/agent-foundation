@@ -81,10 +81,8 @@ class WorkspaceAction(StrEnum):
     account_target_manage = "account_target.manage"
     connector_provider_read = "connector_provider.read"
     connector_provider_manage = "connector_provider.manage"
-    connector_connection_read = "connector_connection.read"
-    connector_connection_manage = "connector_connection.manage"
-    mcp_connection_read = "mcp_connection.read"
-    mcp_connection_manage = "mcp_connection.manage"
+    connection_read = "connection.read"
+    connection_manage = "connection.manage"
     invitation_manage = "invitation.manage"
     role_binding_manage = "role_binding.manage"
     service_account_manage = "service_account.manage"
@@ -116,8 +114,7 @@ _READ_ACTIONS = frozenset(
         WorkspaceAction.application_account_read,
         WorkspaceAction.account_target_read,
         WorkspaceAction.connector_provider_read,
-        WorkspaceAction.connector_connection_read,
-        WorkspaceAction.mcp_connection_read,
+        WorkspaceAction.connection_read,
     }
 )
 
@@ -149,13 +146,12 @@ _CONNECTIVITY_ADMIN_ACTIONS = frozenset(
     {
         WorkspaceAction.application_account_manage,
         WorkspaceAction.connector_provider_manage,
-        WorkspaceAction.connector_connection_manage,
-        WorkspaceAction.mcp_connection_manage,
     }
 )
 
 _BUILDER_ACTIONS = _RUNNER_ACTIONS | frozenset(
     {
+        WorkspaceAction.connection_manage,
         WorkspaceAction.agent_create,
         WorkspaceAction.agent_update,
         WorkspaceAction.agent_revision_create,

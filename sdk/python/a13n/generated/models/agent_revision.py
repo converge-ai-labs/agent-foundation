@@ -10,8 +10,7 @@ from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.agent_config_output import AgentConfigOutput
-    from ..models.connector_connection_tool_selection import ConnectorConnectionToolSelection
-    from ..models.mcp_connection_tool_selection import MCPConnectionToolSelection
+    from ..models.connection_tool_selection import ConnectionToolSelection
     from ..models.principal_ref import PrincipalRef
     from ..models.resolved_agent_model import ResolvedAgentModel
     from ..models.resolved_skill_binding import ResolvedSkillBinding
@@ -40,8 +39,7 @@ class AgentRevision:
         source_revision_id (None | str):
         version (int):
         workspace_id (str):
-        connector_tools (list[ConnectorConnectionToolSelection] | Unset):
-        mcp_tools (list[MCPConnectionToolSelection] | Unset):
+        connection_tools (list[ConnectionToolSelection] | Unset):
     """
 
     agent_id: str
@@ -58,8 +56,7 @@ class AgentRevision:
     source_revision_id: str | None
     version: int
     workspace_id: str
-    connector_tools: list[ConnectorConnectionToolSelection] | Unset = UNSET
-    mcp_tools: list[MCPConnectionToolSelection] | Unset = UNSET
+    connection_tools: list[ConnectionToolSelection] | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.principal_ref import PrincipalRef
@@ -103,19 +100,12 @@ class AgentRevision:
 
         workspace_id = self.workspace_id
 
-        connector_tools: list[dict[str, Any]] | Unset = UNSET
-        if not isinstance(self.connector_tools, Unset):
-            connector_tools = []
-            for connector_tools_item_data in self.connector_tools:
-                connector_tools_item = connector_tools_item_data.to_dict()
-                connector_tools.append(connector_tools_item)
-
-        mcp_tools: list[dict[str, Any]] | Unset = UNSET
-        if not isinstance(self.mcp_tools, Unset):
-            mcp_tools = []
-            for mcp_tools_item_data in self.mcp_tools:
-                mcp_tools_item = mcp_tools_item_data.to_dict()
-                mcp_tools.append(mcp_tools_item)
+        connection_tools: list[dict[str, Any]] | Unset = UNSET
+        if not isinstance(self.connection_tools, Unset):
+            connection_tools = []
+            for connection_tools_item_data in self.connection_tools:
+                connection_tools_item = connection_tools_item_data.to_dict()
+                connection_tools.append(connection_tools_item)
 
         field_dict: dict[str, Any] = {}
 
@@ -137,18 +127,15 @@ class AgentRevision:
                 "workspace_id": workspace_id,
             }
         )
-        if connector_tools is not UNSET:
-            field_dict["connector_tools"] = connector_tools
-        if mcp_tools is not UNSET:
-            field_dict["mcp_tools"] = mcp_tools
+        if connection_tools is not UNSET:
+            field_dict["connection_tools"] = connection_tools
 
         return field_dict
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         from ..models.agent_config_output import AgentConfigOutput
-        from ..models.connector_connection_tool_selection import ConnectorConnectionToolSelection
-        from ..models.mcp_connection_tool_selection import MCPConnectionToolSelection
+        from ..models.connection_tool_selection import ConnectionToolSelection
         from ..models.principal_ref import PrincipalRef
         from ..models.resolved_agent_model import ResolvedAgentModel
         from ..models.resolved_skill_binding import ResolvedSkillBinding
@@ -214,23 +201,14 @@ class AgentRevision:
 
         workspace_id = d.pop("workspace_id")
 
-        _connector_tools = d.pop("connector_tools", UNSET)
-        connector_tools: list[ConnectorConnectionToolSelection] | Unset = UNSET
-        if _connector_tools is not UNSET:
-            connector_tools = []
-            for connector_tools_item_data in _connector_tools:
-                connector_tools_item = ConnectorConnectionToolSelection.from_dict(connector_tools_item_data)
+        _connection_tools = d.pop("connection_tools", UNSET)
+        connection_tools: list[ConnectionToolSelection] | Unset = UNSET
+        if _connection_tools is not UNSET:
+            connection_tools = []
+            for connection_tools_item_data in _connection_tools:
+                connection_tools_item = ConnectionToolSelection.from_dict(connection_tools_item_data)
 
-                connector_tools.append(connector_tools_item)
-
-        _mcp_tools = d.pop("mcp_tools", UNSET)
-        mcp_tools: list[MCPConnectionToolSelection] | Unset = UNSET
-        if _mcp_tools is not UNSET:
-            mcp_tools = []
-            for mcp_tools_item_data in _mcp_tools:
-                mcp_tools_item = MCPConnectionToolSelection.from_dict(mcp_tools_item_data)
-
-                mcp_tools.append(mcp_tools_item)
+                connection_tools.append(connection_tools_item)
 
         agent_revision = cls(
             agent_id=agent_id,
@@ -247,8 +225,7 @@ class AgentRevision:
             source_revision_id=source_revision_id,
             version=version,
             workspace_id=workspace_id,
-            connector_tools=connector_tools,
-            mcp_tools=mcp_tools,
+            connection_tools=connection_tools,
         )
 
         return agent_revision

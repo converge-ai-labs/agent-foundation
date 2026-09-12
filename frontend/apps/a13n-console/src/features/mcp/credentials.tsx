@@ -10,7 +10,7 @@ export function MCPCredentialFields({
   headers,
   onHeaders,
 }: {
-  mode: Schema["MCPAuthMode"];
+  mode: Schema["MCPSource"]["auth_mode"];
   names: readonly string[];
   bearer: string;
   onBearer: (value: string) => void;
