@@ -23,6 +23,53 @@
         }
       }
     },
+    "/api/presence": {
+      "get": {
+        "summary": "Presence",
+        "operationId": "presence_api_presence_get",
+        "parameters": [
+          {
+            "name": "participant_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Participant Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresenceFrame"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/host/terminals": {
       "get": {
         "summary": "Terminals",
@@ -1695,6 +1742,335 @@
                     }
                   ],
                   "title": "Response Operation Configuration Api Operations  Receipt Id  Configuration Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/comments": {
+      "post": {
+        "summary": "Publish Comment",
+        "operationId": "publish_comment_api_threads__thread_id__comments_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutputComment"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentPublication"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Comments",
+        "operationId": "comments_api_threads__thread_id__comments_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "target",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/comments/{comment_id}": {
+      "get": {
+        "summary": "Comment",
+        "operationId": "comment_api_threads__thread_id__comments__comment_id__get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutputComment"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/saved-output": {
+      "post": {
+        "summary": "Saved Output",
+        "operationId": "saved_output_api_threads__thread_id__saved_output_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 65536,
+              "minimum": 1,
+              "default": 65536,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedOutputView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavedOutputTarget"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/children/{execution_id}/saved-output": {
+      "get": {
+        "summary": "Saved Child Output",
+        "operationId": "saved_child_output_api_threads__thread_id__children__execution_id__saved_output_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "execution_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Execution Id"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 20,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedChildOutputPage"
                 }
               }
             }
@@ -4021,6 +4397,59 @@
         ],
         "title": "CatalogReference"
       },
+      "ChangesPage": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "changes",
+            "default": "changes",
+            "title": "Kind",
+            "type": "string"
+          },
+          "repository_root": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Repository Root",
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Path"
+          },
+          "comparison": {
+            "anyOf": [
+              {
+                "enum": [
+                  "staged",
+                  "unstaged",
+                  "untracked"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Comparison"
+          }
+        },
+        "required": [
+          "repository_root"
+        ],
+        "title": "ChangesPage",
+        "type": "object"
+      },
       "ChildActivityView": {
         "properties": {
           "sequence": {
@@ -4319,6 +4748,40 @@
         ],
         "title": "ChildExecutionView"
       },
+      "ChildOutputLocation": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "child_text",
+            "default": "child_text",
+            "title": "Kind",
+            "type": "string"
+          },
+          "execution_id": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Execution Id",
+            "type": "string"
+          },
+          "activity": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activity"
+          }
+        },
+        "required": [
+          "execution_id"
+        ],
+        "title": "ChildOutputLocation",
+        "type": "object"
+      },
       "ChildStatusCounts": {
         "properties": {
           "running": {
@@ -4422,6 +4885,91 @@
           "status"
         ],
         "title": "ChildToolCallView"
+      },
+      "CommentAuthor": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "participant_id": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Participant Id"
+          }
+        },
+        "required": [
+          "display_name"
+        ],
+        "title": "CommentAuthor",
+        "type": "object"
+      },
+      "CommentPage": {
+        "properties": {
+          "comments": {
+            "items": {
+              "$ref": "#/components/schemas/OutputComment"
+            },
+            "type": "array",
+            "title": "Comments"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "comments"
+        ],
+        "title": "CommentPage"
+      },
+      "CommentSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "start": {
+            "minimum": 0,
+            "title": "Start",
+            "type": "integer"
+          },
+          "end": {
+            "exclusiveMinimum": 0,
+            "title": "End",
+            "type": "integer"
+          },
+          "quote": {
+            "maxLength": 16384,
+            "minLength": 1,
+            "title": "Quote",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "quote"
+        ],
+        "title": "CommentSelection",
+        "type": "object"
       },
       "ConfigurationProvenance": {
         "properties": {
@@ -4862,6 +5410,28 @@
         "type": "object",
         "title": "ConversationExcerpt",
         "description": "Small saved display values, independent of model-history compaction."
+      },
+      "ConversationPage": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "conversation",
+            "default": "conversation",
+            "title": "Kind",
+            "type": "string"
+          },
+          "thread_id": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Thread Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "thread_id"
+        ],
+        "title": "ConversationPage",
+        "type": "object"
       },
       "DecisionBatchView": {
         "properties": {
@@ -5442,6 +6012,28 @@
         ],
         "title": "FileEntry"
       },
+      "FilePage": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "file",
+            "default": "file",
+            "title": "Kind",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "FilePage",
+        "type": "object"
+      },
       "FileText": {
         "properties": {
           "entry": {
@@ -5993,6 +6585,18 @@
             "title": "Shared Drafts",
             "default": true
           },
+          "output_comments": {
+            "type": "boolean",
+            "const": true,
+            "title": "Output Comments",
+            "default": true
+          },
+          "page_presence": {
+            "type": "boolean",
+            "const": true,
+            "title": "Page Presence",
+            "default": true
+          },
           "host_files": {
             "type": "boolean",
             "title": "Host Files",
@@ -6350,6 +6954,193 @@
         ],
         "title": "NoteView"
       },
+      "OutputComment": {
+        "properties": {
+          "comment_id": {
+            "type": "string",
+            "pattern": "^comment-[A-Za-z0-9_-]{16,64}$",
+            "title": "Comment Id"
+          },
+          "target": {
+            "$ref": "#/components/schemas/SavedOutputTarget"
+          },
+          "selection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommentSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "author": {
+            "$ref": "#/components/schemas/CommentAuthor"
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 16384,
+            "minLength": 1,
+            "title": "Body"
+          },
+          "root_thread_id": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Root Thread Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "comment_id",
+          "target",
+          "author",
+          "body",
+          "root_thread_id",
+          "created_at"
+        ],
+        "title": "OutputComment"
+      },
+      "PageFocus": {
+        "additionalProperties": false,
+        "properties": {
+          "target": {
+            "$ref": "#/components/schemas/PageTarget"
+          },
+          "root_thread_id": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Root Thread Id"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "title": "PageFocus",
+        "type": "object"
+      },
+      "PageTarget": {
+        "discriminator": {
+          "mapping": {
+            "changes": "#/components/schemas/ChangesPage",
+            "conversation": "#/components/schemas/ConversationPage",
+            "file": "#/components/schemas/FilePage",
+            "project": "#/components/schemas/ProjectPage",
+            "resource": "#/components/schemas/ResourcePage",
+            "terminal": "#/components/schemas/TerminalPage",
+            "workbench": "#/components/schemas/WorkbenchPage"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/WorkbenchPage"
+          },
+          {
+            "$ref": "#/components/schemas/ConversationPage"
+          },
+          {
+            "$ref": "#/components/schemas/ProjectPage"
+          },
+          {
+            "$ref": "#/components/schemas/ResourcePage"
+          },
+          {
+            "$ref": "#/components/schemas/FilePage"
+          },
+          {
+            "$ref": "#/components/schemas/ChangesPage"
+          },
+          {
+            "$ref": "#/components/schemas/TerminalPage"
+          }
+        ]
+      },
+      "ParticipantPresence": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "presence",
+            "default": "presence",
+            "title": "Kind",
+            "type": "string"
+          },
+          "display_name": {
+            "default": "",
+            "maxLength": 80,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "color": {
+            "default": "#64748b",
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "title": "Color",
+            "type": "string"
+          },
+          "focus": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageFocus"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "foreground": {
+            "default": false,
+            "title": "Foreground",
+            "type": "boolean"
+          },
+          "participant_id": {
+            "title": "Participant Id",
+            "type": "string"
+          },
+          "availability": {
+            "default": "unknown",
+            "enum": [
+              "available",
+              "unavailable",
+              "unknown"
+            ],
+            "title": "Availability",
+            "type": "string"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Unavailable Reason"
+          }
+        },
+        "required": [
+          "participant_id"
+        ],
+        "title": "ParticipantPresence",
+        "type": "object"
+      },
       "PendingDecisionSummary": {
         "properties": {
           "kind": {
@@ -6376,6 +7167,54 @@
           "count"
         ],
         "title": "PendingDecisionSummary"
+      },
+      "PresenceFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "presence",
+            "default": "presence",
+            "title": "Kind",
+            "type": "string"
+          },
+          "participant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Participant Id"
+          },
+          "participants": {
+            "items": {
+              "$ref": "#/components/schemas/ParticipantPresence"
+            },
+            "title": "Participants",
+            "type": "array"
+          },
+          "same_page_participant_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Same Page Participant Ids",
+            "type": "array"
+          },
+          "closed": {
+            "default": false,
+            "title": "Closed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "participants"
+        ],
+        "title": "PresenceFrame",
+        "type": "object"
       },
       "ProjectDefaults": {
         "properties": {
@@ -6572,6 +7411,28 @@
         ],
         "title": "ProjectDefaultsPreview"
       },
+      "ProjectPage": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "project",
+            "default": "project",
+            "title": "Kind",
+            "type": "string"
+          },
+          "project_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "title": "ProjectPage",
+        "type": "object"
+      },
       "ProjectSummary": {
         "properties": {
           "project_id": {
@@ -6730,6 +7591,43 @@
         "maxLength": 128,
         "minLength": 3,
         "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$"
+      },
+      "ResourcePage": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "resource",
+            "default": "resource",
+            "title": "Kind",
+            "type": "string"
+          },
+          "resource_kind": {
+            "enum": [
+              "model",
+              "agent",
+              "subagent",
+              "harness_plugin",
+              "environment_profile",
+              "environment_run_extension",
+              "mcp_server",
+              "content_plugin"
+            ],
+            "title": "Resource Kind",
+            "type": "string"
+          },
+          "resource_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Resource Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_kind",
+          "resource_id"
+        ],
+        "title": "ResourcePage",
+        "type": "object"
       },
       "ReviewView": {
         "properties": {
@@ -7080,6 +7978,33 @@
         ],
         "title": "RootOperationView"
       },
+      "RootOutputLocation": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "root_text",
+            "default": "root_text",
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "minimum": 0,
+            "title": "Message",
+            "type": "integer"
+          },
+          "part": {
+            "minimum": 0,
+            "title": "Part",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "message",
+          "part"
+        ],
+        "title": "RootOutputLocation",
+        "type": "object"
+      },
       "RootRunOutcomeView": {
         "properties": {
           "execution": {
@@ -7240,6 +8165,130 @@
           "totals"
         ],
         "title": "RunUsageView"
+      },
+      "SavedChildOutputPage": {
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Id"
+          },
+          "outputs": {
+            "items": {
+              "$ref": "#/components/schemas/SavedOutputView"
+            },
+            "type": "array",
+            "title": "Outputs"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source_id",
+          "outputs",
+          "total"
+        ],
+        "title": "SavedChildOutputPage"
+      },
+      "SavedOutputTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "producing_thread_id": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Producing Thread Id",
+            "type": "string"
+          },
+          "source_id": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "location": {
+            "discriminator": {
+              "mapping": {
+                "child_text": "#/components/schemas/ChildOutputLocation",
+                "root_text": "#/components/schemas/RootOutputLocation"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RootOutputLocation"
+              },
+              {
+                "$ref": "#/components/schemas/ChildOutputLocation"
+              }
+            ],
+            "title": "Location"
+          }
+        },
+        "required": [
+          "producing_thread_id",
+          "source_id",
+          "location"
+        ],
+        "title": "SavedOutputTarget",
+        "type": "object"
+      },
+      "SavedOutputView": {
+        "properties": {
+          "target": {
+            "$ref": "#/components/schemas/SavedOutputTarget"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 65536,
+            "title": "Text"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Offset"
+          },
+          "total_characters": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Characters"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "target",
+          "text",
+          "offset",
+          "total_characters"
+        ],
+        "title": "SavedOutputView"
       },
       "SelectableResourceSummary": {
         "properties": {
@@ -7654,7 +8703,8 @@
               "project",
               "thread",
               "root_operation",
-              "child_execution"
+              "child_execution",
+              "comment"
             ],
             "title": "Kind"
           },
@@ -7868,6 +8918,28 @@
           "status"
         ],
         "title": "TaskView"
+      },
+      "TerminalPage": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "terminal",
+            "default": "terminal",
+            "title": "Kind",
+            "type": "string"
+          },
+          "terminal_id": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Terminal Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "terminal_id"
+        ],
+        "title": "TerminalPage",
+        "type": "object"
       },
       "TerminalView": {
         "additionalProperties": false,
@@ -8965,6 +10037,16 @@
       },
       "TranscriptPart": {
         "properties": {
+          "comment_target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SavedOutputTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "metadata": {
             "$ref": "#/components/schemas/ContentMetadata"
           },
@@ -9157,6 +10239,29 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "WorkbenchPage": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "workbench",
+            "default": "workbench",
+            "title": "Kind",
+            "type": "string"
+          },
+          "section": {
+            "default": "home",
+            "enum": [
+              "home",
+              "settings",
+              "catalog"
+            ],
+            "title": "Section",
+            "type": "string"
+          }
+        },
+        "title": "WorkbenchPage",
+        "type": "object"
       },
       "InteractiveAuthentication": {
         "additionalProperties": false,
@@ -9399,6 +10504,47 @@
           "participants"
         ],
         "title": "DraftFrame",
+        "type": "object"
+      },
+      "PresenceReport": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "presence",
+            "default": "presence",
+            "title": "Kind",
+            "type": "string"
+          },
+          "display_name": {
+            "default": "",
+            "maxLength": 80,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "color": {
+            "default": "#64748b",
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "title": "Color",
+            "type": "string"
+          },
+          "focus": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PageFocus"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "foreground": {
+            "default": false,
+            "title": "Foreground",
+            "type": "boolean"
+          }
+        },
+        "title": "PresenceReport",
         "type": "object"
       },
       "ErrorBody": {
@@ -10377,6 +11523,46 @@
         "title": "ThreadConfigurationMutationInput",
         "type": "object"
       },
+      "CommentPublication": {
+        "additionalProperties": false,
+        "properties": {
+          "comment_id": {
+            "pattern": "^comment-[A-Za-z0-9_-]{16,64}$",
+            "title": "Comment Id",
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/SavedOutputTarget"
+          },
+          "selection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommentSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "author": {
+            "$ref": "#/components/schemas/CommentAuthor"
+          },
+          "body": {
+            "maxLength": 16384,
+            "minLength": 1,
+            "title": "Body",
+            "type": "string"
+          }
+        },
+        "required": [
+          "comment_id",
+          "target",
+          "author",
+          "body"
+        ],
+        "title": "CommentPublication",
+        "type": "object"
+      },
       "ProjectDefaultsApply": {
         "additionalProperties": false,
         "properties": {
@@ -10735,6 +11921,19 @@
   "x-interactive": {
     "authentication": {
       "$ref": "#/components/schemas/InteractiveAuthentication"
+    },
+    "presence": {
+      "path": "/api/presence/connect",
+      "input": {
+        "$ref": "#/components/schemas/PresenceReport"
+      },
+      "output": {
+        "$ref": "#/components/schemas/PresenceFrame"
+      },
+      "error": {
+        "$ref": "#/components/schemas/ErrorEnvelope"
+      },
+      "report_timeout_seconds": 60
     },
     "draft": {
       "path": "/api/threads/{thread_id}/draft/connect",

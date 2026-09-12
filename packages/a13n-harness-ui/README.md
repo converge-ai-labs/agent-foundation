@@ -110,6 +110,8 @@ make a13n-harness-ui-db-migrate msg="describe the schema change"
 
 The generator upgrades the disposable database to the current package head before comparing it with Harness UI metadata. Application startup only applies committed migrations; it never autogenerates against a user's data root.
 
+Keep automatic upgrades compatible with concurrently running older TUI/WebUI processes: preserve existing read/write meanings and allow older inserts to omit new fields. Test an active Run saving across migration and an older schema reader reconnecting after it. Startup does not require revision equality with the package head: an unknown newer single revision is left unchanged when the package's required tables and columns remain present. Missing required storage still fails explicitly. This structural check cannot prove payload or constraint compatibility; migration and serializer changes must preserve those semantics in development rather than forcing active users to restart. Already published older readers retain their original startup behavior. See [the storage compatibility contract](../../spec/a13n-harness-ui/03-local-storage-and-recovery.md#compatible-upgrades-across-app-versions).
+
 ## CLI Validation
 
 Run `make check` and `make check-all` from the repository root. The CLI tests cover native PTY input, startup draft preservation, live display switching, cancellation, continuation recovery, and shell approval using isolated homes and deterministic test models. They do not require provider credentials.

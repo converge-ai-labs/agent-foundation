@@ -12,7 +12,7 @@ a13n-harness-ui webui --host 127.0.0.1 --port 9000
 a13n-harness-ui webui --no-share-computer   # Opt out of native computer sharing
 ```
 
-WebUI enables native file browsing, editing, transfer, creation, move, deletion, and captured Thread input through the [Files API](http-api.md#native-host-files) by default; `--share-computer` explicitly selects that default. The [Git Changes API](http-api.md#native-git-changes) adds repository discovery, status, selected diffs and reviewed Thread input under the same sharing gate. The [Terminal API](http-api.md#native-terminal) adds App-owned interactive POSIX PTYs under the same gate. The [shared draft protocol](http-api.md#shared-composer) is independent of computer sharing. Browser workbench panels remain unavailable. Paths refer to the server account or container mounts, regardless of the Agent's Environment. Project roots are navigation starts, not filesystem confinement. Use `--no-share-computer` to keep native operations unavailable even when authentication is bypassed. Embedded Apps and the bare terminal CLI do not enable native sharing implicitly.
+WebUI enables native file browsing, editing, transfer, creation, move, deletion, and captured Thread input through the [Files API](http-api.md#native-host-files) by default; `--share-computer` explicitly selects that default. The [Git Changes API](http-api.md#native-git-changes) adds repository discovery, status, selected diffs and reviewed Thread input under the same sharing gate. The [Terminal API](http-api.md#native-terminal) adds App-owned interactive POSIX PTYs under the same gate. The [shared draft protocol](http-api.md#shared-composer), [page presence](http-api.md#page-presence), and [saved output comments](http-api.md#saved-output-comments) are independent of computer sharing. Comments persist separately from model history; live presence and drafts do not survive App restart. Browser workbench panels remain unavailable. Paths refer to the server account or container mounts, regardless of the Agent's Environment. Project roots are navigation starts, not filesystem confinement. Use `--no-share-computer` to keep native operations unavailable even when authentication is bypassed. Embedded Apps and the bare terminal CLI do not enable native sharing implicitly.
 
 ## Authentication and key retention
 
@@ -23,6 +23,8 @@ Key precedence is `--apikey`, then `A13N_HARNESS_UI_API_KEY`, then a fresh proce
 ## Listener and application lifetime
 
 Non-loopback listening grants shared instance authority on a trusted network, not tenant isolation; use external TLS when needed. The server owns the App lifetime even without browsers; Ctrl+C or SIGTERM closes it. Unauthenticated `/healthz` and `/readyz` report bounded liveness and App readiness. A fresh instance can be ready for setup before any model is configured.
+
+TUI and WebUI processes can share one local database across compatible package upgrades. A newer migration revision alone does not reject an older compatible reader or gate an active Run's save. An older App leaves unknown newer migration history unchanged and checks that its required tables and columns remain available. Missing storage and real continuation/version conflicts still fail explicitly; schema compatibility does not share live execution ownership. Already released binaries keep their own startup checks, and incompatible payload formats cannot be made readable merely by relaxing revision validation.
 
 ## Container and installed assets
 

@@ -16,7 +16,7 @@ from urllib.parse import quote, urlsplit
 
 import click
 import uvicorn
-from anyio import create_task_group
+from anyio import create_task_group, fail_after, move_on_after
 from fastapi import FastAPI, Query, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
@@ -69,6 +69,20 @@ from a13n_harness_ui.live import LiveCursor, LiveEvent, RootStreamEvent, Summary
 from a13n_harness_ui.model_accounts import AccountProjection, AccountStoreError, Provider
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginStatus
+from a13n_harness_ui.output_comment_models import (
+    CommentPage,
+    CommentPublication,
+    OutputComment,
+    SavedChildOutputPage,
+    SavedOutputTarget,
+    SavedOutputView,
+)
+from a13n_harness_ui.page_presence import (
+    PRESENCE_REFRESH_SECONDS,
+    PRESENCE_TIMEOUT_SECONDS,
+    PresenceFrame,
+    PresenceReport,
+)
 from a13n_harness_ui.setup import EnvironmentReadiness, SetupStatus
 from a13n_harness_ui.shared_drafts import DraftCommand, DraftFrame
 from a13n_harness_ui.storage import ThreadConfiguration
@@ -113,6 +127,8 @@ class ListenerFeatures(SurfaceModel):
     """Implemented browser facilities, not the eventual workbench roadmap."""
 
     shared_drafts: Literal[True] = True
+    output_comments: Literal[True] = True
+    page_presence: Literal[True] = True
     host_files: bool = False
     host_git: bool = False
     host_terminal: bool = False
@@ -425,6 +441,68 @@ def create_webui(
             host=host,
             access="api_key" if api_key is not None else "dangerous_bypass",
         )
+
+    @server.get("/api/presence", response_model=PresenceFrame)
+    async def presence(participant_id: Annotated[str | None, Query(max_length=80)] = None) -> PresenceFrame:
+        return await app().page_presence_snapshot(participant_id)
+
+    @server.websocket("/api/presence/connect")
+    async def connect_presence(socket: WebSocket) -> None:
+        if not await authenticate_interactive(socket, api_key):
+            return
+        try:
+            directory = app().page_presence()
+            participant = directory.attach()
+        except HarnessUiError as exc:
+            await socket.send_json(ErrorEnvelope(error=ErrorBody(code=exc.code, message=str(exc))).model_dump())
+            await socket.close(code=4404)
+            return
+        try:
+            async with create_task_group() as group:
+
+                async def output() -> None:
+                    while True:
+                        changed = directory.changed
+                        if directory.closed:
+                            frame = PresenceFrame(participant_id=participant, participants=(), closed=True)
+                        else:
+                            frame = await app().page_presence_snapshot(participant)
+                        await socket.send_json(frame.model_dump(mode="json"))
+                        if frame.closed:
+                            await socket.close()
+                            group.cancel_scope.cancel()
+                            return
+                        with move_on_after(PRESENCE_REFRESH_SECONDS):
+                            await changed.wait()
+
+                group.start_soon(output)
+                try:
+                    while True:
+                        try:
+                            with fail_after(PRESENCE_TIMEOUT_SECONDS):
+                                raw = await receive_text(socket, limit=16384)
+                            report = PresenceReport.model_validate_json(raw)
+                            await app().report_page_presence(participant, report)
+                        except (ValidationError, ValueError):
+                            await socket.send_json(
+                                ErrorEnvelope(
+                                    error=ErrorBody(code="presence_invalid", message="Invalid page presence report.")
+                                ).model_dump()
+                            )
+                        except HarnessUiError as exc:
+                            await socket.send_json(
+                                ErrorEnvelope(error=ErrorBody(code=exc.code, message=str(exc))).model_dump()
+                            )
+                except TimeoutError:
+                    await socket.close(code=4408, reason="Presence report timed out")
+                except WebSocketDisconnect:
+                    pass
+                finally:
+                    group.cancel_scope.cancel()
+        except* WebSocketDisconnect:
+            pass
+        finally:
+            directory.detach(participant)
 
     @server.websocket("/api/threads/{thread_id}/draft/connect")
     async def connect_draft(socket: WebSocket, thread_id: str) -> None:
@@ -798,6 +876,51 @@ def create_webui(
     async def operation_configuration(receipt_id: str) -> CapturedConfiguration | None:
         return await app().inspect_operation_configuration(receipt_id)
 
+    @server.post(
+        "/api/threads/{thread_id}/comments", response_model=OutputComment, openapi_extra=_body(CommentPublication)
+    )
+    async def publish_comment(thread_id: str, request: Request) -> OutputComment:
+        return await app().publish_output_comment(thread_id, await _document(request, CommentPublication))
+
+    @server.get("/api/threads/{thread_id}/comments", response_model=CommentPage)
+    async def comments(
+        thread_id: str,
+        cursor: Annotated[str | None, Query(max_length=4096)] = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 20,
+        target: Annotated[str | None, Query(max_length=2048)] = None,
+    ) -> CommentPage:
+        try:
+            selected = SavedOutputTarget.model_validate_json(target) if target is not None else None
+        except ValidationError:
+            raise HarnessUiError("Target query does not match the schema.", code="request_invalid") from None
+        return await app().list_output_comments(thread_id, target=selected, cursor=cursor, limit=limit)
+
+    @server.get("/api/threads/{thread_id}/comments/{comment_id}", response_model=OutputComment)
+    async def comment(thread_id: str, comment_id: str) -> OutputComment:
+        return await app().get_output_comment(thread_id, comment_id)
+
+    @server.post(
+        "/api/threads/{thread_id}/saved-output", response_model=SavedOutputView, openapi_extra=_body(SavedOutputTarget)
+    )
+    async def saved_output(
+        thread_id: str,
+        request: Request,
+        offset: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[int, Query(ge=1, le=65536)] = 65536,
+    ) -> SavedOutputView:
+        return await app().read_commented_output(
+            thread_id, await _document(request, SavedOutputTarget), offset=offset, limit=limit
+        )
+
+    @server.get("/api/threads/{thread_id}/children/{execution_id}/saved-output", response_model=SavedChildOutputPage)
+    async def saved_child_output(
+        thread_id: str,
+        execution_id: str,
+        cursor: Annotated[str | None, Query(max_length=4096)] = None,
+        limit: Annotated[int, Query(ge=1, le=20)] = 20,
+    ) -> SavedChildOutputPage:
+        return await app().saved_child_outputs(thread_id, execution_id, cursor=cursor, limit=limit)
+
     @server.get("/api/threads/{thread_id}/context-usage", response_model=ContextUsageView)
     async def context_usage(thread_id: str) -> ContextUsageView:
         return await app().context_usage(thread_id)
@@ -1163,12 +1286,28 @@ def openapi_document(server: FastAPI) -> dict[str, Any]:
     """Lift strict JSON request definitions into one generated schema authority."""
     document = server.openapi()
     components = document.setdefault("components", {}).setdefault("schemas", {})
-    for model in (InteractiveAuthentication, TerminalCommand, TerminalFrame, DraftCommand, DraftFrame, ErrorEnvelope):
+    for model in (
+        InteractiveAuthentication,
+        TerminalCommand,
+        TerminalFrame,
+        DraftCommand,
+        DraftFrame,
+        PresenceReport,
+        PresenceFrame,
+        ErrorEnvelope,
+    ):
         schema = model.model_json_schema(ref_template="#/components/schemas/{model}")
         components.update(schema.pop("$defs", {}))
         components[model.__name__] = schema
     document["x-interactive"] = {
         "authentication": {"$ref": "#/components/schemas/InteractiveAuthentication"},
+        "presence": {
+            "path": "/api/presence/connect",
+            "input": {"$ref": "#/components/schemas/PresenceReport"},
+            "output": {"$ref": "#/components/schemas/PresenceFrame"},
+            "error": {"$ref": "#/components/schemas/ErrorEnvelope"},
+            "report_timeout_seconds": PRESENCE_TIMEOUT_SECONDS,
+        },
         "draft": {
             "path": "/api/threads/{thread_id}/draft/connect",
             "input": {"$ref": "#/components/schemas/DraftCommand"},

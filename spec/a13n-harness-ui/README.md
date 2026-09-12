@@ -4,7 +4,7 @@
 
 Harness UI (`a13n-harness-ui`) is a local Agent workbench with a personal CLI and a trusted-team collaborative WebUI, distributed by the independent `a13n-harness-ui` library. It embeds Harness in one reusable `HarnessUiApp`, reads human-editable resources, discovers trusted extensions and Capabilities, and retains internal Project/Thread identities for durable continuation and execution. Its native full-terminal renderer owns a bounded semantic display cache; the App remains conversation authority.
 
-`a13n-harness-ui` starts the interactive CLI. `a13n-harness-ui webui` explicitly starts one foreground server and WebUI-mode App. The CLI and browser adapter consume the same commands, projections, receipts, and live subscriptions. The browser provides project-organized conversations, shared prompt editing, resource configuration, and explicitly enabled native Host files, Git views, and PTY. All browser participants share one instance authority without multi-tenancy. There is no detached daemon or IPC mode.
+`a13n-harness-ui` starts the interactive CLI. `a13n-harness-ui webui` explicitly starts one foreground server and WebUI-mode App. The CLI and browser adapter consume the same commands, projections, receipts, and live subscriptions. The browser provides project-organized conversations, page presence, shared prompt editing, comments on saved AI output, resource configuration, and explicitly enabled native Host files, Git views, and PTY. All browser participants share one instance authority without multi-tenancy. There is no detached daemon or IPC mode.
 
 Harness UI provides best-effort local continuation rather than durable workflow execution. It stores complete Harness checkpoints at explicit boundaries, but it does not durably accept root receipts, input, or deferred responses, recover active operating-system processes, lease work across workers, or provide distributed failover. a13n Service remains the durable hosted product.
 
@@ -12,22 +12,22 @@ Harness UI depends on the [Harness](../a13n-harness/README.md), [Environment pac
 
 ## Document Catalog
 
-| Document                                                                                         | Owning contract                                                                                                                |
-| ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| [00-overview.md](00-overview.md)                                                                 | Product boundary, architecture, end-to-end flows, completion boundaries, and packaging                                         |
-| [01-configuration-and-resource-catalog.md](01-configuration-and-resource-catalog.md)             | Multi-file configuration source, resource identity, accepted generations, defaults, file mutation, credentials, and validation |
-| [01a-extension-discovery-and-management.md](01a-extension-discovery-and-management.md)           | Capability discovery and the Harness Plugin, Environment Provider, and Environment Run Extension planes                        |
-| [01b-content-plugin-repositories.md](01b-content-plugin-repositories.md)                         | Git-distributed declarative Content Plugins, CLI management, editable installation, Skills, and Markdown subagents             |
-| [02-agent-composition-and-snapshots.md](02-agent-composition-and-snapshots.md)                   | Agent, MCP, Markdown subagent, import, graph resolution, tool configuration, and per-Run composition                           |
-| [02a-model-authentication-and-account-stores.md](02a-model-authentication-and-account-stores.md) | API-key and subscription Model authentication, Codex/Grok compatible account stores, native login, and refresh boundaries      |
-| [02b-environment-skill-sources.md](02b-environment-skill-sources.md)                             | Host-path-preserving and virtual multi-mount Skill sources, user Skill mount, precedence, and per-Run freezing                 |
-| [03-local-storage-and-recovery.md](03-local-storage-and-recovery.md)                             | Thread metadata/configuration heads, immutable Run/checkpoint values, Environment state, and local recovery                    |
-| [04-projects-threads-and-environments.md](04-projects-threads-and-environments.md)               | Project roots, Full Control and Sandbox modes, path layouts, Thread configuration, Environment binding, and state publication  |
-| [05-runtime-subagents-and-surfaces.md](05-runtime-subagents-and-surfaces.md)                     | `HarnessUiApp`, detached projections, root operations, async children, Web listener access, tools, and live presentation       |
-| [06-setup-and-environment-readiness.md](06-setup-and-environment-readiness.md)                   | First-use discovery, reviewed starter files, explicit defaults, and selected Environment preflight/recovery                    |
-| [07-interactive-cli.md](07-interactive-cli.md)                                                   | Full-terminal ownership, commands, display modes, startup, cwd sessions, and context choices                                   |
+| Document                                                                                         | Owning contract                                                                                                                     |
+| ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| [00-overview.md](00-overview.md)                                                                 | Product boundary, architecture, end-to-end flows, completion boundaries, and packaging                                              |
+| [01-configuration-and-resource-catalog.md](01-configuration-and-resource-catalog.md)             | Multi-file configuration source, resource identity, accepted generations, defaults, file mutation, credentials, and validation      |
+| [01a-extension-discovery-and-management.md](01a-extension-discovery-and-management.md)           | Capability discovery and the Harness Plugin, Environment Provider, and Environment Run Extension planes                             |
+| [01b-content-plugin-repositories.md](01b-content-plugin-repositories.md)                         | Git-distributed declarative Content Plugins, CLI management, editable installation, Skills, and Markdown subagents                  |
+| [02-agent-composition-and-snapshots.md](02-agent-composition-and-snapshots.md)                   | Agent, MCP, Markdown subagent, import, graph resolution, tool configuration, and per-Run composition                                |
+| [02a-model-authentication-and-account-stores.md](02a-model-authentication-and-account-stores.md) | API-key and subscription Model authentication, Codex/Grok compatible account stores, native login, and refresh boundaries           |
+| [02b-environment-skill-sources.md](02b-environment-skill-sources.md)                             | Host-path-preserving and virtual multi-mount Skill sources, user Skill mount, precedence, and per-Run freezing                      |
+| [03-local-storage-and-recovery.md](03-local-storage-and-recovery.md)                             | Thread metadata/configuration heads, immutable Run/checkpoint values, Environment state, output-comment storage, and local recovery |
+| [04-projects-threads-and-environments.md](04-projects-threads-and-environments.md)               | Project roots, Full Control and Sandbox modes, path layouts, Thread configuration, Environment binding, and state publication       |
+| [05-runtime-subagents-and-surfaces.md](05-runtime-subagents-and-surfaces.md)                     | `HarnessUiApp`, detached projections, root operations, async children, Web listener access, tools, and live presentation            |
+| [06-setup-and-environment-readiness.md](06-setup-and-environment-readiness.md)                   | First-use discovery, reviewed starter files, explicit defaults, and selected Environment preflight/recovery                         |
+| [07-interactive-cli.md](07-interactive-cli.md)                                                   | Full-terminal ownership, commands, display modes, startup, cwd sessions, and context choices                                        |
 
-The [WebUI catalog](webui/README.md) indexes the browser workbench, collaborative conversations, native computer sharing, and bundled/Docker distribution contracts. Listener and HTTP/API behavior remain owned by `05`; browser drafts retain the storage boundary in `03`.
+The [WebUI catalog](webui/README.md) indexes the browser workbench, page presence and collaborative conversations, saved-output comments, native computer sharing, and bundled/Docker distribution contracts. Listener and HTTP/API behavior remain owned by `05`; transient drafts and durable comments retain their separate storage boundaries in `03`.
 
 ## Reading Paths
 
@@ -62,7 +62,7 @@ Read `05`. A surface calls `HarnessUiApp` commands and queries and consumes deta
 11. The full-terminal CLI is an adapter over one reusable `HarnessUiApp`. Desired configuration remains editable; setup publication is explicit. Project and Thread management are not terminal workflows, but their durable identities and existing history remain intact.
 12. Focused live delivery follows complete root lineage and uses an epoch/sequence snapshot cutover. App-wide summary invalidations are best-effort refetch hints, not durable truth.
 13. Multiple local processes can open one data root through ordinary SQLite and immutable-file behavior. Mutable SQLite heads use expected-version or expected-reference compare-and-select without process lock files, PID inspection, heartbeats, leases, fencing, or distributed scheduling. Independent Apps do not thereby share live collaboration or execution receipts.
-14. Shared browser drafts are in-memory editing state, not selected continuation or durable root-work acceptance. Reconnect never authorizes automatic submission.
+14. Page/editor presence and shared browser drafts are in-memory collaboration state, not selected continuation or durable root-work acceptance. Published output comments are independently persisted human discussion and never enter model context automatically. Reconnect never authorizes automatic submission.
 15. Native Host files, Git views, and PTY are explicitly enabled human operations on the server OS, independent of Agent Environment policy and Run lifetime.
 
 ## Conventions

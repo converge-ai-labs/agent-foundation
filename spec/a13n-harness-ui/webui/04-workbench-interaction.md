@@ -2,7 +2,7 @@
 
 ## Design Position
 
-This document owns the browser's default interaction flow, action placement, and feedback. [Overview](00-overview.md) owns the product boundary; [collaborative conversations](01-collaborative-conversations.md) and [Host computer sharing](02-host-computer-sharing.md) own state and operation semantics. Layout never creates another authority or changes the selected execution target.
+This document owns the browser's default interaction flow, action placement, and feedback. [Overview](00-overview.md) owns the product boundary; [collaborative conversations](01-collaborative-conversations.md), [output comments](05-output-comments.md), and [Host computer sharing](02-host-computer-sharing.md) own state and operation semantics. Layout never creates another authority or changes the selected execution target.
 
 The primary experience is doing work in a conversation. Configuration is available when needed, and code or a terminal can be opened alongside that work. The interface does not require users to understand resource inheritance or runtime internals before sending a prompt.
 
@@ -17,6 +17,14 @@ The primary experience is doing work in a conversation. Configuration is availab
 The left sidebar groups root conversations under Projects. Each Project offers New conversation and Project settings. Conversation rows show title, activity, and attention-needed state. Running, waiting for a decision, and failed states remain distinguishable without opening every Thread. Rename/archive actions are secondary; archive honors the App's active-operation restriction.
 
 Selecting a different conversation is personal navigation. The browser retains each Thread's editing context without cancelling execution or causing collaborators to switch views. An update in another Thread marks its row rather than stealing focus.
+
+## Participant Awareness
+
+The workbench exposes a compact participant directory showing reported current page and foreground, inactive, or disconnected/unknown participation. The current page shows its own participants rather than everyone with that Thread's draft open. The directory remains usable in Project settings and the configuration center without opening a conversation.
+
+Separate tabs with the same display name remain distinguishable. A background tab can be shown as attached but is not labeled as confirmed current attention. Switching between Chat, a file, a diff, configuration, and a terminal updates the reported focused area without moving other users. Participants can explicitly open a collaborator's available page through ordinary navigation; it does not enable continuous following or synchronize scroll.
+
+Same-page presence is an awareness indicator, not a blanket Edit permission or a claim that every surface uses CRDT. Chat retains its shared composer, saved output offers comments, file changes use existing save rules, and terminal input uses explicit control ownership. SSE updates and refetches preserve the local focused area and do not recreate the editor's CRDT replica.
 
 ## Default Layout
 
@@ -47,6 +55,16 @@ While the Agent runs, the composer is labeled Next message and remains collabora
 At a pending question or approval, the relevant response controls explain what needs an answer. After a participant resolves it, other views show the result and disable the stale action. A control conflict refreshes the request instead of presenting a second successful response.
 
 Share conversation copies a same-instance link without a long-lived API key. Other participants use the existing access flow. Sharing a link does not grant access or create a new Thread.
+
+## Comments on Saved AI Output
+
+A saved assistant text block offers Comment; a supported text selection offers Comment on selection. The comment editor shows the exact target or selected quote beside a private draft. Streaming or otherwise unsaved output does not offer successful publication: the UI explains that the output must first be saved, and never treats completion of token delivery as checkpoint success.
+
+A Thread comment list shows published comments, author labels, creation times, and original output references. Inline markers are attached only to an established saved target. A comment whose source is not in the current history view remains in that list with an explicit original-output view, rather than being moved to a similar-looking response. The comment list and referenced-output view remain useful after later Runs and compaction. Opening an old referenced output never selects that checkpoint for continuation.
+
+Publish acknowledges a committed comment, distinct from the shared composer's Synchronized state. Publication failure or a stale target preserves the local comment text. A lost acknowledgement offers reconciliation of the same publication identity, not a second post. Newly published comments update the discussion without replacing the transcript, stealing focus, or clearing another input. Reload and reconnect refetch saved comments independently of presence and draft rejoin.
+
+Comments are human discussion by default. An explicit Add feedback to prompt action copies selected feedback and its source attribution into the shared composer for review; it does not immediately call the model. Existing Send and explicit steering controls retain execution authority. No comment-read or navigation action changes the shared prompt implicitly.
 
 ## Project and Resource Configuration
 
@@ -84,25 +102,30 @@ Terminal focus receives its native key bindings; browser-wide command shortcuts 
 
 ## Empty, Disabled, and Failure States
 
-| Situation                          | User-facing behavior                                                                                                                                      |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Computer sharing disabled          | Hide active Files/Changes/Terminal controls and explain the startup option in instance information; no misleading Enable button without process authority |
-| Missing/invalid model or extension | Link the blocked conversation to its configuration diagnostic; preserve its prompt                                                                        |
-| API key rejected                   | Request a valid key while distinguishing access failure from lost project data; do not repeat mutations after login                                       |
-| Browser offline                    | Mark presence/output as disconnected, preserve recoverable local work, disable execution submissions                                                      |
-| Draft synchronization failed       | Show unsynchronized state and retain recoverable text; do not claim server persistence                                                                    |
-| File changed externally            | Preserve the local buffer and offer comparison/reload rather than silent overwrite                                                                        |
-| Repository inspection failed       | Explain unavailable Git state, not a clean checkout                                                                                                       |
-| Run failed                         | Show the owning operation error and retained evidence; keep deliberate recovery separate from retrying unknown effects                                    |
-| Server restarted                   | Restore continuation, disclose lost shared drafts and live authority, and never automatically resubmit input or recreate a terminal                       |
+| Situation                                     | User-facing behavior                                                                                                                                      |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Computer sharing disabled                     | Hide active Files/Changes/Terminal controls and explain the startup option in instance information; no misleading Enable button without process authority |
+| Missing/invalid model or extension            | Link the blocked conversation to its configuration diagnostic; preserve its prompt                                                                        |
+| API key rejected                              | Request a valid key while distinguishing access failure from lost project data; do not repeat mutations after login                                       |
+| Browser offline                               | Mark presence/output as disconnected, preserve recoverable local work, disable execution submissions                                                      |
+| Draft synchronization failed                  | Show unsynchronized state and retain recoverable text; do not claim server persistence                                                                    |
+| File changed externally                       | Preserve the local buffer and offer comparison/reload rather than silent overwrite                                                                        |
+| Repository inspection failed                  | Explain unavailable Git state, not a clean checkout                                                                                                       |
+| Run failed                                    | Show the owning operation error and retained evidence; keep deliberate recovery separate from retrying unknown effects                                    |
+| Server restarted                              | Reload continuation and committed comments, disclose lost shared drafts and live authority, and never automatically resubmit input or recreate a terminal |
+| Comment source or selected target unavailable | Preserve published comments or the local unpublished draft, explain the unavailable/stale target, and never silently attach to different output           |
 
 ## Verifiable Flows
 
-1. A person opens a configured Project, starts a conversation, and submits without entering the configuration center.
-2. Two browsers coedit one prompt, observe one accepted submission, and retain any uncaptured edits.
-3. One collaborator reads a file/diff while another stays in Chat; adding context is visible to both, navigation is not synchronized.
-4. A busy Thread permits next-prompt editing but does not silently queue or send it.
-5. Applying Project defaults previews a bounded change and leaves an active Run's capture unchanged.
-6. Native Files and Terminal remain on the server when the Agent uses E2B.
-7. Terminal takeover changes input authority without disconnecting other viewers or replaying input.
-8. Disabled sharing, missing Git, unsupported PTY, and authentication failures have distinct recovery paths.
+01. A person opens a configured Project, starts a conversation, and submits without entering the configuration center.
+02. Two browsers coedit one prompt, observe one accepted submission, and retain any uncaptured edits.
+03. One collaborator reads a file/diff while another stays in Chat; adding context is visible to both, navigation is not synchronized.
+04. A busy Thread permits next-prompt editing but does not silently queue or send it.
+05. Applying Project defaults previews a bounded change and leaves an active Run's capture unchanged.
+06. Native Files and Terminal remain on the server when the Agent uses E2B.
+07. Terminal takeover changes input authority without disconnecting other viewers or replaying input.
+08. Disabled sharing, missing Git, unsupported PTY, and authentication failures have distinct recovery paths.
+09. Two people can see whether they are on the same Chat, file, or configuration page without being navigated there by each other; multiple/background tabs are distinguishable.
+10. A participant comments on saved output while another Run executes; the comment survives reconnect, restart, and a later continuation without entering model history.
+11. Streaming output cannot receive a published comment, and selecting a rendered range never silently anchors to different source text.
+12. A lost comment acknowledgement is reconciled without a duplicate post; a missed live hint is repaired by an ordinary comment query.

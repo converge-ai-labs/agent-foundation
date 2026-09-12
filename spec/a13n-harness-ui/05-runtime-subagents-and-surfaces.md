@@ -50,7 +50,8 @@ The App owns:
 - Thread creation, metadata and configuration mutation, Project-filtered keyset queries, and transcript projection;
 - process-local root admission, receipt correlation, execution, deferred response, waiting, cancellation, and steering;
 - immutable Run composition and continuation publication;
-- in-memory shared browser drafts and participant presence, with frontend Send using existing root admission;
+- in-memory shared browser drafts, page/focus and editor presence, with frontend Send using existing root admission;
+- publication, bounded queries, and referenced saved-output reads for durable human comments;
 - explicitly enabled native Host files, Git projections, and human PTY lifetimes;
 - Project-root Environment binding and state lifecycle;
 - async child admission, execution, checkpointing, query, wait, steering, cancellation, and linked resume;
@@ -317,9 +318,17 @@ The hub references only the existing observer for the latest root Run per Thread
 
 Subscription installation and retained replay are atomic within the owning hub, so events after cutover remain buffered even while snapshot queries run. Ring loss or a subscriber gap requests reset; it never invents historical output. Closing or cancelling delivery releases the registered subscriber even under task cancellation, without cancelling the producing Run.
 
-A separate lightweight App-wide stream emits bounded invalidation hints for configuration, catalog, Project, Thread metadata/configuration/continuation, root operation, and child execution changes. Each hint identifies only the affected summary scope needed for refetch. It carries no transcript or checkpoint payload and is not durable truth. A surface that misses hints refetches its summaries.
+A separate lightweight App-wide stream emits bounded invalidation hints for configuration, catalog, Project, Thread metadata/configuration/continuation, root operation, child execution, and committed output-comment changes. Each hint identifies only the affected summary scope needed for refetch. It carries no transcript or checkpoint payload and is not durable truth. A surface that misses hints refetches its summaries.
 
 Retained transcript comes from selected continuations and child compact checkpoints. Current-process activity is merged only for presentation and never written back as continuation truth outside its owning checkpoint path.
+
+### Collaboration and Comment Delivery
+
+[Collaborative conversations](webui/01-collaborative-conversations.md) owns App-wide page participation, same-page membership, and Thread-scoped composer synchronization. Presence and drafts are separate transient values; a Thread-focused SSE reset does not recreate their browser state. Interactive delivery validates instance access before registering presence or joining a draft. A page target grants no new resource or execution authority.
+
+[Output comments](webui/05-output-comments.md) use ordinary App publication and bounded query operations with a separate durable completion boundary. Saved text projections expose typed opaque comment targets, not generic object-store references. Publication resolves only supported saved assistant text in the supplied Thread scope; a published comment provides bounded access to its original target without selecting that source for execution. Neither browser nor HTTP adapter reads SQLite or immutable files directly.
+
+A comment invalidation is emitted only after commit and carries the affected Thread/comment scope, not an AG-UI assistant message or full discussion history. Reconnect refetches durable comments independently of detailed Run replay and draft synchronization. Live presence snapshots describe participation, not durable comment coverage. No cross-channel arrival order authorizes clearing an input, navigating another participant, or treating a comment as root input.
 
 ## CLI
 

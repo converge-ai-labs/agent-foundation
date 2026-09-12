@@ -71,7 +71,7 @@ from a13n_harness_ui.configuration_inspection import (
     captured_configuration,
 )
 from a13n_harness_ui.content_plugins import ContentPluginStore
-from a13n_harness_ui.environment_profiles import BUILT_IN_ENVIRONMENT_PROFILES
+from a13n_harness_ui.environment_profiles import BUILT_IN_ENVIRONMENT_PROFILES, built_in_environment_profile
 from a13n_harness_ui.environment_runtime import (
     EnvironmentRunService,
     EnvironmentSnapshotReconstructor,
@@ -129,6 +129,28 @@ from a13n_harness_ui.model_accounts.login import LoginRequest, LoginSessions, Lo
 from a13n_harness_ui.model_accounts.usage import CodexUsage, CodexUsageClient, ResetRequest, ResetResult
 from a13n_harness_ui.model_runtime import CodexSubscriptionSource, GrokSubscriptionSource, SubscriptionSource
 from a13n_harness_ui.observation import open_observation
+from a13n_harness_ui.output_comment_models import (
+    CommentPage,
+    CommentPublication,
+    OutputComment,
+    SavedChildOutputPage,
+    SavedOutputTarget,
+    SavedOutputView,
+)
+from a13n_harness_ui.output_comments import OutputComments
+from a13n_harness_ui.page_presence import (
+    ChangesPage,
+    ConversationPage,
+    FilePage,
+    PageFocus,
+    PagePresence,
+    PresenceFrame,
+    PresenceReport,
+    ProjectPage,
+    ResourcePage,
+    TerminalPage,
+    WorkbenchPage,
+)
 from a13n_harness_ui.root_execution import RootRunExecutor
 from a13n_harness_ui.root_input import detach_input
 from a13n_harness_ui.root_run import RootRunCoordinator
@@ -298,6 +320,8 @@ class HarnessUiApp:
         self._host_git = HostGit(enabled=share_computer)
         self._host_terminal = HostTerminal(enabled=share_computer)
         self._shared_drafts: dict[str, SharedDraft] = {}
+        self._output_comments = OutputComments(store)
+        self._page_presence = PagePresence()
         self._root_runs = root_runs
         self._subagent_operator = subagent_operator
         self._live_hub = live_hub
@@ -1013,6 +1037,34 @@ class HarnessUiApp:
                 limit=limit,
             )
 
+    async def publish_output_comment(self, thread_id: str, publication: CommentPublication) -> OutputComment:
+        async with self._operation():
+            result = await self._output_comments.publish(thread_id, publication)
+            await self._summary_hub.publish(kind="comment", root_thread_id=thread_id, thread_id=thread_id)
+            return result
+
+    async def get_output_comment(self, thread_id: str, comment_id: str) -> OutputComment:
+        async with self._operation():
+            return await self._output_comments.get(thread_id, comment_id)
+
+    async def list_output_comments(
+        self, thread_id: str, *, target: SavedOutputTarget | None = None, cursor: str | None = None, limit: int = 20
+    ) -> CommentPage:
+        async with self._operation():
+            return await self._output_comments.list(thread_id, target=target, cursor=cursor, limit=limit)
+
+    async def read_commented_output(
+        self, thread_id: str, target: SavedOutputTarget, *, offset: int = 0, limit: int = 64 * 1024
+    ) -> SavedOutputView:
+        async with self._operation():
+            return await self._output_comments.output(thread_id, target, offset=offset, limit=limit)
+
+    async def saved_child_outputs(
+        self, parent_thread_id: str, execution_id: str, *, cursor: str | None = None, limit: int = 20
+    ) -> SavedChildOutputPage:
+        async with self._operation():
+            return await self._output_comments.child_outputs(parent_thread_id, execution_id, cursor=cursor, limit=limit)
+
     async def get_thread_transcript(
         self,
         *,
@@ -1083,6 +1135,76 @@ class HarnessUiApp:
                 await self._threads.update_metadata(thread_id=thread_id, mutation=mutation)
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
             return await self._projections.get_thread(thread_id)
+
+    def page_presence(self) -> PagePresence:
+        self._require_ready()
+        return self._page_presence
+
+    async def report_page_presence(self, participant_id: str, report: PresenceReport) -> None:
+        async with self._operation():
+            self._page_presence.report(participant_id, report)
+
+    async def page_presence_snapshot(self, participant_id: str | None = None) -> PresenceFrame:
+        async with self._operation():
+            return await self._page_presence.snapshot(participant_id, self._page_unavailable_reason)
+
+    async def _page_unavailable_reason(self, focus: PageFocus) -> str | None:
+        try:
+            if focus.root_thread_id is not None:
+                thread = await self._threads.get(focus.root_thread_id)
+                if thread.parent_thread_id is not None:
+                    return "child_thread_scoped"
+            target = focus.target
+            if isinstance(target, WorkbenchPage):
+                return None
+            if isinstance(target, ConversationPage):
+                thread = await self._threads.get(target.thread_id)
+                return "child_thread_scoped" if thread.parent_thread_id is not None else None
+            if isinstance(target, FilePage):
+                await self._host_files.metadata(target.path)
+                return None
+            if isinstance(target, ChangesPage):
+                if not self.host_git_available:
+                    return "host_git_unavailable"
+                discovery = await self._host_git.discover(target.repository_root)
+                return (
+                    None
+                    if (discovery.repository is not None and discovery.repository.root == target.repository_root)
+                    else "host_git_not_repository"
+                )
+            if isinstance(target, TerminalPage):
+                self._host_terminal.get(target.terminal_id)
+                return None
+            source = await self._configurations.current()
+            if source is None:
+                return "configuration_unavailable"
+            if isinstance(target, ProjectPage):
+                return None if target.project_id in source.projects else "project_missing"
+            if isinstance(target, ResourcePage):
+                resources = {
+                    "model": source.models,
+                    "agent": source.agents,
+                    "subagent": source.subagents,
+                    "harness_plugin": source.harness_plugins,
+                    "environment_profile": source.environment_profiles,
+                    "environment_run_extension": source.environment_run_extensions,
+                    "mcp_server": source.mcp_servers,
+                }
+                if target.resource_kind == "content_plugin":
+                    return (
+                        None
+                        if any(item.plugin_id == target.resource_id for item in source.content_plugins)
+                        else "resource_missing"
+                    )
+                if (
+                    target.resource_kind == "environment_profile"
+                    and built_in_environment_profile(target.resource_id) is not None
+                ):
+                    return None
+                return None if target.resource_id in resources[target.resource_kind] else "resource_missing"
+            return "page_unavailable"
+        except HarnessUiError as exc:
+            return exc.code
 
     async def shared_draft(self, thread_id: str) -> SharedDraft:
         async with self._operation():
@@ -1870,6 +1992,7 @@ class HarnessUiApp:
             await idle.wait()
 
     async def _close_collaborators(self) -> None:
+        self._page_presence.close()
         for draft in self._shared_drafts.values():
             draft.close()
         self._shared_drafts.clear()

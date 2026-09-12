@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, m
 from a13n_harness_ui.configuration.models import ProjectDefaults
 from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.live import LiveEvent, RootStreamSummary
+from a13n_harness_ui.output_comment_models import SavedOutputTarget
 from a13n_harness_ui.storage import AgentResourceSource, MarkdownSubagentSource, ThreadConfiguration
 from a13n_harness_ui.storage import ThreadConfigurationPatch as StoredThreadConfigurationPatch
 
@@ -176,6 +177,7 @@ class ThreadDetail(SurfaceModel):
 
 
 class TranscriptPart(SurfaceModel):
+    comment_target: SavedOutputTarget | None = None
     metadata: ContentMetadata = Field(default_factory=ContentMetadata)
 
     kind: Literal[

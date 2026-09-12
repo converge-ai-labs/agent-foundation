@@ -15,6 +15,7 @@ from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from websockets.asyncio.client import connect
 
 from .test_app import _write_configuration
+from .test_comment_protocol import publication
 from .test_configuration_protocol import HEADERS, settled
 from .test_interactive_protocol import frame_until, listener
 
@@ -150,6 +151,18 @@ async def test_child_question_competing_response_history_and_restart(
             )
             child_review = await api.get(prefix + f"/children/{child['execution_id']}/review")
             assert child_review.status_code == 200 and "Child completed." in child_review.text
+            output_page = await api.get(prefix + f"/children/{child['execution_id']}/saved-output", params={"limit": 1})
+            assert output_page.status_code == 200, output_page.text
+            output = output_page.json()["outputs"][0]
+            assert output["text"] == "Child completed."
+            child_comment = publication(output["target"])
+            posted = await api.post(prefix + "/comments", json=child_comment)
+            assert posted.status_code == 200, posted.text
+            child_comment_record = posted.json()
+            wrong_parent = await api.get(
+                f"/api/threads/{child['child_thread_id']}/children/{child['execution_id']}/saved-output"
+            )
+            assert wrong_parent.status_code == 400
             usage = (await api.get(prefix + "/usage")).json()
             assert usage["descendants"]["model_requests"] == 1
             assert usage["root"]["model_requests"] == 4
@@ -157,6 +170,9 @@ async def test_child_question_competing_response_history_and_restart(
         async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
             restored = (await api.get(prefix + "/transcript")).json()
             assert restored == history
+            assert (await api.post(prefix + "/comments", json=child_comment)).json() == child_comment_record
+            original = await api.post(prefix + "/saved-output", json=child_comment["target"])
+            assert original.status_code == 200 and original.json()["text"] == "Child completed."
             assert (await api.get(prefix + "/children")).json()["executions"][0]["execution_id"] == child[
                 "execution_id"
             ]

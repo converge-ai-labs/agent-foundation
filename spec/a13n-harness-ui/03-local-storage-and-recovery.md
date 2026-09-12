@@ -2,11 +2,11 @@
 
 ## Design Position
 
-Harness UI keeps persistence continuation-oriented:
+Harness UI keeps execution persistence continuation-oriented and stores published human comments separately:
 
 1. editable YAML, MCP JSON, and local Markdown files own desired resources and global defaults;
 2. data-root Content Plugin ID directories contain editable local files with optional Git provenance;
-3. SQLite owns accepted-generation indexes, Project/resource lookup projections, terminal Project Model preferences, sticky Thread configurations, execution heads, and selected references;
+3. SQLite owns accepted-generation indexes, Project/resource lookup projections, terminal Project Model preferences, sticky Thread configurations, execution heads, selected references, and published output comments;
 4. immutable content-addressed files own normalized configuration generations, resolved Run compositions, and complete continuation checkpoints;
 5. shared browser drafts, live runtime objects, presence, and native terminal sessions remain in process memory.
 
@@ -27,6 +27,7 @@ The store supports local restart and inspection, not durable work scheduling. Ha
 | Child execution heads                                                                             | SQLite                        | Segment correlation, saved status, and selected checkpoint               |
 | Compact child display                                                                             | Immutable child checkpoint    | Inspection history only                                                  |
 | Environment-state references                                                                      | SQLite plus immutable files   | Current Host-authoritative state                                         |
+| Published output comments and original saved target references                                    | SQLite                        | Durable human discussion; never model history or execution authority     |
 | Shared browser drafts                                                                             | Process memory                | Synchronized editing state only; not execution or continuation authority |
 | Participant presence and native Host terminal sessions                                            | Process memory                | Current shared instance only                                             |
 | Root receipts, active tasks, Models, credentials, clients, adapters, streams, and shell processes | Process memory                | Current App only                                                         |
@@ -46,6 +47,18 @@ A browser can reconnect to the document during the same App lifetime. Server res
 
 Attachments reuse the existing Thread-scoped staging and retained-input lifecycle. The App protects a participating Thread's file area during its lifetime; submitting input retains referenced files independently of the document. Sharing a data root between independent App processes does not synchronize their live documents.
 
+## Output Comment Storage
+
+[Saved output comments](webui/05-output-comments.md) own comment semantics and source anchoring. The existing data-root `metadata.sqlite3` owns their complete durable records: comment identity, root and producing Thread association, exact saved source and text-block location, optional validated text range/quote, publication-time author attribution, body, and creation time. Lookup indexes support Thread-scoped ordered listing and exact-target queries. Presence directories, browser tabs, and CRDT updates are not written into these records or new participant tables.
+
+Publication reads and validates an existing saved source outside the database transaction. One short transaction checks the required selected source or existing retained comment target and inserts the complete record. The stable comment identity is unique; identical reconciliation returns the existing record and conflicting reuse fails without overwriting it. Comment publication does not increment Thread metadata/configuration versions or advance a continuation. Notification occurs only after commit and holds no database session across delivery.
+
+Comment-held source references are retained even after the Thread selects a newer continuation. They point only to existing immutable saved output, not a new output accumulator, whole-transcript table, or a newly synthesized execution checkpoint. Referenced-object reads remain App-mediated and bounded. Scratch cleanup, archive, continuation compaction, draft clearing, and process shutdown do not delete comments or their referenced saved objects. A broken source reference fails explicitly without deleting or relocating the comment. This retention does not select the old checkpoint for execution.
+
+The comment schema is an additive change to the package-owned local SQLite/Alembic history. Upgrade creates the comment storage and indexes with an empty collection for existing Threads; it neither rewrites checkpoints nor backfills comments from conversation text, usage, or live events. It uses the existing serialized migration transaction, single-head migration history, and short bounded lock waiting. There is no new database service, separate migration runner, or cross-database transaction.
+
+Startup serves comment reads and writes only after a compatible schema is established. Migration failure is an explicit store-startup failure, not an in-memory-only fallback that acknowledges unsaved comments. Interrupted transactional upgrades retain the prior schema or the complete new schema. A newer revision alone does not exclude older Apps whose required storage surface remains available. Downgrade past comment storage refuses while comment records exist rather than silently deleting human discussion; forward repair or restoration of a compatible backup remains deliberate. An empty comment schema can be removed without altering Thread or checkpoint data.
+
 ## SQLite Contract
 
 SQLite uses WAL, foreign keys, a bounded busy timeout, UTC-aware persistence values, and short transactions. A transaction never spans Agent execution, model or tool I/O, Environment operations, a wait, a sleep, configuration-file mutation, or live streaming.
@@ -58,12 +71,23 @@ The conceptual groups are:
 | Threads          | Identity, parent, metadata version and values, initial state, sticky configuration version, exact selections, and selected continuation |
 | Child executions | Execution ID, child Run ID, segment index, saved status, composition, checkpoint, and failure                                           |
 | Environments     | Complete Thread/configuration/root binding key and current state reference                                                              |
+| Output comments  | Stable comment identity, Thread family, saved target, author attribution, body, selection quote, and publication time                   |
 
 Resource lookup rows are rebuildable projections of the accepted file generation. They accelerate queries but never authorize edits or survive as an alternate resource definition when the owning file is removed.
 
 One App serializes root admission per Thread and state changes per child execution. Separate local App processes can open the same store, but they do not share root receipts, active tasks, or control and do not take over one another's executions. Thread metadata and Thread configuration updates compare their independent expected integer versions; continuation, child checkpoint, accepted generation, and Environment state selection compare expected references. A mismatch fails explicitly and never overwrites the newer head.
 
 Harness UI does not use PID inspection, heartbeats, or time-based leases to infer whether another App is alive. Current execution ownership is process-local. Hard OS locks used for Thread file cleanup protect resource use only; they neither establish execution ownership nor authorize takeover.
+
+## Compatible Upgrades Across App Versions
+
+Multiple TUI or WebUI processes can remain open while a newer package migrates their shared data root. A database migration revision identifies applied schema changes; it is not a runtime package-version lock. An older App does not require the database revision to equal its bundled head, does not downgrade or stamp a newer revision, and can reconnect when its required tables and columns remain available. An active Run's save is not gated by a package-head comparison.
+
+Startup upgrades revisions known to the package under the existing bounded serialized migration transaction. When the database has a single revision unknown to an older package, that package leaves the migration history unchanged and checks its required table/column surface. Additional tables and columns do not by themselves reject access. Missing required storage, ambiguous migration history, corrupt objects, and real write conflicts remain explicit errors; no in-memory acknowledgment substitutes for persistence.
+
+Schema changes preserve the reads and writes of concurrently running supported older Apps. Compatible expansion retains existing columns, meanings, constraints, and immutable payload representations; added fields permit older writers to omit them. A migration's structural startup check is not proof of semantic compatibility. New writers must not publish payloads that supported old readers cannot interpret, and genuinely incompatible changes require an explicit compatibility transition rather than an ordinary automatic upgrade that breaks active Runs. Historical readers that predate this behavior retain their own startup limitations.
+
+Mixed-version access does not share live execution ownership or remove compare-and-select conflicts. Two Apps independently running the same Thread can still conflict on its selected continuation; schema compatibility never permits overwriting that newer continuation.
 
 ## Thread Files and Automatic Scratch Cleanup
 
@@ -108,7 +132,7 @@ class ThreadConfiguration(BaseModel):
     mcp_server_ids: tuple[str, ...]
 ```
 
-`agent_source` is the discriminated Agent-resource or Markdown-subagent reference owned by [Projects, Threads, and Environments](04-projects-threads-and-environments.md#sticky-thread-configuration). A null `project_id` records a Thread without a Project and is preserved across restart and child creation. The SQLite upgrade rebuilds the Thread configuration table with a nullable Project column while preserving existing rows and references; no existing Thread is reassigned. It uses the normal serialized migration transaction. Downgrade refuses before altering the table if projectless Threads exist; older binaries must not open this schema. The lists are exact ordered enabled selections. Omission belongs only to create or patch input; the stored head contains no inheritance marker. Every non-empty update compares the caller's required expected version, commits all changed axes, and increments `version` atomically. A no-op can retain the version.
+`agent_source` is the discriminated Agent-resource or Markdown-subagent reference owned by [Projects, Threads, and Environments](04-projects-threads-and-environments.md#sticky-thread-configuration). A null `project_id` records a Thread without a Project and is preserved across restart and child creation. The SQLite upgrade rebuilds the Thread configuration table with a nullable Project column while preserving existing rows and references; no existing Thread is reassigned. It uses the normal serialized migration transaction. Downgrade refuses before altering the table if projectless Threads exist; readers that require a non-null Project cannot interpret projectless Threads; revision equality is not a substitute for that payload compatibility boundary. The lists are exact ordered enabled selections. Omission belongs only to create or patch input; the stored head contains no inheritance marker. Every non-empty update compares the caller's required expected version, commits all changed axes, and increments `version` atomically. A no-op can retain the version.
 
 An admitted Run records the Thread configuration version and accepted generation it captured. A later update is valid and affects only later admissions.
 
@@ -212,7 +236,7 @@ The profile digest reuses the accepted generation's canonical normalized content
 
 ## Recovery
 
-Startup validates retained values lazily and reloads the file configuration together with current Content Plugin directories. It does not restore root receipts, replay root input, restart a child segment, reconnect shell processes, infer process liveness, or manufacture a checkpoint from display.
+Startup validates retained values lazily and reloads the file configuration together with current Content Plugin directories. Committed comments remain available through ordinary queries, without restoring page presence or shared drafts. It does not restore root receipts, replay root input, restart a child segment, reconnect shell processes, infer process liveness, or manufacture a checkpoint from display.
 
 A Thread resumes from its selected continuation using its current sticky configuration unless the next admission applies a patch. A Thread with no selected continuation starts its first Run from the immutable empty `HarnessState` created with `HarnessState.new()` when the Thread was inserted. The generated Harness `thread_id` is the Harness UI Thread ID. If selected resources are missing from the current accepted generation or cannot reconstruct against installed dependencies, the Run fails before dispatch; recovery does not fall back to the composition that produced the prior continuation.
 
@@ -247,7 +271,7 @@ The terminal failure presentation identifies the report path and the repository'
 
 ## Invariants
 
-01. Files own desired resources; SQLite owns accepted projections and mutable runtime heads.
+01. Files own desired resources; SQLite owns accepted projections, mutable runtime heads, and published human comments.
 02. Thread configuration is sticky, exact, versioned, and replaceable between Runs.
 03. Thread metadata and Thread configuration are independent versioned heads.
 04. Every admitted Run has one immutable resolved composition.
@@ -257,3 +281,5 @@ The terminal failure presentation identifies the report path and the repository'
 08. Compact display never becomes Harness continuation state.
 09. Process loss never triggers implicit replay, takeover, PID inspection, heartbeat, lease, or lock-file recovery.
 10. Transactions remain short and outside file or external execution I/O.
+11. Published comments retain their original saved targets independently of the selected continuation; they never become continuation or execution authority.
+12. Comment schema upgrades preserve existing conversation data, and no successful publication falls back to transient storage.

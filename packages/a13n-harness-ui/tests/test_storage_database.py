@@ -35,6 +35,7 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
             "current_configuration",
             "environment_binding",
             "project_model_preference",
+            "output_comment",
             "resource_index",
             "thread",
             "thread_configuration",
@@ -168,7 +169,7 @@ def test_migration_verification_rejects_an_unknown_database_revision(tmp_path: P
     finally:
         engine.dispose()
 
-    with pytest.raises(DatabaseSchemaError, match="found: unknown"):
+    with pytest.raises(DatabaseSchemaError, match="missing required table"):
         DatabaseMigrator(path).verify_current()
 
 

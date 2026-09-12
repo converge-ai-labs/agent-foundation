@@ -423,7 +423,7 @@ class SummaryCursor(_StreamModel):
 class SummaryInvalidation(_StreamModel):
     epoch: str = Field(min_length=1, max_length=80)
     sequence: int = Field(ge=1)
-    kind: Literal["configuration", "catalog", "project", "thread", "root_operation", "child_execution"]
+    kind: Literal["configuration", "catalog", "project", "thread", "root_operation", "child_execution", "comment"]
     root_thread_id: str | None = Field(default=None, min_length=1, max_length=80)
     thread_id: str | None = Field(default=None, min_length=1, max_length=80)
     execution_id: str | None = Field(default=None, min_length=1, max_length=80)
@@ -496,7 +496,7 @@ class HarnessUiSummaryHub:
     async def publish(
         self,
         *,
-        kind: Literal["configuration", "catalog", "project", "thread", "root_operation", "child_execution"],
+        kind: Literal["configuration", "catalog", "project", "thread", "root_operation", "child_execution", "comment"],
         root_thread_id: str | None = None,
         thread_id: str | None = None,
         execution_id: str | None = None,

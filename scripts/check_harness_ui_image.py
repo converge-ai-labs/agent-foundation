@@ -93,6 +93,8 @@ def check(image: str) -> None:
         assert status["features"]["host_git"] is True
         assert status["features"]["host_terminal"] is True
         assert status["features"]["shared_drafts"] is True
+        assert status["features"]["page_presence"] is True
+        assert status["features"]["output_comments"] is True
         assert docker("exec", name, "sh", "-c", "command -v git; command -v bash")
         code, body = request(url + "/api/host/terminals", key, data={"cwd": "/work", "rows": 37, "columns": 111})
         assert code == 200
@@ -205,6 +207,73 @@ def check(image: str) -> None:
                 observed.apply_update(base64.b64decode(frame["update_base64"]))
                 if str(observed.get("text", type=Text)) == "container coedit":
                     break
+        with (
+            connect(url.replace("http:", "ws:") + "/api/presence/connect", origin=url, proxy=None) as first,
+            connect(url.replace("http:", "ws:") + "/api/presence/connect", origin=url, proxy=None) as second,
+        ):
+            first.send(json.dumps({"api_key": key}))
+            second.send(json.dumps({"api_key": key}))
+            a = json.loads(first.recv(timeout=5))["participant_id"]
+            b = json.loads(second.recv(timeout=5))["participant_id"]
+            assert a != b
+            report = {
+                "display_name": "Image reader",
+                "foreground": True,
+                "focus": {"target": {"kind": "conversation", "thread_id": draft_thread_id}},
+            }
+            first.send(json.dumps(report))
+            second.send(json.dumps({**report, "foreground": False}))
+            while True:
+                frame = json.loads(first.recv(timeout=5))
+                if b in frame["same_page_participant_ids"]:
+                    break
+        # A second installed App process saves deterministic output into the same
+        # disposable data root; no provider credentials or model network calls.
+        docker(
+            "exec",
+            name,
+            "python",
+            "-c",
+            """
+import asyncio, sys
+from pathlib import Path
+from a13n_harness_ui.app import open_harness_ui_app
+from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+from pydantic_ai.models.function import FunctionModel
+async def stream(messages, info):
+    yield "Saved container comment source"
+async def resolve(self, context, model_id):
+    return FunctionModel(stream_function=stream)
+HarnessUiModelResolver.__call__ = resolve
+async def main():
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=Path("/data")), pricing_auto_update=False)
+    async with open_harness_ui_app(settings, configuration_path=Path("/home/app/.a13n-harness-ui/a13n-harness-ui.yaml"), instrumentation=None) as app:
+        receipt = await app.submit_thread(thread_id=sys.argv[1], prompt="Create saved fixture")
+        result = await app.wait_root_operation(receipt.receipt_id, timeout_seconds=10)
+        assert result.status.value == "completed", result
+asyncio.run(main())
+""",
+            draft_thread_id,
+        )
+        code, body = request(url + f"/api/threads/{draft_thread_id}/transcript", key)
+        assert code == 200, body
+        target = next(
+            part["comment_target"]
+            for entry in json.loads(body)["entries"]
+            for part in entry["parts"]
+            if part.get("comment_target") is not None
+        )
+        publication = {
+            "comment_id": "comment-" + secrets.token_hex(16),
+            "target": target,
+            "author": {"display_name": "Image reader"},
+            "body": "Retain this feedback",
+        }
+        comment_path = f"/api/threads/{draft_thread_id}/comments"
+        code, body = request(url + comment_path, key, data=publication)
+        assert code == 200, body
+        comment = json.loads(body)
         for path in targets.values():
             docker("exec", name, "sh", "-c", f"printf persisted > {path}/smoke-marker")
         docker("stop", "--time", "15", name)
@@ -215,6 +284,10 @@ def check(image: str) -> None:
         assert replacement_key != key
         assert request(url + "/api/status", key)[0] == 401
         assert request(url + "/api/status", replacement_key)[0] == 200
+        assert json.loads(request(url + "/api/presence", replacement_key)[1])["participants"] == []
+        assert json.loads(request(url + comment_path, replacement_key, data=publication)[1]) == comment
+        code, body = request(url + f"/api/threads/{draft_thread_id}/saved-output", replacement_key, data=target)
+        assert code == 200 and json.loads(body)["text"] == "Saved container comment source"
         assert request(url + "/api/host/terminals", replacement_key) == (200, b"[]")
         assert request(url + f"/api/host/terminals/{terminal_id}", replacement_key)[0] == 404
         with connect(url.replace("http:", "ws:") + draft_path, origin=url, proxy=None) as restarted:
@@ -234,7 +307,7 @@ def check(image: str) -> None:
             "test -s /home/app/.a13n-harness-ui/a13n-harness-ui.yaml; find /data -name '*.sqlite*' -o -name '*.db'",
         )
         print(
-            f"Passed: non-root PTY/resize/Git/CRDT, auth, assets, version {installed}, probes, key rotation, persistence, SIGTERM"
+            f"Passed: non-root PTY/resize/Git/CRDT/presence/comments, auth, assets, version {installed}, probes, key rotation, persistence, SIGTERM"
         )
     finally:
         # Only resources created under this invocation's unpredictable name.
