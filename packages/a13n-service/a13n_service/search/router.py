@@ -2,10 +2,11 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Query, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.etags import resource_etag
+from a13n_service.http_types import IfMatch
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.iam.http.resource_dependencies import OrganizationId, WorkspaceId
 from a13n_service.iam.resource_routes import require_organization_boundary
@@ -32,15 +33,6 @@ router = APIRouter(prefix="/api/v1", tags=["search-providers"])
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
 
 
-def _if_match(value: Annotated[str | None, Header(alias="If-Match", min_length=1, max_length=256)] = None) -> str:
-    if value is None:
-        raise SearchProviderError(
-            "precondition_required", "If-Match is required.", category=ErrorCategory.precondition_required
-        )
-    return value
-
-
-IfMatch = Annotated[str, Depends(_if_match)]
 Limit = Annotated[int, Query(ge=1, le=100)]
 Cursor = Annotated[str | None, Query(max_length=2048)]
 

@@ -1,9 +1,9 @@
 import pytest
 from a13n_service.environments.domain import (
+    CreateManagedEnvironmentRequest,
     CreateProviderRequest,
     CreateTemplateRequest,
     CreateTemplateRevisionRequest,
-    NewEnvironmentSelection,
     UpdateTemplateRequest,
 )
 from a13n_service.environments.errors import EnvironmentManagementError
@@ -42,7 +42,7 @@ async def test_org_template_allocates_independent_workspace_environments(
     )
     assert (await service.list_templates(actor=actor(), workspace_id=WORKSPACE_ID)).items == (template,)
     assert (await service.list_providers(actor=actor(), workspace_id=WORKSPACE_ID)).items == (provider,)
-    choice = NewEnvironmentSelection(template_id=template.id)
+    choice = CreateManagedEnvironmentRequest(template_id=template.id)
     first = await service.create_environment(
         actor=actor(), workspace_id=WORKSPACE_ID, request=choice, idempotency_key="first"
     )

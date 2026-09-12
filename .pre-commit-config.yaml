@@ -35,6 +35,7 @@ repos:
       - id: sdk-generate
         name: Regenerate SDKs when the Service contract changes
         entry: make sdk-generate
+        exclude: ^packages/[^/]+/tests/
         language: system
         files: ^(packages/|scripts/export-a13n-service-openapi\.py$|sdk/codegen/|sdk/openapi\.json$|sdk/typescript/(generate\.mjs|package(-lock)?\.json)$|sdk/python/pyproject\.toml$|uv\.lock$)
         pass_filenames: false

@@ -25,3 +25,7 @@ def target_identity(
 def local_backend_eligible():
     host = EnvironmentProviderRecord.configuration["host_id"].as_string()
     return or_(host.is_(None), host == socket.gethostname())
+
+
+def default_environment_name(environment_id: str) -> str:
+    return f"Environment {environment_id[-8:]}"

@@ -2,11 +2,11 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Query, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.etags import resource_etag
-from a13n_service.http_types import IdempotencyKey
+from a13n_service.http_types import IdempotencyKey, IfMatch
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.iam.http.resource_dependencies import OrganizationId, WorkspaceId
 from a13n_service.iam.resource_routes import require_organization_boundary
@@ -26,6 +26,7 @@ from .domain import (
     EnvironmentTemplate,
     EnvironmentTemplateRevision,
     ReplaceCredentialRequest,
+    UpdateEnvironmentRequest,
     UpdateProviderRequest,
     UpdateTemplateRequest,
 )
@@ -34,7 +35,6 @@ from .service import EnvironmentService
 
 router = APIRouter(prefix="/api/v1", tags=["environments"])
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
-IfMatch = Annotated[str, Header(alias="If-Match", max_length=256)]
 Limit = Annotated[int, Query(ge=1, le=100)]
 
 
@@ -180,6 +180,22 @@ async def list_environments(
 @router.get("/environments/{resource_id}")
 async def get_environment(request: Request, response: Response, actor: Actor, resource_id: str) -> Environment:
     resource = await _service(request).get_environment(actor=actor, resource_id=resource_id)
+    response.headers["ETag"] = resource_etag(resource.id, resource.updated_at)
+    return resource
+
+
+@router.patch("/environments/{environment_id}")
+async def update_environment(
+    request: Request,
+    response: Response,
+    actor: Actor,
+    environment_id: str,
+    body: UpdateEnvironmentRequest,
+    if_match: IfMatch,
+) -> Environment:
+    resource = await _service(request).update_environment(
+        actor=actor, environment_id=environment_id, request=body, if_match=if_match
+    )
     response.headers["ETag"] = resource_etag(resource.id, resource.updated_at)
     return resource
 

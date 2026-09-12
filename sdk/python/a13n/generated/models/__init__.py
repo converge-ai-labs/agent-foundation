@@ -134,6 +134,7 @@ from .create_connector_provider_request_credentials import CreateConnectorProvid
 from .create_hook_subscription_request import CreateHookSubscriptionRequest
 from .create_invitation_request import CreateInvitationRequest
 from .create_key_request import CreateKeyRequest
+from .create_managed_environment_request import CreateManagedEnvironmentRequest
 from .create_model_provider_request import CreateModelProviderRequest
 from .create_model_provider_request_configuration import CreateModelProviderRequestConfiguration
 from .create_model_provider_request_extra_headers import CreateModelProviderRequestExtraHeaders
@@ -175,9 +176,16 @@ from .environment_command_status import EnvironmentCommandStatus
 from .environment_ownership import EnvironmentOwnership
 from .environment_provider import EnvironmentProvider
 from .environment_provider_configuration import EnvironmentProviderConfiguration
+from .environment_provider_configuration_source import EnvironmentProviderConfigurationSource
 from .environment_provider_definition import EnvironmentProviderDefinition
 from .environment_provider_definition_configuration_schema import EnvironmentProviderDefinitionConfigurationSchema
 from .environment_provider_definition_credential_schema_type_0 import EnvironmentProviderDefinitionCredentialSchemaType0
+from .environment_provider_definition_template_configuration_schemas import (
+    EnvironmentProviderDefinitionTemplateConfigurationSchemas,
+)
+from .environment_provider_definition_template_configuration_schemas_additional_property import (
+    EnvironmentProviderDefinitionTemplateConfigurationSchemasAdditionalProperty,
+)
 from .environment_retention_condition import EnvironmentRetentionCondition
 from .environment_state import EnvironmentState
 from .environment_status import EnvironmentStatus
@@ -472,6 +480,7 @@ from .update_agent_request import UpdateAgentRequest
 from .update_connection_request import UpdateConnectionRequest
 from .update_connector_provider_request import UpdateConnectorProviderRequest
 from .update_connector_provider_request_credentials_type_0 import UpdateConnectorProviderRequestCredentialsType0
+from .update_environment_request import UpdateEnvironmentRequest
 from .update_hook_subscription_request import UpdateHookSubscriptionRequest
 from .update_hook_subscription_state_request import UpdateHookSubscriptionStateRequest
 from .update_model_provider_request import UpdateModelProviderRequest
@@ -643,6 +652,7 @@ __all__ = (
     "CreateHookSubscriptionRequest",
     "CreateInvitationRequest",
     "CreateKeyRequest",
+    "CreateManagedEnvironmentRequest",
     "CreateModelProviderRequest",
     "CreateModelProviderRequestConfiguration",
     "CreateModelProviderRequestExtraHeaders",
@@ -684,9 +694,12 @@ __all__ = (
     "EnvironmentOwnership",
     "EnvironmentProvider",
     "EnvironmentProviderConfiguration",
+    "EnvironmentProviderConfigurationSource",
     "EnvironmentProviderDefinition",
     "EnvironmentProviderDefinitionConfigurationSchema",
     "EnvironmentProviderDefinitionCredentialSchemaType0",
+    "EnvironmentProviderDefinitionTemplateConfigurationSchemas",
+    "EnvironmentProviderDefinitionTemplateConfigurationSchemasAdditionalProperty",
     "EnvironmentRetentionCondition",
     "EnvironmentState",
     "EnvironmentStatus",
@@ -973,6 +986,7 @@ __all__ = (
     "UpdateConnectionRequest",
     "UpdateConnectorProviderRequest",
     "UpdateConnectorProviderRequestCredentialsType0",
+    "UpdateEnvironmentRequest",
     "UpdateHookSubscriptionRequest",
     "UpdateHookSubscriptionStateRequest",
     "UpdateModelProviderRequest",

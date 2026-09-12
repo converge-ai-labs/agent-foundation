@@ -49,9 +49,13 @@ export function withSchemaValues(
       if (Object.hasOwn(field, "const")) result[key] = field.const;
       else if (result[key] === undefined && Object.hasOwn(field, "default"))
         result[key] = field.default;
-      if (field.type === "object" && object(field.properties)) {
+      if (
+        result[key] !== null &&
+        field.type === "object" &&
+        object(field.properties)
+      ) {
         const nested = withSchemaValues(
-          field,
+          { ...field, $defs: schema.$defs },
           object(result[key]) ? result[key] : {},
         );
         if (Object.keys(nested).length || Object.hasOwn(result, key))
@@ -96,7 +100,7 @@ export function SchemaFields({
             ? t(field.description)
             : undefined;
         if (Object.hasOwn(field, "const")) return null;
-        const current = value[key] ?? field.default;
+        const current = Object.hasOwn(value, key) ? value[key] : field.default;
         const options = Array.isArray(field.oneOf)
           ? field.oneOf.flatMap((choice) =>
               object(choice) && typeof choice.const === "string"
@@ -136,7 +140,7 @@ export function SchemaFields({
             <fieldset key={key} className={styles.stack}>
               <legend>{label}</legend>
               <SchemaFields
-                schema={field}
+                schema={{ ...field, $defs: schema.$defs }}
                 value={object(current) ? current : {}}
                 onChange={(next) => change(key, next)}
                 secret={secret}
@@ -207,7 +211,9 @@ export function SchemaFields({
                   change(
                     key,
                     event.target.value === ""
-                      ? undefined
+                      ? secret || field.default == null
+                        ? undefined
+                        : ""
                       : field.type === "string"
                         ? event.target.value
                         : Number(event.target.value),

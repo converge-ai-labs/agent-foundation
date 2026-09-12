@@ -53,15 +53,25 @@ class E2BCredential(BaseModel):
 
 
 class E2BProviderConfiguration(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        json_schema_extra={"x-primary-fields": ["template", "timeout_seconds", "allow_internet_access"]},
+    )
 
-    template: str = Field(default="base", min_length=1, max_length=256)
+    template: str = Field(
+        default="base",
+        min_length=1,
+        max_length=256,
+        title="E2B template name or ID",
+        description="Use an existing E2B template. Preinstalled software, CPU and memory are configured when building that template in E2B.",
+    )
     root: str = "/home/user"
     user: str = Field(default="user", pattern=r"^[a-z_][a-z0-9_-]{0,63}$")
     python: str = "/usr/bin/python3"
-    timeout_seconds: int = Field(default=3600, ge=30, le=86_400)
+    timeout_seconds: int = Field(default=3600, ge=30, le=86_400, title="Sandbox timeout (seconds)")
     request_timeout_seconds: float = Field(default=30, gt=0, le=300, allow_inf_nan=False)
-    allow_internet_access: bool = True
+    allow_internet_access: bool = Field(default=True, title="Allow internet access")
     read_only: bool = False
     max_file_bytes: int = Field(default=16 * 1024 * 1024, gt=0, le=1024 * 1024 * 1024)
     max_observation_bytes: int = Field(default=1024 * 1024, gt=0, le=16 * 1024 * 1024)

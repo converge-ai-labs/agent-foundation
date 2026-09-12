@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from a13n_envd_client import __version__ as envd_client_version
 from anyio import CancelScope
-from pydantic import BaseModel, JsonValue, ValidationError
+from pydantic import BaseModel
 
 from .._local_identity import local_backing_identity
 from ..attachments import StdioEIPCarrier
@@ -69,26 +69,8 @@ class LocalEnvdEnvironmentProvider(EnvironmentProvider):
         return _PROVIDER_KEY
 
     @property
-    def configuration_versions(self) -> frozenset[str]:
-        return frozenset({_CONFIGURATION_VERSION})
-
-    def validate_configuration(self, *, schema_version: str, value: JsonValue) -> BaseModel:
-        if schema_version != _CONFIGURATION_VERSION:
-            raise _provider_error(
-                "Local Envd configuration version is unsupported.",
-                code="provider_schema_unsupported",
-                category=EnvironmentProviderErrorCategory.UNSUPPORTED,
-                schema_version=schema_version,
-            )
-        try:
-            return LocalEnvdProviderConfiguration.model_validate(value)
-        except ValidationError as error:
-            raise _provider_error(
-                "Local Envd configuration is invalid.",
-                code="provider_spec_invalid",
-                category=EnvironmentProviderErrorCategory.INVALID,
-                schema_version=schema_version,
-            ) from error
+    def configuration_models(self) -> dict[str, type[BaseModel]]:
+        return {"1": LocalEnvdProviderConfiguration}
 
     async def create_runtime(
         self, *, configuration: BaseModel, credential: BaseModel | None, context: ProviderRuntimeContext

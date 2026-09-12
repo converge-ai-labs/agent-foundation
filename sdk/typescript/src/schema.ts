@@ -843,6 +843,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/environments/{environment_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update Environment */
+    patch: operations["patch_environments_environment_id"];
+    trace?: never;
+  };
   "/api/v1/environments/{environment_id}/delete": {
     parameters: {
       query?: never;
@@ -4441,6 +4458,15 @@ export interface components {
       /** Name */
       name: string;
     };
+    /** CreateManagedEnvironmentRequest */
+    CreateManagedEnvironmentRequest: {
+      /** Name */
+      name?: string | null;
+      /** Template Id */
+      template_id: string;
+      /** Version */
+      version?: number | null;
+    };
     /** CreateModelProviderRequest */
     CreateModelProviderRequest: {
       /** Configuration */
@@ -4749,6 +4775,8 @@ export interface components {
       generation: number;
       /** Id */
       id: string;
+      /** Name */
+      name: string;
       /** Organization Id */
       organization_id: string;
       /**
@@ -4810,6 +4838,12 @@ export interface components {
         [key: string]: components["schemas"]["JsonValue"];
       };
       /**
+       * Configuration Source
+       * @default user
+       * @enum {string}
+       */
+      configuration_source?: "user" | "deployment";
+      /**
        * Created At
        * Format: date-time
        */
@@ -4846,6 +4880,11 @@ export interface components {
       credential_schema: {
         [key: string]: components["schemas"]["JsonValue"];
       } | null;
+      /**
+       * Deployment Managed
+       * @default false
+       */
+      deployment_managed?: boolean;
       /** Display Name */
       display_name: string;
       /** Requires Keepalive */
@@ -4856,6 +4895,12 @@ export interface components {
       supports_managed: boolean;
       /** Supports Stop */
       supports_stop: boolean;
+      /** Template Configuration Schemas */
+      template_configuration_schemas: {
+        [key: string]: {
+          [key: string]: components["schemas"]["JsonValue"];
+        };
+      };
       /** Type */
       type: string;
     };
@@ -6348,6 +6393,8 @@ export interface components {
        * @default 1
        */
       configuration_schema_version?: string;
+      /** Name */
+      name?: string | null;
       /** Provider Id */
       provider_id: string;
       state?: components["schemas"]["EnvironmentState"] | null;
@@ -7826,6 +7873,11 @@ export interface components {
       /** Name */
       name?: string | null;
       status?: components["schemas"]["ConnectorProviderStatus"] | null;
+    };
+    /** UpdateEnvironmentRequest */
+    UpdateEnvironmentRequest: {
+      /** Name */
+      name: string;
     };
     /** UpdateHookSubscriptionRequest */
     UpdateHookSubscriptionRequest: {
@@ -10930,6 +10982,56 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["EnvironmentTemplateRevision"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  patch_environments_environment_id: {
+    parameters: {
+      query?: never;
+      header: {
+        "If-Match": string;
+      };
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateEnvironmentRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Environment"];
         };
       };
       /** @description Invalid request. */
@@ -17480,7 +17582,7 @@ export interface operations {
     requestBody: {
       content: {
         "application/json":
-          | components["schemas"]["NewEnvironmentSelection"]
+          | components["schemas"]["CreateManagedEnvironmentRequest"]
           | components["schemas"]["RegisterEnvironmentRequest"];
       };
     };

@@ -36,7 +36,7 @@ Register one concrete no-argument Provider class through the entry-point group:
 
 A Provider implementation should:
 
-1. expose one stable namespaced `key` and exact `configuration_versions`;
+1. expose one stable namespaced `key` and `configuration_models`, mapping each supported version to its Pydantic recipe model; the base class derives `configuration_versions` and validation;
 2. validate configuration into a frozen package-owned Pydantic model;
 3. accept credentials, SDK clients, transport factories, and bootstrap stores only through a fresh process-local runtime collaborator;
 4. return one fresh inert `Environment` from `create_environment()` and describe its configured capabilities without target I/O;

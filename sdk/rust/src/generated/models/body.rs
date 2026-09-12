@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Body {
-    AnyOf0(models::NewEnvironmentSelection),
+    AnyOf0(models::CreateManagedEnvironmentRequest),
     AnyOf1(models::RegisterEnvironmentRequest),
 }
 impl Default for Body {

@@ -67,7 +67,9 @@ async def build_control_runtime(
         trace_query_provider_registry,
         stack,
     )
-    environments = build_environment_service(shared, environment_catalog)
+    environments = await build_environment_service(
+        shared, environment_catalog, settings, oss_identity=identity is not None
+    )
     skills = await build_skill_bundle(components, shared, execution, stack)
     models = build_model_bundle(settings, components, shared, execution)
     agents = build_agent_management(

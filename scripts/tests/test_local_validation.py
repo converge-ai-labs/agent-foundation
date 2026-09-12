@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 from scripts.run_python_tests import main
 
@@ -116,6 +118,8 @@ def test_full_frontend_check_and_python_packaging_share_one_build() -> None:
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout.count("pnpm --dir frontend --filter a13n-harness-ui-webui run build\n") == 1
     assert result.stdout.count("pnpm --dir frontend run check\n") == 1
+    assert result.stdout.count("pnpm --dir frontend run test\n") == 1
+    assert result.stdout.count("pnpm --dir frontend --filter a13n-ui run build\n") == 1
     assert result.stdout.count("pnpm --dir frontend --filter a13n-console run build\n") == 1
     assert result.stdout.count("pnpm --dir frontend install --frozen-lockfile\n") == 1
     assert "scripts/prepare-a13n-harness-ui-assets.py" in result.stdout
@@ -134,3 +138,21 @@ def test_logging_and_service_build_targets_publish_only_their_own_package(compon
     assert result.returncode == 0, result.stdout + result.stderr
     build_commands = [line for line in result.stdout.splitlines() if "uv build" in line]
     assert build_commands == [f"uv build --package {component} --out-dir dist"]
+
+
+@pytest.mark.parametrize(
+    "path,regenerates",
+    [
+        ("packages/a13n-service/tests/test_openapi.py", False),
+        ("packages/a13n-harness/tests/test_agent.py", False),
+        ("packages/a13n-service/src/a13n_service/app.py", True),
+        ("packages/a13n-service/pyproject.toml", True),
+        ("sdk/codegen/generate.py", True),
+        ("uv.lock", True),
+    ],
+)
+def test_sdk_hook_skips_package_tests_but_keeps_contract_inputs(path: str, regenerates: bool) -> None:
+    config = yaml.safe_load((REPOSITORY_ROOT / ".pre-commit-config.yaml").read_text())
+    hook = next(hook for repo in config["repos"] for hook in repo["hooks"] if hook["id"] == "sdk-generate")
+    selected = bool(re.search(hook["files"], path)) and not re.search(hook.get("exclude", "^$"), path)
+    assert bool(selected) is regenerates

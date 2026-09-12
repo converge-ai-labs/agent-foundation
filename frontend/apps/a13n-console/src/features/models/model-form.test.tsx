@@ -167,10 +167,8 @@ it.each([
       "My endpoint",
     );
     await user.click(screen.getByRole("button", { name: /Advanced settings/ }));
-    await user.type(
-      screen.getByRole("textbox", { name: "Base URL" }),
-      `https://example.com/v1/${path}`,
-    );
+    await user.click(screen.getByRole("textbox", { name: "Base URL" }));
+    await user.paste(`https://example.com/v1/${path}`);
     await user.click(
       screen.getByRole("button", { name: "Use base URL without the API path" }),
     );

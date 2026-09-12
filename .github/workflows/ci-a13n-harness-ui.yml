@@ -159,6 +159,7 @@ jobs:
           pnpm --dir frontend install --frozen-lockfile
           pnpm --dir frontend run format:check
           pnpm --dir frontend --filter '!a13n-harness-ui-webui' -r run check
+          pnpm --dir frontend --filter '!a13n-harness-ui-webui' -r run test
           pnpm --dir frontend --filter '!a13n-harness-ui-webui' -r run build
 
   distribution:
@@ -205,6 +206,8 @@ jobs:
       - name: Build WebUI assets
         run: |
           pnpm --dir frontend install --frozen-lockfile
+          pnpm --dir frontend --filter a13n-harness-ui-webui run check
+          pnpm --dir frontend --filter a13n-harness-ui-webui run test
           pnpm --dir frontend --filter a13n-harness-ui-webui run build
 
       - name: Prepare bundled WebUI assets

@@ -115,27 +115,28 @@ def local_app(config: dict, role: str):
         from ..iam.run_fault_identity import fault_authenticator
 
         authenticate = fault_authenticator(config, authenticate)
-    environment_catalog = None
+    from a13n_environment import build_environment_provider_catalog
+
+    # This isolated Host uses custom identities and explicitly opts into local
+    # backends. Production OSS deployments publish these through local_providers.
+    builtin_keys = (*settings.environments.provider_builtins, "a13n.direct-local", "a13n.docker")
+    environment_catalog = build_environment_provider_catalog(builtin_keys=builtin_keys)
     reverse_envd = None
     if config.get("e2b_lifecycle") and role == "worker":
         from ..environment.e2b_host import environment_catalog as e2b_catalog
 
-        environment_catalog = e2b_catalog(config, settings.environments.provider_builtins)
+        environment_catalog = e2b_catalog(config, builtin_keys)
     elif config.get("docker_lifecycle") and role == "worker":
         from ..environment.docker_lifecycle_host import environment_catalog as docker_catalog
 
-        environment_catalog = docker_catalog(config, settings.environments.provider_builtins)
+        environment_catalog = docker_catalog(config, builtin_keys)
     elif "reverse_envd" in config and role == "worker" and not os.environ.get("LIVE_TEST_NO_REVERSE_ENVD"):
         from ..environment.environment_host import ReverseEnvdHost
 
-        reverse_envd = ReverseEnvdHost(config["reverse_envd"], settings.environments.provider_builtins)
+        reverse_envd = ReverseEnvdHost(config["reverse_envd"], builtin_keys)
         environment_catalog = reverse_envd.catalog
     elif config.get("websocket_envd") and (role == "control" or os.environ.get("LIVE_TEST_NO_REVERSE_ENVD")):
-        from a13n_environment import build_environment_provider_catalog
-
-        environment_catalog = build_environment_provider_catalog(
-            builtin_keys=tuple(dict.fromkeys((*settings.environments.provider_builtins, "a13n.websocket-envd")))
-        )
+        environment_catalog = build_environment_provider_catalog(builtin_keys=(*builtin_keys, "a13n.websocket-envd"))
     if role == "worker":
         from a13n_harness.plugin_factories import build_harness_plugin_factory_catalog
 

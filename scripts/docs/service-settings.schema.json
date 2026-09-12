@@ -449,9 +449,6 @@
       "properties": {
         "provider_builtins": {
           "default": [
-            "a13n.direct-local",
-            "a13n.local-envd",
-            "a13n.docker",
             "a13n.e2b",
             "a13n.http-envd"
           ],
@@ -460,6 +457,19 @@
           },
           "title": "Provider Builtins",
           "type": "array"
+        },
+        "local_providers": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "$ref": "#/$defs/JsonValue"
+            },
+            "type": "object"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/LocalProviderType"
+          },
+          "title": "Local Providers",
+          "type": "object"
         },
         "provider_extensions": {
           "default": [],
@@ -825,6 +835,7 @@
       "title": "IamSettings",
       "type": "object"
     },
+    "JsonValue": {},
     "LifecycleSettings": {
       "additionalProperties": false,
       "properties": {
@@ -901,6 +912,14 @@
       },
       "title": "LifecycleSettings",
       "type": "object"
+    },
+    "LocalProviderType": {
+      "enum": [
+        "a13n.direct-local",
+        "a13n.local-envd",
+        "a13n.docker"
+      ],
+      "type": "string"
     },
     "LogFormat": {
       "description": "Supported process log formats.",

@@ -18,13 +18,18 @@ For individual frontend checks and development servers:
 
 ```bash
 make frontend-sync
-make frontend-check-all
+make frontend-check       # Formatting, types, and generated contracts
+make frontend-test        # Unit and interaction tests
+make frontend-build       # Application assets and UI showcase
+make frontend-check-all   # All three, without repeated type checking
 pnpm --dir frontend --filter a13n-ui dev
 pnpm --dir frontend --filter a13n-console dev
 pnpm --dir frontend --filter a13n-harness-ui-webui dev
 ```
 
 `make install`, `make format`, `make check`, `make build`, and `make check-all` include this workspace. `make a13n-harness-ui-assets` prepares only the browser assets needed by the Python distribution. Harness UI contract checks also require the repository's uv/Python environment.
+
+Package scripts follow the same separation: `check` is static validation, `test` runs tests, and `build` produces assets without repeating type checking. For a Console-only change, use `pnpm --dir frontend --filter a13n-console check` and pass the relevant test files to `pnpm --dir frontend --filter a13n-console test`.
 
 Applications own their business state, API integration, and translations. Shared UI source must not import application modules. Console consumes the private `a13n-ui` package through a workspace dependency. The standalone TypeScript SDK remains outside this workspace.
 

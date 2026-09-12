@@ -288,7 +288,7 @@ export function RunOptions({
             })),
             ...(choices.data?.environments ?? []).map((environment) => ({
               value: `instance:${environment.id}`,
-              label: environment.id,
+              label: `${t("Instance")}: ${environment.name}`,
             })),
           ]}
         />

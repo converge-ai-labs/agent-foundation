@@ -201,7 +201,7 @@ def test_service_generated_references_match_current_definitions(built_site: Path
 
 def test_service_workflow_examples_match_request_models() -> None:
     from a13n_service.agents.domain import CreateAgentRequest
-    from a13n_service.connectivity.mcp.domain import CreateMCPConnectionRequest
+    from a13n_service.connectivity.connections.domain import CreateConnectionRequest
     from a13n_service.gateway.requests import StartRunRequest
     from a13n_service.skills.domain import CreateSkillRequest
 
@@ -212,8 +212,9 @@ def test_service_workflow_examples_match_request_models() -> None:
     agent, run = blocks("agents-and-runs.md")
     CreateAgentRequest.model_validate(agent)
     StartRunRequest.model_validate(run)
-    mcp = next(value for value in blocks("external-tools.md") if "endpoint_url" in value)
-    CreateMCPConnectionRequest.model_validate(mcp)
+    for connection in blocks("external-tools.md"):
+        if "source" in connection:
+            CreateConnectionRequest.model_validate(connection)
     skill = next(value for value in blocks("resources.md") if "source" in value)
     CreateSkillRequest.model_validate(skill)
 
