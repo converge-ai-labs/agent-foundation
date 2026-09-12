@@ -91,6 +91,7 @@ const ModalSurface = memo(
   }) {
     return (
       <DialogPopup
+        data-a13n-modal
         className={cn(size === "lg" && "sm:max-w-[45rem]")}
         finalFocus={finalFocus}
         closeProps={{ "aria-label": closeLabel }}

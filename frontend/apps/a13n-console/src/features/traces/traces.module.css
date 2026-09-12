@@ -244,6 +244,8 @@
 }
 .contentSequence {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: 16px;
 }
 .contentEmpty {
@@ -505,4 +507,18 @@
   .track {
     min-height: 22px;
   }
+}
+
+:global([data-a13n-modal]) .metrics {
+  margin: 0;
+  padding: 16px;
+  gap: 16px 32px;
+}
+:global([data-a13n-modal]) :is(.contentBody, .rawContent) {
+  max-height: none;
+  overflow: visible;
+}
+:global([data-a13n-modal]) .rawContent {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

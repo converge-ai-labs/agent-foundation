@@ -94,6 +94,7 @@ export function ServiceAccounts() {
                   <div className={styles.actions}>
                     <AccountEditor account={item} />
                     <Confirm
+                      subject={item.name}
                       triggerVariant="ghost"
                       title={t("Delete service account")}
                       description={t(
@@ -255,7 +256,11 @@ function AccountEditor({ account }: { account?: Schema["ServiceAccount"] }) {
           error={mutation.error ?? reload.error}
           retry={account ? () => reload.mutate() : undefined}
         />
-        <FormActions pending={mutation.isPending} />
+        <FormActions
+          pending={mutation.isPending}
+          onCancel={() => setOpen(false)}
+          label={t(account ? "Save changes" : "Create service account")}
+        />
       </form>
     </ModalFrame>
   );

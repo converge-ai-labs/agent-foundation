@@ -86,11 +86,32 @@ for (const kind of ["connector", "mcp"] as const) {
         </QueryClientProvider>,
       );
       await screen.findByRole("button", { name: action });
+      if (kind === "mcp" && action === "Enable") {
+        await user.clear(screen.getByRole("textbox", { name: "Name" }));
+        await user.type(
+          screen.getByRole("textbox", { name: "Name" }),
+          "Unsaved name",
+        );
+        await user.click(screen.getByRole("tab", { name: "Authorization" }));
+        await user.click(screen.getByRole("tab", { name: "Details" }));
+        expect(
+          screen.getByRole<HTMLInputElement>("textbox", { name: "Name" }).value,
+        ).toBe("Unsaved name");
+      }
       await act(async () => {
         cache.setQueryData(queryKey, { ...resource, version: 3 });
       });
       await user.click(screen.getByRole("button", { name: action }));
-      await user.click(screen.getByRole("button", { name: "Confirm" }));
+      await user.click(
+        screen.getByRole("button", {
+          name:
+            action === "Revoke"
+              ? "Revoke authorization"
+              : kind === "mcp" && action === "Delete"
+                ? "Delete MCP connection"
+                : `${action} connection`,
+        }),
+      );
       await waitFor(() => {
         if (action === "Delete")
           expect(http.DELETE).toHaveBeenCalledWith(

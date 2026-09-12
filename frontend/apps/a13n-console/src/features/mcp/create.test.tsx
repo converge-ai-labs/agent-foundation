@@ -44,7 +44,12 @@ it.each(["google-compute-engine", "jentic"])(
     const onSuccess = vi.fn();
     render(
       <QueryClientProvider client={cache}>
-        <CreateMCP preset={preset} onStarted={vi.fn()} onSuccess={onSuccess} />
+        <CreateMCP
+          onCancel={vi.fn()}
+          preset={preset}
+          onStarted={vi.fn()}
+          onSuccess={onSuccess}
+        />
       </QueryClientProvider>,
     );
     const user = userEvent.setup();

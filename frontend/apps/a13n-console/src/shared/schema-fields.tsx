@@ -198,7 +198,10 @@ export function SchemaFields({
                       ? "text"
                       : "number"
                 }
-                autoComplete={secret ? "off" : undefined}
+                name={key}
+                autoComplete={
+                  secret || field.format === "password" ? "new-password" : "off"
+                }
                 value={
                   typeof current === "string" || typeof current === "number"
                     ? current

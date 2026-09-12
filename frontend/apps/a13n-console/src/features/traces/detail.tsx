@@ -404,31 +404,53 @@ function ObservationDetails({
         </Metric>
         <Metric label={t("Cost")}>{formatCost(observation.cost_usd)}</Metric>
       </div>
-      <div className={styles.identifier}>
-        <CopyableId value={observation.id} />
-        {observation.parent_id && (
-          <span>
-            {t("Parent ID")}: <CopyableId value={observation.parent_id} />
-          </span>
-        )}
-      </div>
-      <p>
-        <Timestamp value={observation.started_at} /> —{" "}
-        <Timestamp value={observation.ended_at} />
-      </p>
-      {observation.model && (
-        <div className={styles.modelIdentity}>
-          <Metric label={t("Requested model")}>
-            {observation.model.requested ?? "-"}
-          </Metric>
-          <Metric label={t("Response model")}>
-            {observation.model.response ?? "-"}
-          </Metric>
-        </div>
-      )}
-      <MetadataChips observation={observation} />
-      <ContentPair observation={observation} view={view} />
-      <ObservationMetadata observation={observation} view={view} />
+      <Tabs defaultValue="input">
+        <TabsList aria-label={t("Observation")}>
+          <TabsTab value="input">{t("Input")}</TabsTab>
+          <TabsTab value="output">{t("Output")}</TabsTab>
+          <TabsTab value="metadata">{t("Metadata")}</TabsTab>
+        </TabsList>
+        <TabsPanel value="input">
+          <TraceContent
+            content={observation.input}
+            compact={view === "compact"}
+          />
+        </TabsPanel>
+        <TabsPanel value="output">
+          <TraceContent
+            content={observation.output}
+            compact={view === "compact"}
+          />
+        </TabsPanel>
+        <TabsPanel value="metadata">
+          <div className={shared.stack}>
+            <div className={styles.identifier}>
+              <CopyableId value={observation.id} />
+              {observation.parent_id && (
+                <span>
+                  {t("Parent ID")}: <CopyableId value={observation.parent_id} />
+                </span>
+              )}
+            </div>
+            <p>
+              <Timestamp value={observation.started_at} /> —{" "}
+              <Timestamp value={observation.ended_at} />
+            </p>
+            {observation.model && (
+              <div className={styles.modelIdentity}>
+                <Metric label={t("Requested model")}>
+                  {observation.model.requested ?? "-"}
+                </Metric>
+                <Metric label={t("Response model")}>
+                  {observation.model.response ?? "-"}
+                </Metric>
+              </div>
+            )}
+            <MetadataChips observation={observation} />
+            <ObservationMetadata observation={observation} view={view} />
+          </div>
+        </TabsPanel>
+      </Tabs>
     </div>
   );
 }

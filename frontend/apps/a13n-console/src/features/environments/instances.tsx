@@ -297,6 +297,7 @@ function EnvironmentDetails({
         {can("environment.manage") && environment.ownership === "managed" && (
           <div className={`${styles.actions} border-t border-border pt-4`}>
             <Confirm
+              subject={environment.id}
               title={t("Stop environment target")}
               description={t(
                 "This stops the target when it has no active users. A later run can resume it.",
@@ -305,6 +306,7 @@ function EnvironmentDetails({
               action={() => act("stop")}
             />
             <Confirm
+              subject={environment.id}
               title={t("Delete environment target")}
               description={t(
                 "Files and processes on the target will be lost. Environment history is retained. This cannot be undone.",
@@ -547,7 +549,11 @@ function EnvironmentForm({ close }: { close: () => void }) {
         </>
       )}
       <ErrorNotice error={save.error} />
-      <FormActions pending={save.isPending} label={t("Create environment")} />
+      <FormActions
+        pending={save.isPending}
+        onCancel={close}
+        label={t("Create environment")}
+      />
     </form>
   );
 }

@@ -6,16 +6,14 @@ export { default as formSectionStyles } from "./form-section.module.css";
 export function FormSection({
   title,
   description,
-  aside = false,
   children,
 }: {
   title?: string;
   description?: string;
-  aside?: boolean;
   children: ReactNode;
 }) {
   return (
-    <section className={styles.section} data-aside={aside || undefined}>
+    <section className={styles.section}>
       {title && (
         <div className={styles.heading}>
           <h3>{title}</h3>

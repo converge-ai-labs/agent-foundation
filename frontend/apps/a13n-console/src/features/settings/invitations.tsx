@@ -108,6 +108,7 @@ export function Invitations({ scope }: { scope: MembershipScope }) {
                     <div className={styles.actions}>
                       <InvitationEditor scope={scope} invitation={item} />
                       <Confirm
+                        subject={item.email}
                         triggerVariant="ghost"
                         title={t("Revoke invitation")}
                         description={t(
@@ -277,6 +278,7 @@ function InvitationEditor({
           )}
           <ErrorNotice error={mutation.error} />
           <FormActions
+            onCancel={() => setOpen(false)}
             pending={mutation.isPending}
             label={t(invitation ? "Resend invitation" : "Send invitation")}
           />

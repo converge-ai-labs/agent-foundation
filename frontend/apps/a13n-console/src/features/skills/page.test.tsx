@@ -207,7 +207,7 @@ it("renames and deletes a skill with its workspace, CSRF proof and existing ETag
   await user.click(
     await screen.findByRole("menuitem", { name: "Delete skill" }),
   );
-  await user.click(await screen.findByRole("button", { name: "Confirm" }));
+  await user.click(await screen.findByRole("button", { name: "Delete skill" }));
   expect(await screen.findByText("Skill collection")).toBeTruthy();
   const mutations = requests.filter((request) => request.method !== "GET");
   expect(mutations.map((request) => request.method)).toEqual([

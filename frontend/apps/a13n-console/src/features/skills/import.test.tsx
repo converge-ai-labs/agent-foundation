@@ -89,6 +89,7 @@ it("publishes a new version using the chosen GitHub source and current version",
     dialog.getByRole("textbox", { name: "Repository URL" }),
     "https://github.com/example/skill",
   );
+  await user.click(dialog.getByRole("button", { name: "Advanced settings" }));
   await user.type(
     dialog.getByRole("textbox", { name: "Subdirectory" }),
     "skills/review",

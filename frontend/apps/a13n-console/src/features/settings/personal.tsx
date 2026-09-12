@@ -87,6 +87,7 @@ function BrowserSessions() {
               render: (item) =>
                 !item.revoked_at && (
                   <Confirm
+                    subject={item.id}
                     triggerVariant="ghost"
                     title={t("Revoke session")}
                     description={t("This browser will need to sign in again.")}

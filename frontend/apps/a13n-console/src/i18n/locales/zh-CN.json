@@ -1759,5 +1759,7 @@
   "Process limit": "进程数上限",
   "Sandbox timeout (seconds)": "沙箱超时时间（秒）",
   "Save name": "保存名称",
-  "Use an existing E2B template. Preinstalled software, CPU and memory are configured when building that template in E2B.": "使用已有的 E2B 模板。预装软件、CPU 和内存在 E2B 中构建该模板时配置。"
+  "Use an existing E2B template. Preinstalled software, CPU and memory are configured when building that template in E2B.": "使用已有的 E2B 模板。预装软件、CPU 和内存在 E2B 中构建该模板时配置。",
+  "Used by agents. Cannot be changed later.": "供智能体引用，创建后不可更改。",
+  "Leave blank to keep saved credentials.": "留空可保留已保存的凭据。"
 }
