@@ -17,11 +17,13 @@ vi.mock("../../auth/context", () => ({
 }));
 vi.mock("./authorization-context", () => ({
   takeCallback: () => ({
+    type: "connector",
     receipt: "r".repeat(48),
     state: "a".repeat(64),
     authorizationId: "auth_test",
   }),
   readAuthorization: () => ({
+    type: "connector",
     authorizationId: "auth_test",
     state: "a".repeat(64),
     verifier: "b".repeat(64),

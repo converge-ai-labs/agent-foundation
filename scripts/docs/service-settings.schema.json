@@ -192,12 +192,20 @@
           "default": null,
           "title": "Public Origin"
         },
-        "authorization_return_urls": {
+        "authorization_callback_urls": {
           "default": [],
           "items": {
             "type": "string"
           },
-          "title": "Authorization Return Urls",
+          "title": "Authorization Callback Urls",
+          "type": "array"
+        },
+        "mcp_servers": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/MCPServerSettings"
+          },
+          "title": "Mcp Servers",
           "type": "array"
         },
         "oauth_client_name": {
@@ -944,6 +952,101 @@
         }
       },
       "title": "LoggingSettings",
+      "type": "object"
+    },
+    "MCPServerSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "pattern": "^[a-z][a-z0-9-]{0,127}$",
+          "title": "Key",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "endpoint_url": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Endpoint Url",
+          "type": "string"
+        },
+        "auth_mode": {
+          "enum": [
+            "none",
+            "bearer",
+            "oauth",
+            "static_headers"
+          ],
+          "title": "Auth Mode",
+          "type": "string"
+        },
+        "documentation_url": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Documentation Url"
+        },
+        "logo_url": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Logo Url"
+        },
+        "requirements": {
+          "default": "",
+          "maxLength": 2048,
+          "title": "Requirements",
+          "type": "string"
+        },
+        "static_header_names": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Static Header Names",
+          "type": "array"
+        },
+        "override_builtin": {
+          "default": false,
+          "title": "Override Builtin",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "key",
+        "name",
+        "description",
+        "endpoint_url",
+        "auth_mode"
+      ],
+      "title": "MCPServerSettings",
       "type": "object"
     },
     "MigrationSettings": {

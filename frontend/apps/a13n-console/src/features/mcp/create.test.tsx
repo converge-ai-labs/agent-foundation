@@ -2,8 +2,8 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
+import type { Schema } from "../../shared/api";
 import { CreateMCP } from "./create";
-import { mcpPresets } from "../connections/presets";
 
 const http = vi.hoisted(() => ({ POST: vi.fn(), GET: vi.fn() }));
 vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
@@ -18,8 +18,34 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
+const presets = {
+  airtable: {
+    key: "airtable",
+    name: "Airtable",
+    description: "Bases and records",
+    endpoint_url: "https://mcp.airtable.com/mcp",
+    auth_mode: "oauth",
+  },
+  "google-compute-engine": {
+    key: "google-compute-engine",
+    name: "Google Compute Engine",
+    description: "Manage compute infrastructure",
+    endpoint_url: "https://compute.googleapis.com/mcp",
+    auth_mode: "static_headers",
+    static_header_names: ["Authorization", "x-goog-user-project"],
+  },
+  jentic: {
+    key: "jentic",
+    name: "Jentic",
+    description: "Secure API access",
+    endpoint_url: "https://api.jentic.com/mcp",
+    auth_mode: "static_headers",
+    static_header_names: ["x-jentic-api-key"],
+  },
+} satisfies Record<string, Schema["MCPServer"]>;
+
 it("shows preset authentication as read-only", () => {
-  const preset = mcpPresets.find((item) => item.id === "airtable")!;
+  const preset = presets.airtable;
   const cache = new QueryClient();
   render(
     <QueryClientProvider client={cache}>
@@ -35,7 +61,7 @@ it("shows preset authentication as read-only", () => {
   expect(screen.queryByRole("combobox", { name: "Authentication" })).toBeNull();
   expect(
     screen.getByRole("group", { name: "Authentication" }).textContent,
-  ).toContain(`auth.${preset.auth}`);
+  ).toContain(`auth.${preset.auth_mode}`);
   cache.clear();
 });
 
@@ -53,11 +79,11 @@ it("keeps authentication selectable for custom MCP connections", () => {
   cache.clear();
 });
 
-it.each(["google-compute-engine", "jentic"])(
+it.each(["google-compute-engine", "jentic"] as const)(
   "%s prefills header names and sends values only through the credential endpoint",
   async (presetId) => {
-    const preset = mcpPresets.find((item) => item.id === presetId)!;
-    const headers = preset.headerNames!;
+    const preset = presets[presetId];
+    const headers = preset.static_header_names!;
     const initial = {
       id: "mcp_test",
       version: 1,
@@ -112,7 +138,7 @@ it.each(["google-compute-engine", "jentic"])(
       name: preset.name,
       source: {
         kind: "mcp",
-        endpoint_url: preset.endpoint,
+        endpoint_url: preset.endpoint_url,
         auth_mode: "static_headers",
         static_header_names: headers.map((name) => name.toLowerCase()),
       },

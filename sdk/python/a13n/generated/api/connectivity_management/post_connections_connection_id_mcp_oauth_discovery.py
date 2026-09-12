@@ -7,12 +7,16 @@ import httpx2 as httpx
 from ...client import AuthenticatedClient, Client
 from ...models.error_response import ErrorResponse
 from ...models.mcpo_auth_discovery import MCPOAuthDiscovery
+from ...models.mcpo_auth_setup_request import MCPOAuthSetupRequest
 from ...types import Response
 
 
 def build_request(
     connection_id: str,
+    *,
+    body: MCPOAuthSetupRequest,
 ) -> dict[str, Any]:
+    headers: dict[str, Any] = {}
 
     _kwargs: dict[str, Any] = {
         "method": "post",
@@ -21,6 +25,11 @@ def build_request(
         ),
     }
 
+    _kwargs["json"] = body.to_dict()
+
+    headers["Content-Type"] = "application/json"
+
+    _kwargs["headers"] = headers
     return _kwargs
 
 
@@ -57,11 +66,13 @@ def sync_detailed(
     connection_id: str,
     *,
     client: AuthenticatedClient,
+    body: MCPOAuthSetupRequest,
 ) -> Response[ErrorResponse | MCPOAuthDiscovery]:
     """Discover Mcp Oauth
 
     Args:
         connection_id (str):
+        body (MCPOAuthSetupRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -73,6 +84,7 @@ def sync_detailed(
 
     kwargs = build_request(
         connection_id=connection_id,
+        body=body,
     )
 
     response = client.get_httpx_client().request(
@@ -86,11 +98,13 @@ def sync(
     connection_id: str,
     *,
     client: AuthenticatedClient,
+    body: MCPOAuthSetupRequest,
 ) -> ErrorResponse | MCPOAuthDiscovery | None:
     """Discover Mcp Oauth
 
     Args:
         connection_id (str):
+        body (MCPOAuthSetupRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -103,6 +117,7 @@ def sync(
     return sync_detailed(
         connection_id=connection_id,
         client=client,
+        body=body,
     ).parsed
 
 
@@ -110,11 +125,13 @@ async def asyncio_detailed(
     connection_id: str,
     *,
     client: AuthenticatedClient,
+    body: MCPOAuthSetupRequest,
 ) -> Response[ErrorResponse | MCPOAuthDiscovery]:
     """Discover Mcp Oauth
 
     Args:
         connection_id (str):
+        body (MCPOAuthSetupRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -126,6 +143,7 @@ async def asyncio_detailed(
 
     kwargs = build_request(
         connection_id=connection_id,
+        body=body,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -137,11 +155,13 @@ async def asyncio(
     connection_id: str,
     *,
     client: AuthenticatedClient,
+    body: MCPOAuthSetupRequest,
 ) -> ErrorResponse | MCPOAuthDiscovery | None:
     """Discover Mcp Oauth
 
     Args:
         connection_id (str):
+        body (MCPOAuthSetupRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -155,5 +175,6 @@ async def asyncio(
         await asyncio_detailed(
             connection_id=connection_id,
             client=client,
+            body=body,
         )
     ).parsed

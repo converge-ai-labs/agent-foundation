@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Literal, Self
 
 from a13n_logging import LogFormat
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, field_validator, model_validator
 
 from a13n_service import __version__
 from a13n_service.agents.domain import PluginKey
@@ -273,6 +273,28 @@ class SecretsSettings(Section):
     encryption_key_id: str | None = Field(default=None, min_length=1, max_length=128, repr=False)
 
 
+class MCPServerSettings(Section):
+    key: str = Field(pattern=r"^[a-z][a-z0-9-]{0,127}$")
+    name: str = Field(min_length=1, max_length=128)
+    description: str = Field(min_length=1, max_length=1024)
+    endpoint_url: str = Field(min_length=1, max_length=2048)
+    auth_mode: Literal["none", "bearer", "oauth", "static_headers"]
+    documentation_url: str | None = Field(default=None, min_length=1, max_length=2048)
+    logo_url: str | None = Field(default=None, min_length=1, max_length=2048)
+    requirements: str = Field(default="", max_length=2048)
+    static_header_names: tuple[str, ...] = Field(default=(), max_length=16)
+    override_builtin: bool = False
+
+    @model_validator(mode="after")
+    def valid_static_headers(self) -> Self:
+        names = tuple(name.casefold() for name in self.static_header_names)
+        if len(set(names)) != len(names):
+            raise ValueError("MCP server static header names must be unique")
+        if (self.auth_mode == "static_headers") != bool(names):
+            raise ValueError("Static-header catalog entries require header names only for static_headers auth")
+        return self
+
+
 class ConnectivitySettings(Section):
     provider_request_max_bytes: int = Field(
         default=PROVIDER_REQUEST_MAX_BYTES,
@@ -298,7 +320,8 @@ class ConnectivitySettings(Section):
     max_redirects: int = Field(default=MAX_REDIRECTS, ge=0, le=MAX_REDIRECTS)
     oauth_setup_ttl_seconds: int = Field(default=600, ge=60, le=900)
     public_origin: str | None = Field(default=None, min_length=1, max_length=2048)
-    authorization_return_urls: tuple[str, ...] = ()
+    authorization_callback_urls: tuple[str, ...] = ()
+    mcp_servers: tuple[MCPServerSettings, ...] = ()
     oauth_client_name: str = Field(default="Agent Foundation", min_length=1, max_length=128)
     private_endpoint_domains: tuple[str, ...] = ()
     private_endpoint_cidrs: tuple[str, ...] = ()
@@ -315,6 +338,17 @@ class ConnectivitySettings(Section):
     connector_reconcile_lease_seconds: int = Field(default=60, ge=10, le=600)
     retention_poll_interval_seconds: float = Field(default=60, gt=0, le=3600)
     retention_batch_size: int = Field(default=25, ge=1, le=1000)
+
+    @field_validator("authorization_callback_urls")
+    @classmethod
+    def valid_authorization_callbacks(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        from a13n_service.connectivity.browser_urls import split_browser_url
+
+        if len(set(values)) != len(values):
+            raise ValueError("Authorization callback URLs must be unique")
+        for value in values:
+            split_browser_url(value)
+        return values
 
     @model_validator(mode="after")
     def validate_connectivity_bounds(self) -> Self:

@@ -9,6 +9,7 @@ import {
 const state = "a".repeat(64),
   receipt = "r".repeat(48);
 const context = {
+  type: "connector",
   state,
   verifier: "b".repeat(64),
   authorizationId: "auth_test",
@@ -48,6 +49,7 @@ it("binds completion to the application proof and strips callback material immed
     `/connections/callback?authorization_id=auth_test&receipt=${receipt}&state=${state}`,
   );
   expect(takeCallback()).toEqual({
+    type: "connector",
     receipt,
     state,
     authorizationId: "auth_test",
@@ -59,7 +61,8 @@ it("binds completion to the application proof and strips callback material immed
 it.each([
   { expiresAt: new Date(Date.now() - 1).toISOString() },
   { returnPath: "https://evil.example" },
-  { verifier: undefined },
+  { authorizationId: undefined },
+  { type: "mcp" },
   { state: "short" },
 ])("rejects expired or malformed application context: %j", (change) => {
   sessionStorage.setItem(
@@ -67,6 +70,26 @@ it.each([
     JSON.stringify({ ...context, ...change }),
   );
   expect(readAuthorization()).toBeNull();
+});
+it("accepts a single MCP provider result and rejects mixed callback fields", () => {
+  const providerState = "oauth_state-with-url-safe-characters_123456789";
+  window.history.replaceState(
+    null,
+    "",
+    `/connections/callback?code=provider-code&iss=${encodeURIComponent("https://auth.example")}&state=${providerState}`,
+  );
+  expect(takeCallback()).toEqual({
+    type: "mcp",
+    code: "provider-code",
+    iss: "https://auth.example",
+    state: providerState,
+  });
+  window.history.replaceState(
+    null,
+    "",
+    `/connections/callback?code=code&error=denied&state=${state}`,
+  );
+  expect(takeCallback()).toBeNull();
 });
 it.each([
   `authorization_id=auth_test&receipt=${receipt}&receipt=${receipt}&state=${state}`,

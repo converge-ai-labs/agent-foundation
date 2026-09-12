@@ -30,6 +30,14 @@ pub struct McpoAuthClientInput {
     #[serde(rename = "issuer_url")]
     pub issuer_url: String,
 
+    #[serde(
+        rename = "redirect_uri",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub redirect_uri: Option<Option<String>>,
+
     #[serde(rename = "token_endpoint_auth_method")]
     pub token_endpoint_auth_method: TokenEndpointAuthMethod,
 }
@@ -45,6 +53,7 @@ impl McpoAuthClientInput {
             client_secret: None,
             grant_type: None,
             issuer_url,
+            redirect_uri: None,
             token_endpoint_auth_method,
         }
     }

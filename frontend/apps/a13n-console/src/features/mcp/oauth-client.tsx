@@ -28,20 +28,21 @@ export function MCPOAuthClientEditor({
 }: {
   connection: Schema["Connection"];
   configuration: Schema["MCPOAuthClientConfiguration"] | null;
-  discovery: Schema["MCPOAuthDiscovery"];
+  discovery: Schema["MCPOAuthSetupAction"];
   onSaved: (connection: Schema["Connection"], grant: GrantType) => void;
   onCancel?: () => void;
 }) {
   const client = useClient(),
     cache = useQueryClient(),
     { t } = useTranslation(),
-    supportedGrants = discovery.grant_types_supported,
+    supportedGrants = discovery.grant_types ?? [],
+    supportedMethods = discovery.token_endpoint_auth_methods ?? [],
     initialGrant =
       configuration?.grant_type ?? supportedGrants[0] ?? "authorization_code";
   const [grant, setGrant] = useState<GrantType>(initialGrant),
     [clientId, setClientId] = useState(configuration?.client_id ?? ""),
     [secret, setSecret] = useState("");
-  const methods = discovery.token_endpoint_auth_methods_supported.filter(
+  const methods = supportedMethods.filter(
     (method) => grant === "authorization_code" || method !== "none",
   );
   const [method, setMethod] = useState<AuthMethod>(
@@ -61,10 +62,14 @@ export function MCPOAuthClientEditor({
             client: remove
               ? null
               : {
-                  issuer_url: discovery.issuer_url,
+                  issuer_url: discovery.issuer_url!,
                   client_id: clientId,
                   token_endpoint_auth_method: method,
                   grant_type: grant,
+                  redirect_uri:
+                    grant === "authorization_code"
+                      ? discovery.redirect_uri
+                      : null,
                   client_secret: method === "none" ? null : secret,
                 },
           },
@@ -83,7 +88,7 @@ export function MCPOAuthClientEditor({
     if (value !== "authorization_code" && value !== "client_credentials")
       return;
     setGrant(value);
-    const compatible = discovery.token_endpoint_auth_methods_supported.filter(
+    const compatible = supportedMethods.filter(
       (candidate) => value === "authorization_code" || candidate !== "none",
     );
     if (!compatible.includes(method))

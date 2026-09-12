@@ -37,6 +37,7 @@ class MCPOAuthClientConfiguration(StrictModel):
     token_endpoint_auth_method: OAuthTokenAuthMethod
     grant_type: OAuthGrantType
     source: OAuthClientSource
+    redirect_uri: Endpoint | None = None
 
 
 class MCPOAuthClientInput(StrictModel):
@@ -44,6 +45,7 @@ class MCPOAuthClientInput(StrictModel):
     client_id: str = Field(min_length=1, max_length=2048)
     token_endpoint_auth_method: OAuthTokenAuthMethod
     grant_type: OAuthGrantType = "authorization_code"
+    redirect_uri: Endpoint | None = None
     client_secret: SecretStr | None = Field(default=None, min_length=1, max_length=16_384, repr=False)
 
     @model_validator(mode="after")
@@ -53,12 +55,18 @@ class MCPOAuthClientInput(StrictModel):
             raise ValueError("Confidential clients require a secret; public clients must not supply one")
         if self.grant_type == "client_credentials" and self.token_endpoint_auth_method == "none":
             raise ValueError("Client credentials requires authenticated token requests")
+        if (self.grant_type == "authorization_code") != (self.redirect_uri is not None):
+            raise ValueError("Authorization-code clients require a redirect URI; machine clients must omit it")
         return self
 
 
 class ConfigureMCPOAuthClientRequest(StrictModel):
     expected_version: int = Field(ge=1)
     client: MCPOAuthClientInput | None
+
+
+class MCPOAuthSetupRequest(StrictModel):
+    redirect_uri: Endpoint | None = None
 
 
 class MCPOAuthDiscovery(StrictModel):
@@ -68,6 +76,27 @@ class MCPOAuthDiscovery(StrictModel):
     grant_types_supported: tuple[OAuthGrantType, ...]
     client_registration: Literal["metadata_document", "dynamic", "manual"]
     authorization_response_iss_parameter_supported: bool
+
+
+class MCPOAuthSetupAction(StrictModel):
+    type: Literal[
+        "configure_oauth_client",
+        "start_authorization",
+        "authenticate_client_credentials",
+        "check_connection",
+        "completed",
+    ]
+    redirect_uri: Endpoint | None = None
+    issuer_url: Endpoint | None = None
+    token_endpoint_auth_methods: tuple[OAuthTokenAuthMethod, ...] = ()
+    grant_types: tuple[OAuthGrantType, ...] = ()
+    client_registration: Literal["metadata_document", "dynamic", "manual"] | None = None
+    documentation_url: Endpoint | None = None
+
+
+class MCPOAuthSetup(StrictModel):
+    next_action: MCPOAuthSetupAction
+    client: MCPOAuthClientConfiguration | None = None
 
 
 class MCPConnectionCommandRequest(StrictModel):

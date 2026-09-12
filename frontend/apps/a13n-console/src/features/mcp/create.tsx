@@ -10,7 +10,6 @@ import { ErrorNotice } from "../../shared/feedback";
 import { FormActions } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
-import type { MCPPreset } from "../connections/presets";
 import { MCPOAuthSetup } from "./oauth-setup";
 import {
   HeaderFields,
@@ -26,7 +25,7 @@ export function CreateMCP({
   onSuccess,
   onCancel,
 }: {
-  preset?: MCPPreset;
+  preset?: Schema["MCPServer"];
   endpoint?: string;
   onStarted: () => void;
   onSuccess: (value: Schema["Connection"]) => void;
@@ -39,12 +38,12 @@ export function CreateMCP({
     key = useIdempotency();
   const created = useRef<Schema["Connection"]>(undefined);
   const [name, setName] = useState(preset?.name ?? ""),
-    [endpoint, setEndpoint] = useState(preset?.endpoint ?? initialEndpoint),
+    [endpoint, setEndpoint] = useState(preset?.endpoint_url ?? initialEndpoint),
     [mode, setMode] = useState<Schema["MCPSource"]["auth_mode"]>(
-      preset?.auth ?? "oauth",
+      preset?.auth_mode ?? "oauth",
     ),
     [headerRows, setHeaderRows] = useState<HeaderDraft[]>(() =>
-      (preset?.headerNames ?? [""]).map((name) => ({
+      (preset?.static_header_names ?? [""]).map((name) => ({
         id: crypto.randomUUID(),
         name,
         value: "",
@@ -150,9 +149,15 @@ export function CreateMCP({
   });
   return oauthConnection ? (
     <div className={styles.stack}>
-      {preset && <p className={styles.muted}>{t(preset.requirements)}</p>}
-      {preset && (
-        <a href={preset.docs} target="_blank" rel="noopener noreferrer">
+      {preset?.requirements && (
+        <p className={styles.muted}>{t(preset.requirements)}</p>
+      )}
+      {preset?.documentation_url && (
+        <a
+          href={preset.documentation_url}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
           {t("Setup guide")}
         </a>
       )}
@@ -226,9 +231,15 @@ export function CreateMCP({
             onHeaders={() => {}}
           />
         ))}
-      {preset && <p className={styles.muted}>{t(preset.requirements)}</p>}
-      {preset && (
-        <a href={preset.docs} target="_blank" rel="noopener noreferrer">
+      {preset?.requirements && (
+        <p className={styles.muted}>{t(preset.requirements)}</p>
+      )}
+      {preset?.documentation_url && (
+        <a
+          href={preset.documentation_url}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
           {t("Setup guide")}
         </a>
       )}

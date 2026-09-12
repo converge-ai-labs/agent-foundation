@@ -82,6 +82,7 @@ async def test_dcr_fallback_is_discovered_and_cleanup_uses_exact_registration() 
         preparation = await client.prepare(
             RESOURCE,
             public_origin="https://1.1.1.1",
+            redirect_uri="https://app.example/callback",
             client_name="Service",
         )
         cleaned = await client.cleanup_registration_bundle(
@@ -193,6 +194,7 @@ async def test_dcr_is_used_when_client_metadata_cannot_use_a_public_client() -> 
         preparation = await MCPOAuthClient(http, EndpointPolicy()).prepare(
             RESOURCE,
             public_origin="https://1.1.1.1",
+            redirect_uri="https://app.example/callback",
             client_name="Service",
         )
 
@@ -388,6 +390,7 @@ async def test_well_known_fallback_preserves_resource_and_issuer_identity(resour
         preparation = await MCPOAuthClient(http, EndpointPolicy()).prepare(
             "https://8.8.8.8/mcp/",
             public_origin="https://1.1.1.1",
+            redirect_uri="https://app.example/callback",
             client_name="Service",
         )
     assert preparation.resource_url == resource
@@ -431,6 +434,7 @@ async def test_advertised_metadata_accepts_a_canonical_parent_resource(
         preparation = await MCPOAuthClient(http, EndpointPolicy()).prepare(
             endpoint,
             public_origin="https://1.1.1.1",
+            redirect_uri="https://app.example/callback",
             client_name="Service",
         )
 
@@ -462,6 +466,7 @@ async def test_advertised_parent_resource_requires_authoritative_coverage(
             await MCPOAuthClient(http, EndpointPolicy()).prepare(
                 RESOURCE,
                 public_origin="https://1.1.1.1",
+                redirect_uri="https://app.example/callback",
                 client_name="Service",
             )
 
@@ -492,6 +497,7 @@ async def test_mismatched_path_metadata_falls_back_to_valid_root_metadata() -> N
         preparation = await MCPOAuthClient(http, EndpointPolicy()).prepare(
             RESOURCE,
             public_origin="https://1.1.1.1",
+            redirect_uri="https://app.example/callback",
             client_name="Service",
         )
 
@@ -511,6 +517,7 @@ async def test_well_known_resource_must_match_the_identity_used_to_construct_its
             await MCPOAuthClient(http, EndpointPolicy()).prepare(
                 "https://8.8.8.8/mcp/",
                 public_origin="https://1.1.1.1",
+                redirect_uri="https://app.example/callback",
                 client_name="Service",
             )
 
@@ -553,9 +560,19 @@ async def test_registration_negotiates_supported_client_authentication(supported
         client = MCPOAuthClient(http_client, EndpointPolicy())
         if not valid:
             with pytest.raises(MCPOAuthError):
-                await client.prepare(RESOURCE, public_origin="https://1.1.1.1", client_name="Service")
+                await client.prepare(
+                    RESOURCE,
+                    public_origin="https://1.1.1.1",
+                    redirect_uri="https://app.example/callback",
+                    client_name="Service",
+                )
         else:
-            preparation = await client.prepare(RESOURCE, public_origin="https://1.1.1.1", client_name="Service")
+            preparation = await client.prepare(
+                RESOURCE,
+                public_origin="https://1.1.1.1",
+                redirect_uri="https://app.example/callback",
+                client_name="Service",
+            )
             assert preparation.token_endpoint_auth_method == returned
             assert preparation.client_secret == secret
 
@@ -595,9 +612,15 @@ async def test_discovery_accepts_only_root_slash_alias_and_pins_declared_issuer(
             with pytest.raises(MCPOAuthError, match="issuer_mismatch"):
                 await client.discover(RESOURCE)
             return
-        preparation = await client.prepare(RESOURCE, public_origin="https://1.1.1.1", client_name="Service")
+        preparation = await client.prepare(
+            RESOURCE,
+            public_origin="https://1.1.1.1",
+            redirect_uri="https://app.example/callback",
+            client_name="Service",
+        )
         assert preparation.issuer_url == declared
-        assert preparation.redirect_uri.endswith(issuer_key(declared))
+        assert preparation.redirect_uri == "https://app.example/callback"
+        assert issuer_key(declared) in preparation.client_id
 
 
 @pytest.mark.anyio

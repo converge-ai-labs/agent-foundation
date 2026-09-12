@@ -45,14 +45,14 @@ const connection: Schema["Connection"] = {
   updated_at: "2026-09-12T00:00:00Z",
 };
 
-const discovery: Schema["MCPOAuthDiscovery"] = {
+const discovery = {
+  type: "configure_oauth_client",
   issuer_url: "https://auth.example",
-  redirect_uri: "https://service.example/api/v1/oauth/mcp/callback/key",
-  token_endpoint_auth_methods_supported: ["client_secret_basic"],
-  grant_types_supported: ["authorization_code", "client_credentials"],
+  redirect_uri: "https://application.example/connections/callback",
+  token_endpoint_auth_methods: ["client_secret_basic"],
+  grant_types: ["authorization_code", "client_credentials"],
   client_registration: "dynamic",
-  authorization_response_iss_parameter_supported: true,
-};
+} satisfies Schema["MCPOAuthSetupAction"];
 
 afterEach(() => {
   cleanup();
@@ -93,17 +93,13 @@ it("offers verification retry without repeating OAuth metadata discovery", async
 });
 
 it("continues automatic browser authorization without asking for client details", async () => {
-  http.GET.mockResolvedValue({ data: null, response: new Response() });
-  http.POST.mockImplementation(async (path: string) => ({
-    data: path.endsWith("oauth-discovery")
-      ? discovery
-      : {
-          id: "mos_test",
-          authorization_url: "https://auth.example/authorize",
-          expires_at: "2026-09-12T00:10:00Z",
-        },
+  http.POST.mockResolvedValue({
+    data: {
+      client: null,
+      next_action: { type: "start_authorization" },
+    },
     response: new Response(),
-  }));
+  });
 
   renderSetup();
 
@@ -120,9 +116,15 @@ it("continues automatic browser authorization without asking for client details"
 it("opens manual setup with a focused client ID and copyable callback", async () => {
   const user = userEvent.setup();
   const write = vi.spyOn(navigator.clipboard, "writeText");
-  http.GET.mockResolvedValue({ data: null, response: new Response() });
   http.POST.mockResolvedValue({
-    data: { ...discovery, client_registration: "manual" },
+    data: {
+      client: null,
+      next_action: {
+        ...discovery,
+        type: "configure_oauth_client",
+        client_registration: "manual",
+      },
+    },
     response: new Response(),
   });
 
@@ -140,19 +142,19 @@ it("opens manual setup with a focused client ID and copyable callback", async ()
 });
 
 it("connects a saved machine client without starting browser authorization", async () => {
-  http.GET.mockResolvedValue({
-    data: {
-      issuer_url: discovery.issuer_url,
-      client_id: "machine-client",
-      token_endpoint_auth_method: "client_secret_basic",
-      grant_type: "client_credentials",
-      source: "pre_registered",
-    },
-    response: new Response(),
-  });
+  const client = {
+    issuer_url: discovery.issuer_url,
+    client_id: "machine-client",
+    token_endpoint_auth_method: "client_secret_basic",
+    grant_type: "client_credentials",
+    source: "pre_registered",
+  } satisfies Schema["MCPOAuthClientConfiguration"];
   http.POST.mockImplementation(async (path: string) => ({
-    data: path.endsWith("oauth-discovery")
-      ? discovery
+    data: path.endsWith("oauth-setup")
+      ? {
+          client,
+          next_action: { type: "authenticate_client_credentials" },
+        }
       : { ...connection, status: "ready", credential_configured: true },
     response: new Response(),
   }));
@@ -171,16 +173,21 @@ it("opens machine-only discovery as client setup and connects without a callback
   const machineDiscovery = {
     ...discovery,
     redirect_uri: null,
-    grant_types_supported: ["client_credentials"],
-  } satisfies Schema["MCPOAuthDiscovery"];
-  http.GET.mockResolvedValue({ data: null, response: new Response() });
+    grant_types: ["client_credentials"],
+  } satisfies Schema["MCPOAuthSetupAction"];
   http.PUT.mockResolvedValue({
     data: { ...connection, version: 2 },
     response: new Response(),
   });
   http.POST.mockImplementation(async (path: string) => ({
-    data: path.endsWith("oauth-discovery")
-      ? machineDiscovery
+    data: path.endsWith("oauth-setup")
+      ? {
+          client: null,
+          next_action: {
+            ...machineDiscovery,
+            type: "configure_oauth_client",
+          },
+        }
       : { ...connection, status: "ready", credential_configured: true },
     response: new Response(),
   }));

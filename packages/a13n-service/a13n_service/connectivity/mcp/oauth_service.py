@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import httpx2
-from sqlalchemy import select, update
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
@@ -24,7 +24,7 @@ from a13n_service.durable_operations.idempotency import (
     InvalidIdempotencyKey,
     digest_visible_ascii_key,
 )
-from a13n_service.iam import AuthenticatedActor, PrincipalType
+from a13n_service.iam import AuthenticatedActor
 from a13n_service.ids import new_object_id
 from a13n_service.secrets import (
     SecretProtectionError,
@@ -33,7 +33,7 @@ from a13n_service.secrets import (
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
-from ..connections.handoff import BrowserHandoff, store_material
+from ..connections.handoff import store_material
 from .domain import MCPAuthorizationLaunch, MCPClientMetadata, MCPOAuthClientInput
 from .errors import MCPConnectionError
 from .management import (
@@ -60,9 +60,15 @@ from .oauth_client import (
     OAuthPreparation,
     authorization_url,
     oauth_client_metadata,
-    oauth_redirect_uri,
+    redirect_key,
 )
-from .oauth_configuration import OAuthConfiguration, client_refresh_context, configured_client, store_client
+from .oauth_configuration import (
+    OAuthConfiguration,
+    client_configuration,
+    client_refresh_context,
+    configured_client,
+    store_client,
+)
 from .service import ConnectionDiscovery
 
 
@@ -75,6 +81,7 @@ class OAuthSource:
     endpoint_url: str
     version: int
     client: MCPOAuthClientInput | None
+    redirect_uri: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +114,8 @@ class MCPOAuthService:
         discovery: ConnectionDiscovery,
         *,
         public_origin: str | None,
+        redirect_uris: tuple[str, ...],
+        documentation_urls: dict[str, str] | None = None,
         client_name: str,
         instance_id: str,
         setup_ttl_seconds: int = 600,
@@ -118,19 +127,35 @@ class MCPOAuthService:
         self._protector = protector
         self._discovery = discovery
         self._public_origin = public_origin.rstrip("/") if public_origin is not None else None
+        self._redirect_uris = redirect_uris
+        self._documentation_urls = documentation_urls or {}
         self._client_name = client_name
         self._instance_id = instance_id
         self._setup_ttl_seconds = setup_ttl_seconds
         self._claim_lease_seconds = claim_lease_seconds
         self._clock = clock
 
-    def client_metadata(self, issuer_key: str) -> MCPClientMetadata:
-        return oauth_client_metadata(self._require_origin(), issuer_key, self._client_name)
+    def client_metadata(self, issuer_key_value: str, redirect_key_value: str) -> MCPClientMetadata:
+        redirect_uri = next(
+            (item for item in self._redirect_uris if redirect_key(item) == redirect_key_value),
+            None,
+        )
+        if redirect_uri is None:
+            raise MCPConnectionError(
+                "invalid_redirect_uri", "OAuth redirect URI is not registered.", category=ErrorCategory.not_found
+            )
+        return oauth_client_metadata(self._require_origin(), issuer_key_value, redirect_uri, self._client_name)
 
     @property
     def configuration(self) -> OAuthConfiguration:
         return OAuthConfiguration(
-            self._sessions, self._oauth, self._protector, public_origin=self._public_origin, clock=self._clock
+            self._sessions,
+            self._oauth,
+            self._protector,
+            public_origin=self._public_origin,
+            redirect_uris=self._redirect_uris,
+            documentation_urls=self._documentation_urls,
+            clock=self._clock,
         )
 
     def _require_origin(self) -> str:
@@ -150,27 +175,31 @@ class MCPOAuthService:
         connection_id: str,
         idempotency_key: str,
         expected_version: int,
-        handoff: BrowserHandoff | None = None,
+        redirect_uri: str,
     ) -> MCPAuthorizationLaunch:
-        self._require_origin()
+        if redirect_uri not in self._redirect_uris:
+            raise MCPConnectionError(
+                "invalid_redirect_uri",
+                "OAuth redirect URI is not registered for this deployment.",
+                category=ErrorCategory.invalid_request,
+            )
         key_digest = _idempotency_digest(idempotency_key)
-        request_fingerprint = digest_request(
-            {"expected_version": expected_version, "handoff": asdict(handoff) if handoff is not None else None}
-        )
+        request_fingerprint = digest_request({"expected_version": expected_version, "redirect_uri": redirect_uri})
         source = await self._authorize_source(
             actor=actor,
             connection_id=connection_id,
             expected_version=expected_version,
             key_digest=key_digest,
             request_fingerprint=request_fingerprint,
-            handoff=handoff,
+            redirect_uri=redirect_uri,
         )
         if isinstance(source, OAuthSessionSnapshot):
             return await self._launch_from_session(source)
         try:
             preparation = await self._oauth.prepare(
                 source.endpoint_url,
-                public_origin=self._require_origin(),
+                public_origin=self._public_origin,
+                redirect_uri=source.redirect_uri,
                 client_name=self._client_name,
                 client=source.client,
             )
@@ -311,72 +340,40 @@ class MCPOAuthService:
                 category=ErrorCategory.unavailable,
             ) from error
 
-    async def receive_callback(self, *, callback_key: str, state: str, code: str, issuer: str | None) -> str:
-        """Capture the provider response before an authenticated browser completes it."""
-        now = self._clock()
-        receipt = random_secrets.token_urlsafe(32)
-        async with transaction(self._sessions) as session:
-            connection_id = await session.scalar(
-                select(MCPAuthorizationRecord.connection_id).where(
-                    MCPAuthorizationRecord.state_digest == _digest(state)
-                )
-            )
-            if connection_id is None:
-                raise MCPConnectionError(
-                    "invalid_oauth_state", "OAuth callback state is invalid.", category=ErrorCategory.invalid_request
-                )
-            connection = await require_connection(session, connection_id, lock=True)
-            setup_record = await session.scalar(
-                select(MCPAuthorizationRecord)
-                .where(MCPAuthorizationRecord.state_digest == _digest(state))
-                .with_for_update()
-            )
-            if (
-                setup_record is None
-                or setup_record.status != "pending"
-                or assume_utc(setup_record.expires_at) <= now
-                or connection.status != "pending"
-                or connection.version != setup_record.connection_version
-            ):
-                raise MCPConnectionError(
-                    "oauth_session_unavailable",
-                    "OAuth authorization session is unavailable.",
-                    category=ErrorCategory.conflict,
-                )
-            setup = self._resolve_setup(OAuthSessionSnapshot.from_record(setup_record))
-            preparation = oauth_preparation(setup)
-            if preparation.redirect_uri != oauth_redirect_uri(self._require_origin(), callback_key):
-                raise MCPConnectionError(
-                    "oauth_callback_mismatch",
-                    "OAuth callback address is invalid.",
-                    category=ErrorCategory.invalid_request,
-                )
-            if issuer is not None and issuer != preparation.issuer_url:
-                raise MCPConnectionError(
-                    "oauth_issuer_mismatch", "OAuth callback issuer is invalid.", category=ErrorCategory.invalid_request
-                )
-            setup["code"] = code
-            setup["receipt_digest"] = _digest(receipt)
-            setup["protocol_receipt"] = receipt
-            setup_record.replace_credential(canonical_json(setup), self._protector)
-            setup_record.status = "received"
-            setup_record.updated_at = now
-        return f"{self._public_origin}/connection-authorizations/browser"
-
-    async def callback(
+    async def complete(
         self,
         *,
         actor: AuthenticatedActor,
+        authorization_id: str,
         state: str,
-        receipt: str,
+        code: str | None,
+        issuer: str | None,
+        response_error: str | None,
     ) -> Connection:
-        source = await self._reserve_callback(actor=actor, state=state, receipt=receipt)
+        source = await self._reserve_callback(
+            actor=actor,
+            authorization_id=authorization_id,
+            state=state,
+            issuer=issuer,
+        )
+        if response_error is not None:
+            failure = MCPOAuthError("authorization_rejected")
+            await self._callback_failed(source, failure)
+            raise MCPConnectionError(
+                "mcp_oauth_rejected",
+                "Remote MCP authorization was rejected.",
+                category=ErrorCategory.conflict,
+            )
+        if code is None:
+            raise MCPConnectionError(
+                "invalid_oauth_response", "OAuth response is invalid.", category=ErrorCategory.invalid_request
+            )
         try:
             setup = self._resolve_setup(source.session)
             preparation = oauth_preparation(setup)
             credential = await self._oauth.exchange_code(
                 preparation,
-                code=required_oauth_string(setup, "code"),
+                code=code,
                 verifier=required_oauth_string(setup, "verifier"),
             )
             credential = with_expiration(credential, self._clock())
@@ -421,7 +418,7 @@ class MCPOAuthService:
         expected_version: int,
         key_digest: str,
         request_fingerprint: str,
-        handoff: BrowserHandoff | None,
+        redirect_uri: str,
     ) -> OAuthSource | OAuthSessionSnapshot:
         async with transaction(self._sessions) as session:
             connection = await require_connection(session, connection_id, lock=True)
@@ -467,6 +464,12 @@ class MCPOAuthService:
                     "This Connection uses client credentials.",
                     category=ErrorCategory.conflict,
                 )
+            if client is not None and client.redirect_uri != redirect_uri:
+                raise MCPConnectionError(
+                    "oauth_client_redirect_mismatch",
+                    "Configured OAuth client uses a different redirect URI.",
+                    category=ErrorCategory.conflict,
+                )
             now = self._clock()
             await session.execute(
                 update(MCPAuthorizationRecord)
@@ -508,8 +511,6 @@ class MCPOAuthService:
                 created_at=now,
                 updated_at=now,
             )
-            if handoff is not None:
-                handoff.initialize(authorization, self._protector)
             session.add(authorization)
             record_command(
                 session,
@@ -535,6 +536,7 @@ class MCPOAuthService:
                 endpoint_url=connection.endpoint_url,
                 version=connection.version,
                 client=client,
+                redirect_uri=redirect_uri,
             )
 
     async def _create_session(
@@ -584,6 +586,7 @@ class MCPOAuthService:
                             "client_id": preparation.client_id,
                             "client_secret": preparation.client_secret,
                             "token_endpoint_auth_method": preparation.token_endpoint_auth_method,
+                            "redirect_uri": preparation.redirect_uri,
                         }
                     ),
                     source="dynamic" if preparation.registration_endpoint is not None else "metadata_document",
@@ -651,28 +654,21 @@ class MCPOAuthService:
         self,
         *,
         actor: AuthenticatedActor,
+        authorization_id: str,
         state: str,
-        receipt: str,
+        issuer: str | None,
     ) -> CallbackSource:
         now = self._clock()
         async with transaction(self._sessions) as session:
-            connection_id = await session.scalar(
-                select(MCPAuthorizationRecord.connection_id).where(
-                    MCPAuthorizationRecord.state_digest == _digest(state)
-                )
-            )
-            if connection_id is None:
+            oauth_session = await session.get(MCPAuthorizationRecord, authorization_id)
+            if oauth_session is None or oauth_session.state_digest != _digest(state):
                 raise MCPConnectionError(
                     "invalid_oauth_state", "OAuth callback state is invalid.", category=ErrorCategory.invalid_request
                 )
-            connection = await require_connection(session, connection_id, lock=True)
-            oauth_session = await session.scalar(
-                select(MCPAuthorizationRecord)
-                .where(MCPAuthorizationRecord.state_digest == _digest(state))
-                .with_for_update()
-            )
+            connection = await require_connection(session, oauth_session.connection_id, lock=True)
+            await session.refresh(oauth_session, with_for_update=True)
             if (
-                oauth_session is None
+                oauth_session.state_digest != _digest(state)
                 or oauth_session.initiating_principal_id != actor.principal.principal_id
                 or oauth_session.initiating_principal_type != actor.principal.principal_type.value
             ):
@@ -691,7 +687,7 @@ class MCPOAuthService:
                     "oauth_state_replayed", "OAuth callback state was already used.", category=ErrorCategory.conflict
                 )
             if (
-                oauth_session.status != "received"
+                oauth_session.status != "pending"
                 or connection.status != "pending"
                 or connection.version != oauth_session.connection_version
             ):
@@ -701,13 +697,20 @@ class MCPOAuthService:
                     category=ErrorCategory.conflict,
                 )
             snapshot = OAuthSessionSnapshot.from_record(oauth_session)
-            if not random_secrets.compare_digest(
-                _digest(receipt), required_oauth_string(self._resolve_setup(snapshot), "receipt_digest")
-            ):
+            preparation = oauth_preparation(self._resolve_setup(snapshot))
+            client_record = await session.get(MCPConnectionOAuthClientRecord, connection.id)
+            configured_redirect = (
+                client_configuration(client_record).redirect_uri if client_record is not None else None
+            )
+            if preparation.redirect_uri not in self._redirect_uris or configured_redirect != preparation.redirect_uri:
                 raise MCPConnectionError(
-                    "invalid_oauth_receipt",
-                    "OAuth callback receipt is invalid.",
+                    "oauth_callback_mismatch",
+                    "OAuth callback address is invalid.",
                     category=ErrorCategory.invalid_request,
+                )
+            if issuer is not None and issuer != preparation.issuer_url:
+                raise MCPConnectionError(
+                    "oauth_issuer_mismatch", "OAuth callback issuer is invalid.", category=ErrorCategory.invalid_request
                 )
             oauth_session.status = "exchanging"
             oauth_session.claim_generation += 1
@@ -814,6 +817,8 @@ class MCPOAuthService:
                     :128
                 ]
                 attempt.clear_credential()
+                if isinstance(error, MCPOAuthError) and error.details:
+                    attempt.setup_json = {"oauth_setup": error.details}
                 attempt.updated_at = self._clock()
                 if _source_matches(connection, source):
                     connection.status = "action_required"
@@ -850,13 +855,6 @@ def _callback_claim_matches(session: MCPAuthorizationRecord, source: CallbackSou
         and session.claim_generation == source.claim_generation
         and session.claim_owner == source.claim_owner
     )
-
-
-def _require_user(actor: AuthenticatedActor) -> None:
-    if actor.principal.principal_type is not PrincipalType.user:
-        raise MCPConnectionError(
-            "interactive_user_required", "OAuth requires an interactive User.", category=ErrorCategory.forbidden
-        )
 
 
 def _idempotency_digest(value: str) -> str:

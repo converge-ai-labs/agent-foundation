@@ -485,7 +485,7 @@ async def test_http_api_creates_and_authorizes_composio_with_optional_prefill(
             oauth,
             mcp,
             public_origin="https://foundation.example",
-            return_urls=("https://customer.example/callback",),
+            callback_urls=("https://customer.example/callback",),
             clock=lambda: now[0],
         )
         runtime = SimpleNamespace(connections=management(service), authorizations=authorizations)

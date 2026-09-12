@@ -12,6 +12,7 @@ from a13n_service.connectivity.connections.service import ConnectionService
 from a13n_service.connectivity.connectors.connections import ConnectorConnectionService
 from a13n_service.connectivity.connectors.service import ConnectorProviderService
 from a13n_service.connectivity.ingress.admission import IngressEventService
+from a13n_service.connectivity.mcp.catalog import MCPServerCatalog
 from a13n_service.connectivity.mcp.oauth_service import MCPOAuthService
 from a13n_service.connectivity.mcp.service import MCPConnectionService
 
@@ -26,6 +27,7 @@ class ConnectivityControlRuntime:
     connector_providers: ConnectorProviderService
     connector_connections: ConnectorConnectionService
     mcp_connections: MCPConnectionService
+    mcp_servers: MCPServerCatalog
     mcp_oauth: MCPOAuthService
     checks: ConnectionChecks
     connections: ConnectionService

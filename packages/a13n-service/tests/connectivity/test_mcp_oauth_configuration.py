@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from asyncio import gather
 from datetime import timedelta
 from urllib.parse import parse_qs, urlsplit
 
@@ -12,16 +13,16 @@ from a13n_service.connectivity.mcp.domain import (
     ConfigureMCPOAuthClientRequest,
     MCPAuthMode,
     MCPOAuthClientInput,
+    MCPOAuthSetupRequest,
 )
 from a13n_service.connectivity.mcp.errors import MCPConnectionError
 from a13n_service.connectivity.mcp.models import MCPAuthorizationRecord, MCPConnectionOAuthClientRecord
-from a13n_service.connectivity.mcp.oauth_client import issuer_key
 from a13n_service.storage import transaction
 from pydantic import SecretStr, ValidationError
 
 from .conftest import NOW, WORKSPACE_ID, actor
 from .connection_helpers import management
-from .test_mcp_service import ISSUER, MCP_ENDPOINT, RemoteServer, capture_receipt
+from .test_mcp_service import APP_CALLBACK, ISSUER, MCP_ENDPOINT, RemoteServer
 from .test_mcp_service import mcp_services as mcp_services
 
 
@@ -43,6 +44,7 @@ def app_client():
         client_id="user-owned-client",
         client_secret=SecretStr("user-owned-secret"),
         token_endpoint_auth_method="client_secret_post",
+        redirect_uri=APP_CALLBACK,
     )
 
 
@@ -52,6 +54,7 @@ async def launch_for(oauth, connection):
         connection_id=connection.id,
         idempotency_key=f"authorize-{connection.version}",
         expected_version=connection.version,
+        redirect_uri=APP_CALLBACK,
     )
     return launch, parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
 
@@ -83,8 +86,14 @@ async def test_configured_client_is_write_only_survives_authorization_and_is_nev
     remote.use_dcr = False
     launch, state = await launch_for(oauth, configured)
     assert parse_qs(urlsplit(launch.authorization_url).query)["client_id"] == ["user-owned-client"]
-    receipt = await capture_receipt(oauth, state)
-    ready = await oauth.callback(actor=actor(), state=state, receipt=receipt)
+    ready = await oauth.complete(
+        actor=actor(),
+        authorization_id=launch.id,
+        state=state,
+        code="code",
+        issuer=ISSUER,
+        response_error=None,
+    )
     assert ready.status == "ready"
     token_request = next(request for request in remote.requests if request.url.path == "/token")
     assert parse_qs(token_request.content.decode())["client_secret"] == ["user-owned-secret"]
@@ -108,6 +117,7 @@ async def test_replacing_service_registered_client_cleans_only_the_owned_registr
         connection_id=created.id,
         idempotency_key="authorize-owned-client",
         expected_version=created.version,
+        redirect_uri=APP_CALLBACK,
     )
     current = await management(connections).get(actor=actor(), connection_id=created.id)
 
@@ -125,14 +135,12 @@ async def test_replacing_service_registered_client_cleans_only_the_owned_registr
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("received", [False, True])
 async def test_reconfiguration_invalidates_existing_authorization_and_clears_tokens(
-    mcp_services, connectivity_sessions, received
+    mcp_services, connectivity_sessions
 ):
     connections, oauth, _ = mcp_services
     created = await create_connection(connections)
     launch, state = await launch_for(oauth, created)
-    receipt = await capture_receipt(oauth, state) if received else "not-received"
     current = await management(connections).get(actor=actor(), connection_id=created.id)
     configured = await oauth.configuration.configure(
         actor=actor(),
@@ -142,11 +150,57 @@ async def test_reconfiguration_invalidates_existing_authorization_and_clears_tok
     assert configured.version == current.version + 1
     assert not configured.credential_configured
     with pytest.raises(MCPConnectionError, match="unavailable"):
-        await oauth.callback(actor=actor(), state=state, receipt=receipt)
+        await oauth.complete(
+            actor=actor(),
+            authorization_id=launch.id,
+            state=state,
+            code="code",
+            issuer=ISSUER,
+            response_error=None,
+        )
     async with connectivity_sessions() as session:
         setup = await session.get(MCPAuthorizationRecord, launch.id)
         assert setup.status == "expired"
         assert setup.ciphertext is None
+
+
+@pytest.mark.anyio
+async def test_pre_registered_browser_client_does_not_require_service_public_origin(mcp_services):
+    connections, oauth, remote = mcp_services
+    oauth._public_origin = None
+    created = await create_connection(connections)
+    setup = await oauth.configuration.setup(
+        actor=actor(),
+        connection_id=created.id,
+        request=MCPOAuthSetupRequest(redirect_uri=APP_CALLBACK),
+    )
+    assert setup.next_action.type == "configure_oauth_client"
+    assert setup.next_action.grant_types == ("authorization_code", "client_credentials")
+    configured = await oauth.configuration.configure(
+        actor=actor(),
+        connection_id=created.id,
+        request=ConfigureMCPOAuthClientRequest(expected_version=created.version, client=app_client()),
+    )
+    requests_after_configuration = len(remote.requests)
+    setup = await oauth.configuration.setup(
+        actor=actor(),
+        connection_id=created.id,
+        request=MCPOAuthSetupRequest(redirect_uri=APP_CALLBACK),
+    )
+    assert setup.next_action.type == "start_authorization"
+    assert len(remote.requests) == requests_after_configuration
+
+    launch, state = await launch_for(oauth, configured)
+    ready = await oauth.complete(
+        actor=actor(),
+        authorization_id=launch.id,
+        state=state,
+        code="code",
+        issuer=ISSUER,
+        response_error=None,
+    )
+
+    assert ready.status == "ready"
 
 
 @pytest.mark.anyio
@@ -178,40 +232,73 @@ async def test_missing_issuer_is_accepted_with_issuer_specific_callback(
                 client=app_client()
                 if registration == "confidential"
                 else MCPOAuthClientInput(
-                    issuer_url=ISSUER, client_id="public-client", token_endpoint_auth_method="none"
+                    issuer_url=ISSUER,
+                    client_id="public-client",
+                    token_endpoint_auth_method="none",
+                    redirect_uri=APP_CALLBACK,
                 ),
             ),
         )
-    _, state = await launch_for(oauth, connection)
-    receipt = await capture_receipt(oauth, state, issuer=None)
-    ready = await oauth.callback(actor=actor(), state=state, receipt=receipt)
+    launch, state = await launch_for(oauth, connection)
+    ready = await oauth.complete(
+        actor=actor(),
+        authorization_id=launch.id,
+        state=state,
+        code="code",
+        issuer=None,
+        response_error=None,
+    )
     assert ready.status == "ready"
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("wrong_issuer_value", [f"{ISSUER}/", "https://other.example", ""])
-async def test_callback_path_issuer_and_receipt_are_all_checked_before_token_exchange(mcp_services, wrong_issuer_value):
+async def test_completion_checks_operation_state_issuer_and_replay_before_token_exchange(
+    mcp_services, wrong_issuer_value
+):
     connections, oauth, remote = mcp_services
     connection = await create_connection(connections)
-    _, state = await launch_for(oauth, connection)
-    with pytest.raises(MCPConnectionError) as wrong_path:
-        await oauth.receive_callback(
-            callback_key=issuer_key(f"{ISSUER}/different"), state=state, code="code", issuer=None
+    launch, state = await launch_for(oauth, connection)
+    with pytest.raises(MCPConnectionError) as wrong_state:
+        await oauth.complete(
+            actor=actor(),
+            authorization_id=launch.id,
+            state="wrong-state" * 4,
+            code="code",
+            issuer=ISSUER,
+            response_error=None,
         )
-    assert wrong_path.value.code == "oauth_callback_mismatch"
+    assert wrong_state.value.code == "invalid_oauth_state"
     with pytest.raises(MCPConnectionError) as wrong_issuer:
-        await capture_receipt(oauth, state, issuer=wrong_issuer_value)
+        await oauth.complete(
+            actor=actor(),
+            authorization_id=launch.id,
+            state=state,
+            code="code",
+            issuer=wrong_issuer_value,
+            response_error=None,
+        )
     assert wrong_issuer.value.code == "oauth_issuer_mismatch"
-    receipt = await capture_receipt(oauth, state)
-    with pytest.raises(MCPConnectionError) as repeated:
-        await capture_receipt(oauth, state)
-    assert repeated.value.code == "oauth_session_unavailable"
-    with pytest.raises(MCPConnectionError) as wrong_receipt:
-        await oauth.callback(actor=actor(), state=state, receipt="wrong-receipt")
-    assert wrong_receipt.value.code == "invalid_oauth_receipt"
     assert not any(request.url.path == "/token" for request in remote.requests)
-    ready = await oauth.callback(actor=actor(), state=state, receipt=receipt)
+    ready = await oauth.complete(
+        actor=actor(),
+        authorization_id=launch.id,
+        state=state,
+        code="code",
+        issuer=ISSUER,
+        response_error=None,
+    )
     assert ready.status == "ready"
+    with pytest.raises(MCPConnectionError) as repeated:
+        await oauth.complete(
+            actor=actor(),
+            authorization_id=launch.id,
+            state=state,
+            code="code",
+            issuer=ISSUER,
+            response_error=None,
+        )
+    assert repeated.value.code == "oauth_state_replayed"
 
 
 @pytest.mark.anyio
@@ -219,14 +306,69 @@ async def test_received_response_keeps_original_expiry(mcp_services, connectivit
     connections, oauth, remote = mcp_services
     connection = await create_connection(connections)
     launch, state = await launch_for(oauth, connection)
-    receipt = await capture_receipt(oauth, state)
     async with transaction(connectivity_sessions) as session:
         setup = await session.get(MCPAuthorizationRecord, launch.id)
         setup.expires_at = NOW - timedelta(seconds=1)
     with pytest.raises(MCPConnectionError) as failure:
-        await oauth.callback(actor=actor(), state=state, receipt=receipt)
+        await oauth.complete(
+            actor=actor(),
+            authorization_id=launch.id,
+            state=state,
+            code="code",
+            issuer=ISSUER,
+            response_error=None,
+        )
     assert failure.value.code == "oauth_session_expired"
     assert not any(request.url.path == "/token" for request in remote.requests)
+
+
+@pytest.mark.anyio
+async def test_provider_rejection_is_single_use_and_projects_only_a_safe_error(mcp_services, connectivity_sessions):
+    connections, oauth, remote = mcp_services
+    connection = await create_connection(connections)
+    launch, state = await launch_for(oauth, connection)
+
+    with pytest.raises(MCPConnectionError) as rejected:
+        await oauth.complete(
+            actor=actor(),
+            authorization_id=launch.id,
+            state=state,
+            code=None,
+            issuer=ISSUER,
+            response_error="private-provider-detail",
+        )
+    assert rejected.value.code == "mcp_oauth_rejected"
+    assert not any(request.url.path == "/token" for request in remote.requests)
+    async with connectivity_sessions() as session:
+        attempt = await session.get(MCPAuthorizationRecord, launch.id)
+        assert attempt is not None
+        assert attempt.last_error_code == "authorization_rejected"
+        assert attempt.ciphertext is None
+
+
+@pytest.mark.anyio
+async def test_concurrent_completion_exchanges_the_code_once(mcp_services):
+    connections, oauth, remote = mcp_services
+    connection = await create_connection(connections)
+    launch, state = await launch_for(oauth, connection)
+
+    results = await gather(
+        *(
+            oauth.complete(
+                actor=actor(),
+                authorization_id=launch.id,
+                state=state,
+                code="code",
+                issuer=ISSUER,
+                response_error=None,
+            )
+            for _ in range(2)
+        ),
+        return_exceptions=True,
+    )
+
+    assert sum(not isinstance(result, Exception) for result in results) == 1
+    assert sum(request.url.path == "/token" for request in remote.requests) == 1
 
 
 def test_public_client_cannot_hold_a_secret():

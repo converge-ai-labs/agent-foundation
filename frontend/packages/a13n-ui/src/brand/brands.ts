@@ -1,4 +1,3 @@
-import { mcpServers } from "a13n-mcp-directory";
 import { lobeBrands, lobeIconsCdn } from "./lobe-brands.generated";
 
 /** Display identities only. These mappings never select an endpoint or account. */
@@ -110,19 +109,7 @@ const curatedBrands: Record<string, Brand> = {
   "a13n.e2b": { icon: "https://e2b.dev/brand/e2b-symbol-fire-orange-s.svg" },
 };
 
-const mcpDirectoryBrands: Record<string, Brand> = {};
-for (const [identity, server] of Object.entries(mcpServers))
-  if ("icon" in server)
-    mcpDirectoryBrands[identity] = {
-      icon: server.icon,
-      endpoints: [server.endpoint],
-    };
-
-export const brands = mergeBrandCatalogs(
-  lobeBrands,
-  mcpDirectoryBrands,
-  curatedBrands,
-);
+export const brands = mergeBrandCatalogs(lobeBrands, curatedBrands);
 
 const brandsByEndpoint = new Map<string, Brand>();
 for (const brand of Object.values(brands))

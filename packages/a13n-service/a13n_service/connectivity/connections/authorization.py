@@ -50,14 +50,14 @@ class AuthorizationService:
         mcp_connections: MCPConnectionService,
         *,
         public_origin: str | None,
-        return_urls: tuple[str, ...],
+        callback_urls: tuple[str, ...],
         clock: Clock = utc_now,
     ) -> None:
         self._sessions, self._protector = sessions, protector
         self._connectors, self._mcp = connectors, mcp
         self._mcp_connections = mcp_connections
         self._origin = public_origin
-        self._return_urls = return_urls
+        self._callback_urls = callback_urls
         self._clock = clock
 
     async def create(
@@ -93,20 +93,26 @@ class AuthorizationService:
                 credentials={key: value.get_secret_value() for key, value in request.credentials.items()},
             )
             return await self.get(actor=actor, authorization_id=launch.attempt_id)
-        if self._origin is None:
+        if kind == "connector" and self._origin is None:
             raise ConnectionError(
                 "authorization_unavailable",
                 "Browser authorization requires a public origin.",
                 category=ErrorCategory.unavailable,
             )
-        if request.return_url not in (*self._return_urls, f"{self._origin}/connections/callback"):
-            raise ConnectionError(
-                "invalid_return_url",
-                "Authorization return URL is not registered.",
-                category=ErrorCategory.invalid_request,
-            )
-        handoff = BrowserHandoff.from_request(request)
         if kind == "connector":
+            if request.return_url not in self._callback_urls:
+                raise ConnectionError(
+                    "invalid_return_url",
+                    "Authorization return URL is not registered.",
+                    category=ErrorCategory.invalid_request,
+                )
+            if request.redirect_uri is not None:
+                raise ConnectionError(
+                    "invalid_authorization_request",
+                    "Connector authorization requires an application handoff.",
+                    category=ErrorCategory.invalid_request,
+                )
+            handoff = BrowserHandoff.from_request(request)
             launch = await self._connectors.start_setup(
                 actor=actor,
                 connection_id=connection_id,
@@ -118,6 +124,18 @@ class AuthorizationService:
             )
             identifier = launch.attempt_id
         else:
+            if request.redirect_uri not in self._callback_urls:
+                raise ConnectionError(
+                    "invalid_redirect_uri",
+                    "OAuth redirect URI is not registered for this deployment.",
+                    category=ErrorCategory.invalid_request,
+                )
+            if request.return_url is not None:
+                raise ConnectionError(
+                    "invalid_authorization_request",
+                    "MCP OAuth uses the application callback flow.",
+                    category=ErrorCategory.invalid_request,
+                )
             if request.options:
                 raise ConnectionError(
                     "invalid_authorization_options",
@@ -129,7 +147,7 @@ class AuthorizationService:
                 connection_id=connection_id,
                 idempotency_key=idempotency_key,
                 expected_version=request.expected_version,
-                handoff=handoff,
+                redirect_uri=request.redirect_uri,
             )
             identifier = launch.id
         return await self.get(actor=actor, authorization_id=identifier)
@@ -324,11 +342,10 @@ class AuthorizationService:
             self._require_live(connection, attempt)
             if not matches(attempt.browser_binding_digest, request.browser_nonce):
                 raise invalid_handoff()
-            if attempt.kind == "mcp":
-                if attempt.status != "received" or request.session_uri is not None:
-                    raise invalid_handoff()
-            elif attempt.status != "attached" or (
-                attempt.completion_method == "oauth_verifier" and request.session_uri is None
+            if (
+                attempt.kind != "connector"
+                or attempt.status != "attached"
+                or (attempt.completion_method == "oauth_verifier" and request.session_uri is None)
             ):
                 raise invalid_handoff()
             bundle = secret_bundle(attempt, self._protector)
@@ -355,8 +372,11 @@ class AuthorizationService:
         async with transaction(self._sessions) as session:
             connection, attempt = await self._load(session, authorization_id, lock=True)
             await self._authorize(session, actor, attempt)
-            if not matches(attempt.receipt_digest, request.receipt) or not matches(
-                attempt.completion_challenge, request.completion_verifier
+            if attempt.kind == "connector" and (
+                request.receipt is None
+                or request.completion_verifier is None
+                or not matches(attempt.receipt_digest, request.receipt)
+                or not matches(attempt.completion_challenge, request.completion_verifier)
             ):
                 raise invalid_handoff()
             if attempt.status == "completed":
@@ -365,10 +385,16 @@ class AuthorizationService:
             kind = attempt.kind
             bundle = secret_bundle(attempt, self._protector)
         if kind == "mcp":
-            state, receipt = bundle.get("state"), bundle.get("protocol_receipt")
-            if not isinstance(state, str) or not isinstance(receipt, str):
+            if request.state is None:
                 raise invalid_handoff()
-            await self._mcp.callback(actor=actor, state=state, receipt=receipt)
+            await self._mcp.complete(
+                actor=actor,
+                authorization_id=authorization_id,
+                state=request.state,
+                code=request.code,
+                issuer=request.iss,
+                response_error=request.error,
+            )
         else:
             nonce, session_uri = bundle.get("browser_nonce"), bundle.get("session_uri")
             if not isinstance(nonce, str) or (session_uri is not None and not isinstance(session_uri, str)):
@@ -427,8 +453,11 @@ class AuthorizationService:
         action = None
         if status in {"attached", "pending"} and attempt.ciphertext is not None:
             bundle = secret_bundle(attempt, self._protector)
+            provider_url = bundle.get("provider_url")
             token = bundle.get("launch_token")
-            if isinstance(token, str) and isinstance(bundle.get("provider_url"), str):
+            if attempt.kind == "mcp" and isinstance(provider_url, str):
+                action = AuthorizationAction(type="open_url", url=provider_url)
+            elif isinstance(token, str) and isinstance(provider_url, str):
                 action = AuthorizationAction(
                     type="open_url",
                     url=f"{self._origin}/connection-authorizations/browser#"
@@ -436,8 +465,12 @@ class AuthorizationService:
                 )
         if status == "completed" and connection.status != "ready":
             action = AuthorizationAction(type="check_connection")
+        if status == "failed" and attempt.kind == "mcp" and attempt.last_error_code == "oauth_client_required":
+            setup = attempt.setup_json.get("oauth_setup")
+            if isinstance(setup, dict):
+                action = AuthorizationAction.model_validate({"type": "configure_oauth_client", **setup})
         outcome_unknown = attempt.last_error_code in {"setup_outcome_unknown", "setup_verification_pending"}
-        if status in {"failed", "expired", "cancelled"} and not outcome_unknown:
+        if status in {"failed", "expired", "cancelled"} and not outcome_unknown and action is None:
             action = AuthorizationAction(type="restart")
         return Authorization.model_validate(
             dict(

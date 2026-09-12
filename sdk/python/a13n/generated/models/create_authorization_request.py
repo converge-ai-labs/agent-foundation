@@ -25,6 +25,7 @@ class CreateAuthorizationRequest:
         completion_challenge (None | str | Unset):
         credentials (CreateAuthorizationRequestCredentialsType0 | None | Unset):
         options (CreateAuthorizationRequestOptions | Unset):
+        redirect_uri (None | str | Unset):
         return_url (None | str | Unset):
         state (None | str | Unset):
     """
@@ -34,6 +35,7 @@ class CreateAuthorizationRequest:
     completion_challenge: str | Unset | None = UNSET
     credentials: CreateAuthorizationRequestCredentialsType0 | Unset | None = UNSET
     options: CreateAuthorizationRequestOptions | Unset = UNSET
+    redirect_uri: str | Unset | None = UNSET
     return_url: str | Unset | None = UNSET
     state: str | Unset | None = UNSET
 
@@ -64,6 +66,12 @@ class CreateAuthorizationRequest:
         if not isinstance(self.options, Unset):
             options = self.options.to_dict()
 
+        redirect_uri: str | Unset | None
+        if isinstance(self.redirect_uri, Unset):
+            redirect_uri = UNSET
+        else:
+            redirect_uri = self.redirect_uri
+
         return_url: str | Unset | None
         if isinstance(self.return_url, Unset):
             return_url = UNSET
@@ -90,6 +98,8 @@ class CreateAuthorizationRequest:
             field_dict["credentials"] = credentials
         if options is not UNSET:
             field_dict["options"] = options
+        if redirect_uri is not UNSET:
+            field_dict["redirect_uri"] = redirect_uri
         if return_url is not UNSET:
             field_dict["return_url"] = return_url
         if state is not UNSET:
@@ -142,6 +152,15 @@ class CreateAuthorizationRequest:
         else:
             options = CreateAuthorizationRequestOptions.from_dict(_options)
 
+        def _parse_redirect_uri(data: object) -> str | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(str | Unset | None, data)
+
+        redirect_uri = _parse_redirect_uri(d.pop("redirect_uri", UNSET))
+
         def _parse_return_url(data: object) -> str | Unset | None:
             if data is None:
                 return data
@@ -166,6 +185,7 @@ class CreateAuthorizationRequest:
             completion_challenge=completion_challenge,
             credentials=credentials,
             options=options,
+            redirect_uri=redirect_uri,
             return_url=return_url,
             state=state,
         )

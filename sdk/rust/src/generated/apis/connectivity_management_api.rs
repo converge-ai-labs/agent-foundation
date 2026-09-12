@@ -102,10 +102,28 @@ pub enum GetConnectorProvidersConnectorProviderIdConnectorsConnectorKeyToolsErro
     UnknownValue(serde_json::Value),
 }
 
-/// struct for typed errors of method [`get_oauth_mcp_client_metadata_issuer_key_json`]
+/// struct for typed errors of method [`get_mcp_servers`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum GetOauthMcpClientMetadataIssuerKeyJsonError {
+pub enum GetMcpServersError {
+    Status400(models::ErrorResponse),
+    DefaultResponse(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
+/// struct for typed errors of method [`get_mcp_servers_server_key`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum GetMcpServersServerKeyError {
+    Status400(models::ErrorResponse),
+    DefaultResponse(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
+/// struct for typed errors of method [`get_oauth_mcp_client_metadata_issuer_key_redirect_key_json`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonError {
     Status400(models::ErrorResponse),
     DefaultResponse(models::ErrorResponse),
     UnknownValue(serde_json::Value),
@@ -196,6 +214,15 @@ pub enum PostConnectionsConnectionIdMcpDiscoverError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum PostConnectionsConnectionIdMcpOauthDiscoveryError {
+    Status400(models::ErrorResponse),
+    DefaultResponse(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
+/// struct for typed errors of method [`post_connections_connection_id_mcp_oauth_setup`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PostConnectionsConnectionIdMcpOauthSetupError {
     Status400(models::ErrorResponse),
     DefaultResponse(models::ErrorResponse),
     UnknownValue(serde_json::Value),
@@ -963,18 +990,164 @@ pub async fn get_connector_providers_connector_provider_id_connectors_connector_
     }
 }
 
-pub async fn get_oauth_mcp_client_metadata_issuer_key_json(
+pub async fn get_mcp_servers(
     configuration: &configuration::Configuration,
-    issuer_key: &str,
-) -> Result<Response<models::McpClientMetadata>, Error<GetOauthMcpClientMetadataIssuerKeyJsonError>>
-{
+    query: Option<&str>,
+    limit: Option<i32>,
+    cursor: Option<&str>,
+) -> Result<Response<models::McpServerCollection>, Error<GetMcpServersError>> {
     // add a prefix to parameters to efficiently prevent name collisions
-    let p_path_issuer_key = issuer_key;
+    let p_query_query = query;
+    let p_query_limit = limit;
+    let p_query_cursor = cursor;
+
+    let uri_str = format!("{}/api/v1/mcp-servers", configuration.base_path);
+    let mut req_builder = configuration.client.request(reqwest::Method::GET, &uri_str);
+
+    if let Some(ref param_value) = p_query_query {
+        req_builder = req_builder.query(&[("query", &param_value.to_string())]);
+    }
+    if let Some(ref param_value) = p_query_limit {
+        req_builder = req_builder.query(&[("limit", &param_value.to_string())]);
+    }
+    if let Some(ref param_value) = p_query_cursor {
+        req_builder = req_builder.query(&[("cursor", &param_value.to_string())]);
+    }
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+    if let Some(ref token) = configuration.bearer_access_token {
+        req_builder = req_builder.bearer_auth(token.to_owned());
+    };
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content)
+                .map(|data| Response {
+                    data,
+                    status,
+                    headers,
+                })
+                .map_err(Error::from),
+            ContentType::Text => {
+                return Err(Error::from(serde_json::Error::custom(
+                    "Received `text/plain` content type response that cannot be converted to `models::McpServerCollection`",
+                )));
+            }
+            ContentType::Unsupported(unknown_type) => {
+                return Err(Error::from(serde_json::Error::custom(format!(
+                    "Received `{unknown_type}` content type response that cannot be converted to `models::McpServerCollection`"
+                ))));
+            }
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<GetMcpServersError> = serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(Box::new(ResponseContent {
+            status,
+            headers,
+            content,
+            entity,
+        })))
+    }
+}
+
+pub async fn get_mcp_servers_server_key(
+    configuration: &configuration::Configuration,
+    server_key: &str,
+) -> Result<Response<models::McpServer>, Error<GetMcpServersServerKeyError>> {
+    // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_server_key = server_key;
 
     let uri_str = format!(
-        "{}/api/v1/oauth/mcp/client-metadata/{issuer_key}.json",
+        "{}/api/v1/mcp-servers/{server_key}",
         configuration.base_path,
-        issuer_key = crate::generated::apis::urlencode(p_path_issuer_key)
+        server_key = crate::generated::apis::urlencode(p_path_server_key)
+    );
+    let mut req_builder = configuration.client.request(reqwest::Method::GET, &uri_str);
+
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+    if let Some(ref token) = configuration.bearer_access_token {
+        req_builder = req_builder.bearer_auth(token.to_owned());
+    };
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content)
+                .map(|data| Response {
+                    data,
+                    status,
+                    headers,
+                })
+                .map_err(Error::from),
+            ContentType::Text => {
+                return Err(Error::from(serde_json::Error::custom(
+                    "Received `text/plain` content type response that cannot be converted to `models::McpServer`",
+                )));
+            }
+            ContentType::Unsupported(unknown_type) => {
+                return Err(Error::from(serde_json::Error::custom(format!(
+                    "Received `{unknown_type}` content type response that cannot be converted to `models::McpServer`"
+                ))));
+            }
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<GetMcpServersServerKeyError> = serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(Box::new(ResponseContent {
+            status,
+            headers,
+            content,
+            entity,
+        })))
+    }
+}
+
+pub async fn get_oauth_mcp_client_metadata_issuer_key_redirect_key_json(
+    configuration: &configuration::Configuration,
+    issuer_key: &str,
+    redirect_key: &str,
+) -> Result<
+    Response<models::McpClientMetadata>,
+    Error<GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonError>,
+> {
+    // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_issuer_key = issuer_key;
+    let p_path_redirect_key = redirect_key;
+
+    let uri_str = format!(
+        "{}/api/v1/oauth/mcp/client-metadata/{issuer_key}/{redirect_key}.json",
+        configuration.base_path,
+        issuer_key = crate::generated::apis::urlencode(p_path_issuer_key),
+        redirect_key = crate::generated::apis::urlencode(p_path_redirect_key)
     );
     let mut req_builder = configuration.client.request(reqwest::Method::GET, &uri_str);
 
@@ -1017,7 +1190,7 @@ pub async fn get_oauth_mcp_client_metadata_issuer_key_json(
         }
     } else {
         let content = resp.text().await?;
-        let entity: Option<GetOauthMcpClientMetadataIssuerKeyJsonError> =
+        let entity: Option<GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonError> =
             serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,
@@ -1714,12 +1887,14 @@ pub async fn post_connections_connection_id_mcp_discover(
 pub async fn post_connections_connection_id_mcp_oauth_discovery(
     configuration: &configuration::Configuration,
     connection_id: &str,
+    mcpo_auth_setup_request: models::McpoAuthSetupRequest,
 ) -> Result<
     Response<models::McpoAuthDiscovery>,
     Error<PostConnectionsConnectionIdMcpOauthDiscoveryError>,
 > {
     // add a prefix to parameters to efficiently prevent name collisions
     let p_path_connection_id = connection_id;
+    let p_body_mcpo_auth_setup_request = mcpo_auth_setup_request;
 
     let uri_str = format!(
         "{}/api/v1/connections/{connection_id}/mcp/oauth-discovery",
@@ -1736,6 +1911,7 @@ pub async fn post_connections_connection_id_mcp_oauth_discovery(
     if let Some(ref token) = configuration.bearer_access_token {
         req_builder = req_builder.bearer_auth(token.to_owned());
     };
+    req_builder = req_builder.json(&p_body_mcpo_auth_setup_request);
 
     let req = req_builder.build()?;
     let resp = configuration.client.execute(req).await?;
@@ -1773,6 +1949,78 @@ pub async fn post_connections_connection_id_mcp_oauth_discovery(
     } else {
         let content = resp.text().await?;
         let entity: Option<PostConnectionsConnectionIdMcpOauthDiscoveryError> =
+            serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(Box::new(ResponseContent {
+            status,
+            headers,
+            content,
+            entity,
+        })))
+    }
+}
+
+pub async fn post_connections_connection_id_mcp_oauth_setup(
+    configuration: &configuration::Configuration,
+    connection_id: &str,
+    mcpo_auth_setup_request: models::McpoAuthSetupRequest,
+) -> Result<Response<models::McpoAuthSetup>, Error<PostConnectionsConnectionIdMcpOauthSetupError>> {
+    // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_connection_id = connection_id;
+    let p_body_mcpo_auth_setup_request = mcpo_auth_setup_request;
+
+    let uri_str = format!(
+        "{}/api/v1/connections/{connection_id}/mcp/oauth-setup",
+        configuration.base_path,
+        connection_id = crate::generated::apis::urlencode(p_path_connection_id)
+    );
+    let mut req_builder = configuration
+        .client
+        .request(reqwest::Method::POST, &uri_str);
+
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+    if let Some(ref token) = configuration.bearer_access_token {
+        req_builder = req_builder.bearer_auth(token.to_owned());
+    };
+    req_builder = req_builder.json(&p_body_mcpo_auth_setup_request);
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content)
+                .map(|data| Response {
+                    data,
+                    status,
+                    headers,
+                })
+                .map_err(Error::from),
+            ContentType::Text => {
+                return Err(Error::from(serde_json::Error::custom(
+                    "Received `text/plain` content type response that cannot be converted to `models::McpoAuthSetup`",
+                )));
+            }
+            ContentType::Unsupported(unknown_type) => {
+                return Err(Error::from(serde_json::Error::custom(format!(
+                    "Received `{unknown_type}` content type response that cannot be converted to `models::McpoAuthSetup`"
+                ))));
+            }
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<PostConnectionsConnectionIdMcpOauthSetupError> =
             serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,

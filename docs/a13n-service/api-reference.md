@@ -820,9 +820,31 @@ Discover Mcp Oauth.
 | --------------- | -------- | -------- | ------------- | ----------------------- |
 | `connection_id` | path     | true     | string        | —                       |
 
+Request body: required.
+
+- `application/json`: `MCPOAuthSetupRequest`.
+
 Responses:
 
 - **200** — Successful Response (`application/json: MCPOAuthDiscovery`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/connections/{connection_id}/mcp/oauth-setup`
+
+Get Mcp Oauth Setup.
+
+| Parameter       | Location | Required | Type / schema | Constraints and default |
+| --------------- | -------- | -------- | ------------- | ----------------------- |
+| `connection_id` | path     | true     | string        | —                       |
+
+Request body: required.
+
+- `application/json`: `MCPOAuthSetupRequest`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: MCPOAuthSetup`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -973,13 +995,44 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
-### `GET /api/v1/oauth/mcp/client-metadata/{issuer_key}.json`
+### `GET /api/v1/mcp-servers`
+
+List Mcp Servers.
+
+| Parameter | Location | Required | Type / schema  | Constraints and default             |
+| --------- | -------- | -------- | -------------- | ----------------------------------- |
+| `query`   | query    | false    | string         | maxLength=256; default=""           |
+| `limit`   | query    | false    | integer        | minimum=1; maximum=200; default=100 |
+| `cursor`  | query    | false    | string or null | —                                   |
+
+Responses:
+
+- **200** — Successful Response (`application/json: MCPServerCollection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/mcp-servers/{server_key}`
+
+Get Mcp Server.
+
+| Parameter    | Location | Required | Type / schema | Constraints and default |
+| ------------ | -------- | -------- | ------------- | ----------------------- |
+| `server_key` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: MCPServer`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/oauth/mcp/client-metadata/{issuer_key}/{redirect_key}.json`
 
 Mcp Client Metadata.
 
-| Parameter    | Location | Required | Type / schema | Constraints and default  |
-| ------------ | -------- | -------- | ------------- | ------------------------ |
-| `issuer_key` | path     | true     | string        | pattern="^[0-9a-f]{64}$" |
+| Parameter      | Location | Required | Type / schema | Constraints and default  |
+| -------------- | -------- | -------- | ------------- | ------------------------ |
+| `issuer_key`   | path     | true     | string        | pattern="^[0-9a-f]{64}$" |
+| `redirect_key` | path     | true     | string        | pattern="^[0-9a-f]{64}$" |
 
 Responses:
 

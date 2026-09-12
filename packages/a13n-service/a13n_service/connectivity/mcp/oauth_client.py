@@ -49,10 +49,17 @@ _ACTION_REQUIRED_TOKEN_ERRORS = frozenset(
 
 
 class MCPOAuthError(ValueError):
-    def __init__(self, code: str, *, action_required: bool = False) -> None:
+    def __init__(
+        self,
+        code: str,
+        *,
+        action_required: bool = False,
+        details: dict[str, object] | None = None,
+    ) -> None:
         super().__init__(code)
         self.code = code
         self.action_required = action_required
+        self.details = details or {}
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,15 +126,22 @@ def issuer_key(issuer: str) -> str:
     return hashlib.sha256(issuer.encode()).hexdigest()
 
 
-def oauth_redirect_uri(public_origin: str, key: str) -> str:
-    return f"{public_origin}/api/v1/oauth/mcp/callback/{key}"
+def redirect_key(redirect_uri: str) -> str:
+    return hashlib.sha256(redirect_uri.encode()).hexdigest()
 
 
-def oauth_client_metadata(public_origin: str, key: str, client_name: str) -> MCPClientMetadata:
+def oauth_client_metadata(
+    public_origin: str,
+    issuer_key_value: str,
+    redirect_uri: str,
+    client_name: str,
+) -> MCPClientMetadata:
     return MCPClientMetadata(
-        client_id=f"{public_origin}/api/v1/oauth/mcp/client-metadata/{key}.json",
+        client_id=(
+            f"{public_origin}/api/v1/oauth/mcp/client-metadata/{issuer_key_value}/{redirect_key(redirect_uri)}.json"
+        ),
         client_name=client_name,
-        redirect_uris=(oauth_redirect_uri(public_origin, key),),
+        redirect_uris=(redirect_uri,),
     )
 
 
@@ -159,7 +173,8 @@ class MCPOAuthClient:
         self,
         endpoint_url: str,
         *,
-        public_origin: str,
+        public_origin: str | None,
+        redirect_uri: str,
         client_name: str,
         client: MCPOAuthClientInput | None = None,
     ) -> OAuthPreparation:
@@ -174,20 +189,39 @@ class MCPOAuthClient:
         if "authorization_code" not in discovered.grant_types:
             raise MCPOAuthError("authorization_code_unsupported")
         metadata = discovered.metadata
-        key = issuer_key(discovered.issuer_url)
-        identity = oauth_client_metadata(public_origin, key, client_name)
-        redirect_uri = identity.redirect_uris[0]
+        identity = (
+            oauth_client_metadata(public_origin, issuer_key(discovered.issuer_url), redirect_uri, client_name)
+            if public_origin is not None
+            else None
+        )
         if client is not None and client.issuer_url != discovered.issuer_url:
             raise MCPOAuthError("configured_issuer_mismatch")
-        registration = await self._client_registration(
-            metadata,
-            strategy=discovered.client_registration,
-            client=client,
-            supported_auth_methods=discovered.token_auth_methods,
-            client_metadata_url=identity.client_id,
-            redirect_uri=redirect_uri,
-            client_name=client_name,
-        )
+        try:
+            registration = await self._client_registration(
+                metadata,
+                strategy=discovered.client_registration,
+                client=client,
+                supported_auth_methods=discovered.token_auth_methods,
+                client_metadata_url=identity.client_id if identity is not None else None,
+                redirect_uri=redirect_uri,
+                client_name=client_name,
+            )
+        except MCPOAuthError as error:
+            if client is not None or error.code not in {
+                "client_registration_unsupported",
+                "client_metadata_unavailable",
+            }:
+                raise
+            raise MCPOAuthError(
+                "oauth_client_required",
+                details={
+                    "redirect_uri": redirect_uri,
+                    "issuer_url": discovered.issuer_url,
+                    "token_endpoint_auth_methods": discovered.token_auth_methods,
+                    "grant_types": discovered.grant_types,
+                    "client_registration": discovered.client_registration,
+                },
+            ) from error
         return OAuthPreparation(
             redirect_uri=redirect_uri,
             resource_url=discovered.resource_url,
@@ -251,7 +285,7 @@ class MCPOAuthClient:
         metadata: AuthorizationMetadata,
         *,
         strategy: Literal["metadata_document", "dynamic", "manual"],
-        client_metadata_url: str,
+        client_metadata_url: str | None,
         redirect_uri: str,
         client_name: str,
         client: MCPOAuthClientInput | None,
@@ -260,6 +294,8 @@ class MCPOAuthClient:
         if client is not None:
             return _configured_registration(client, supported_auth_methods)
         if strategy == "metadata_document":
+            if client_metadata_url is None:
+                raise MCPOAuthError("client_metadata_unavailable")
             info = create_client_info_from_metadata_url(client_metadata_url)
             return _registration(info, endpoint=None)
         if strategy == "manual":

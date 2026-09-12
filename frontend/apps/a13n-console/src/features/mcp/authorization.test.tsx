@@ -58,21 +58,21 @@ it("uses the saved app and refreshed version for reconnect after authorization f
     status: "pending",
     credential_configured: true,
   };
-  http.GET.mockImplementation(async (path: string) => ({
-    data: path.endsWith("oauth-client") ? null : failed,
-    response: new Response(),
-  }));
+  http.GET.mockResolvedValue({ data: failed, response: new Response() });
   http.PUT.mockResolvedValue({ data: updated, response: new Response() });
   http.POST.mockImplementation(async (path: string) => {
-    if (path.endsWith("oauth-discovery"))
+    if (path.endsWith("oauth-setup"))
       return {
         data: {
-          issuer_url: "https://auth.example",
-          redirect_uri: "https://service.example/api/v1/oauth/mcp/callback/key",
-          grant_types_supported: ["authorization_code"],
-          client_registration: "manual",
-          token_endpoint_auth_methods_supported: ["client_secret_post"],
-          authorization_response_iss_parameter_supported: false,
+          client: null,
+          next_action: {
+            type: "configure_oauth_client",
+            issuer_url: "https://auth.example",
+            redirect_uri: "https://application.example/connections/callback",
+            grant_types: ["authorization_code"],
+            client_registration: "manual",
+            token_endpoint_auth_methods: ["client_secret_post"],
+          },
         },
         response: new Response(),
       };

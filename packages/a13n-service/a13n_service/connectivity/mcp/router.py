@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query, Request, Response
-from fastapi.responses import RedirectResponse
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.etags import resource_etag
@@ -14,11 +13,14 @@ from a13n_service.iam.http.authentication import authenticate_mutation
 from a13n_service.request_runtime import get_connectivity_control_runtime
 
 from ..connections.domain import Connection, ConnectionCommandRequest
+from .catalog import MCPServer, MCPServerCollection
 from .domain import (
     ConfigureMCPOAuthClientRequest,
     MCPClientMetadata,
     MCPOAuthClientConfiguration,
     MCPOAuthDiscovery,
+    MCPOAuthSetup,
+    MCPOAuthSetupRequest,
     MCPToolCollection,
 )
 from .errors import MCPConnectionError
@@ -53,30 +55,48 @@ def _oauth(request: Request) -> MCPOAuthService:
     return runtime.mcp_oauth
 
 
-@router.get("/api/v1/oauth/mcp/client-metadata/{issuer_key}.json", response_model=MCPClientMetadata)
-async def mcp_client_metadata(request: Request, issuer_key: IssuerKey) -> MCPClientMetadata:
-    return _oauth(request).client_metadata(issuer_key)
+@router.get("/api/v1/mcp-servers", response_model=MCPServerCollection)
+async def list_mcp_servers(
+    request: Request,
+    actor: Actor,
+    query: Annotated[str, Query(max_length=256)] = "",
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+    cursor: Annotated[str | None, Query(max_length=2048)] = None,
+) -> MCPServerCollection:
+    del actor
+    runtime = get_connectivity_control_runtime(request)
+    if runtime is None:
+        raise MCPConnectionError(
+            "connection_management_unavailable",
+            "Connection management is unavailable.",
+            category=ErrorCategory.unavailable,
+        )
+    return runtime.mcp_servers.list(query=query, limit=limit, cursor=cursor)
 
 
-@router.get("/api/v1/oauth/mcp/callback/{issuer_key}", include_in_schema=False)
-async def receive_mcp_oauth(
+@router.get("/api/v1/mcp-servers/{server_key}", response_model=MCPServer)
+async def get_mcp_server(request: Request, actor: Actor, server_key: str) -> MCPServer:
+    del actor
+    runtime = get_connectivity_control_runtime(request)
+    if runtime is None:
+        raise MCPConnectionError(
+            "connection_management_unavailable",
+            "Connection management is unavailable.",
+            category=ErrorCategory.unavailable,
+        )
+    return runtime.mcp_servers.get(server_key)
+
+
+@router.get(
+    "/api/v1/oauth/mcp/client-metadata/{issuer_key}/{redirect_key}.json",
+    response_model=MCPClientMetadata,
+)
+async def mcp_client_metadata(
     request: Request,
     issuer_key: IssuerKey,
-    state: Annotated[str, Query(min_length=32, max_length=512)],
-    code: Annotated[str, Query(min_length=1, max_length=8192)],
-    iss: Annotated[str | None, Query(min_length=1, max_length=2048)] = None,
-) -> RedirectResponse:
-    if (
-        any(len(request.query_params.getlist(key)) > 1 for key in ("state", "code", "iss", "error"))
-        or "error" in request.query_params
-    ):
-        raise MCPConnectionError(
-            "invalid_oauth_response", "OAuth response is invalid.", category=ErrorCategory.invalid_request
-        )
-    location = await _oauth(request).receive_callback(callback_key=issuer_key, state=state, code=code, issuer=iss)
-    return RedirectResponse(
-        location, status_code=303, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
-    )
+    redirect_key: IssuerKey,
+) -> MCPClientMetadata:
+    return _oauth(request).client_metadata(issuer_key, redirect_key)
 
 
 @router.get("/api/v1/connections/{connection_id}/mcp/oauth-client", response_model=MCPOAuthClientConfiguration | None)
@@ -87,8 +107,17 @@ async def get_mcp_oauth_client(
 
 
 @router.post("/api/v1/connections/{connection_id}/mcp/oauth-discovery", response_model=MCPOAuthDiscovery)
-async def discover_mcp_oauth(request: Request, actor: Actor, connection_id: str) -> MCPOAuthDiscovery:
-    return await _oauth(request).configuration.discover(actor=actor, connection_id=connection_id)
+async def discover_mcp_oauth(
+    request: Request, actor: Actor, connection_id: str, body: MCPOAuthSetupRequest
+) -> MCPOAuthDiscovery:
+    return await _oauth(request).configuration.discover(actor=actor, connection_id=connection_id, request=body)
+
+
+@router.post("/api/v1/connections/{connection_id}/mcp/oauth-setup", response_model=MCPOAuthSetup)
+async def get_mcp_oauth_setup(
+    request: Request, actor: Actor, connection_id: str, body: MCPOAuthSetupRequest
+) -> MCPOAuthSetup:
+    return await _oauth(request).configuration.setup(actor=actor, connection_id=connection_id, request=body)
 
 
 @router.put("/api/v1/connections/{connection_id}/mcp/oauth-client", response_model=Connection)

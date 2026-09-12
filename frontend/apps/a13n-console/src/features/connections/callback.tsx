@@ -22,7 +22,12 @@ export function ConnectionAuthorizationCallback() {
     [error, setError] = useState<unknown>(null),
     [confirmed, setConfirmed] = useState(false);
   useEffect(() => {
-    if (auth.isPending || started.current || !confirmed) return;
+    if (
+      auth.isPending ||
+      started.current ||
+      (callback?.type === "connector" && !confirmed)
+    )
+      return;
     started.current = true;
     const response = callback;
     callback = null;
@@ -32,7 +37,9 @@ export function ConnectionAuthorizationCallback() {
       !context ||
       !response ||
       response.state !== context.state ||
-      response.authorizationId !== context.authorizationId
+      response.type !== context.type ||
+      (response.type === "connector" &&
+        response.authorizationId !== context.authorizationId)
     ) {
       clearAuthorization();
       setError(
@@ -47,10 +54,19 @@ export function ConnectionAuthorizationCallback() {
     void client.http
       .POST("/api/v1/connection-authorizations/{authorization_id}/complete", {
         params: { path: { authorization_id: context.authorizationId } },
-        body: {
-          receipt: response.receipt,
-          completion_verifier: context.verifier,
-        },
+        body:
+          response.type === "connector"
+            ? {
+                receipt: response.receipt,
+                completion_verifier:
+                  context.type === "connector" ? context.verifier : undefined,
+              }
+            : {
+                state: response.state,
+                ...(response.code ? { code: response.code } : {}),
+                ...(response.iss ? { iss: response.iss } : {}),
+                ...(response.error ? { error: response.error } : {}),
+              },
       })
       .then(data)
       .then(requireCompletedAuthorization)
@@ -98,7 +114,7 @@ export function ConnectionAuthorizationCallback() {
             {t("Continue")}
           </Link>
         </>
-      ) : !confirmed && !auth.isPending ? (
+      ) : callback?.type === "connector" && !confirmed && !auth.isPending ? (
         <div className="grid justify-items-start gap-4">
           <p>
             {t(

@@ -35,9 +35,6 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.102.8
         version: 5.102.8(react@19.2.8)
-      a13n-mcp-directory:
-        specifier: workspace:*
-        version: link:../../packages/a13n-mcp-directory
       a13n-ui:
         specifier: workspace:*
         version: link:../../packages/a13n-ui
@@ -134,12 +131,6 @@ importers:
         specifier: ^5.0.0
         version: 5.0.0(@types/node@24.13.3)(jsdom@29.1.1)(vite@8.2.2(@types/node@24.13.3)(jiti@2.7.0))
 
-  packages/a13n-mcp-directory:
-    devDependencies:
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
   packages/a13n-ui:
     dependencies:
       '@base-ui/react':
@@ -151,9 +142,6 @@ importers:
       '@phosphor-icons/react':
         specifier: ^2.1.10
         version: 2.1.10(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      a13n-mcp-directory:
-        specifier: workspace:*
-        version: link:../a13n-mcp-directory
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1

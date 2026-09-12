@@ -186,6 +186,43 @@ def test_connectivity_bounds_and_public_origin_fail_closed() -> None:
     assert settings.validated_connectivity_public_origin() == "http://127.0.0.1:8080"
 
 
+def test_connectivity_callback_and_mcp_catalog_configuration_is_typed() -> None:
+    settings = Settings(
+        connectivity={
+            "authorization_callback_urls": ("https://app.example/oauth/callback",),
+            "mcp_servers": (
+                {
+                    "key": "internal-tools",
+                    "name": "Internal tools",
+                    "description": "Deployment tools",
+                    "endpoint_url": "https://tools.example/mcp",
+                    "auth_mode": "static_headers",
+                    "static_header_names": ("X-API-Key",),
+                },
+            ),
+        }
+    )
+
+    assert settings.connectivity.authorization_callback_urls == ("https://app.example/oauth/callback",)
+    assert settings.connectivity.mcp_servers[0].static_header_names == ("X-API-Key",)
+    with pytest.raises(ValueError, match="unique"):
+        Settings(connectivity={"authorization_callback_urls": ("https://app.example/callback",) * 2})
+    with pytest.raises(ValueError, match="Static-header"):
+        Settings(
+            connectivity={
+                "mcp_servers": (
+                    {
+                        "key": "invalid",
+                        "name": "Invalid",
+                        "description": "Missing headers",
+                        "endpoint_url": "https://tools.example/mcp",
+                        "auth_mode": "static_headers",
+                    },
+                )
+            }
+        )
+
+
 def test_environment_capacity_configuration(monkeypatch):
     defaults = Settings()
     assert defaults.environments.max_targets_per_workspace == 1000

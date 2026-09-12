@@ -19,7 +19,7 @@ from sqlalchemy import update
 from .conftest import NOW, WORKSPACE_ID, actor
 from .connection_helpers import management, mcp_checks
 from .test_mcp_refresh import _expired_connection
-from .test_mcp_service import MCP_ENDPOINT, RemoteServer, _rpc, capture_receipt
+from .test_mcp_service import APP_CALLBACK, MCP_ENDPOINT, RemoteServer, _rpc
 from .test_mcp_service import mcp_services as mcp_services
 
 
@@ -206,9 +206,9 @@ async def test_discovery_without_receipt_rechecks_authority_before_ready(
             connection_id=connection.id,
             idempotency_key="authorize-test",
             expected_version=connection.version,
+            redirect_uri=APP_CALLBACK,
         )
         state = parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
-        receipt = await capture_receipt(oauth, state)
 
     transport = connections._discovery._transport
     original = transport.connect
@@ -232,7 +232,14 @@ async def test_discovery_without_receipt_rechecks_authority_before_ready(
             )
         else:
             assert state is not None
-            await oauth.callback(actor=actor(), state=state, receipt=receipt)
+            await oauth.complete(
+                actor=actor(),
+                authorization_id=launch.id,
+                state=state,
+                code="code",
+                issuer="https://8.8.4.4",
+                response_error=None,
+            )
     assert failure.value.code == "resource_not_found"
     async with connectivity_sessions() as session:
         record = await require_connection(session, connection.id)

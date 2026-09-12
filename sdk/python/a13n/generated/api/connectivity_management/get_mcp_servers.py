@@ -1,24 +1,40 @@
 from http import HTTPStatus
 from typing import Any
-from urllib.parse import quote
 
 import httpx2 as httpx
 
 from ...client import AuthenticatedClient, Client
 from ...models.error_response import ErrorResponse
-from ...models.mcp_client_metadata import MCPClientMetadata
-from ...types import Response
+from ...models.mcp_server_collection import MCPServerCollection
+from ...types import UNSET, Response, Unset
 
 
 def build_request(
-    issuer_key: str,
+    *,
+    query: str | Unset = UNSET,
+    limit: int | Unset = UNSET,
+    cursor: str | Unset | None = UNSET,
 ) -> dict[str, Any]:
+
+    params: dict[str, Any] = {}
+
+    params["query"] = query
+
+    params["limit"] = limit
+
+    json_cursor: str | Unset | None
+    if isinstance(cursor, Unset):
+        json_cursor = UNSET
+    else:
+        json_cursor = cursor
+    params["cursor"] = json_cursor
+
+    params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
     _kwargs: dict[str, Any] = {
         "method": "get",
-        "url": "/api/v1/oauth/mcp/client-metadata/{issuer_key}.json".format(
-            issuer_key=quote(str(issuer_key), safe=""),
-        ),
+        "url": "/api/v1/mcp-servers",
+        "params": params,
     }
 
     return _kwargs
@@ -26,9 +42,9 @@ def build_request(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> ErrorResponse | MCPClientMetadata:
+) -> ErrorResponse | MCPServerCollection:
     if response.status_code == 200:
-        response_200 = MCPClientMetadata.from_dict(response.json())
+        response_200 = MCPServerCollection.from_dict(response.json())
 
         return response_200
 
@@ -44,7 +60,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[ErrorResponse | MCPClientMetadata]:
+) -> Response[ErrorResponse | MCPServerCollection]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -54,25 +70,31 @@ def _build_response(
 
 
 def sync_detailed(
-    issuer_key: str,
     *,
-    client: AuthenticatedClient | Client,
-) -> Response[ErrorResponse | MCPClientMetadata]:
-    """Mcp Client Metadata
+    client: AuthenticatedClient,
+    query: str | Unset = UNSET,
+    limit: int | Unset = UNSET,
+    cursor: str | Unset | None = UNSET,
+) -> Response[ErrorResponse | MCPServerCollection]:
+    """List Mcp Servers
 
     Args:
-        issuer_key (str):
+        query (str | Unset):
+        limit (int | Unset):
+        cursor (None | str | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ErrorResponse | MCPClientMetadata]
+        Response[ErrorResponse | MCPServerCollection]
     """
 
     kwargs = build_request(
-        issuer_key=issuer_key,
+        query=query,
+        limit=limit,
+        cursor=cursor,
     )
 
     response = client.get_httpx_client().request(
@@ -83,49 +105,61 @@ def sync_detailed(
 
 
 def sync(
-    issuer_key: str,
     *,
-    client: AuthenticatedClient | Client,
-) -> ErrorResponse | MCPClientMetadata | None:
-    """Mcp Client Metadata
+    client: AuthenticatedClient,
+    query: str | Unset = UNSET,
+    limit: int | Unset = UNSET,
+    cursor: str | Unset | None = UNSET,
+) -> ErrorResponse | MCPServerCollection | None:
+    """List Mcp Servers
 
     Args:
-        issuer_key (str):
+        query (str | Unset):
+        limit (int | Unset):
+        cursor (None | str | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ErrorResponse | MCPClientMetadata
+        ErrorResponse | MCPServerCollection
     """
 
     return sync_detailed(
-        issuer_key=issuer_key,
         client=client,
+        query=query,
+        limit=limit,
+        cursor=cursor,
     ).parsed
 
 
 async def asyncio_detailed(
-    issuer_key: str,
     *,
-    client: AuthenticatedClient | Client,
-) -> Response[ErrorResponse | MCPClientMetadata]:
-    """Mcp Client Metadata
+    client: AuthenticatedClient,
+    query: str | Unset = UNSET,
+    limit: int | Unset = UNSET,
+    cursor: str | Unset | None = UNSET,
+) -> Response[ErrorResponse | MCPServerCollection]:
+    """List Mcp Servers
 
     Args:
-        issuer_key (str):
+        query (str | Unset):
+        limit (int | Unset):
+        cursor (None | str | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ErrorResponse | MCPClientMetadata]
+        Response[ErrorResponse | MCPServerCollection]
     """
 
     kwargs = build_request(
-        issuer_key=issuer_key,
+        query=query,
+        limit=limit,
+        cursor=cursor,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -134,26 +168,32 @@ async def asyncio_detailed(
 
 
 async def asyncio(
-    issuer_key: str,
     *,
-    client: AuthenticatedClient | Client,
-) -> ErrorResponse | MCPClientMetadata | None:
-    """Mcp Client Metadata
+    client: AuthenticatedClient,
+    query: str | Unset = UNSET,
+    limit: int | Unset = UNSET,
+    cursor: str | Unset | None = UNSET,
+) -> ErrorResponse | MCPServerCollection | None:
+    """List Mcp Servers
 
     Args:
-        issuer_key (str):
+        query (str | Unset):
+        limit (int | Unset):
+        cursor (None | str | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ErrorResponse | MCPClientMetadata
+        ErrorResponse | MCPServerCollection
     """
 
     return (
         await asyncio_detailed(
-            issuer_key=issuer_key,
             client=client,
+            query=query,
+            limit=limit,
+            cursor=cursor,
         )
     ).parsed

@@ -15,6 +15,7 @@ from a13n_service.connectivity.connections.domain import (
 from a13n_service.connectivity.connections.handoff import digest
 from a13n_service.connectivity.connections.models import AuthorizationRecord
 from a13n_service.connectivity.connections.service import ConnectionService
+from a13n_service.connectivity.mcp.errors import MCPConnectionError
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import RoleBindingRecord
@@ -24,7 +25,7 @@ from pydantic import SecretStr
 from .conftest import SERVICE_ACCOUNT_ID, WORKSPACE_ID, actor
 from .test_composio_setup import composio_sessions as composio_sessions
 from .test_composio_setup import composio_setup as composio_setup
-from .test_mcp_service import ISSUER, MCP_ENDPOINT, issuer_key, service_bundle
+from .test_mcp_service import APP_CALLBACK, ISSUER, MCP_ENDPOINT, service_bundle
 
 pytestmark = pytest.mark.anyio
 VERIFIER = "v" * 64
@@ -46,13 +47,21 @@ async def app_actor(sessions) -> AuthenticatedActor:
 
 
 def browser_request(version: int, *, connector: bool = False) -> CreateAuthorizationRequest:
-    return CreateAuthorizationRequest(
-        expected_version=version,
-        method="browser",
-        return_url=RETURN_URL,
-        state="application-state-" + "s" * 32,
-        completion_challenge=digest(VERIFIER),
-        options={"auth_config_id": "ac_test", "toolkit_version": "20260903_01"} if connector else {},
+    return (
+        CreateAuthorizationRequest(
+            expected_version=version,
+            method="browser",
+            return_url=RETURN_URL,
+            state="application-state-" + "s" * 32,
+            completion_challenge=digest(VERIFIER),
+            options={"auth_config_id": "ac_test", "toolkit_version": "20260903_01"},
+        )
+        if connector
+        else CreateAuthorizationRequest(
+            expected_version=version,
+            method="browser",
+            redirect_uri=APP_CALLBACK,
+        )
     )
 
 
@@ -82,7 +91,7 @@ async def test_composio_application_backend_owns_completion_and_replay(composio_
             oauth,
             mcp,
             public_origin="https://foundation.example",
-            return_urls=(RETURN_URL,),
+            callback_urls=(RETURN_URL, APP_CALLBACK),
             clock=lambda: now[0],
         )
         auth = await service.create(
@@ -119,7 +128,7 @@ async def test_composio_application_backend_owns_completion_and_replay(composio_
             assert attempt is not None and attempt.ciphertext is None
 
 
-async def test_mcp_application_backend_and_cross_tab_binding(composio_setup, credential_protector):
+async def test_mcp_application_callback_rechecks_principal_state_and_session(composio_setup, credential_protector):
     connector, _, _, sessions, _, _, now = composio_setup
     principal = await app_actor(sessions)
     common = ConnectionService(sessions, EndpointPolicy(), clock=lambda: now[0])
@@ -131,7 +140,7 @@ async def test_mcp_application_backend_and_cross_tab_binding(composio_setup, cre
             oauth,
             mcp,
             public_origin="https://1.1.1.1",
-            return_urls=(RETURN_URL,),
+            callback_urls=(RETURN_URL, APP_CALLBACK),
             clock=lambda: now[0],
         )
         connection = await common.create(
@@ -142,25 +151,41 @@ async def test_mcp_application_backend_and_cross_tab_binding(composio_setup, cre
                 {"name": "Remote", "source": {"kind": "mcp", "endpoint_url": MCP_ENDPOINT, "auth_mode": "oauth"}}
             ),
         )
+        with pytest.raises(ConnectionError) as invalid_redirect:
+            await service.create(
+                actor=principal,
+                connection_id=connection.id,
+                idempotency_key="mcp-wrong-callback",
+                request=browser_request(connection.version).model_copy(
+                    update={"redirect_uri": "https://other.example/callback"}
+                ),
+            )
+        assert invalid_redirect.value.code == "invalid_redirect_uri"
         auth = await service.create(
             actor=principal,
             connection_id=connection.id,
             idempotency_key="mcp-start",
             request=browser_request(connection.version),
         )
-        launch = parse_qs(urlsplit(auth.next_action.url).fragment)
-        target = await service.launch(
-            auth.id, LaunchAuthorizationRequest(token=launch["token"][0], browser_nonce="b" * 64)
-        )
+        assert auth.next_action is not None and auth.next_action.url is not None
+        state = parse_qs(urlsplit(auth.next_action.url).query)["state"][0]
         with pytest.raises(ConnectionError):
-            await service.launch(auth.id, LaunchAuthorizationRequest(token=launch["token"][0], browser_nonce="c" * 64))
-        state = parse_qs(urlsplit(target.url).query)["state"][0]
-        redirected = await oauth.receive_callback(
-            callback_key=issuer_key(ISSUER), state=state, code="code", issuer=ISSUER
+            await service.complete(
+                actor=actor(),
+                authorization_id=auth.id,
+                request=CompleteAuthorizationRequest(state=state, code="code", iss=ISSUER),
+            )
+        with pytest.raises(MCPConnectionError):
+            await service.complete(
+                actor=principal,
+                authorization_id=auth.id,
+                request=CompleteAuthorizationRequest(state="x" * 43, code="code", iss=ISSUER),
+            )
+        result = await service.complete(
+            actor=principal,
+            authorization_id=auth.id,
+            request=CompleteAuthorizationRequest(state=state, code="code", iss=ISSUER),
         )
-        assert redirected.endswith("/connection-authorizations/browser")
-        proof = await browser_roundtrip(service, auth)
-        result = await service.complete(actor=principal, authorization_id=auth.id, request=proof)
         assert result.status == "completed"
         current = await common.get(actor=principal, connection_id=connection.id)
         assert current.status == "ready" and current.authorization_generation == 2
@@ -178,7 +203,7 @@ async def test_mcp_direct_credentials_are_queryable_and_create_is_local(composio
             oauth,
             mcp,
             public_origin=None,
-            return_urls=(),
+            callback_urls=(),
             clock=lambda: now[0],
         )
         connection = await common.create(
@@ -244,7 +269,7 @@ async def test_connection_check_does_not_restore_previous_account_during_authori
             oauth,
             mcp,
             public_origin="https://foundation.example",
-            return_urls=(RETURN_URL,),
+            callback_urls=(RETURN_URL, APP_CALLBACK),
             clock=lambda: now[0],
         )
         await service.create(
@@ -277,7 +302,7 @@ async def test_mcp_preparation_failure_is_queryable_and_never_repeats_registrati
             oauth,
             mcp,
             public_origin="https://foundation.example",
-            return_urls=(RETURN_URL,),
+            callback_urls=(RETURN_URL, APP_CALLBACK),
             clock=lambda: now[0],
         )
         connection = await common.create(
@@ -332,7 +357,7 @@ async def test_mcp_preparation_cancellation_fences_a_late_provider_response(
             oauth,
             mcp,
             public_origin="https://foundation.example",
-            return_urls=(RETURN_URL,),
+            callback_urls=(RETURN_URL, APP_CALLBACK),
             clock=lambda: now[0],
         )
         connection = await common.create(
@@ -391,7 +416,7 @@ async def test_completion_rechecks_application_permissions(composio_setup, crede
             oauth,
             mcp,
             public_origin="https://foundation.example",
-            return_urls=(RETURN_URL,),
+            callback_urls=(RETURN_URL, APP_CALLBACK),
             clock=lambda: now[0],
         )
         auth = await service.create(
@@ -428,7 +453,7 @@ async def test_return_url_registration_is_exact_before_provider_io(composio_setu
             oauth,
             mcp,
             public_origin="https://foundation.example",
-            return_urls=(RETURN_URL,),
+            callback_urls=(RETURN_URL, APP_CALLBACK),
             clock=lambda: now[0],
         )
         with pytest.raises(ConnectionError, match="not registered"):
@@ -461,7 +486,7 @@ async def test_machine_authorization_fences_late_credential_publication(
             oauth,
             mcp,
             public_origin="https://foundation.example",
-            return_urls=(RETURN_URL,),
+            callback_urls=(RETURN_URL, APP_CALLBACK),
             clock=lambda: now[0],
         )
         connection = await common.create(

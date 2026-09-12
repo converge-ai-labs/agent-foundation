@@ -58,15 +58,35 @@ Create an Authorization with `POST /api/v1/connections/{connection_id}/authoriza
 
 Your application owns its customer identities and maps them to Connection IDs. Service does not require an a13n User for each customer. Your backend can use a Service Account API key with Workspace Builder authority to create Connections and authorize them. Keep that API key in the backend.
 
-For browser authorization:
+Connector browser authorization uses Service's browser handoff:
 
-1. Register the exact HTTPS application callback in `A13N_SERVICE_CONNECTIVITY_AUTHORIZATION_RETURN_URLS`. Configure a public HTTPS `A13N_SERVICE_CONNECTIVITY_PUBLIC_ORIGIN` for the Service browser handoff.
+1. Register the exact HTTPS application callback in `A13N_SERVICE_CONNECTIVITY_AUTHORIZATION_CALLBACK_URLS`. Configure a public HTTPS `A13N_SERVICE_CONNECTIVITY_PUBLIC_ORIGIN` for the Service browser handoff.
 2. Generate unpredictable application `state` and a completion verifier. Retain them in the initiating application session. Send `method: "browser"`, `return_url`, `state`, `completion_challenge` (the lowercase hexadecimal SHA-256 digest of the verifier), `expected_version`, and source-specific `options`.
 3. Open the returned `next_action.url` in the customer's browser. Service binds the link to that tab and handles the provider flow.
 4. At your callback, remove the query parameters from browser navigation state, validate `state` and `authorization_id`, and send `receipt` plus `completion_verifier` from the same authenticated backend principal to `POST /api/v1/connection-authorizations/{authorization_id}/complete`.
 5. Query the operation and Connection after an uncertain response. Start a new authorization only when needed. Customers do not log in to Console.
 
-Serve callbacks without caching or referrer forwarding, and exclude callback query strings from access logs. Console uses this same contract at `/connections/callback`; its browser session already authenticates the initiating user. Route `/connection-authorizations/browser` and its script to Service and `/api` to Service. The application callback can be hosted separately.
+Serve callbacks without caching or referrer forwarding, and exclude callback query strings from access logs. Route `/connection-authorizations/browser` and its script to Service and `/api` to Service. The application callback can be hosted separately.
+
+Remote MCP OAuth returns directly to the application instead:
+
+1. Add the exact application callback to `A13N_SERVICE_CONNECTIVITY_AUTHORIZATION_CALLBACK_URLS`. Use HTTPS, except for exact loopback HTTP during local development.
+2. Call `POST /api/v1/connections/{connection_id}/mcp/oauth-setup` with `{"redirect_uri":"https://app.example/oauth/callback"}`. Follow its typed `next_action`: configure a client, start authorization, authenticate with client credentials, check the Connection, or finish.
+3. For `start_authorization`, create a browser Authorization with `method: "browser"`, the Connection `expected_version`, and the same `redirect_uri`. Retain the returned authorization ID and the unpredictable `state` from `next_action.url` in the initiating application session, then open that URL.
+4. At the callback, remove the query from browser history before rendering or authenticating. Verify the returned state against the retained value. From the same authenticated principal that started the attempt, call `POST /api/v1/connection-authorizations/{authorization_id}/complete` with `state`, exactly one of `code` or provider `error`, and `iss` when supplied.
+5. Read the Authorization and Connection after an uncertain response. Never resubmit a possibly consumed code with a new attempt.
+
+For example, a backend completion request is:
+
+```http
+POST /api/v1/connection-authorizations/authz_123/complete
+Authorization: Bearer <application-service-account-key>
+Content-Type: application/json
+
+{"state":"<returned-state>","code":"<provider-code>","iss":"https://authorization.example"}
+```
+
+The application must not put its Service credential in browser code. Console performs the same completion through its authenticated, CSRF-protected client at `/connections/callback`. MCP OAuth has no public Service callback, receipt, completion verifier, or manual confirmation step.
 
 ### Direct credentials
 
@@ -90,9 +110,11 @@ Reauthorization uses the existing Connection's `/authorizations` endpoint. Its I
 
 MCP sources support `none`, `bearer`, `static_headers`, and `oauth`. A `none` connection becomes ready through an explicit check. Other modes require credentials or OAuth before checking. MCP checks report `mcp_discovery` scope; they establish protocol and tool-discovery eligibility, not successful execution of every tool.
 
-OAuth uses discovered authorization-server metadata. Automatic registration is preferred where supported. Manage a connection-owned OAuth app through `/api/v1/connections/{connection_id}/mcp/oauth-client` and inspect discovery through `/api/v1/connections/{connection_id}/mcp/oauth-discovery`. The app configuration contains its issuer, client ID, grant type, token authentication method, and write-only client secret. Replacing or removing it clears active tokens and requires authorization again. Failed authorization retains the app configuration for correction.
+List the Service-owned setup catalog through `GET /api/v1/mcp-servers`; use `query`, `limit`, and `cursor` for search and pagination, or read one key through `GET /api/v1/mcp-servers/{server_key}`. Built-in and operator-configured entries are templates only. Create an ordinary Connection from the selected endpoint and authentication fields.
 
-Authorization-code clients use the common browser handoff. Machine clients use `method: "client_credentials"` at the common Authorization endpoint after their app configuration is saved. Refresh uses the current configured client and does not change the Connection's authorization generation.
+OAuth uses discovered authorization-server metadata. Automatic registration is preferred where supported. Request the next setup action through `/api/v1/connections/{connection_id}/mcp/oauth-setup`, manage a connection-owned OAuth app through `/api/v1/connections/{connection_id}/mcp/oauth-client`, and use `/mcp/oauth-discovery` only when the raw safe capability projection is needed. The app configuration contains its issuer, client ID, grant type, token authentication method, bound redirect URI, and write-only client secret. Replacing or removing it clears active tokens and requires authorization again. Failed authorization retains the app configuration for correction.
+
+Authorization-code clients use the application-owned callback flow above. Machine clients use `method: "client_credentials"` at the common Authorization endpoint after their app configuration is saved. Refresh uses the current configured client and does not change the Connection's authorization generation.
 
 ## Application Accounts and event reception
 
@@ -126,7 +148,7 @@ Worker composition provides `WorkerRuntime.external_tools`. A host constructing 
 
 Replacement Attempts and inherited continuations retain these contexts and resolve fresh credentials. New child Runs receive no parent native contexts by default. The Harness sees ordinary MCP capabilities and needs no Account-specific configuration.
 
-Control owns Account and connection management, setup, and short-lived OAuth state expiration. OAuth refresh is demand-driven before authenticated use; interrupted exchanges require new authorization. Connection deletion first invalidates locally, then makes one bounded remote cleanup attempt. Failed or unknown cleanup is reported honestly and has no background retry. Connectivity owns inbound delivery and admission. Workers own tool discovery and outbound execution. No local MCP listener or separate MCP service is needed. `A13N_SERVICE_CONNECTIVITY_PUBLIC_ORIGIN` is required for interactive callback flows, not for noninteractive management. Remote MCP must negotiate protocol `2025-11-25`; authenticated MCP endpoint redirects are rejected.
+Control owns Account and connection management, setup, and short-lived OAuth state expiration. OAuth refresh is demand-driven before authenticated use; interrupted exchanges require new authorization. Connection deletion first invalidates locally, then makes one bounded remote cleanup attempt. Failed or unknown cleanup is reported honestly and has no background retry. Connectivity owns inbound delivery and admission. Workers own tool discovery and outbound execution. No local MCP listener or separate MCP service is needed. `A13N_SERVICE_CONNECTIVITY_PUBLIC_ORIGIN` is required when automatic OAuth uses a Client ID Metadata Document and for the Connector browser bridge; a pre-registered MCP client can return directly to an allowlisted application callback without it. Remote MCP must negotiate protocol `2025-11-25`; authenticated MCP endpoint redirects are rejected.
 
 ## Development database setup
 
