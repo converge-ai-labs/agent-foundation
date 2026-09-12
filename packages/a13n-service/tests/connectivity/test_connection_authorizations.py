@@ -374,7 +374,10 @@ async def test_mcp_preparation_cancellation_fences_a_late_provider_response(
                 await pending
         assert (await service.get(actor=principal, authorization_id=replay.id)).status == "cancelled"
         current = await common.get(actor=principal, connection_id=connection.id)
-        assert current.status == "pending" and current.authorization_generation == connection.authorization_generation
+        assert (
+            current.status == "action_required"
+            and current.authorization_generation == connection.authorization_generation
+        )
 
 
 async def test_completion_rechecks_application_permissions(composio_setup, credential_protector):
@@ -436,3 +439,83 @@ async def test_return_url_registration_is_exact_before_provider_io(composio_setu
                 request=browser_request(connection.version, connector=True).model_copy(update={"return_url": url}),
             )
         assert state["link_calls"] == 0
+
+
+@pytest.mark.parametrize("fence", ["cancel", "revoke_permission"])
+async def test_machine_authorization_fences_late_credential_publication(
+    composio_setup, credential_protector, monkeypatch, fence
+):
+    from asyncio import create_task
+
+    from a13n_service.connectivity.mcp.domain import ConfigureMCPOAuthClientRequest, MCPOAuthClientInput
+    from anyio import Event, fail_after
+
+    connector, _, _, sessions, _, _, now = composio_setup
+    principal = await app_actor(sessions)
+    common = ConnectionService(sessions, EndpointPolicy(), clock=lambda: now[0])
+    async with service_bundle(sessions, credential_protector) as (mcp, oauth, _):
+        service = AuthorizationService(
+            sessions,
+            credential_protector,
+            connector,
+            oauth,
+            mcp,
+            public_origin="https://foundation.example",
+            return_urls=(RETURN_URL,),
+            clock=lambda: now[0],
+        )
+        connection = await common.create(
+            actor=principal,
+            workspace_id=WORKSPACE_ID,
+            idempotency_key="machine-fence-create",
+            request=CreateConnectionRequest.model_validate(
+                {"name": "Machine", "source": {"kind": "mcp", "endpoint_url": MCP_ENDPOINT, "auth_mode": "oauth"}}
+            ),
+        )
+        connection = await oauth.configuration.configure(
+            actor=principal,
+            connection_id=connection.id,
+            request=ConfigureMCPOAuthClientRequest(
+                expected_version=connection.version,
+                client=MCPOAuthClientInput(
+                    issuer_url=ISSUER,
+                    client_id="machine-client",
+                    client_secret="machine-secret",
+                    token_endpoint_auth_method="client_secret_basic",
+                    grant_type="client_credentials",
+                ),
+            ),
+        )
+        entered, release = Event(), Event()
+        acquire = oauth._acquire_machine_credential
+
+        async def delayed(source):
+            credential = await acquire(source)
+            entered.set()
+            await release.wait()
+            return credential
+
+        monkeypatch.setattr(oauth, "_acquire_machine_credential", delayed)
+        request = CreateAuthorizationRequest(expected_version=connection.version, method="client_credentials")
+        with fail_after(5):
+            pending = create_task(
+                service.create(
+                    actor=principal, connection_id=connection.id, idempotency_key="machine-fence-auth", request=request
+                )
+            )
+            await entered.wait()
+            replay = await service.create(
+                actor=principal, connection_id=connection.id, idempotency_key="machine-fence-auth", request=request
+            )
+            if fence == "cancel":
+                await service.cancel(actor=principal, authorization_id=replay.id)
+            else:
+                async with transaction(sessions) as session:
+                    binding = await session.get(RoleBindingRecord, "rb_connectivity_runner")
+                    binding.role_key = "runner"
+            release.set()
+            result = await pending
+        assert result.status == ("cancelled" if fence == "cancel" else "failed")
+        current = await common.get(actor=actor(), connection_id=connection.id)
+        assert not current.credential_configured
+        assert current.authorization_generation == connection.authorization_generation

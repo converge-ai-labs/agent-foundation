@@ -245,6 +245,7 @@ class MCPOAuthService:
         now = self._clock()
         async with transaction(self._sessions) as session:
             connection = await require_connection(session, connection_id, lock=True)
+            await authorize_connection(session, actor, connection, mode="manage")
             client_record = await session.get(MCPConnectionOAuthClientRecord, connection_id)
             if (
                 not _source_matches(connection, source)

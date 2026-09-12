@@ -256,7 +256,7 @@ class AuthorizationService:
                     actor=actor, connection_id=connection_id, idempotency_key=identifier, request=replacement
                 )
         except ApplicationError as error:
-            error_code = error.code
+            error_code = "setup_outcome_unknown" if error.code == "mcp_oauth_unavailable" else error.code
         async with transaction(self._sessions) as session:
             connection, attempt = await self._load(session, identifier, lock=True)
             if attempt.status == "starting":
@@ -283,6 +283,12 @@ class AuthorizationService:
             connection, attempt = await self._load(session, authorization_id, lock=True)
             await self._authorize(session, actor, attempt)
             if attempt.status not in _TERMINAL:
+                if connection.setup_generation == attempt.generation:
+                    connection.setup_generation += 1
+                    connection.version += 1
+                    connection.status = "action_required"
+                    connection.status_reason = "reauthorization_required"
+                    connection.updated_at = self._clock()
                 attempt.status = "cancelled"
                 attempt.clear_credential()
                 attempt.claim_owner = None
