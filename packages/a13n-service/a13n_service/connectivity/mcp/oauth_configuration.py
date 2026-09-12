@@ -45,9 +45,12 @@ def require_oauth(connection: MCPConnectionRecord) -> None:
 
 
 def configured_client(record: MCPConnectionOAuthClientRecord, protector: SecretProtector) -> MCPOAuthClientInput:
+    return _configured_client(record, _protected_client(record, protector))
+
+
+def _configured_client(record: MCPConnectionOAuthClientRecord, protected: dict[str, object]) -> MCPOAuthClientInput:
     values = dict(record.configuration_json)
     values.pop("source", None)
-    protected = _protected_client(record, protector)
     values["client_secret"] = protected.get("client_secret")
     return MCPOAuthClientInput.model_validate(values)
 
@@ -88,8 +91,8 @@ def client_cleanup_bundle(record: MCPConnectionOAuthClientRecord, protector: Sec
 
 
 def client_refresh_context(record: MCPConnectionOAuthClientRecord, protector: SecretProtector) -> OAuthClientContext:
-    client = configured_client(record, protector)
     protected = _protected_client(record, protector)
+    client = _configured_client(record, protected)
     resource_url = protected.get("resource_url")
     token_endpoint = protected.get("token_endpoint")
     scope = protected.get("scope")

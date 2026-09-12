@@ -59,6 +59,8 @@ class RemoteServer:
         self.refresh_error: str | None = None
         self.machine_error: str | None = None
         self.machine_token_count = 0
+        self.verification_unavailable = False
+        self.machine_expires_in = 1
 
     def __call__(self, request: httpx2.Request) -> httpx2.Response:
         self.requests.append(request)
@@ -142,7 +144,7 @@ class RemoteServer:
                     json={
                         "access_token": f"machine-oauth-secret-{self.machine_token_count}",
                         "token_type": "Bearer",
-                        "expires_in": 1,
+                        "expires_in": self.machine_expires_in,
                     },
                 )
             assert values["code_verifier"][0]
@@ -173,6 +175,8 @@ class RemoteServer:
                 },
             )
         if body["method"] == "initialize":
+            if self.verification_unavailable:
+                raise httpx2.ConnectError("MCP temporarily unavailable", request=request)
             if not self.allow_anonymous:
                 assert (
                     request.headers.get("authorization")
@@ -633,8 +637,9 @@ async def test_oauth_refresh_rotates_bundle_without_coupling_readiness_to_discov
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("verification_unavailable", [False, True])
 async def test_client_credentials_acquires_and_renews_without_browser_authorization(
-    mcp_services, oauth_refresh, connectivity_sessions, credential_protector
+    mcp_services, oauth_refresh, connectivity_sessions, credential_protector, verification_unavailable
 ) -> None:
     connections, oauth, remote = mcp_services
     machine_oauth = MCPOAuthService(
@@ -673,12 +678,27 @@ async def test_client_credentials_acquires_and_renews_without_browser_authorizat
         ),
     )
 
-    ready = await machine_oauth.authenticate_client_credentials(
+    remote.requests.clear()
+    remote.verification_unavailable = verification_unavailable
+    authenticated = await machine_oauth.authenticate_client_credentials(
         actor=actor(),
         connection_id=configured.id,
         idempotency_key="authenticate-machine-oauth",
         expected_version=configured.version,
     )
+    assert remote.requests[0].url.path == "/token"
+    assert authenticated.credential_configured is True
+    if verification_unavailable:
+        assert authenticated.status == "pending"
+        remote.verification_unavailable = False
+        ready = await connections.reconnect(
+            actor=actor(),
+            connection_id=authenticated.id,
+            idempotency_key="verify-machine-oauth",
+            expected_version=authenticated.version,
+        )
+    else:
+        ready = authenticated
     assert ready.status == "ready"
     assert remote.machine_token_count == 1
     assert not any(request.url.path == "/authorize" for request in remote.requests)
@@ -701,7 +721,7 @@ async def test_client_credentials_acquires_and_renews_without_browser_authorizat
         idempotency_key="authenticate-machine-oauth",
         expected_version=configured.version,
     )
-    assert replayed == ready
+    assert replayed == authenticated
     assert remote.machine_token_count == 1
 
     assert await oauth_refresh.ensure_current(ready.id) is True
@@ -879,13 +899,14 @@ def oauth_refresh(mcp_services, connectivity_sessions, credential_protector):
 
 
 @pytest.mark.parametrize("invalidation", ["abandoned", "disabled", "deleted"])
-async def test_postgresql_cross_pod_callback_and_single_refresh(
-    postgres_connectivity_sessions, credential_protector, monkeypatch, invalidation
+@pytest.mark.parametrize("grant", ["authorization_code", "client_credentials"])
+async def test_postgresql_cross_pod_authorization_and_single_refresh(
+    postgres_connectivity_sessions, credential_protector, monkeypatch, invalidation, grant
 ):
     from datetime import timedelta
 
     sessions = postgres_connectivity_sessions
-    async with service_bundle(sessions, credential_protector) as (connections, pod_a, _remote):
+    async with service_bundle(sessions, credential_protector) as (connections, pod_a, remote):
         created = await connections.create(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
@@ -893,9 +914,6 @@ async def test_postgresql_cross_pod_callback_and_single_refresh(
             request=CreateMCPConnectionRequest(
                 name="Cross Pod", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.oauth
             ),
-        )
-        launch = await pod_a.authorize(
-            actor=actor(), connection_id=created.id, idempotency_key="authorize", expected_version=1
         )
         pod_b = MCPOAuthService(
             sessions,
@@ -907,9 +925,37 @@ async def test_postgresql_cross_pod_callback_and_single_refresh(
             instance_id="pod-b",
             clock=lambda: NOW,
         )
-        state = parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
-        receipt = await capture_receipt(pod_a, state)
-        ready = await pod_b.callback(actor=actor(), state=state, receipt=receipt)
+        if grant == "client_credentials":
+            configured = await pod_a.configuration.configure(
+                actor=actor(),
+                connection_id=created.id,
+                request=ConfigureMCPOAuthClientRequest(
+                    expected_version=created.version,
+                    client=MCPOAuthClientInput(
+                        issuer_url=ISSUER,
+                        client_id="machine-client",
+                        client_secret="machine-secret",
+                        token_endpoint_auth_method="client_secret_basic",
+                        grant_type="client_credentials",
+                    ),
+                ),
+            )
+            ready = await pod_b.authenticate_client_credentials(
+                actor=actor(),
+                connection_id=created.id,
+                idempotency_key="authenticate",
+                expected_version=configured.version,
+            )
+            remote.machine_expires_in = 3600
+            expected_token = "machine-oauth-secret-2"
+        else:
+            launch = await pod_a.authorize(
+                actor=actor(), connection_id=created.id, idempotency_key="authorize", expected_version=1
+            )
+            state = parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
+            receipt = await capture_receipt(pod_a, state)
+            ready = await pod_b.callback(actor=actor(), state=state, receipt=receipt)
+            expected_token = "refreshed-oauth-secret"
         assert ready.status == "ready"
         entered, release = Event(), Event()
         original_refresh = pod_a._oauth.refresh
@@ -943,9 +989,7 @@ async def test_postgresql_cross_pod_callback_and_single_refresh(
         await waiting.wait()
         assert not competing.done()
         release.set()
-        assert (
-            (await running).headers == (await competing).headers == {"Authorization": "Bearer refreshed-oauth-secret"}
-        )
+        assert (await running).headers == (await competing).headers == {"Authorization": f"Bearer {expected_token}"}
         assert await second.ensure_current(ready.id) is True
         assert len(calls) == 1
         if invalidation != "abandoned":

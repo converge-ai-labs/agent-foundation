@@ -302,16 +302,7 @@ class MCPOAuthService:
 
     async def _acquire_machine_credential(self, source: MachineOAuthSource) -> JsonObject:
         try:
-            client_secret = source.client.client_secret
-            assert client_secret is not None
-            credential = await self._oauth.acquire_client_credentials(
-                endpoint_url=source.endpoint_url,
-                issuer_url=source.client.issuer_url,
-                client_id=source.client.client_id,
-                client_secret=client_secret,
-                token_endpoint_auth_method=source.client.token_endpoint_auth_method,
-                scope=source.client.scope,
-            )
+            credential = await self._oauth.acquire_client_credentials(source.client)
             return with_expiration(credential, self._clock())
         except MCPOAuthError as error:
             if error.action_required:

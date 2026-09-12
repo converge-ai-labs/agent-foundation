@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import json
+from dataclasses import replace
 from urllib.parse import parse_qs
 
 import httpx2
@@ -97,7 +98,7 @@ async def test_dcr_fallback_is_discovered_and_cleanup_uses_exact_registration() 
 
 
 @pytest.mark.anyio
-async def test_machine_only_authorization_server_does_not_require_pkce() -> None:
+async def test_machine_only_authorization_server_does_not_require_browser_metadata() -> None:
     def handle(request: httpx2.Request) -> httpx2.Response:
         if request.url.path == "/mcp":
             return httpx2.Response(401)
@@ -107,7 +108,6 @@ async def test_machine_only_authorization_server_does_not_require_pkce() -> None
             return _json(
                 {
                     "issuer": ISSUER,
-                    "authorization_endpoint": f"{ISSUER}/authorize",
                     "token_endpoint": f"{ISSUER}/token",
                     "grant_types_supported": ["client_credentials"],
                     "token_endpoint_auth_methods_supported": ["client_secret_basic"],
@@ -119,6 +119,7 @@ async def test_machine_only_authorization_server_does_not_require_pkce() -> None
         discovered = await MCPOAuthClient(http_client, EndpointPolicy()).discover(RESOURCE)
 
     assert discovered.grant_types == ("client_credentials",)
+    assert discovered.authorization_endpoint is None
 
 
 @pytest.mark.anyio
@@ -597,3 +598,77 @@ async def test_discovery_accepts_only_root_slash_alias_and_pins_declared_issuer(
         preparation = await client.prepare(RESOURCE, public_origin="https://1.1.1.1", client_name="Service")
         assert preparation.issuer_url == declared
         assert preparation.redirect_uri.endswith(issuer_key(declared))
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("auth_method", ["client_secret_basic", "client_secret_post"])
+async def test_machine_token_and_renewal_use_saved_endpoint_and_parent_resource(auth_method):
+    context = replace(
+        refresh_context(auth_method),
+        grant_type="client_credentials",
+        resource_url="https://8.8.8.8",
+        scope="tools",
+    )
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        assert str(request.url) == context.token_endpoint
+        assert "cookie" not in request.headers
+        form = parse_qs(request.content.decode())
+        assert form["grant_type"] == ["client_credentials"]
+        assert form["resource"] == [context.resource_url]
+        assert form["scope"] == ["tools"]
+        assert "refresh_token" not in form
+        if auth_method == "client_secret_basic":
+            assert request.headers["authorization"].startswith("Basic ")
+            assert "client_secret" not in form
+        else:
+            assert form["client_id"] == ["client"]
+            assert form["client_secret"] == ["secret"]
+        return httpx2.Response(
+            200,
+            json={"access_token": f"token-{len(requests)}", "token_type": "Bearer", "expires_in": 3600},
+            headers={"set-cookie": "provider=session; Path=/"},
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle), cookies={"old": "cookie"}) as pool:
+        oauth = MCPOAuthClient(pool, EndpointPolicy())
+        token = await oauth.acquire_client_credentials(context)
+        renewed = await oauth.refresh(token, context)
+        assert token["access_token"] == "token-1"
+        assert renewed["access_token"] == "token-2"
+        assert not pool.is_closed
+        assert not pool.cookies
+    assert len(requests) == 2
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("response", "reason", "action_required"),
+    [
+        (httpx2.Response(400, json={"error": "invalid_client"}), "reauthorization_required", True),
+        (httpx2.Response(403, json={"error": "insufficient_scope"}), "reauthorization_required", True),
+        (httpx2.Response(401), "reauthorization_required", True),
+        (httpx2.Response(403, text="Forbidden"), "reauthorization_required", True),
+        (httpx2.Response(503, json={"error": "temporarily_unavailable"}), "token_exchange_unavailable", False),
+        (httpx2.Response(200, json={"access_token": "token", "token_type": "MAC"}), "invalid_token_response", False),
+        (httpx2.Response(400, json={"error": []}), "invalid_oauth_response", False),
+        (httpx2.Response(200, content=b"x" * 129), "response_too_large", False),
+        (httpx2.Response(307, headers={"location": "https://9.9.9.9/token"}), "oauth_redirect_forbidden", False),
+    ],
+)
+async def test_machine_token_uses_shared_response_and_network_guards(response, reason, action_required):
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        return response
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as pool:
+        oauth = MCPOAuthClient(pool, EndpointPolicy(), response_max_bytes=128)
+        context = replace(refresh_context("client_secret_post"), grant_type="client_credentials")
+        with pytest.raises(MCPOAuthError, match=reason) as error:
+            await oauth.acquire_client_credentials(context)
+        assert error.value.action_required is action_required
+    assert len(requests) == 1

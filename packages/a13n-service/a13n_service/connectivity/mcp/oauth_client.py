@@ -6,15 +6,14 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from typing import Any, Literal, cast
-from urllib.parse import parse_qs, urljoin, urlsplit, urlunsplit
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx2
 from authlib.integrations.base_client.errors import OAuthError
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 from authlib.oauth2 import OAuth2Client
-from mcp.client.auth.exceptions import OAuthFlowError, OAuthRegistrationError, OAuthTokenError
-from mcp.client.auth.extensions.client_credentials import ClientCredentialsOAuthProvider
-from mcp.client.auth.oauth2 import TokenStorage, check_registration_usable
+from mcp.client.auth.exceptions import OAuthRegistrationError
+from mcp.client.auth.oauth2 import check_registration_usable
 from mcp.client.auth.utils import (
     build_oauth_authorization_server_metadata_discovery_urls,
     build_protected_resource_metadata_discovery_urls,
@@ -29,10 +28,9 @@ from mcp.shared.auth import (
     OAuthClientInformationFull,
     OAuthClientMetadata,
     OAuthMetadata,
-    OAuthToken,
     ProtectedResourceMetadata,
 )
-from pydantic import ValidationError
+from pydantic import AnyHttpUrl, ValidationError
 
 from a13n_service.connectivity.bounds import MAX_REDIRECTS
 from a13n_service.connectivity.http import (
@@ -73,6 +71,13 @@ class OAuthPreparation:
     scope: str | None
 
 
+class AuthorizationMetadata(OAuthMetadata):
+    """Machine-only issuers need no browser authorization endpoint (RFC 8414)."""
+
+    # The SDK requires this browser-only field; discovery also serves machine grants.
+    authorization_endpoint: AnyHttpUrl | None = None  # pyright: ignore[reportIncompatibleVariableOverride]
+
+
 @dataclass(frozen=True, slots=True)
 class OAuthDiscovery:
     resource_url: str
@@ -80,7 +85,7 @@ class OAuthDiscovery:
     authorization_endpoint: str | None
     token_endpoint: str
     scope: str | None
-    metadata: OAuthMetadata
+    metadata: AuthorizationMetadata
     resource_metadata: ProtectedResourceMetadata
     token_auth_methods: tuple[OAuthTokenAuthMethod, ...]
     grant_types: tuple[OAuthGrantType, ...]
@@ -134,24 +139,6 @@ class _ClientRegistration:
     token_auth_method: str
     access_token: str | None
     management_uri: str | None
-
-
-class _MemoryTokenStorage(TokenStorage):
-    def __init__(self) -> None:
-        self.tokens: OAuthToken | None = None
-        self.client_info: OAuthClientInformationFull | None = None
-
-    async def get_tokens(self) -> OAuthToken | None:
-        return self.tokens
-
-    async def set_tokens(self, tokens: OAuthToken) -> None:
-        self.tokens = tokens
-
-    async def get_client_info(self) -> OAuthClientInformationFull | None:
-        return self.client_info
-
-    async def set_client_info(self, client_info: OAuthClientInformationFull) -> None:
-        self.client_info = client_info
 
 
 class MCPOAuthClient:
@@ -261,7 +248,7 @@ class MCPOAuthClient:
 
     async def _client_registration(
         self,
-        metadata: OAuthMetadata,
+        metadata: AuthorizationMetadata,
         *,
         strategy: Literal["metadata_document", "dynamic", "manual"],
         client_metadata_url: str,
@@ -341,16 +328,7 @@ class MCPOAuthClient:
 
     async def refresh(self, bundle: dict[str, Any], client: OAuthClientContext) -> dict[str, Any]:
         if client.grant_type == "client_credentials":
-            if client.client_secret is None:
-                raise MCPOAuthError("reauthorization_required", action_required=True)
-            return await self.acquire_client_credentials(
-                endpoint_url=client.resource_url,
-                issuer_url=client.issuer_url,
-                client_id=client.client_id,
-                client_secret=client.client_secret,
-                token_endpoint_auth_method=client.token_endpoint_auth_method,
-                scope=client.scope,
-            )
+            return await self.acquire_client_credentials(client)
         refresh_token = bundle.get("refresh_token")
         if not isinstance(refresh_token, str) or not refresh_token:
             raise MCPOAuthError("reauthorization_required", action_required=True)
@@ -373,72 +351,29 @@ class MCPOAuthClient:
         merged.update(token)
         return merged
 
-    async def acquire_client_credentials(
-        self,
-        *,
-        endpoint_url: str,
-        issuer_url: str,
-        client_id: str,
-        client_secret: str,
-        token_endpoint_auth_method: str,
-        scope: str | None,
-    ) -> dict[str, Any]:
-        """Acquire a machine token through the SDK provider under Service network policy."""
-        endpoint = await self._validate(endpoint_url)
-        storage = _MemoryTokenStorage()
-        provider = ClientCredentialsOAuthProvider(
-            server_url=endpoint,
-            storage=storage,
-            client_id=client_id,
-            client_secret=client_secret,
-            token_endpoint_auth_method=_confidential_auth_method(token_endpoint_auth_method),
-            scope=scope,
-            issuer=issuer_url,
-        )
-        request = httpx2.Request(
-            "POST",
-            endpoint,
-            headers={"Accept": "application/json, text/event-stream", "Content-Type": "application/json"},
-            json={
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "initialize",
-                "params": {
-                    "protocolVersion": MCP_PROTOCOL_REVISION,
-                    "capabilities": {},
-                    "clientInfo": {"name": "a13n-service", "version": "1"},
-                },
-            },
-        )
-        flow = provider.async_auth_flow(request)
+    async def acquire_client_credentials(self, client: OAuthClientContext) -> dict[str, Any]:
+        """Obtain a machine token without discovering or initializing the MCP server."""
+        if client.grant_type != "client_credentials" or client.token_endpoint_auth_method == "none":
+            raise MCPOAuthError("unsupported_token_endpoint_auth_method")
+        token_client = self._token_client(client.client_id, client.client_secret, client.token_endpoint_auth_method)
         try:
-            outbound = await anext(flow)
-            for _ in range(16):
-                request_body = await outbound.aread()
-                response = await self._send_sdk_request(outbound, sensitive=True)
-                if _client_credentials_rejected(request_body, response):
-                    raise MCPOAuthError("reauthorization_required", action_required=True)
-                try:
-                    outbound = await flow.asend(response)
-                except StopAsyncIteration:
-                    break
-            else:
-                raise MCPOAuthError("oauth_flow_too_many_requests")
-        except MCPOAuthError:
-            raise
-        except (OAuthFlowError, OAuthRegistrationError, OAuthTokenError, ValidationError, ValueError) as error:
-            raise MCPOAuthError("token_exchange_failed") from error
-        token = storage.tokens
-        if token is None:
-            raise MCPOAuthError("invalid_token_response")
+            async with cast(httpx2.AsyncClient, token_client):
+                token = await token_client.fetch_token(
+                    client.token_endpoint,
+                    grant_type="client_credentials",
+                    resource=client.resource_url,
+                    scope=client.scope,
+                )
+        except (OAuthError, ConnectivityHttpError, EndpointPolicyError, ValueError, TypeError) as error:
+            raise _token_error(error) from error
+        _validate_token(token)
         return {
             "kind": "oauth",
             "grant_type": "client_credentials",
-            "access_token": token.access_token,
-            "token_type": token.token_type,
-            "refresh_token": token.refresh_token,
-            "scope": token.scope or scope,
-            "expires_in": token.expires_in,
+            "access_token": token["access_token"],
+            "token_type": token["token_type"],
+            "scope": _optional_string(token, "scope") or client.scope,
+            "expires_in": token.get("expires_in"),
         }
 
     def _token_client(
@@ -541,7 +476,7 @@ class MCPOAuthClient:
             raise mismatch
         raise MCPOAuthError("protected_resource_metadata_missing")
 
-    async def _authorization_metadata(self, issuer: str) -> OAuthMetadata:
+    async def _authorization_metadata(self, issuer: str) -> AuthorizationMetadata:
         if urlsplit(issuer).query:
             raise MCPOAuthError("invalid_issuer_identifier")
         for candidate in build_oauth_authorization_server_metadata_discovery_urls(issuer, issuer):
@@ -549,7 +484,7 @@ class MCPOAuthClient:
                 value = await self._get_json(candidate)
                 if not _metadata_issuer_matches(issuer, value.get("issuer")):
                     raise MCPOAuthError("issuer_mismatch")
-                metadata = OAuthMetadata.model_validate(value)
+                metadata = AuthorizationMetadata.model_validate(value)
             except ValidationError as error:
                 raise MCPOAuthError("invalid_authorization_metadata") from error
             except MCPOAuthError as error:
@@ -561,7 +496,7 @@ class MCPOAuthClient:
 
     async def _metadata_endpoint(
         self,
-        metadata: OAuthMetadata,
+        metadata: AuthorizationMetadata,
         key: str,
         *,
         required: bool = True,
@@ -693,11 +628,13 @@ def authorization_url(
 
 def _token_error(error: Exception) -> MCPOAuthError:
     if isinstance(error, ConnectivityHttpError):
+        if error.code == "token_authorization_rejected":
+            return MCPOAuthError("reauthorization_required", action_required=True)
         return MCPOAuthError(error.code)
     if isinstance(error, EndpointPolicyError):
         return MCPOAuthError("unsafe_oauth_endpoint")
     if isinstance(error, OAuthError):
-        action_required = error.error in {"invalid_grant", "invalid_token", "insufficient_scope"}
+        action_required = error.error in _ACTION_REQUIRED_TOKEN_ERRORS
         return MCPOAuthError(
             "reauthorization_required" if action_required else "token_exchange_failed",
             action_required=action_required,
@@ -739,14 +676,14 @@ def _resource_matches_candidate(resource: str, endpoint: str, metadata_url: str)
     return metadata_url in locations
 
 
-def _supported_token_auth_methods(metadata: OAuthMetadata) -> tuple[OAuthTokenAuthMethod, ...]:
+def _supported_token_auth_methods(metadata: AuthorizationMetadata) -> tuple[OAuthTokenAuthMethod, ...]:
     supported = metadata.token_endpoint_auth_methods_supported or ["client_secret_basic"]
     methods: tuple[OAuthTokenAuthMethod, ...] = ("none", "client_secret_basic", "client_secret_post")
     return tuple(method for method in methods if method in supported)
 
 
 def _automatic_registration(
-    metadata: OAuthMetadata,
+    metadata: AuthorizationMetadata,
     methods: tuple[OAuthTokenAuthMethod, ...],
 ) -> Literal["metadata_document", "dynamic", "manual"]:
     if "none" in methods and metadata.client_id_metadata_document_supported is True:
@@ -804,30 +741,6 @@ def _registration_cleanup_bundle(response: httpx2.Response) -> dict[str, Any]:
     except ValueError:
         return {}
     return value if isinstance(value, dict) else {}
-
-
-def _confidential_auth_method(value: object) -> Literal["client_secret_basic", "client_secret_post"]:
-    if value == "client_secret_basic" or value == "client_secret_post":
-        return cast(Literal["client_secret_basic", "client_secret_post"], value)
-    raise MCPOAuthError("unsupported_token_endpoint_auth_method")
-
-
-def _client_credentials_rejected(request_body: bytes, response: httpx2.Response) -> bool:
-    try:
-        form = parse_qs(request_body.decode("ascii"), strict_parsing=True)
-    except (UnicodeDecodeError, ValueError):
-        return False
-    if form.get("grant_type") != ["client_credentials"]:
-        return False
-    if response.status_code in {401, 403}:
-        return True
-    if response.status_code != 400:
-        return False
-    try:
-        payload = response.json()
-    except ValueError:
-        return False
-    return isinstance(payload, dict) and payload.get("error") in _ACTION_REQUIRED_TOKEN_ERRORS
 
 
 def _safe_scope(value: str | None) -> str | None:
