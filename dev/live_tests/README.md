@@ -46,11 +46,9 @@ uv run --locked python -m pytest dev/live_tests/control --live-round-two
 uv run --locked python -m pytest dev/live_tests/model --live-management
 ```
 
-## CI correctness suites
+## Manual correctness suites
 
-[Live Tests CI](../../.github/workflows/ci-live-tests.yml) runs on relevant non-draft pull requests, pushes to `main`, and manual dispatch. One offline support job validates fixtures and collection before the journey jobs run. The final `Live tests` check requires support and every journey job to succeed; a skipped or cancelled job cannot satisfy the gate.
-
-The reviewed selections live in `ci.py`. CI runs 398 selected cases across seven suites; the full parameter matrices remain available through the ordinary live-test opt-ins below. There is one job each for core, functional, native Environment and Service Environment, and two jobs each for control, Fork/queue and Run faults. At most six of these ten jobs run concurrently. Each job runs serially with its own dependencies and processes. Sharding keeps every selected node from a module in one job, preserving module-scoped backend setup.
+Live tests are opt-in local checks. No GitHub Actions workflow runs these suites. The existing `make live-test-ci` command and `ci.py` module remain the manual entry points for the 398 reviewed cases across seven suites; the full parameter matrices remain available through the ordinary live-test opt-ins below. Each invocation runs serially with its own dependencies and processes. Optional sharding keeps every selected node from a module together, preserving module-scoped backend setup.
 
 | Suite                 | Selected cases | Coverage                                                                                                                                                                                   |
 | --------------------- | -------------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -62,7 +60,7 @@ The reviewed selections live in `ci.py`. CI runs 398 selected cases across seven
 | `environment-native`  |            112 | Local/Docker/envd files, lifecycle, transport failures, bootstrap boundaries and real ENOSPC                                                                                               |
 | `environment-service` |             59 | Docker case-21 variants, backend conformance and multi-Worker Environment lifecycle, sharing, policy, dependency and authority boundaries                                                  |
 
-CI uses scripted local model endpoints and local MCP/Connector fixtures. It creates its own PostgreSQL, Redis and RustFS, starts real Control/Worker processes, and uses real direct-local, Local Envd, Docker, HTTP Envd and reverse-WebSocket Envd targets. Model-update case 23, real Model/Connector/Search account tests, E2B, and performance benchmarks are excluded. E2B parameters in mixed Environment modules are deselected before fixture setup, so private Provider configuration is not read. Five selected unsupported Environment combinations remain explicitly skipped because external daemons have no managed creation, some providers admit only one concurrent Session, and Docker has no native TTL renewal; these skips are not passing lifecycle coverage.
+The reviewed suites use scripted local model endpoints and local MCP/Connector fixtures. Each invocation creates its own PostgreSQL, Redis and RustFS, starts real Control/Worker processes, and uses real direct-local, Local Envd, Docker, HTTP Envd and reverse-WebSocket Envd targets. Model-update case 23, real Model/Connector/Search account tests, E2B, and performance benchmarks are excluded. E2B parameters in mixed Environment modules are deselected before fixture setup, so private Provider configuration is not read. Five selected unsupported Environment combinations remain explicitly skipped because external daemons have no managed creation, some providers admit only one concurrent Session, and Docker has no native TTL renewal; these skips are not passing lifecycle coverage.
 
 The reduced combinations preserve these representative boundaries:
 
@@ -74,9 +72,9 @@ The reduced combinations preserve these representative boundaries:
 - Environment sharing: first preparation with both `on_run`/`on_use` for direct-local and Docker (4); Docker cancellation/crash, Worker crash with HTTP Envd and cancellation with WebSocket Envd (4). Tools/access, template and lifecycle conformance still exercise all four non-cloud Service backends. Both principal-disable and role-revocation tests check the request-11 IAM refresh boundary and the other Worker's independent authority.
 - Native file failures: every missing-file operation and wrong-type operation remains represented, distributed across backends instead of their full Cartesian products (10 and 8). Traversal, symlink escape, read-only denial, real OS permissions and aborted writes retain every backend. Docker bootstrap corruption covers all four operations and four corruption kinds in four representative pairs.
 
-Lab setup migrates the disposable database and initializes both isolated identities in one bootstrap process, replacing three interpreter startups (two in core). Every case still owns fresh databases, buckets, fault relays and Service processes. CI runner setup falls from fifteen jobs to ten; native daemon/image builds fall from three jobs to two. `--basetemp` creates missing parent directories before pytest starts. The local Composio Host supplies its HTTPS peer through trusted composition while provider requests retain the production empty configuration schema; Docker file evidence is read as the container user through Docker, independently of Harness tools.
+Lab setup migrates the disposable database and initializes both isolated identities in one bootstrap process, replacing three interpreter startups (two in core). Function-scoped fault labs own fresh databases, buckets, fault relays and Service processes. `--basetemp` creates missing parent directories before pytest starts. The local Composio Host supplies its HTTPS peer through trusted composition while provider requests retain the production empty configuration schema; Docker file evidence is read as the container user through Docker, independently of Harness tools.
 
-Run the same entry points locally:
+Run the suites locally:
 
 ```sh
 # Selection only: no containers, services, native daemons or private account reads.
@@ -84,7 +82,7 @@ make live-test-ci suite=environment-service LIVE_TEST_ARGS='--collect-only'
 # The first round needs Docker but no native daemon build.
 make live-test-ci suite=core
 make live-test-ci suite=control LIVE_TEST_ARGS='-k waiting -x'
-# Reproduce exactly the second of the two Control CI jobs.
+# Run the second of two optional Control shards.
 make live-test-ci suite=control LIVE_TEST_ARGS='--shard=2/2'
 # Build the source daemon, sandbox and both limited-storage fixture images.
 make live-test-ci-environment-build
@@ -92,9 +90,9 @@ make live-test-ci suite=environment-native
 make live-test-ci suite=environment-service
 ```
 
-The CI entry point ignores ambient Service/AWS/live-account/telemetry settings and pytest selection overrides. It does not load `.env`. `A13N_ENVD_TEST_BINARY`, `LIVE_TEST_SANDBOX_IMAGE`, `LIVE_TEST_FILE_RESOURCE_IMAGE` and `LIVE_TEST_DOCKER_RESOURCE_IMAGE` can select explicit local build artifacts. An additional `-k` expression only narrows the reviewed selection; it cannot re-enable E2B. `--junitxml` and `--basetemp` accept explicit output paths. The Linux Environment jobs install Bubblewrap and enable the existing unprivileged-user-namespace prerequisite before building the daemon; native isolation remains enabled for Local Envd.
+The manual entry point ignores ambient Service/AWS/live-account/telemetry settings and pytest selection overrides. It does not load `.env`. `A13N_ENVD_TEST_BINARY`, `LIVE_TEST_SANDBOX_IMAGE`, `LIVE_TEST_FILE_RESOURCE_IMAGE` and `LIVE_TEST_DOCKER_RESOURCE_IMAGE` can select explicit local build artifacts. An additional `-k` expression only narrows the reviewed selection; it cannot re-enable E2B. `--junitxml` and `--basetemp` accept explicit output paths. On Linux, install Bubblewrap and enable unprivileged user namespaces before running Local Envd cases; native isolation remains enabled.
 
-Journey jobs have a 45-minute test deadline within a 60-minute job budget. CI retains JUnit results and explicit process/daemon log globs for seven days, including on failure. Private lab configuration JSON, TLS keys and workspace payloads are not included in artifacts. Collection/support results do not establish live success; inspect the journey results and durations separately.
+Use `--junitxml` for a local result report. Process and daemon logs remain in the fixture-owned lab directories for inspection. Collection/support results do not establish live success; inspect the journey results and durations separately.
 
 ## Helper ownership
 

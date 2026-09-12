@@ -163,10 +163,10 @@ live-test-local: sync ## Run first-round HTTP journeys with owned Docker depende
 	@uv run --locked python -m dev.live_tests.isolated $(LIVE_TEST_ARGS)
 
 .PHONY: live-test-ci live-test-ci-environment-build
-live-test-ci: sync ## Run a reviewed account-free CI suite (suite=core|functional|control|fork-queue|run-faults|environment-native|environment-service)
+live-test-ci: sync ## Run a reviewed account-free suite manually (suite=core|functional|control|fork-queue|run-faults|environment-native|environment-service)
 	@uv run --locked python -m dev.live_tests.ci $(suite) $(LIVE_TEST_ARGS)
 
-live-test-ci-environment-build: image-sandbox ## Build the native daemon and fixture images for the CI Environment matrices
+live-test-ci-environment-build: image-sandbox ## Build the native daemon and fixture images for the manual Environment matrices
 	@cargo build --locked --package a13n-envd
 	@docker build -f dev/live_tests/environment/file_resources.Dockerfile --build-arg SANDBOX_IMAGE="$(SANDBOX_IMAGE)" --target worker -t a13n-file-resources:local .
 	@docker build -f dev/live_tests/environment/file_resources.Dockerfile --build-arg SANDBOX_IMAGE="$(SANDBOX_IMAGE)" --target docker-sandbox -t a13n-file-resources:docker .

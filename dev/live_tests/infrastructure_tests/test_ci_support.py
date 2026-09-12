@@ -1,4 +1,4 @@
-"""Verify CI's collected journeys, opt-in gates and account isolation without live I/O."""
+"""Verify the manual suite selections, opt-in gates and account isolation without live I/O."""
 
 import argparse
 import os
@@ -6,7 +6,6 @@ import subprocess
 import sys
 
 import pytest
-import yaml
 
 from .. import ci
 
@@ -141,63 +140,3 @@ def test_ci_creates_missing_basetemp_parent_for_real_pytest(tmp_path, monkeypatc
     assert not basetemp.parent.exists()
     assert ci.main(["environment-native", f"--basetemp={basetemp}"]) == 0
     assert list(basetemp.rglob("native-proof"))
-
-
-@pytest.mark.parametrize(
-    ("support", "journeys"),
-    [
-        ("success", "success"),
-        ("failure", "success"),
-        ("cancelled", "success"),
-        ("skipped", "success"),
-        ("success", "failure"),
-        ("success", "cancelled"),
-        ("success", "skipped"),
-    ],
-)
-def test_workflow_gate_rejects_failed_cancelled_or_skipped_jobs(support, journeys):
-    workflow = yaml.safe_load((ci.REPOSITORY / ".github/workflows/ci-live-tests.yml").read_text())
-    gate = workflow["jobs"]["validation"]["steps"][0]
-    result = subprocess.run(
-        ["bash", "-e", "-c", gate["run"]],
-        env={"SUPPORT_RESULT": support, "JOURNEYS_RESULT": journeys},
-        check=False,
-    )
-    assert (result.returncode == 0) == (support == journeys == "success")
-
-
-def test_workflow_executes_every_suite_and_requires_all_results():
-    workflow = yaml.safe_load((ci.REPOSITORY / ".github/workflows/ci-live-tests.yml").read_text())
-    jobs = workflow["jobs"]
-    journeys = jobs["journeys"]
-    matrix = journeys["strategy"]["matrix"]["include"]
-    assert {item["suite"] for item in matrix} == ci.SUITES.keys()
-    for suite in ci.SUITES:
-        shards = [item for item in matrix if item["suite"] == suite]
-        assert {item["shards"] for item in shards} == {len(shards)}
-        assert {item["shard"] for item in shards} == set(range(1, len(shards) + 1))
-        selected = [selection for item in shards for selection in ci.selections(suite, (item["shard"], item["shards"]))]
-        assert len(selected) == len(set(selected))
-        assert set(selected) == set(ci.SUITES[suite].selections)
-        module_owners = {}
-        for item in shards:
-            for selection in ci.selections(suite, (item["shard"], item["shards"])):
-                module = selection.split("::", 1)[0]
-                assert module_owners.setdefault(module, item["shard"]) == item["shard"]
-    assert journeys["strategy"]["fail-fast"] is False
-    assert jobs["validation"]["needs"] == ["support", "journeys"]
-    gate = jobs["validation"]["steps"][0]
-    assert gate["env"]["JOURNEYS_RESULT"] == "${{ needs.journeys.result }}"
-    assert 'test "$JOURNEYS_RESULT" = success' in gate["run"]
-    run = next(step for step in journeys["steps"] if step["name"] == "Run isolated journeys")
-    assert "make live-test-ci" in run["run"]
-    assert "--junitxml" in run["run"]
-    assert "--basetemp" in run["run"]
-    assert "--shard=$SHARD/$SHARDS" in run["run"]
-    artifact = next(step for step in journeys["steps"] if "upload-artifact" in step.get("uses", ""))
-    assert artifact["if"] == "always()"
-    assert set(artifact["with"]["path"].splitlines()) == {
-        "${{ runner.temp }}/live-results/*.xml",
-        "${{ runner.temp }}/live-pytest/**/*.log",
-        "dev/live_tests/.state/**/*.log",
-    }

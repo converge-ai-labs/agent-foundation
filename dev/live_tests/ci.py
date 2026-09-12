@@ -1,4 +1,4 @@
-"""Run the reviewed, account-free live journeys used by CI and local reproduction."""
+"""Run reviewed, account-free live journeys manually."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def cases(module, *names):
     return tuple(f"{module}::{name}" for name in names)
 
 
-# Explicit files/node IDs keep new opt-in provider or stress tests out of CI until reviewed.
+# Explicit files/node IDs keep new opt-in provider or stress tests out of the selected suites until reviewed.
 SUITES = {
     "core": Suite(
         (
@@ -401,7 +401,7 @@ def main(arguments=None):
         # pytest creates basetemp itself, but requires its parent to exist.
         options.basetemp.resolve().parent.mkdir(parents=True, exist_ok=True)
     print(
-        f"Live CI suite: {options.suite} shard {options.shard[0]}/{options.shard[1]}; "
+        f"Live suite: {options.suite} shard {options.shard[0]}/{options.shard[1]}; "
         f"{len(files)} explicit selections; external accounts disabled",
         flush=True,
     )
