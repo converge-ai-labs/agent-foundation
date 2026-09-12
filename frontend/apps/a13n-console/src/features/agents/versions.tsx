@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button } from "a13n-ui";
+import { Button, DisclosureSection } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -57,7 +57,12 @@ export function AgentVersions({ agent }: { agent: Schema["Agent"] }) {
                 onClick={() => setSelected(item)}
                 type="button"
               >
-                v{item.version}
+                v{item.version}{" "}
+                {item.id === agent.current_revision_id && (
+                  <span className="text-xs text-muted-foreground">
+                    {t("Current")}
+                  </span>
+                )}
               </Button>
             ),
           },
@@ -74,6 +79,7 @@ export function AgentVersions({ agent }: { agent: Schema["Agent"] }) {
               can("agent.revision.create") &&
               item.id !== agent.current_revision_id && (
                 <Confirm
+                  subject={`${agent.name} · v${item.version}`}
                   triggerVariant="ghost"
                   title={t("Restore version")}
                   description={t(
@@ -113,7 +119,21 @@ export function AgentVersions({ agent }: { agent: Schema["Agent"] }) {
           <h3>
             {t("Version")} {selected.version}
           </h3>
-          <JsonView value={selected.config} />
+          <dl className="grid gap-3 my-4">
+            <div>
+              <dt className={styles.muted}>{t("Model")}</dt>
+              <dd>{selected.config.model.model_key}</dd>
+            </div>
+            <div>
+              <dt className={styles.muted}>{t("Instructions")}</dt>
+              <dd className="whitespace-pre-wrap">
+                {selected.config.instructions || "—"}
+              </dd>
+            </div>
+          </dl>
+          <DisclosureSection title={t("Configuration details")}>
+            <JsonView value={selected.config} />
+          </DisclosureSection>
         </section>
       )}
     </div>

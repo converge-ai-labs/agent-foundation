@@ -157,6 +157,7 @@ export function SkillActions({ resource }: { resource: SkillResource }) {
       </MenuTrigger>
       <MenuPopup align="end">
         <Confirm
+          subject={resource.value.name}
           title={t("Delete skill")}
           description={t(
             "This removes the skill and its revisions from ordinary access. Agents currently using this skill must be updated first.",

@@ -59,9 +59,7 @@ export function ModelEditor({
       title={t(modelId ? "Edit model" : "Add model")}
       description={
         modelId
-          ? t(
-              "Adjust this model\u2019s defaults and availability for your agents.",
-            )
+          ? undefined
           : t(
               "Choose a provider and model, then set the defaults your agents will use.",
             )

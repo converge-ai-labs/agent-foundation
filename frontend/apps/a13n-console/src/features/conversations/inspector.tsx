@@ -9,7 +9,12 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
-import { ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
+import {
+  ErrorNotice,
+  Loading,
+  StateBadge,
+  Timestamp,
+} from "../../shared/feedback";
 import { JsonView } from "../../shared/form";
 import { conversationQueries, runPath } from "./api";
 import styles from "./conversations.module.css";
@@ -33,7 +38,7 @@ export function RunInspector({ run }: { run: Schema["RunResource"] }) {
           {t("Details")}
         </Button>
       }
-      size={"md"}
+      size="lg"
       title={t("Run details")}
       description={t(
         "Inspect the configuration, execution attempts, and related runs.",
@@ -41,61 +46,73 @@ export function RunInspector({ run }: { run: Schema["RunResource"] }) {
       closeLabel={t("Close")}
       open={open}
     >
-      <h3>{t("Configuration evidence")}</h3>
-      {can("trace.read") && (
-        <p>
-          <Link
-            to={`${basePath}/traces?run_id=${run.id}&from=${encodeURIComponent(run.created_at)}&to=${encodeURIComponent(new Date(new Date(run.completed_at ?? Date.now()).getTime() + 1_000).toISOString())}`}
-          >
-            {t("Open run traces")}
-          </Link>
-        </p>
-      )}
-      <dl className={styles.metadata}>
-        <dt>{t("Run")}</dt>
-        <dd>{run.id}</dd>
-        <dt>{t("Agent revision")}</dt>
-        <dd>
-          <AgentLink agentId={run.agent_id}>{run.agent_revision_id}</AgentLink>
-        </dd>
-        <dt>{t("Effective configuration digest")}</dt>
-        <dd>{run.effective_agent_config_digest}</dd>
-        <dt>{t("Environment")}</dt>
-        <dd>{run.environment_id ?? t("None")}</dd>
-      </dl>
-      <h3>{t("Attempts")}</h3>
-      <ErrorNotice error={attempts.error ?? lineage.error} />
-      {attempts.isPending ? (
-        <Loading />
-      ) : (
-        attempts.data?.map((attempt) => (
-          <DisclosureSection
-            key={attempt.id}
-            title={
-              <>
-                {t("Attempt")}
-                {attempt.attempt_number}
-                <StateBadge state={attempt.status} />
-              </>
-            }
-          >
-            <JsonView value={attempt} />
-          </DisclosureSection>
-        ))
-      )}
-      <h3>{t("Lineage")}</h3>
-      {lineage.data?.items.map((entry) => (
-        <p key={entry.run_id}>
-          <Link to={runPath(basePath, entry)} onClick={() => setOpen(false)}>
-            {entry.run_id}
-          </Link>{" "}
-          <StateBadge state={entry.status} />
-        </p>
-      ))}
-      <RunEvents runId={run.id} />
-      <DisclosureSection title={<>{t("Full run metadata")}</>}>
-        <JsonView value={run} />
-      </DisclosureSection>
+      <div className={styles.composerOptions}>
+        <div className={styles.inline}>
+          <StateBadge state={run.status} />
+          <Timestamp value={run.created_at} />
+        </div>
+        <DisclosureSection title={t("Configuration evidence")}>
+          {can("trace.read") && (
+            <p>
+              <Link
+                to={`${basePath}/traces?run_id=${run.id}&from=${encodeURIComponent(run.created_at)}&to=${encodeURIComponent(new Date(new Date(run.completed_at ?? Date.now()).getTime() + 1_000).toISOString())}`}
+              >
+                {t("Open run traces")}
+              </Link>
+            </p>
+          )}
+          <dl className={styles.metadata}>
+            <dt>{t("Run")}</dt>
+            <dd>{run.id}</dd>
+            <dt>{t("Agent revision")}</dt>
+            <dd>
+              <AgentLink agentId={run.agent_id}>
+                {run.agent_revision_id}
+              </AgentLink>
+            </dd>
+            <dt>{t("Effective configuration digest")}</dt>
+            <dd>{run.effective_agent_config_digest}</dd>
+            <dt>{t("Environment")}</dt>
+            <dd>{run.environment_id ?? t("None")}</dd>
+          </dl>
+        </DisclosureSection>
+        <h3>{t("Attempts")}</h3>
+        <ErrorNotice error={attempts.error ?? lineage.error} />
+        {attempts.isPending ? (
+          <Loading />
+        ) : (
+          attempts.data?.map((attempt) => (
+            <DisclosureSection
+              key={attempt.id}
+              title={
+                <span className="flex items-center gap-2">
+                  <span>
+                    {t("Attempt")} {attempt.attempt_number}
+                  </span>
+                  <StateBadge state={attempt.status} />
+                </span>
+              }
+            >
+              <JsonView value={attempt} />
+            </DisclosureSection>
+          ))
+        )}
+        <h3>{t("Lineage")}</h3>
+        {lineage.data?.items.map((entry) => (
+          <p key={entry.run_id}>
+            <Link to={runPath(basePath, entry)} onClick={() => setOpen(false)}>
+              {entry.run_id}
+            </Link>{" "}
+            <StateBadge state={entry.status} />
+          </p>
+        ))}
+        <DisclosureSection title={t("Events")}>
+          <RunEvents runId={run.id} />
+        </DisclosureSection>
+        <DisclosureSection title={<>{t("Full run metadata")}</>}>
+          <JsonView value={run} />
+        </DisclosureSection>
+      </div>
     </ModalFrame>
   );
 }

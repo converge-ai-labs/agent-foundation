@@ -66,3 +66,101 @@
   font-weight: 500;
   overflow-wrap: anywhere;
 }
+
+.modelForm {
+  display: grid;
+  min-width: 0;
+}
+.connectionFields,
+.editIdentity,
+.identityFields,
+.defaultsFields {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.identityFields {
+  padding-top: 20px;
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.providerSummary {
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--a13n-surface);
+}
+.providerSummary strong {
+  font-size: 14px;
+}
+.modelForm > [data-a13n-form-actions] {
+  border-top: 1px solid var(--a13n-border-soft);
+}
+
+.editForm {
+  &.modelForm {
+    row-gap: 20px;
+  }
+}
+.modelIdentity {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-block: 12px 16px;
+}
+.modelMark {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: var(--a13n-surface);
+}
+.modelHeading {
+  flex: 1;
+  min-width: 0;
+}
+.modelHeading h3 {
+  margin: 0 0 5px;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.modelHeading > span {
+  color: var(--a13n-secondary);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.modelStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.modelStatus label {
+  font-size: 13px;
+  cursor: pointer;
+}
+.editForm .providerSummary {
+  padding: 0 0 4px;
+  background: transparent;
+}
+.editForm .editIdentity {
+  gap: 20px;
+  padding-bottom: 12px;
+}
+.editForm > [data-a13n-form-actions] {
+  border-top: 0;
+  margin-top: 4px;
+}
+@media (max-width: 640px) {
+  .modelIdentity {
+    flex-wrap: wrap;
+  }
+  .modelHeading {
+    flex-basis: calc(100% - 72px);
+  }
+  .modelStatus {
+    margin-left: 72px;
+  }
+}

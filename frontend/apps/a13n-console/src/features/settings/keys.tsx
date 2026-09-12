@@ -138,6 +138,7 @@ export function ApiKeys({
                 render: (item) =>
                   !item.revoked_at && (
                     <Confirm
+                      subject={item.name}
                       triggerVariant="ghost"
                       title={t("Revoke API key")}
                       description={t(
@@ -261,7 +262,11 @@ function CreateKey({ accountId }: { accountId?: string }) {
             }))}
           />
           <ErrorNotice error={create.error} />
-          <FormActions pending={create.isPending} label={t("Create key")} />
+          <FormActions
+            onCancel={() => setOpen(false)}
+            pending={create.isPending}
+            label={t("Create key")}
+          />
         </form>
       )}
     </ModalFrame>

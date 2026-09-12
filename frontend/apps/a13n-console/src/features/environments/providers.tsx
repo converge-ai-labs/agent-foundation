@@ -333,7 +333,7 @@ function ProviderForm({
           </FormField>
         </FormSection>
         <FormSection title={t("Connection")}>
-          <div className={styles.twoColumns}>
+          <div className={styles.stack}>
             <ProviderTypeField
               definitions={definitions}
               value={type}

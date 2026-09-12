@@ -286,7 +286,8 @@ export function SearchProviderForm({
                 ? t("Saved credential · enter to replace")
                 : undefined
             }
-            autoComplete="off"
+            autoComplete="new-password"
+            name="search-api-key"
             required={!original}
             value={credential}
             onChange={(event) => setCredential(event.target.value)}

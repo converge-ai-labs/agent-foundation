@@ -131,7 +131,7 @@ export function ProviderForm({
         save.mutate();
       }}
     >
-      <FormSection aside={!onCreated} title={t("General")}>
+      <FormSection>
         <FormField
           className="min-w-0 w-full"
           label={t("Name")}
@@ -147,7 +147,7 @@ export function ProviderForm({
           />
         </FormField>
       </FormSection>
-      <FormSection aside={!onCreated} title={t("Connection")}>
+      <FormSection title={t("Connection")}>
         <ProviderTypeField
           definitions={definitions}
           value={type}
@@ -201,7 +201,7 @@ export function ProviderForm({
                 type="password"
                 placeholder={
                   original?.value.credential_configured
-                    ? t("Leave empty to keep saved credential")
+                    ? t("Saved credential · enter to replace")
                     : undefined
                 }
                 autoComplete="new-password"
@@ -260,7 +260,7 @@ export function ProviderForm({
         )}
       </FormSection>
       {original && (
-        <FormSection aside={!onCreated} title={t("Availability")}>
+        <FormSection>
           <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
         </FormSection>
       )}

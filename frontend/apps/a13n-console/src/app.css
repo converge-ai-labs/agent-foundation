@@ -34,3 +34,57 @@
 .skip-link:focus {
   top: 12px;
 }
+
+/* Console modal composition, including dialogs rendered through portals. */
+[data-a13n-modal] {
+  border-radius: 18px;
+}
+:root:not(.dark) [data-a13n-modal] {
+  --popover: #fdfdfc;
+  --a13n-surface: #f3f3f1;
+  background: var(--popover);
+}
+[data-a13n-modal] [data-slot="dialog-title"] {
+  font-size: 20px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+[data-a13n-modal] :is([data-slot="input"], [role="combobox"]) {
+  min-height: 40px;
+  border-radius: 10px;
+}
+[data-a13n-modal] [data-slot="disclosure-surface"] {
+  border-radius: 12px;
+  background: var(--a13n-surface);
+}
+[data-a13n-modal] [data-slot="disclosure-surface"] > button {
+  min-height: 52px;
+  padding-inline: 16px;
+}
+[data-a13n-modal]
+  :is([data-a13n-form-actions], [data-slot="dialog-footer"])
+  button {
+  min-height: 40px;
+  padding-inline: 18px;
+  border-radius: 10px;
+}
+[data-a13n-modal] [data-a13n-form-actions] {
+  isolation: isolate;
+  box-shadow: 0 -12px 16px -12px var(--popover);
+}
+[data-a13n-modal] [data-slot="tabs"] {
+  gap: 20px;
+}
+[data-a13n-modal] [data-slot="tabs-list"] {
+  max-width: 100%;
+  overflow-x: auto;
+  justify-content: flex-start;
+}
+/* Keep navigation stationary when a dialog's tab content changes height. */
+[data-slot="dialog-viewport"]:has([data-a13n-modal] [role="tablist"]) {
+  align-items: start;
+  padding-top: min(10dvh, 80px);
+}
+[data-a13n-modal]:has([role="tablist"]) {
+  max-height: calc(90dvh - 24px);
+}

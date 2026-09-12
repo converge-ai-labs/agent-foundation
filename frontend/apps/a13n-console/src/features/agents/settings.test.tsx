@@ -53,6 +53,7 @@ it("preserves metadata drafts across avatar uploads and uses each returned ETag"
     <QueryClientProvider client={cache}>
       <MemoryRouter>
         <AgentDetails
+          close={vi.fn()}
           resource={{ value, etag: '"initial"' }}
           reload={vi.fn()}
           onImageSaved={onImageSaved}

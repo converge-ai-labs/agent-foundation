@@ -231,6 +231,7 @@ export function ThreadQueue({
                   )}
                 {state === "queued" && can("queued_submission.delete") && (
                   <Confirm
+                    subject={item.queued_submission_id}
                     onSuccess={refresh}
                     title={t("Delete queued message")}
                     description={t(
