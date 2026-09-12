@@ -120,9 +120,24 @@ async fn generated_binary_upload_sets_the_declared_content_type() {
     let base = format!("http://{}", listener.local_addr().unwrap());
     let server = tokio::spawn(async move {
         let (mut socket, _) = listener.accept().await.unwrap();
-        let headers = request_headers(&mut socket).await.to_lowercase();
+        let mut request = request_headers(&mut socket).await;
+        let headers = request.split("\r\n\r\n").next().unwrap().to_lowercase();
         assert!(headers.contains("content-type: application/octet-stream"));
         assert!(headers.contains("idempotency-key: upload-test"));
+        assert!(headers.contains("transfer-encoding: chunked"));
+        // Drain the streamed upload before closing, otherwise unread bytes can
+        // reset the TCP connection and discard the error response on Linux.
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while !request.ends_with("\r\n0\r\n\r\n") {
+                let mut chunk = [0; 4096];
+                let count = socket.read(&mut chunk).await.unwrap();
+                assert_ne!(count, 0, "upload ended before its final chunk");
+                request.push_str(std::str::from_utf8(&chunk[..count]).unwrap());
+            }
+        })
+        .await
+        .expect("upload did not finish");
+        assert!(request.contains("binary body"));
         let body = json!({"error":{"code":"test_error","message":"test", "details":{},"request_id":"req_upload"}}).to_string();
         socket.write_all(format!("HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nX-Request-ID: req_upload\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).as_bytes()).await.unwrap();
     });
