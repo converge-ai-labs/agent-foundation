@@ -1,10 +1,10 @@
 # Browser server
 
-Harness UI's HTTP server shares the local `HarnessUiApp` with the terminal product. Its bundled browser page is currently an authentication/status foundation, **not** the Service Console or a completed browser chat workbench. Do not infer browser controls from backend API availability.
+Harness UI's HTTP server shares the local `HarnessUiApp` with the terminal product. Its English-only browser workbench provides setup, provider accounts, configuration resources and Project readiness, **not** Service Console business models. Browser capabilities and backend API availability remain distinct.
 
 ## Start the server
 
-The bundled foundation page accepts the instance API key and displays the installed Python package version returned by the server. It does not yet provide conversation, setup, shared drafts, Host Files, Git, or terminal controls; those browser controls remain unavailable. The HTTP API is independent: native Host Files and read-only Git Changes are enabled by default (Git requires an installed executable), with real native terminal sessions on POSIX Hosts and process-local shared CRDT drafts through authenticated WebSockets.
+The bundled workbench accepts the instance API key, displays the installed Python package version, and provides light/dark themes, guided setup, provider-account/key management, resource editing and Project readiness. Conversation, shared prompting, comments, Host Files, Git and terminal pages are subsequent workbench blocks. The HTTP API is independent: native Host Files and read-only Git Changes are enabled by default (Git requires an installed executable), with real native terminal sessions on POSIX Hosts and process-local shared CRDT drafts through authenticated WebSockets.
 
 ```bash
 a13n-harness-ui webui                       # 127.0.0.1:8765, generated per-process API key
@@ -12,7 +12,15 @@ a13n-harness-ui webui --host 127.0.0.1 --port 9000
 a13n-harness-ui webui --no-share-computer   # Opt out of native computer sharing
 ```
 
-WebUI enables native file browsing, editing, transfer, creation, move, deletion, and captured Thread input through the [Files API](http-api.md#native-host-files) by default; `--share-computer` explicitly selects that default. The [Git Changes API](http-api.md#native-git-changes) adds repository discovery, status, selected diffs and reviewed Thread input under the same sharing gate. The [Terminal API](http-api.md#native-terminal) adds App-owned interactive POSIX PTYs under the same gate. The [shared draft protocol](http-api.md#shared-composer), [page presence](http-api.md#page-presence), and [saved output comments](http-api.md#saved-output-comments) are independent of computer sharing. Comments persist separately from model history; live presence and drafts do not survive App restart. Browser workbench panels remain unavailable. Paths refer to the server account or container mounts, regardless of the Agent's Environment. Project roots are navigation starts, not filesystem confinement. Use `--no-share-computer` to keep native operations unavailable even when authentication is bypassed. Embedded Apps and the bare terminal CLI do not enable native sharing implicitly.
+WebUI enables native file browsing, editing, transfer, creation, move, deletion, and captured Thread input through the [Files API](http-api.md#native-host-files) by default; `--share-computer` explicitly selects that default. The [Git Changes API](http-api.md#native-git-changes) adds repository discovery, status, selected diffs and reviewed Thread input under the same sharing gate. The [Terminal API](http-api.md#native-terminal) adds App-owned interactive POSIX PTYs under the same gate. The [shared draft protocol](http-api.md#shared-composer), [page presence](http-api.md#page-presence), and [saved output comments](http-api.md#saved-output-comments) are independent of computer sharing. Comments persist separately from model history; live presence and drafts do not survive App restart. Native Files/Git/terminal and saved-comment browser panels remain unavailable. Paths refer to the server account or container mounts, regardless of the Agent's Environment. Project roots are navigation starts, not filesystem confinement. Use `--no-share-computer` to keep native operations unavailable even when authentication is bypassed. Embedded Apps and the bare terminal CLI do not enable native sharing implicitly.
+
+## Configure the workbench
+
+Use **Setup & readiness** for first-use configuration: choose a model connection and execution environment, add optional Project roots and additional Agent instructions, check readiness, then preview and publish generated files. Provider login and model credentials are managed under **Provider accounts**, separately from the instance access key. Device login is preferred for remote servers where a browser callback cannot reach the server's loopback listener.
+
+**Resources** supports source creation, validation, publication and deletion. Common fields and the advanced YAML editor share one local draft. Edits survive navigation and access-key replacement in the current tab, but not a reload. Publication is a complete-file, last-write-wins operation; an observed external change never silently overwrites a dirty draft. Validation does not publish, and active Runs keep their captured configuration. MCP source content is not readable through this API: replacing it explicitly replaces every resource and unseen field in that file.
+
+**Projects** displays server directories and previews accepted defaults with per-axis provenance. Default, None and Custom list selections remain distinct. Preview does not include unsaved source changes or execute a model. The online indicator displays per-tab presence and lets each collaborator set a display profile; this is not provider login or an authenticated identity.
 
 ## Authentication and key retention
 

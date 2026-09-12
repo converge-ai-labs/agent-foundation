@@ -1,8 +1,16 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BrowserRouter } from "react-router";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Button } from "a13n-ui";
+import { createTransport, result, type Schema } from "./transport/client";
+import { TransportContext } from "./transport/context";
+import { DraftContext, type SourceDraft } from "./configuration/sources";
+import { Workbench } from "./shell/workbench";
+import { TextField } from "./shell/ui";
+import styles from "./shell/workbench.module.css";
 
 const KEY_STORAGE = "a13n-harness-ui.api-key";
-
-function initialKey(): string {
+export function initialKey(): string {
   const fragment = new URLSearchParams(window.location.hash.slice(1));
   const key = fragment.get("api_key");
   if (key !== null) {
@@ -23,126 +31,151 @@ function initialKey(): string {
     return "";
   }
 }
-
+function retainKey(key: string) {
+  try {
+    if (key) localStorage.setItem(KEY_STORAGE, key);
+    else localStorage.removeItem(KEY_STORAGE);
+  } catch {
+    /* Authentication does not require browser storage. */
+  }
+}
 export function BrowserApp() {
+  // Consume and remove the URL credential before mounting the router or any network consumer.
   const [key, setKey] = useState(initialKey);
-  const [input, setInput] = useState(key);
+  const [input, setInput] = useState("");
   const [attempt, setAttempt] = useState(0);
-  const [version, setVersion] = useState<string | null>(null);
-  const [revision, setRevision] = useState<string | null>(null);
+  const [status, setStatus] = useState<Schema<"ListenerStatus"> | null>(null);
   const [error, setError] = useState("");
-
+  const [connecting, setConnecting] = useState(true);
+  const drafts = useRef(new Map<string, SourceDraft>());
+  const [queries] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: { retry: false, staleTime: 15000 },
+          mutations: { retry: false, networkMode: "always" },
+        },
+      }),
+  );
+  const transportRef = useRef<ReturnType<typeof createTransport> | null>(null);
+  const unauthorized = useCallback(() => {
+    transportRef.current?.close();
+    setStatus(null);
+    setError("Access expired. Enter the API key printed by this server.");
+    setConnecting(false);
+    void queries.cancelQueries();
+    queries.clear();
+  }, [queries]);
+  const transport = useMemo(
+    () => createTransport(key, unauthorized),
+    [key, unauthorized, attempt],
+  );
+  transportRef.current = transport;
   useEffect(() => {
-    const controller = new AbortController();
-    setVersion(null);
+    let active = true;
+    setStatus(null);
     setError("");
-    async function connect() {
-      try {
-        const response = await fetch("/api/status", {
-          headers: key ? { Authorization: `Bearer ${key}` } : {},
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (response.status === 401) {
-          throw new Error("Enter the API key printed by this server.");
-        }
-        if (!response.ok)
-          throw new Error("Server unavailable. Retry when it is ready.");
-        const status: unknown = await response.json();
+    setConnecting(true);
+    const controller = new AbortController();
+    void result(
+      transport.client.GET("/api/status", { signal: controller.signal }),
+    )
+      .then((next) => {
         if (
-          typeof status !== "object" ||
-          status === null ||
-          !("api_version" in status) ||
-          status.api_version !== "1" ||
-          !("version" in status) ||
-          typeof status.version !== "string" ||
-          !status.version
-        ) {
+          next.api_version !== "1" ||
+          typeof next.version !== "string" ||
+          !next.version ||
+          !next.app ||
+          !next.features
+        )
           throw new Error(
             "This server returned an incompatible status response.",
           );
-        }
-        if (controller.signal.aborted) return;
-        setVersion(status.version);
-        setRevision(
-          "build_revision" in status &&
-            typeof status.build_revision === "string"
-            ? status.build_revision
-            : null,
-        );
-        try {
-          if (key) window.localStorage.setItem(KEY_STORAGE, key);
-          else window.localStorage.removeItem(KEY_STORAGE);
-        } catch {
-          // Storage may be disabled; authentication still works for this page.
-        }
-      } catch (failure) {
-        if (!controller.signal.aborted) {
+        if (!active) return;
+        retainKey(key);
+        queries.setQueryData(["status"], next);
+        setStatus(next);
+        setConnecting(false);
+      })
+      .catch((failure: unknown) => {
+        if (active) {
           setError(
             failure instanceof Error ? failure.message : "Connection failed.",
           );
+          setConnecting(false);
         }
-      }
-    }
-    void connect();
-    return () => controller.abort();
-  }, [key, attempt]);
-
+      });
+    return () => {
+      active = false;
+      controller.abort();
+      transport.close();
+    };
+  }, [transport, key, queries]);
+  const forget = () => {
+    transport.close();
+    retainKey("");
+    setInput("");
+    setKey("");
+    queries.clear();
+    setStatus(null);
+    setAttempt((value) => value + 1);
+  };
   return (
-    <main>
-      <h1>Harness UI</h1>
-      <p>
-        WebUI foundation. Conversation and management controls are not yet
-        available.
-      </p>
-      {version ? (
-        <>
-          <p role="status">
-            Running version: <strong>{version}</strong>
-            {revision && <span> (revision {revision})</span>}
-          </p>
-          <p>
-            Shared drafts, Host files, Git views, and terminals are not yet
-            available.
-          </p>
-          <button
-            onClick={() => {
-              try {
-                window.localStorage.removeItem(KEY_STORAGE);
-              } catch {
-                /* Storage is optional. */
-              }
-              setInput("");
-              setKey("");
-              setAttempt((value) => value + 1);
-            }}
-          >
-            Forget API key
-          </button>
-        </>
-      ) : (
-        <>
-          <p role="status">{error || "Connecting to server…"}</p>
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              setKey(input);
-              setAttempt((value) => value + 1);
-            }}
-          >
-            <label>
-              API key{" "}
-              <input
-                type="password"
-                autoComplete="off"
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
+    <QueryClientProvider client={queries}>
+      <TransportContext.Provider value={transport}>
+        <DraftContext.Provider value={drafts.current}>
+          {status ? (
+            <BrowserRouter>
+              <Workbench
+                status={status}
+                forget={forget}
+                unauthorized={unauthorized}
               />
-            </label>
-            <button type="submit">Connect</button>
-          </form>
-        </>
-      )}
-    </main>
+            </BrowserRouter>
+          ) : (
+            <main className={styles.access}>
+              <div className={styles.accessCard}>
+                <span className={styles.brandMark}>a13n</span>
+                <h1>Connect to Harness UI</h1>
+                <p>
+                  Use the instance API key printed by your server. Provider
+                  accounts and model keys are configured after connecting.
+                </p>
+                <p role="status">
+                  {error ||
+                    (connecting
+                      ? "Connecting to server…"
+                      : "Enter your instance key.")}
+                </p>
+                <form
+                  className={styles.stack}
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    setKey(input);
+                    setAttempt((value) => value + 1);
+                  }}
+                >
+                  <TextField
+                    label="API key"
+                    type="password"
+                    value={input}
+                    onChange={setInput}
+                  />
+                  <Button type="submit" loading={connecting}>
+                    Connect
+                  </Button>
+                </form>
+                {drafts.current.size > 0 && (
+                  <p>
+                    Local resource drafts are retained in this tab. Reconnect
+                    without reloading to resume editing.
+                  </p>
+                )}
+              </div>
+            </main>
+          )}
+        </DraftContext.Provider>
+      </TransportContext.Provider>
+    </QueryClientProvider>
   );
 }

@@ -1,3 +1,4 @@
+import "a13n-ui/styles.css";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserApp } from "./app";

@@ -1259,9 +1259,16 @@ def create_webui(
                 return FileResponse(destination, headers={"Cache-Control": "public, max-age=31536000, immutable"})
             return _error("not_found", "Asset not found.", 404)
         segments = path.split("/")
-        recognized = path in {"", "setup", "settings"} or (
-            len(segments) == 2 and segments[0] == "threads" and bool(segments[1])
-        )
+        recognized = path in {
+            "",
+            "setup",
+            "settings",
+            "projects",
+            "settings/resources",
+            "settings/source",
+            "settings/accounts",
+            "settings/catalog",
+        } or (len(segments) == 2 and segments[0] in {"threads", "projects"} and bool(segments[1]))
         if not recognized:
             return _error("not_found", "Route not found.", 404)
         index = static_root / "index.html"

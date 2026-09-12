@@ -18,15 +18,26 @@
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "jsdom": "^29.1.1",
+    "openapi-typescript": "^7.13.0",
     "typescript": "^5.9.3",
     "vite": "^8.2.2",
     "vitest": "^5.0.0"
   },
   "dependencies": {
+    "@codemirror/lang-yaml": "^6.1.3",
+    "@phosphor-icons/react": "^2.1.10",
+    "@tanstack/react-query": "^5.102.8",
+    "a13n-ui": "workspace:*",
+    "codemirror": "^6.0.2",
+    "openapi-fetch": "^0.17.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "react-router": "^8.3.1",
+    "yaml": "^2.9.1"
   }
 }

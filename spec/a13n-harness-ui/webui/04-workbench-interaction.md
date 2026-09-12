@@ -6,6 +6,8 @@ This document owns the browser's default interaction flow, action placement, and
 
 The primary experience is doing work in a conversation. Configuration is available when needed, and code or a terminal can be opened alongside that work. The interface does not require users to understand resource inheritance or runtime internals before sending a prompt.
 
+The workbench uses the shared frontend design system with English interface text only. It has no language selector or translation runtime. Light and dark themes remain available; English-only interface text does not restrict the language of prompts, configuration content, names or comments.
+
 ## Entry and Navigation
 
 1. Open the instance URL and complete the existing key-entry flow if necessary.

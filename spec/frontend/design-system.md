@@ -99,7 +99,7 @@ Base UI controls retain keyboard interaction and disabled semantics. Motion resp
 
 Applications load the shared stylesheet once and opt into base typography with `a13n-root` on the document body, so portaled overlays inherit the same font, line height, and font smoothing as the application. Light is the default theme. The document element toggles the `dark` class, ensuring portaled Select, Dialog, and Tooltip content inherits the same tokens. Per-subtree mixed themes are outside the supported contract.
 
-English is the application default and fallback; Simplified Chinese is supported. Applications own language selection and persistence. Console stores a supported language locally; unavailable browser storage leaves selection usable for the current session. Shared components have no translation runtime or locale persistence.
+Applications own their language scope. Console uses English as the default and fallback and supports Simplified Chinese; it stores a supported language locally, with session-only selection when browser storage is unavailable. Harness UI WebUI uses English only and has no language selector or translation runtime. Shared components receive application-owned strings and have no translation runtime or locale persistence.
 
 ## Development Showcase and Validation
 

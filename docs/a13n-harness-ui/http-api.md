@@ -1,6 +1,6 @@
 # Harness UI HTTP API
 
-The optional browser server exposes a local App API even though its bundled browser only implements authentication/status. These endpoints do not imply that browser chat, configuration editors, Host Files, Git, or terminal panels are implemented.
+The optional browser server exposes a local App API. Its bundled browser currently implements workbench entry, setup, provider-account/key management, configuration editing, Project readiness and page presence. These endpoints do not imply that browser chat, Host Files, Git or terminal panels are implemented.
 
 This is **not Service Native `/api/v1`**. It has a shared instance access key, process-local operation receipts, and best-effort live subscriptions. Use the [browser-server guide](webui.md) to start/configure the listener and [Python embedding guide](embedding.md) for App ownership.
 
