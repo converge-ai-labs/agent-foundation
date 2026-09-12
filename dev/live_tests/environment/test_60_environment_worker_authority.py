@@ -6,7 +6,6 @@ from uuid import uuid4
 
 import pytest
 
-from ..infrastructure.management_support import last_tool_result
 from ..infrastructure.round_two_lab import open_lab, private_json
 from .environment_backends import EnvironmentBackend
 from .environment_workers import add_second_worker, reset_workers, shell
@@ -54,7 +53,13 @@ async def test_revoked_user_cannot_borrow_other_worker_authority(authorities, re
     )
     token = secrets.token_urlsafe(32)
     private_json(pair.lab.root / "fault-principals.json", [{"id": account["id"], "token": token}])
-    case = await pair.journey.case(gate_at=0, steps=[shell("printf revoked > revoked")])
+    # The tenth request still owns the accepted IAM snapshot; request eleven
+    # must refresh it before dispatching another model request or tool.
+    case = await pair.journey.case(
+        gate_at=9,
+        steps=[shell(f"printf accepted > accepted-{index}") for index in range(10)]
+        + [shell("printf revoked > revoked")],
+    )
     async with pair.only(pair.workers[1]):
         receipt = await pair.journey.live.request(
             "POST",
@@ -77,8 +82,10 @@ async def test_revoked_user_cannot_borrow_other_worker_authority(authorities, re
         },
     )
     await pair.journey.live.release(case)
-    await pair.journey.live.finish(receipt["run_id"])
-    assert last_tool_result(pair.journey.observations(case)[-1])["ok"] is False
+    result = await pair.journey.live.finish(receipt["run_id"], "failed")
+    assert result["failure"]["code"] == "attempt_authorization_denied"
+    assert len(pair.journey.observations(case)) == 10
+    assert all((target.root / f"accepted-{index}").read_text() == "accepted" for index in range(10))
     assert not (target.root / "revoked").exists()
     assert (await pair.record(environment))["active_runs"] == [active["run_id"]]
     await pair.journey.live.release(active_case)

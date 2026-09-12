@@ -114,21 +114,21 @@ def test_managed_upload_and_agent_payloads_match_current_contracts():
 
 
 @pytest.mark.anyio
-async def test_composio_fixture_is_usable_by_production_adapter(tmp_path, monkeypatch):
-    import ipaddress
-
+async def test_composio_fixture_is_usable_by_production_adapter(tmp_path):
     from a13n_service.connectivity.connectors.contracts import ConnectionBinding, SetupContext
     from a13n_service.connectivity.connectors.http import ConnectorHttpClient
     from a13n_service.connectivity.connectors.providers.composio.runtime import ComposioProvider
     from a13n_service.connectivity.connectors.providers.configuration import ApiKeyCredentials
-    from a13n_service.endpoint_policy import EndpointPolicy
 
-    monkeypatch.setattr("a13n_service.endpoint_policy._resolve_addresses", lambda *_: [ipaddress.ip_address("8.8.8.8")])
-    origin = "https://backend.composio.dev"
+    from ..harness_integration.connector_host import PeerEndpoint
+
+    origin = "https://127.0.0.1:9443"
     app = FastAPI()
     app.include_router(connectivity_router(tmp_path, {"token": "fixture-token", "control_url": origin}))
     async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app)) as http:
-        policy = EndpointPolicy()
+        policy = PeerEndpoint(origin)
+        with pytest.raises(ValueError, match="unexpected upstream"):
+            await policy.validate("https://unexpected.example")
         provider = ComposioProvider(
             ConnectorHttpClient(http, policy, response_max_bytes=1024 * 1024),
             ApiKeyCredentials(api_key="fixture-token"),

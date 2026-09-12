@@ -115,7 +115,7 @@ async def cleanup_provider_lab(journey):
 
 @asynccontextmanager
 async def configured_provider_lab(section, settings):
-    async with open_lab(suite="management") as lab:
+    async with open_lab(suite="management", local_connectors=section != "connector") as lab:
         # Cloud catalog discovery can outlast the local peers' 15-second HTTP budget.
         lab.client.http.timeout = httpx2.Timeout(90)
         journey = ManagementJourney(lab)

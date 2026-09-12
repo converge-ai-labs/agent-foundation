@@ -148,14 +148,22 @@ def local_app(config: dict, role: str):
             factories.append(RunFaultFactory(config["run_faults"].get("plugin_state_version")))
         catalog = build_harness_plugin_factory_catalog(explicit_factories=tuple(factories))
         logger.info("Live-test Worker installed plugin factories: %s", ", ".join(catalog))
+    connector_host = None
+    if config.get("local_connectors"):
+        from ..harness_integration.connector_host import ConnectorHost
+
+        connector_host = ConnectorHost(config, settings)
     app = create_app(
         settings,
         components=Components(
             request_authenticator=authenticate,
             plugin_factory_catalog=catalog,
             environment_provider_catalog=environment_catalog,
+            connector_provider_registry=connector_host.registry if connector_host else None,
         ),
     )
+    if connector_host is not None:
+        connector_host.install(app)
     if reverse_envd is not None:
         reverse_envd.install(app)
     if role == "control":

@@ -92,20 +92,15 @@ jobs:
       matrix:
         include:
           - {suite: core, shard: 1, shards: 1}
-          - {suite: functional, shard: 1, shards: 2}
-          - {suite: functional, shard: 2, shards: 2}
-          - {suite: control, shard: 1, shards: 3}
-          - {suite: control, shard: 2, shards: 3}
-          - {suite: control, shard: 3, shards: 3}
-          - {suite: fork-queue, shard: 1, shards: 3}
-          - {suite: fork-queue, shard: 2, shards: 3}
-          - {suite: fork-queue, shard: 3, shards: 3}
-          - {suite: run-faults, shard: 1, shards: 3}
-          - {suite: run-faults, shard: 2, shards: 3}
-          - {suite: run-faults, shard: 3, shards: 3}
+          - {suite: functional, shard: 1, shards: 1}
+          - {suite: control, shard: 1, shards: 2}
+          - {suite: control, shard: 2, shards: 2}
+          - {suite: fork-queue, shard: 1, shards: 2}
+          - {suite: fork-queue, shard: 2, shards: 2}
+          - {suite: run-faults, shard: 1, shards: 2}
+          - {suite: run-faults, shard: 2, shards: 2}
           - {suite: environment-native, shard: 1, shards: 1}
-          - {suite: environment-service, shard: 1, shards: 2}
-          - {suite: environment-service, shard: 2, shards: 2}
+          - {suite: environment-service, shard: 1, shards: 1}
     steps:
       - name: Checkout
         uses: actions/checkout@v6

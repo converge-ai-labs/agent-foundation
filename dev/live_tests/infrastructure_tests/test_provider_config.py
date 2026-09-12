@@ -272,13 +272,16 @@ async def test_cleanup_attempts_every_owned_environment_even_after_run_failure()
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("failure", ["provision", "test"])
-async def test_provider_cleanup_precedes_lab_teardown_after_failure(monkeypatch, failure):
+@pytest.mark.parametrize("section", ["environment", "connector"])
+async def test_provider_cleanup_precedes_lab_teardown_after_failure(monkeypatch, failure, section):
     from ..providers import real_providers
 
     events = []
 
     @asynccontextmanager
     async def lab(**kwargs):
+        # Configured Connector accounts must never be routed to the scripted peer.
+        assert kwargs["local_connectors"] == (section != "connector")
         try:
             yield SimpleNamespace(client=SimpleNamespace(config={"workspace_id": "ws_owned"}, http=SimpleNamespace()))
         finally:
@@ -296,6 +299,6 @@ async def test_provider_cleanup_precedes_lab_teardown_after_failure(monkeypatch,
     monkeypatch.setattr(real_providers, "provision_provider", provision)
     monkeypatch.setattr(real_providers, "cleanup_provider_lab", cleanup)
     with pytest.raises(RuntimeError):
-        async with real_providers.configured_provider_lab("environment", None):
+        async with real_providers.configured_provider_lab(section, None):
             raise RuntimeError("test failed")
     assert events == ["remote cleanup", "lab removed"]

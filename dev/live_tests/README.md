@@ -50,19 +50,31 @@ uv run --locked python -m pytest dev/live_tests/model --live-management
 
 [Live Tests CI](../../.github/workflows/ci-live-tests.yml) runs on relevant non-draft pull requests, pushes to `main`, and manual dispatch. One offline support job validates fixtures and collection before the journey jobs run. The final `Live tests` check requires support and every journey job to succeed; a skipped or cancelled job cannot satisfy the gate.
 
-The reviewed selections live in `ci.py`. The current selection contains 570 parameterized cases across seven suites, without the 100-round Worker stress repetitions. CI partitions the larger suites into disjoint file/node selections: one core job, two functional jobs, three control jobs, three Fork/queue jobs, three Run-fault jobs, one native Environment job and two Service Environment jobs. At most six of these fifteen jobs run concurrently. Each job runs serially; parallelism is between jobs with separate runners, not pytest-xdist inside fault labs. Keeping all parameters of a selected file/node together preserves module-scoped Environment fixtures.
+The reviewed selections live in `ci.py`. CI runs 398 selected cases across seven suites; the full parameter matrices remain available through the ordinary live-test opt-ins below. There is one job each for core, functional, native Environment and Service Environment, and two jobs each for control, Fork/queue and Run faults. At most six of these ten jobs run concurrently. Each job runs serially with its own dependencies and processes. Sharding keeps every selected node from a module in one job, preserving module-scoped backend setup.
 
 | Suite                 | Selected cases | Coverage                                                                                                                                                                                   |
 | --------------------- | -------------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `core`                |             21 | Cases 01–08, including Native/Hosted protocol contracts, in one owned lab                                                                                                                  |
-| `functional`          |             38 | Queue, Retry, Fork, async children, Workspace isolation, Agent/Plugin/Skill/Asset execution, structured output, client feedback, and direct-local Environment selection/access/inheritance |
-| `control`             |             80 | Cases 45–50: acceptance, waiting, concurrency, branches, queue and inbox boundaries                                                                                                        |
-| `fork-queue`          |             85 | Cases 51–56, including both case-54 files: child results, Steer/queue races and Fork independence                                                                                          |
-| `run-faults`          |             66 | Cases 37–42: persistence, control receipts, budgets/drain, acceptance/queue faults, current authority and dependency failures                                                              |
-| `environment-native`  |            201 | Local/Docker/envd files, lifecycle, transport failures, bootstrap boundaries and real ENOSPC                                                                                               |
-| `environment-service` |             79 | Docker case-21 variants, backend conformance and multi-Worker Environment lifecycle, sharing, policy, dependency and authority boundaries                                                  |
+| `functional`          |             35 | Queue, Retry, Fork, async children, Workspace isolation, Agent/Plugin/Skill/Asset execution, structured output, client feedback, and direct-local Environment selection/access/inheritance |
+| `control`             |             63 | Cases 45–50: acceptance, waiting, concurrency, branches, queue and inbox boundaries                                                                                                        |
+| `fork-queue`          |             49 | Cases 51–56, including both case-54 files: child results, Steer/queue races and Fork independence                                                                                          |
+| `run-faults`          |             59 | Cases 37–42: persistence, control receipts, budgets/drain, acceptance/queue faults, current authority and dependency failures                                                              |
+| `environment-native`  |            112 | Local/Docker/envd files, lifecycle, transport failures, bootstrap boundaries and real ENOSPC                                                                                               |
+| `environment-service` |             59 | Docker case-21 variants, backend conformance and multi-Worker Environment lifecycle, sharing, policy, dependency and authority boundaries                                                  |
 
-CI uses scripted local model endpoints and local MCP/Connector fixtures. It creates its own PostgreSQL, Redis and RustFS, starts real Control/Worker processes, and uses real direct-local, Local Envd, Docker, HTTP Envd and reverse-WebSocket Envd targets. Model-update case 23, real Model/Connector/Search account tests, E2B, and performance benchmarks are excluded. E2B parameters in mixed Environment modules are deselected before fixture setup, so private Provider configuration is not read. Eleven selected Environment combinations remain explicitly skipped because external daemons have no managed creation, some providers admit only one concurrent Session, and Docker has no native TTL renewal; these skips are not passing lifecycle coverage.
+CI uses scripted local model endpoints and local MCP/Connector fixtures. It creates its own PostgreSQL, Redis and RustFS, starts real Control/Worker processes, and uses real direct-local, Local Envd, Docker, HTTP Envd and reverse-WebSocket Envd targets. Model-update case 23, real Model/Connector/Search account tests, E2B, and performance benchmarks are excluded. E2B parameters in mixed Environment modules are deselected before fixture setup, so private Provider configuration is not read. Five selected unsupported Environment combinations remain explicitly skipped because external daemons have no managed creation, some providers admit only one concurrent Session, and Docker has no native TTL renewal; these skips are not passing lifecycle coverage.
+
+The reduced combinations preserve these representative boundaries:
+
+- Fork versus Control: Continue, Interrupt and Feedback, each with Fork paused and with the source command paused (6 cases).
+- Fork versus execution: model, tool and checkpoint phases in both pause orders (6); replacement ownership after claim in both orders (2); explicit and shared queue handoff in both orders (4). The duplicate planned-handoff cross product is omitted; the dedicated SIGTERM/checkpoint and drain/lease tests remain.
+- Terminal submission: absent, completed and waiting heads, each with and without an existing queue, distributing failed/cancelled outcomes across the six cases.
+- Lost successor replies: Continue before/after commit plus committed Fork, Retry, Feedback and waiting Continue (6). Async-child delivery retains running, approval-waiting, completed and cancelled parents (4).
+- Model streams: one truncated, malformed or timeout failure plus repeated truncation that exhausts recovery (4); explicit 429 recovery and exhausted 503 rejection (2). PostgreSQL, Redis and S3 outage/recovery tests remain.
+- Environment sharing: first preparation with both `on_run`/`on_use` for direct-local and Docker (4); Docker cancellation/crash, Worker crash with HTTP Envd and cancellation with WebSocket Envd (4). Tools/access, template and lifecycle conformance still exercise all four non-cloud Service backends. Both principal-disable and role-revocation tests check the request-11 IAM refresh boundary and the other Worker's independent authority.
+- Native file failures: every missing-file operation and wrong-type operation remains represented, distributed across backends instead of their full Cartesian products (10 and 8). Traversal, symlink escape, read-only denial, real OS permissions and aborted writes retain every backend. Docker bootstrap corruption covers all four operations and four corruption kinds in four representative pairs.
+
+Lab setup migrates the disposable database and initializes both isolated identities in one bootstrap process, replacing three interpreter startups (two in core). Every case still owns fresh databases, buckets, fault relays and Service processes. CI runner setup falls from fifteen jobs to ten; native daemon/image builds fall from three jobs to two. `--basetemp` creates missing parent directories before pytest starts. The local Composio Host supplies its HTTPS peer through trusted composition while provider requests retain the production empty configuration schema; Docker file evidence is read as the container user through Docker, independently of Harness tools.
 
 Run the same entry points locally:
 
@@ -72,8 +84,8 @@ make live-test-ci suite=environment-service LIVE_TEST_ARGS='--collect-only'
 # The first round needs Docker but no native daemon build.
 make live-test-ci suite=core
 make live-test-ci suite=control LIVE_TEST_ARGS='-k waiting -x'
-# Reproduce exactly the second of the three Control CI jobs.
-make live-test-ci suite=control LIVE_TEST_ARGS='--shard=2/3'
+# Reproduce exactly the second of the two Control CI jobs.
+make live-test-ci suite=control LIVE_TEST_ARGS='--shard=2/2'
 # Build the source daemon, sandbox and both limited-storage fixture images.
 make live-test-ci-environment-build
 make live-test-ci suite=environment-native

@@ -56,7 +56,11 @@ async def test_environment_backend_tools_and_access(environment_backend):
         async with backend.target() as target:
             environment = await target.allocate(access=access)
             await assert_access_policy(
-                journey, environment, access, root=None if backend.kind == "e2b" else target.root
+                journey,
+                environment,
+                access,
+                root=None if backend.kind == "e2b" else target.root,
+                read_text=target.read_text,
             )
             logger.info(
                 "Environment backend=%s access=%s passed real operation/effect assertions", backend.kind, access

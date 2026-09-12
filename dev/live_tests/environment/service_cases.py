@@ -128,7 +128,7 @@ async def assert_template_preparation(journey, template, revised, *, preparation
     assert len(set(allocated)) == 2 and after_ids - before_ids == set(allocated)
 
 
-async def assert_access_policy(journey, environment, access, *, root=None):
+async def assert_access_policy(journey, environment, access, *, root=None, read_text=None):
     marker = "WRITTEN_BY_HARNESS_" + uuid4().hex
     proof = "PREEXISTING_FILE_CONTENT"
     if root is not None:
@@ -168,9 +168,9 @@ async def assert_access_policy(journey, environment, access, *, root=None):
     if root is not None:
         assert (root / "output.txt").exists() == (access in {"read_write", "full"})
         if access in {"read_write", "full"}:
-            assert (root / "output.txt").read_text() == marker
+            assert (await read_text("output.txt") if read_text else (root / "output.txt").read_text()) == marker
         if access == "full":
-            assert (root / "shell-copy.txt").read_text() == proof
+            assert (await read_text("shell-copy.txt") if read_text else (root / "shell-copy.txt").read_text()) == proof
         else:
             assert not (root / "shell-copy.txt").exists()
     if access != "full":

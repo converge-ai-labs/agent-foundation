@@ -25,10 +25,10 @@ from .infrastructure.config import CONFIG, STATE, load_config, save_config
 from .infrastructure.host import authenticated_control, local_app, settings_for
 
 
-async def initialize() -> None:
-    if CONFIG.exists():
+async def initialize(config=None) -> None:
+    if config is None and CONFIG.exists():
         config = load_config()
-    else:
+    if config is None:
         config = {
             "control_url": "http://127.0.0.1:18000",
             "worker_url": "http://127.0.0.1:18001",
@@ -111,6 +111,16 @@ async def initialize() -> None:
     finally:
         await engine.dispose()
     print(f"Created local Workspace {config['workspace_id']}; private configuration: {CONFIG}")
+
+
+async def bootstrap() -> None:
+    """Migrate an owned lab and seed both identities in one interpreter startup."""
+    settings = load_settings()
+    await anyio.to_thread.run_sync(DatabaseMigrator(settings.database_config(), settings.migration_config()).upgrade)
+    config = load_config()
+    await initialize(config)
+    if "other_identity" in config:
+        await initialize({**config, **config["other_identity"]})
 
 
 async def provision() -> None:
@@ -234,10 +244,12 @@ async def provision() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("init", "setup", "control", "worker", "authenticated-control"))
+    parser.add_argument("command", choices=("init", "bootstrap", "setup", "control", "worker", "authenticated-control"))
     args = parser.parse_args()
     if args.command == "init":
         anyio.run(initialize)
+    elif args.command == "bootstrap":
+        anyio.run(bootstrap)
     elif args.command == "setup":
         anyio.run(provision)
     elif args.command == "authenticated-control":

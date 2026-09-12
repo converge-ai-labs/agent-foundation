@@ -46,9 +46,7 @@ async def connection(journey, kind):
         {
             "name": "Live Composio adapter",
             "type": "composio",
-            "configuration": {
-                "endpoint": journey.live.config["peer_url"],
-            },
+            "configuration": {},
             "credentials": {"api_key": journey.live.config["token"]},
         },
     )

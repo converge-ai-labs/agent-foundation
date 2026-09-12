@@ -46,7 +46,8 @@ def test_reviewed_ci_journeys_collect_once_without_external_or_stress_cases(coll
             for token in ("/model/", "/providers/", "/performance/", "/infrastructure_tests/", "e2b")
         )
     assert len(collected_suites["core"]) == 21
-    assert len(collected_suites["functional"]) == 38
+    assert len(collected_suites["functional"]) == 35
+    assert len(seen) == 398
     files = {case.split("::")[0] for case in seen}
     root = ci.TEST_ROOT
     # All requested control/fault files and every non-cloud Environment module
@@ -132,6 +133,16 @@ def test_empty_shard_fails_before_invoking_pytest(monkeypatch):
     assert caught.value.code == 2
 
 
+def test_ci_creates_missing_basetemp_parent_for_real_pytest(tmp_path, monkeypatch):
+    test = tmp_path / "test_native_temp.py"
+    test.write_text("def test_workspace(tmp_path):\n    (tmp_path / 'native-proof').write_text('ready')\n")
+    monkeypatch.setitem(ci.SUITES, "environment-native", ci.Suite((str(test),), ()))
+    basetemp = tmp_path / "runner" / "live-pytest" / "native-1"
+    assert not basetemp.parent.exists()
+    assert ci.main(["environment-native", f"--basetemp={basetemp}"]) == 0
+    assert list(basetemp.rglob("native-proof"))
+
+
 @pytest.mark.parametrize(
     ("support", "journeys"),
     [
@@ -168,6 +179,11 @@ def test_workflow_executes_every_suite_and_requires_all_results():
         selected = [selection for item in shards for selection in ci.selections(suite, (item["shard"], item["shards"]))]
         assert len(selected) == len(set(selected))
         assert set(selected) == set(ci.SUITES[suite].selections)
+        module_owners = {}
+        for item in shards:
+            for selection in ci.selections(suite, (item["shard"], item["shards"])):
+                module = selection.split("::", 1)[0]
+                assert module_owners.setdefault(module, item["shard"]) == item["shard"]
     assert journeys["strategy"]["fail-fast"] is False
     assert jobs["validation"]["needs"] == ["support", "journeys"]
     gate = jobs["validation"]["steps"][0]

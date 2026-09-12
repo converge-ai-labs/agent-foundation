@@ -55,6 +55,33 @@ class BackendTarget:
     process: asyncio.subprocess.Process | None
     proxy: TCPProxy | None = None
 
+    async def read_text(self, path):
+        if self.backend.kind != "docker":
+            return await asyncio.to_thread((self.root / path).read_text)
+        # A daemon-created 0600 file belongs to the container user. Inspect it
+        # through Docker, independently of the Service/Harness file tools.
+        import docker
+
+        def read():
+            client = docker.from_env()
+            try:
+                containers = [
+                    container
+                    for container in client.containers.list()
+                    if any(
+                        mount.get("Source") == str(self.root) and mount.get("Destination") == "/workspace"
+                        for mount in container.attrs.get("Mounts", [])
+                    )
+                ]
+                assert len(containers) == 1, "Expected one owned container for this bind directory"
+                result = containers[0].exec_run(["cat", "/workspace/" + path])
+                assert result.exit_code == 0, result.output
+                return result.output.decode()
+            finally:
+                client.close()
+
+        return await asyncio.to_thread(read)
+
     async def restart_daemon(self):
         await self.backend.lab.stop(self.process)
         self.process = await self.backend.launch_daemon(self.root.parent)

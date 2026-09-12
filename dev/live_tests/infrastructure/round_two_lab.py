@@ -189,6 +189,7 @@ async def open_lab(
     long_session=None,
     run_faults=None,
     performance=None,
+    local_connectors=True,
 ):
     if suite not in {"core", "round-two", "management"}:
         raise ValueError(f"Unknown live-test suite: {suite}")
@@ -251,7 +252,11 @@ async def open_lab(
         from .fixture_peer import certificate_context, create_certificate
 
         if management:
-            config.update(peer_url=free_origin().replace("http:", "https:"), **create_certificate(root))
+            config.update(
+                peer_url=free_origin().replace("http:", "https:"),
+                local_connectors=local_connectors,
+                **create_certificate(root),
+            )
         if suite != "core":
             # Same Organization, a different Workspace/User; do not mask Workspace isolation defects.
             config["other_identity"] = {
@@ -325,14 +330,7 @@ async def open_lab(
         if management:
             peer = await lab.spawn("dev.live_tests.infrastructure.fixture_peer")
             await lab.ready(peer, config["peer_url"], verify=certificate_context(config))
-        await lab.command("a13n_service", "db", "upgrade")
-        await lab.command("dev.live_tests.manage", "init")
-        if suite != "core":
-            other_path = root / "other.json"
-            private_json(other_path, {**config, **config["other_identity"]})
-            await lab.command(
-                "dev.live_tests.manage", "init", environment={**environment, "LIVE_TEST_CONFIG": str(other_path)}
-            )
+        await lab.command("dev.live_tests.manage", "bootstrap")
         control = await lab.spawn("dev.live_tests.manage", "control")
         lab.control = control
         await lab.ready(control, config["control_url"])
