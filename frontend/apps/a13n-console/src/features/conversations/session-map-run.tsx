@@ -13,7 +13,7 @@ import {
 } from "../../shared/feedback";
 import { runPath } from "./api";
 import { useExecution } from "./use-execution";
-import { MapItem } from "./session-map-item";
+import { MapExecution } from "./session-map-execution";
 import { inputText } from "./input";
 import styles from "./session-map.module.css";
 
@@ -79,10 +79,11 @@ export function MapRun({
               aria-hidden="true"
             />
             <span className={styles.runLabel}>{label}</span>
+            <span className={styles.runExcerpt}>{input}</span>
             {branchPoint && (
               <span className={styles.branchPoint}>
                 <GitBranchIcon size={12} />
-                {t("Branch point")}
+                <span className="sr-only">{t("Branch point")}</span>
               </span>
             )}
             {expanded && execution && (
@@ -134,30 +135,7 @@ export function MapRun({
           {state.status === "unavailable" ? (
             <p>{t("Execution history is unavailable or incomplete.")}</p>
           ) : execution ? (
-            <>
-              <p className={styles.itemsExplanation}>
-                {t("Each step is one model call; tools belong to that step.")}
-              </p>
-              <ul>
-                {execution.steps.map((step, index) => (
-                  <li key={step.id} className={styles.step}>
-                    <details open>
-                      <summary>
-                        <span>
-                          {t("Step {{number}}", { number: index + 1 })}
-                        </span>
-                        <StateBadge state={step.state} />
-                      </summary>
-                      <ul>
-                        {step.items.map((id) => (
-                          <MapItem key={id} item={execution.items.get(id)!} />
-                        ))}
-                      </ul>
-                    </details>
-                  </li>
-                ))}
-              </ul>
-            </>
+            <MapExecution execution={execution} />
           ) : null}
         </div>
       )}

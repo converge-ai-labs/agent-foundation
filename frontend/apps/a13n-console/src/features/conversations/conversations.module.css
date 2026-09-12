@@ -189,8 +189,7 @@
   font-weight: 500;
 }
 .message {
-  display: flex;
-  gap: 10px;
+  min-width: 0;
 }
 .identityAvatar {
   width: 18px;
@@ -209,19 +208,29 @@
   border-radius: 7px;
   flex-shrink: 0;
 }
-.messageBody {
+.agentResponse {
   min-width: 0;
-  flex: 1;
 }
-.messageHeading {
+.agentHeading {
   display: flex;
-  gap: 8px;
   align-items: center;
-  margin: 3px 0 10px;
+  gap: 10px;
+  margin-bottom: 10px;
   font-size: 12px;
 }
-.messageHeading strong {
+.agentHeading strong {
   font-weight: 500;
+}
+.agentContent {
+  display: grid;
+  min-width: 0;
+  gap: 14px;
+  padding-left: 36px;
+}
+.agentContent > .tool,
+.agentContent > .reasoning,
+.agentContent > .structuredOutput {
+  margin-left: 0;
 }
 .messageActions {
   display: flex;
@@ -678,5 +687,11 @@
   }
   .sessionBody[data-map-open] > .sessionContent {
     grid-row: 2;
+  }
+}
+
+@media (max-width: 680px) {
+  .agentContent {
+    padding-left: 0;
   }
 }

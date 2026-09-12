@@ -285,52 +285,46 @@ function RunContent({
           agentName={agent.data?.name}
           agentId={run.agent_id}
           agentImageUrl={agent.data?.image_url}
-        />
-        {!live.items.some(
-          (item) =>
-            item.kind === "text_message" &&
-            item.role === "assistant" &&
-            item.text,
-        ) &&
-          run.output_text && (
-            <article className={styles.message}>
-              <div className={styles.messageBody}>
-                <strong>{agent.data?.name ?? t("Agent")}</strong>
-                <MarkdownContent text={run.output_text} />
-              </div>
-            </article>
-          )}
-        {active && (
-          <p className={styles.liveStatus} role="status">
-            {t(
-              live.state === "connected"
-                ? "Agent is working…"
-                : "Connecting to run…",
-            )}
-          </p>
-        )}
-        {run.failure != null && (
-          <section className={styles.failure}>
-            <h3>{t("The agent could not finish this run")}</h3>
-            <p>
+        >
+          {!live.items.some(
+            (item) =>
+              item.kind === "text_message" &&
+              item.role === "assistant" &&
+              item.text,
+          ) &&
+            run.output_text && <MarkdownContent text={run.output_text} />}
+          {active && (
+            <p className={styles.liveStatus} role="status">
               {t(
-                "Your messages are saved. Review the details or retry this run.",
+                live.state === "connected"
+                  ? "Agent is working…"
+                  : "Connecting to run…",
               )}
             </p>
-            <DisclosureSection title={<>{t("Error details")}</>}>
-              <JsonView value={run.failure} />
+          )}
+          {run.failure != null && (
+            <section className={styles.failure}>
+              <h3>{t("The agent could not finish this run")}</h3>
+              <p>
+                {t(
+                  "Your messages are saved. Review the details or retry this run.",
+                )}
+              </p>
+              <DisclosureSection title={<>{t("Error details")}</>}>
+                <JsonView value={run.failure} />
+              </DisclosureSection>
+            </section>
+          )}
+          {run.output != null && run.output !== run.output_text && (
+            <DisclosureSection
+              className={styles.structuredOutput}
+              defaultOpen
+              title={<>{t("Structured output")}</>}
+            >
+              <JsonView value={run.output} />
             </DisclosureSection>
-          </section>
-        )}
-        {run.output != null && run.output !== run.output_text && (
-          <DisclosureSection
-            className={styles.structuredOutput}
-            defaultOpen
-            title={<>{t("Structured output")}</>}
-          >
-            <JsonView value={run.output} />
-          </DisclosureSection>
-        )}
+          )}
+        </PresentedItems>
       </div>
       {waiting && run.sealed_state_digest_sha256 && (
         <>

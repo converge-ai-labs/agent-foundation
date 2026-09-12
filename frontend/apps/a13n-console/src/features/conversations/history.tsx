@@ -97,14 +97,15 @@ function HistoricalRun({ runId }: { runId: string }) {
         agentName={agent.data?.name}
         agentId={run.agent_id}
         agentImageUrl={agent.data?.image_url}
-      />
-      {!items.some(
-        (item) =>
-          item.kind === "text_message" &&
-          item.role === "assistant" &&
-          item.text,
-      ) &&
-        run.output_text && <MarkdownContent text={run.output_text} />}
+      >
+        {!items.some(
+          (item) =>
+            item.kind === "text_message" &&
+            item.role === "assistant" &&
+            item.text,
+        ) &&
+          run.output_text && <MarkdownContent text={run.output_text} />}
+      </PresentedItems>
       {!retained.data.available && (
         <p className={styles.notice}>
           {t("Detailed items are currently unavailable for this run.")}

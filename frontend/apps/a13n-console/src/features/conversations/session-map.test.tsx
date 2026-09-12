@@ -220,7 +220,7 @@ it("nests branches at their origin, previews on hover, and selects the exact run
   await user.click(
     screen.getAllByRole("button", { name: "Inspect steps for Run 1" })[0]!,
   );
-  expect(await screen.findByText("Step 1")).toBeTruthy();
+  expect(await screen.findByText("LLM call")).toBeTruthy();
   expect(requests.filter((path) => path.endsWith("/stream"))).toHaveLength(1);
   await user.click(root);
   expect(

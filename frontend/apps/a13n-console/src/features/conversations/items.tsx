@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { DisclosureSection } from "a13n-ui";
 
 import {
@@ -15,25 +16,29 @@ import { MarkdownContent } from "../../shared/markdown";
 import { isObject, type PresentedItem } from "./projection";
 import { inputText } from "./input";
 import { AssetAttachment } from "./attachment";
+import { ToolDetails } from "./tool-details";
 import { AgentAvatar } from "../agents/avatar";
-import { CopyableId, CopyButton } from "../../shared/copy";
+import { CopyButton } from "../../shared/copy";
 export function PresentedItems({
   items,
   runState,
   agentName,
   agentId,
   agentImageUrl,
+  children,
 }: {
   items: readonly PresentedItem[];
   runState?: string;
   agentName?: string;
   agentId?: string;
   agentImageUrl?: string | null;
+  children?: ReactNode;
 }) {
   const { t } = useTranslation();
-  return items
+  const content = items
     .filter(
       (item) =>
+        item.display !== false &&
         item.kind !== "run_output" &&
         (item.kind !== "text_message" || item.role === "assistant"),
     )
@@ -52,7 +57,8 @@ export function PresentedItems({
                 <span className={styles.toolState}>
                   {item.state === "completed" ? (
                     <CheckIcon size={13} aria-label={t("Completed")} />
-                  ) : item.state === "streaming" && runState !== "waiting" ? (
+                  ) : item.state === "streaming" &&
+                    ["running", "queued"].includes(runState ?? "running") ? (
                     <CircleNotchIcon
                       size={13}
                       className={styles.spinning}
@@ -60,25 +66,24 @@ export function PresentedItems({
                     />
                   ) : (
                     <StateBadge
-                      state={runState === "waiting" ? "waiting" : item.state}
+                      state={
+                        item.state === "streaming"
+                          ? ["waiting", "failed", "cancelled"].includes(
+                              runState ?? "",
+                            )
+                            ? runState === "waiting"
+                              ? "waiting"
+                              : "interrupted"
+                            : "unknown"
+                          : item.state
+                      }
                     />
                   )}
                 </span>
               </span>
             }
           >
-            <div className={styles.toolBody}>
-              <CopyableId value={item.toolName || item.id} />
-              <h4>{t("Arguments")}</h4>
-              <JsonView value={parseJson(item.arguments)} />
-              {item.result !== undefined && (
-                <>
-                  <h4>{t("Result")}</h4>
-                  <JsonView value={parseJson(item.result)} />
-                </>
-              )}
-              {item.failure !== undefined && <JsonView value={item.failure} />}
-            </div>
+            <ToolDetails item={item} />
           </DisclosureSection>
         );
       if (item.kind === "reasoning_message")
@@ -116,39 +121,45 @@ export function PresentedItems({
         );
       return (
         <article key={item.id} className={styles.message} data-role={item.role}>
-          <AgentAvatar
-            name={agentName ?? t("Agent")}
-            id={agentId}
-            url={agentImageUrl}
-            className={styles.messageAvatar}
+          <MarkdownContent
+            text={
+              item.text ||
+              (item.state === "streaming"
+                ? t("Thinking…")
+                : t("No text content"))
+            }
           />
-          <div className={styles.messageBody}>
-            <div className={styles.messageHeading}>
-              <strong>{agentName ?? t("Agent")}</strong>
-              {item.state !== "completed" && <StateBadge state={item.state} />}
+          {item.text && item.state === "completed" && (
+            <div className={styles.messageActions}>
+              <CopyButton
+                value={item.text}
+                iconOnly
+                copyLabel={t("Copy message")}
+              />
             </div>
-            <MarkdownContent
-              text={
-                item.text ||
-                (item.state === "streaming"
-                  ? t("Thinking…")
-                  : t("No text content"))
-              }
-            />
-            {item.text && item.state === "completed" && (
-              <div className={styles.messageActions}>
-                <CopyButton
-                  value={item.text}
-                  iconOnly
-                  copyLabel={t("Copy message")}
-                />
-              </div>
-            )}
-            {item.failure !== undefined && <JsonView value={item.failure} />}
-          </div>
+          )}
+          {item.failure !== undefined && <JsonView value={item.failure} />}
         </article>
       );
     });
+  if (content.length === 0 && !children) return null;
+  return (
+    <section className={styles.agentResponse} aria-label={t("Agent response")}>
+      <div className={styles.agentHeading}>
+        <AgentAvatar
+          name={agentName ?? t("Agent")}
+          id={agentId}
+          url={agentImageUrl}
+          className={styles.messageAvatar}
+        />
+        <strong>{agentName ?? t("Agent")}</strong>
+      </div>
+      <div className={styles.agentContent}>
+        {content}
+        {children}
+      </div>
+    </section>
+  );
 }
 export function InputContent({
   input,
@@ -235,12 +246,4 @@ export function InputContent({
         )}
     </>
   );
-}
-function parseJson(value: unknown) {
-  if (typeof value !== "string") return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
 }
