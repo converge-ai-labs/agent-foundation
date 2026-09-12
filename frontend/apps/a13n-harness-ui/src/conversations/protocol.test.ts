@@ -63,7 +63,7 @@ afterAll(async () => {
     clearTimeout(kill);
   }
   vi.unstubAllGlobals();
-});
+}, 20000);
 async function until(predicate: () => boolean) {
   await vi.waitFor(() => expect(predicate()).toBe(true), {
     timeout: 10000,

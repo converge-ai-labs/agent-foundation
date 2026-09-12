@@ -51,6 +51,7 @@ import { useLiveWorkbench, type Profile } from "./presence";
 import styles from "./workbench.module.css";
 import { ConversationNavigation } from "../conversations/navigation";
 import { ConversationPage } from "../conversations/conversation";
+import { NativeWorkspace } from "../native/workspace";
 
 import { readPreference, writePreference } from "./preferences";
 
@@ -252,35 +253,37 @@ export function Workbench({
               error={statusQuery.error}
               retry={() => void statusQuery.refetch()}
             />
-            <Routes>
-              <Route path="/" element={<HomePage />} />
-              <Route
-                path="/threads/:threadId"
-                element={
-                  <ConversationPage
-                    profile={profile}
-                    unauthorized={unauthorized}
-                  />
-                }
-              />
-              <Route path="/setup" element={<SetupPage />} />
-              <Route path="/projects" element={<ProjectsPage />} />
-              <Route path="/projects/:projectId" element={<ProjectPage />} />
-              <Route path="/settings" element={<SourcesPage />} />
-              <Route path="/settings/resources" element={<SourcesPage />} />
-              <Route path="/settings/source" element={<SourcePage />} />
-              <Route path="/settings/accounts" element={<AccountsPage />} />
-              <Route path="/settings/catalog" element={<CatalogPage />} />
-              <Route
-                path="*"
-                element={
-                  <Panel title="Page unavailable">
-                    <p>This page is not available in this build.</p>
-                    <Link to="/">Return to the workbench</Link>
-                  </Panel>
-                }
-              />
-            </Routes>
+            <NativeWorkspace>
+              <Routes>
+                <Route path="/" element={<HomePage />} />
+                <Route
+                  path="/threads/:threadId"
+                  element={
+                    <ConversationPage
+                      profile={profile}
+                      unauthorized={unauthorized}
+                    />
+                  }
+                />
+                <Route path="/setup" element={<SetupPage />} />
+                <Route path="/projects" element={<ProjectsPage />} />
+                <Route path="/projects/:projectId" element={<ProjectPage />} />
+                <Route path="/settings" element={<SourcesPage />} />
+                <Route path="/settings/resources" element={<SourcesPage />} />
+                <Route path="/settings/source" element={<SourcePage />} />
+                <Route path="/settings/accounts" element={<AccountsPage />} />
+                <Route path="/settings/catalog" element={<CatalogPage />} />
+                <Route
+                  path="*"
+                  element={
+                    <Panel title="Page unavailable">
+                      <p>This page is not available in this build.</p>
+                      <Link to="/">Return to the workbench</Link>
+                    </Panel>
+                  }
+                />
+              </Routes>
+            </NativeWorkspace>
           </main>
         </div>
         <ModalFrame

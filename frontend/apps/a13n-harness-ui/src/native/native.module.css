@@ -1,0 +1,337 @@
+.workarea {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  min-width: 0;
+}
+.workToolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-bottom: 12px;
+}
+.workToolbar [aria-pressed="true"] {
+  background: var(--a13n-surface);
+}
+.layout {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+  gap: 24px;
+}
+.page {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.withPane .page {
+  overflow: auto;
+}
+.pane {
+  flex: 0 0 48%;
+  min-width: 0;
+  min-height: 0;
+  max-height: calc(100dvh - 145px);
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--a13n-border);
+  padding-left: 20px;
+}
+.paneHeader,
+.fileHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.paneHeader strong {
+  font-size: 15px;
+  font-weight: 500;
+}
+.paneHeader small {
+  display: block;
+}
+.pane small,
+.fileHeader span {
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.pane strong {
+  font-weight: 500;
+}
+.pane h3 {
+  font-size: 13px;
+  font-weight: 500;
+  margin: 0;
+}
+.pane .authority {
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 8px 0 12px;
+}
+.paneBody {
+  overflow: auto;
+  min-height: 0;
+  padding: 2px 2px 24px;
+}
+.location {
+  display: grid;
+  gap: 10px;
+  padding-bottom: 12px;
+}
+.address {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+}
+.address > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  max-height: 64px;
+  overflow: auto;
+}
+.breadcrumbs button {
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  border: 0;
+  background: none;
+  padding: 3px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.breadcrumbs button:not(:last-child)::after {
+  content: "/";
+  padding-left: 6px;
+  color: var(--a13n-border);
+}
+.breadcrumbs button:hover {
+  color: var(--a13n-text);
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--a13n-secondary);
+}
+.fileList {
+  max-height: 250px;
+  min-height: 48px;
+  overflow: auto;
+}
+.fileRow {
+  display: flex;
+  align-items: center;
+  border-radius: 5px;
+}
+.fileLink,
+.changeRow {
+  border: 0;
+  background: transparent;
+  color: var(--a13n-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  font-size: 12px;
+  min-width: 0;
+  width: 100%;
+  text-align: left;
+  border-radius: 5px;
+}
+.fileLink span,
+.changeRow span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.fileLink svg {
+  flex-shrink: 0;
+}
+.fileLink small,
+.changeRow small {
+  flex-shrink: 0;
+}
+.fileRow:hover,
+.changeRow:hover,
+.selected {
+  background: var(--a13n-surface);
+}
+.entryActions {
+  flex-shrink: 0;
+  position: relative;
+  font-size: 12px;
+}
+.entryActions summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 5px;
+}
+.entryActions[open] > div {
+  position: absolute;
+  z-index: 5;
+  width: 170px;
+  right: 0;
+  padding: 8px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 6px;
+  background: var(--a13n-canvas);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.file {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--a13n-border);
+  min-width: 0;
+}
+.fileHeader {
+  font-size: 13px;
+}
+.fileHeader strong {
+  overflow-wrap: anywhere;
+}
+.path {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  color: var(--a13n-secondary);
+}
+.path small {
+  display: block;
+}
+.editor {
+  min-width: 0;
+}
+.notice {
+  padding: 12px;
+  background: var(--a13n-surface);
+  border-radius: 6px;
+  display: grid;
+  gap: 10px;
+  font-size: 12px;
+}
+.notice details,
+.metadata,
+.repo details {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.notice summary,
+.metadata summary,
+.repo summary {
+  cursor: pointer;
+  color: var(--a13n-secondary);
+  padding: 4px 0;
+}
+.capture {
+  display: grid;
+  gap: 10px;
+}
+.range {
+  display: flex;
+  gap: 12px;
+}
+.range > * {
+  flex: 1;
+  min-width: 0;
+}
+.empty {
+  padding: 18px 4px;
+  display: grid;
+  gap: 10px;
+}
+.buffers {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  background: var(--a13n-surface);
+  padding: 6px;
+  border-radius: 6px;
+}
+.buffers > small {
+  flex-basis: 100%;
+  padding: 4px;
+}
+.repo {
+  display: grid;
+  gap: 6px;
+}
+.changeGroup {
+  display: grid;
+  gap: 4px;
+}
+.changeGroup h3 {
+  display: flex;
+  justify-content: space-between;
+  color: var(--a13n-secondary);
+  margin-bottom: 4px;
+}
+.changeGroup h3 span {
+  font-size: 11px;
+}
+@media (max-width: 1199px) {
+  .withPane .pageBeside {
+    display: none;
+  }
+  .pane {
+    flex: 1;
+    border-left: 0;
+    padding-left: 0;
+    max-height: calc(100dvh - 150px);
+  }
+  .layout {
+    gap: 0;
+  }
+}
+@media (max-width: 760px) {
+  .workToolbar {
+    padding-bottom: 8px;
+  }
+  .pane {
+    max-height: calc(100dvh - 150px);
+  }
+  .fileList {
+    max-height: 185px;
+  }
+}
+
+.location > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--a13n-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 8px 0;
+}
+.locationFields {
+  display: grid;
+  gap: 10px;
+  padding: 6px 0 10px;
+}

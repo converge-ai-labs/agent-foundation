@@ -92,7 +92,12 @@ export function useLiveWorkbench(
                 ? ["comments", event.root_thread_id]
                 : ["comments"],
             });
-          else void queries.invalidateQueries();
+          else
+            void queries.invalidateQueries({
+              // Native observations refresh on return/actions/reconnect, not each
+              // unrelated conversation event. They are not a filesystem watcher.
+              predicate: (query) => !event || query.queryKey[0] !== "native",
+            });
         },
         setSummary,
       ),

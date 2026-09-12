@@ -2,7 +2,7 @@
 
 This private English-only React application provides collaborative conversations, execution/decision controls, instance authentication, guided setup, provider-account/key management, configuration resource editing and Project readiness. It uses the public `a13n-ui` design system, with local light/dark preferences and per-tab display profiles. Console localization is unchanged.
 
-The browser consumes the Python App's HTTP, summary SSE and page-presence WebSocket APIs. It does not own agent execution or import the Service SDK. Saved-output discussion uses independent comment queries and explicit retained feedback capture. Native Files/Git/terminal browser panels are subsequent workbench blocks, not enabled placeholder controls.
+The browser consumes the Python App's HTTP, summary SSE and page-presence WebSocket APIs. It does not own agent execution or import the Service SDK. Saved-output discussion uses independent comment queries and explicit retained feedback capture. Native Files and read-only Git Changes run beside Chat on wide screens and switch views on narrow screens. The terminal browser panel is the next workbench block, not an enabled placeholder control.
 
 The npm package `a13n-harness-ui-webui` is private build input. Repository automation copies `dist/` into the generated `a13n_harness_ui/static/` tree for the Python wheel and sdist. Neither generated directory is committed. A wheel rebuilt from the sdist requires no Node.js.
 
@@ -39,6 +39,14 @@ Each Thread owns an in-tab Yjs document and local UndoManager. `y-codemirror.nex
 Controls consume canonical request discriminators and exact receipt/parent identities. Inspection separates captured and next-Run configuration; configuration conflicts retain dirty patches against their original version. Markdown does not execute supplied HTML or automatically fetch remote images. Saved assistant raw text and output targets retain exact identity for comments. Source-identical rendered text nodes carry original offsets; ambiguous Markdown selections fall back to exact raw-source selection, not substring matching. Private publication drafts remain separate from shared composer state, with stable-identity reconciliation after uncertain responses. Comment invalidations refetch comments independently. Explicit feedback capture inserts an existing retained attachment handle; Input metadata renders its complete captured text as an inspectable reference for both Send and text-only steering.
 
 `tests/protocol_server.py` supplies an isolated real Python App with FunctionModel for Node protocol tests. Actual JavaScript Yjs replicas exercise HTTP admission, metadata, WS coediting and focused SSE together, without browsers, external models or user configuration. The normal Vitest command includes these tests alongside jsdom components and pure folds.
+
+## Native Files and Changes
+
+`src/native` consumes the existing Host APIs independently of Agent Environments. Configured roots and absolute paths navigate the server or container filesystem. File operations require their observed revisions; new-file/upload destinations must be absent, while explicit replacement uploads carry the existing file's observed revision. Native mutations are never automatically retried. Dirty CodeMirror buffers remain private to this tab across navigation and access replacement. Conflicts and unknown save outcomes retain local text and offer an inspected disk version before explicit adoption or replacement. Common line endings are preserved; editing mixed endings explicitly normalizes them to the first style.
+
+Changes distinguishes HEAD/index, index/worktree and new-file comparisons, retains repository and patch identities, and discloses binary, rename, conflict, ignored and unborn states. Read failures do not mean a clean tree. Refresh after native actions or returning to the pane updates observations without replacing dirty buffers. There are no stage, commit, Git-discard or worktree controls.
+
+Add to prompt captures reviewed disk bytes or exact patch lines using the existing Thread attachment owner, then selects only its returned handle in that conversation's shared composer. Opening/editing never adds input. Source metadata and captured bytes remain inspectable even after the native source changes. Nonstandard line separators that differ from the backend's line numbering use explicit whole-source capture rather than an approximate range. Binary/large captures retain bytes and remain subject to normal submission and text-only steering limits.
 
 ## Configuration editing
 

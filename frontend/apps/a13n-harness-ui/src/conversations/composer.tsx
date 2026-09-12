@@ -151,6 +151,7 @@ export function Composer({
     name: string;
     text: string;
     url?: string;
+    source?: Schema<"ThreadAttachment">["source"];
   } | null>(null);
   const selections = [...draft.doc.getMap<string>("attachments").entries()];
   const attachments = useQueries({
@@ -286,6 +287,7 @@ export function Composer({
         name: attachment?.name ?? id,
         text,
         url: URL.createObjectURL(blob),
+        source: attachment?.source,
       });
     } catch (failure) {
       setError(
@@ -476,6 +478,29 @@ export function Composer({
         description="These are the retained bytes selected for input, not the current file on the server."
         closeLabel="Close"
       >
+        {preview?.source && (
+          <div className={styles.summary}>
+            {"path" in preview.source && (
+              <p>Server native capture · {preview.source.path}</p>
+            )}
+            {"repository_path" in preview.source && (
+              <p>
+                {preview.source.comparison} · {preview.source.repository_path} ·
+                HEAD {preview.source.head_oid ?? "empty tree"}
+              </p>
+            )}
+            <details>
+              <summary>Captured source identity</summary>
+              <pre className={styles.code}>
+                {JSON.stringify(preview.source, null, 2)}
+              </pre>
+            </details>
+            <p>
+              These are immutable captured bytes, not a fresh read of the
+              source. Sending retains this content with its source metadata.
+            </p>
+          </div>
+        )}
         <pre className={styles.code}>{preview?.text}</pre>
         {preview?.url && (
           <a href={preview.url} download={preview.name}>
