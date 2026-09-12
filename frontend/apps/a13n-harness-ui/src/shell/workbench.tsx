@@ -53,6 +53,7 @@ import { ConversationNavigation } from "../conversations/navigation";
 import { ConversationPage } from "../conversations/conversation";
 import { NativeWorkspace } from "../native/workspace";
 
+import { pageLink } from "./page-links";
 import { readPreference, writePreference } from "./preferences";
 
 export function Workbench({
@@ -71,18 +72,25 @@ export function Workbench({
     display_name: readPreference("display-name", ""),
     color: readPreference("color", "#64748b"),
   }));
+  const [nativeFocus, setNativeFocus] = useState<Schema<"PageTarget"> | null>(
+    null,
+  );
+  const sources = useSources();
   const [peopleOpen, setPeopleOpen] = useState(false);
   const [menu, setMenu] = useState(false);
   const live = useLiveWorkbench(
     profile,
     !!status.features?.page_presence,
     unauthorized,
+    nativeFocus,
   );
   const location = useLocation();
   const navigate = useNavigate();
   const { client } = useTransport();
   const [restoreTarget, setRestoreTarget] = useState(() =>
-    location.pathname === "/" ? readPreference("last-thread", "") : "",
+    location.pathname === "/" && !location.search
+      ? readPreference("last-thread", "")
+      : "",
   );
   useEffect(() => {
     if (!restoreTarget) return;
@@ -253,7 +261,10 @@ export function Workbench({
               error={statusQuery.error}
               retry={() => void statusQuery.refetch()}
             />
-            <NativeWorkspace>
+            <NativeWorkspace
+              onFocus={setNativeFocus}
+              unauthorized={unauthorized}
+            >
               <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route
@@ -338,6 +349,19 @@ export function Workbench({
                     ? "Same page"
                     : participant.availability}
                 </small>
+                {participant.focus && (
+                  <small>{participant.focus.target.kind}</small>
+                )}
+                {participant.focus &&
+                  participant.availability === "available" &&
+                  pageLink(participant.focus, sources.data?.sources) && (
+                    <Link
+                      to={pageLink(participant.focus, sources.data?.sources)!}
+                      onClick={() => setPeopleOpen(false)}
+                    >
+                      Open page
+                    </Link>
+                  )}
                 {participant.unavailable_reason && (
                   <small>{participant.unavailable_reason}</small>
                 )}

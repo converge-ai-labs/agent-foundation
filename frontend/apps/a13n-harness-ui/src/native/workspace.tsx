@@ -3,7 +3,7 @@ import { matchPath, useLocation } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button, ChoiceField } from "a13n-ui";
 import { Folder, GitDiff, X, ArrowClockwise } from "@phosphor-icons/react";
-import { ApiError, result } from "../transport/client";
+import { ApiError, result, type Schema } from "../transport/client";
 import { useProjects, useStatus, useTransport } from "../transport/context";
 import { ErrorNotice, TextField } from "../shell/ui";
 import { readPreference, writePreference } from "../shell/preferences";
@@ -11,8 +11,18 @@ import { FileBuffers, basename, breadcrumbs, parentPath } from "./buffer";
 import { Files } from "./files";
 import { Changes, type DiffSelection } from "./changes";
 import styles from "./native.module.css";
+import { TerminalPanel } from "./terminal";
+import { nativeLink, pageLink } from "../shell/page-links";
 
-export function NativeWorkspace({ children }: { children: ReactNode }) {
+export function NativeWorkspace({
+  children,
+  onFocus,
+  unauthorized,
+}: {
+  children: ReactNode;
+  onFocus: (target: Schema<"PageTarget"> | null) => void;
+  unauthorized: () => void;
+}) {
   const { client } = useTransport();
   const projects = useProjects();
   const status = useStatus();
@@ -21,11 +31,21 @@ export function NativeWorkspace({ children }: { children: ReactNode }) {
   const location = useLocation();
   const threadId = matchPath("/threads/:threadId", location.pathname)?.params
     .threadId;
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [focusedArea, setFocusedArea] = useState<
+    "page" | "native" | "terminal"
+  >("page");
+  const [terminalId, setTerminalId] = useState("");
+  const [terminalOpened, setTerminalOpened] = useState(false);
+  const pageElement = useRef<HTMLDivElement>(null);
+  const paneElement = useRef<HTMLElement>(null);
+  const [paneLink, setPaneLink] = useState("");
   const [pane, setPane] = useState<"files" | "changes" | null>(null);
   const [directory, setDirectory] = useState(() =>
     readPreference("native-directory", ""),
   );
   const [path, setPath] = useState("");
+  const [fileTabs, setFileTabs] = useState<string[]>([]);
   const [address, setAddress] = useState(directory);
   const [error, setError] = useState<unknown>(null);
   const [opening, setOpening] = useState(false);
@@ -90,6 +110,10 @@ export function NativeWorkspace({ children }: { children: ReactNode }) {
       const nextDirectory = isDirectory ? target : parentPath(target);
       setDirectory(nextDirectory);
       setPath(isDirectory ? "" : target);
+      if (!isDirectory)
+        setFileTabs((tabs) =>
+          tabs.includes(target) ? tabs : [...tabs, target],
+        );
       setAddress(nextDirectory);
       writePreference("native-directory", nextDirectory);
       if (isDirectory) select(null);
@@ -98,6 +122,88 @@ export function NativeWorkspace({ children }: { children: ReactNode }) {
     } finally {
       if (!controller.signal.aborted) setOpening(false);
     }
+  };
+  useEffect(() => {
+    const link = nativeLink(location.search);
+    if (link.pane && link.path && status.data?.features?.host_files) {
+      setPane(link.pane);
+      setFocusedArea("native");
+      if (window.matchMedia("(max-width: 1199px)").matches)
+        setTerminalOpen(false);
+      if (link.pane === "changes") {
+        openingRequest.current?.abort();
+        setOpening(false);
+        setError(null);
+        setDirectory(link.path);
+        setAddress(link.path);
+        select(
+          link.diffPath && link.comparison
+            ? {
+                repository_path: link.path,
+                path: link.diffPath,
+                comparison: link.comparison,
+              }
+            : null,
+        );
+      } else void open(link.path);
+    }
+    if (link.terminal && status.data?.features?.host_terminal) {
+      setTerminalId(link.terminal);
+      setFocusedArea("terminal");
+      setTerminalOpen(true);
+      setTerminalOpened(true);
+    }
+    // Navigation never creates a session, claims control or adds model input.
+    // Personal native selection otherwise survives ordinary Thread navigation.
+  }, [
+    location.search,
+    status.data?.features?.host_files,
+    status.data?.features?.host_terminal,
+  ]);
+  useEffect(() => {
+    const link = nativeLink(location.search);
+    if (!(link.pane && link.path) && !link.terminal) {
+      setFocusedArea("page");
+      if (window.matchMedia("(max-width: 1199px)").matches) {
+        setPane(null);
+        setTerminalOpen(false);
+      }
+    }
+  }, [location.pathname, location.search]);
+  const nativeTarget = (): Schema<"PageTarget"> | null =>
+    pane === "files" && (path || directory)
+      ? { kind: "file", path: path || directory }
+      : pane === "changes" && directory
+        ? {
+            kind: "changes",
+            repository_root: selected?.repository_path || directory,
+            path: selected?.path,
+            comparison: selected?.comparison,
+          }
+        : null;
+  useEffect(() => {
+    onFocus(
+      focusedArea === "native"
+        ? nativeTarget()
+        : focusedArea === "terminal" && terminalOpen && terminalId
+          ? { kind: "terminal", terminal_id: terminalId }
+          : null,
+    );
+  }, [
+    focusedArea,
+    pane,
+    path,
+    directory,
+    selected,
+    terminalOpen,
+    terminalId,
+    onFocus,
+  ]);
+  const closePane = () => {
+    setPane(null);
+    setFocusedArea("page");
+    pageElement.current?.focus();
+    refresh();
   };
   const roots =
     projects.data?.flatMap((project) =>
@@ -111,51 +217,130 @@ export function NativeWorkspace({ children }: { children: ReactNode }) {
   ];
   const show = (next: "files" | "changes") => {
     setPane(next);
+    setFocusedArea("native");
+    if (window.matchMedia("(max-width: 1199px)").matches)
+      setTerminalOpen(false);
+    requestAnimationFrame(() => paneElement.current?.focus());
     refresh();
     if (!directory && uniqueRoots[0]) void open(uniqueRoots[0].value);
   };
   return (
-    <div className={`${styles.workarea} ${pane ? styles.withPane : ""}`}>
+    <div
+      className={`${styles.workarea} ${pane ? styles.withPane : ""} ${terminalOpen && status.data?.features?.host_terminal ? styles.withTerminal : ""}`}
+    >
       <div className={styles.workToolbar} aria-label="Workbench views">
         <Button
           variant="ghost"
           size="sm"
-          aria-pressed={!pane}
-          onClick={() => setPane(null)}
+          aria-pressed={!pane && !terminalOpen}
+          onClick={() => {
+            setTerminalOpen(false);
+            closePane();
+          }}
         >
           {threadId ? "Chat" : "Page"}
         </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-pressed={pane === "files"}
-          onClick={() => show("files")}
-        >
-          <Folder />
-          Files
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-pressed={pane === "changes"}
-          onClick={() => show("changes")}
-        >
-          <GitDiff />
-          Changes
-        </Button>
+        {status.data?.features?.host_files && (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-pressed={pane === "files"}
+            onClick={() => show("files")}
+          >
+            <Folder />
+            Files
+          </Button>
+        )}
+        {status.data?.features?.host_git && (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-pressed={pane === "changes"}
+            onClick={() => show("changes")}
+          >
+            <GitDiff />
+            Changes
+          </Button>
+        )}
+        {status.data?.features?.host_terminal && (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-pressed={terminalOpen}
+            onClick={() => {
+              setTerminalOpen(!terminalOpen);
+              setFocusedArea(
+                !terminalOpen ? "terminal" : pane ? "native" : "page",
+              );
+              setTerminalOpened(true);
+              refresh();
+            }}
+          >
+            Terminal
+          </Button>
+        )}
+        {status.data?.features?.host_files &&
+          !status.data?.features?.host_git && (
+            <small
+              className={styles.authority}
+              title="Install Git on the server to inspect Changes. Native Files remains available."
+            >
+              Git unavailable
+            </small>
+          )}
+        {!status.data?.features?.host_terminal && (
+          <small
+            className={styles.authority}
+            title="Native PTY requires POSIX support. Computer sharing is selected at server startup; --no-share-computer disables native access."
+          >
+            {status.data?.features?.host_files
+              ? "Native PTY unavailable on this server"
+              : "Native sharing disabled by this server"}
+          </small>
+        )}
       </div>
       <div className={styles.layout}>
-        <div className={`${styles.page} ${pane ? styles.pageBeside : ""}`}>
+        <div
+          ref={pageElement}
+          tabIndex={-1}
+          onFocusCapture={() => setFocusedArea("page")}
+          onPointerDown={() => setFocusedArea("page")}
+          className={`${styles.page} ${pane ? styles.pageBeside : ""}`}
+        >
           {children}
         </div>
         {pane && (
-          <aside className={styles.pane} aria-label="Native computer context">
+          <aside
+            ref={paneElement}
+            tabIndex={-1}
+            onFocusCapture={() => setFocusedArea("native")}
+            onPointerDown={() => setFocusedArea("native")}
+            className={styles.pane}
+            aria-label="Native computer context"
+          >
             <header className={styles.paneHeader}>
               <div>
                 <strong>{pane === "files" ? "Files" : "Changes"}</strong>
                 <small>Server / container · native OS user</small>
               </div>
               <div className={styles.actions}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={!nativeTarget()}
+                  onClick={() => {
+                    const target = nativeTarget();
+                    if (target)
+                      setPaneLink(
+                        new URL(
+                          pageLink({ target, root_thread_id: threadId })!,
+                          window.location.origin,
+                        ).href,
+                      );
+                  }}
+                >
+                  Share view
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -168,12 +353,19 @@ export function NativeWorkspace({ children }: { children: ReactNode }) {
                   variant="ghost"
                   size="icon"
                   aria-label="Close native pane"
-                  onClick={() => setPane(null)}
+                  onClick={closePane}
                 >
                   <X />
                 </Button>
               </div>
             </header>
+            {paneLink && (
+              <TextField
+                label="Same-instance view link (access key not included)"
+                value={paneLink}
+                onChange={() => {}}
+              />
+            )}
             <p className={styles.authority}>
               These paths are on the server, not the browser or the Agent's
               selected Environment. Reading and editing do not add model input.
@@ -252,6 +444,39 @@ export function NativeWorkspace({ children }: { children: ReactNode }) {
                 </details>
                 <ErrorNotice error={error || projects.error} />
                 {opening && <p role="status">Opening native path…</p>}
+                {pane === "files" && fileTabs.length > 0 && (
+                  <nav
+                    className={styles.fileTabs}
+                    aria-label="Open native files"
+                  >
+                    {fileTabs.map((tab) => (
+                      <span key={tab}>
+                        <Button
+                          size="sm"
+                          variant={tab === path ? "outline" : "ghost"}
+                          aria-pressed={tab === path}
+                          title={tab}
+                          onClick={() => void open(tab)}
+                        >
+                          {basename(tab)}
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          aria-label={`Close file view: ${tab}`}
+                          onClick={() => {
+                            setFileTabs((tabs) =>
+                              tabs.filter((item) => item !== tab),
+                            );
+                            if (tab === path) setPath("");
+                          }}
+                        >
+                          <X />
+                        </Button>
+                      </span>
+                    ))}
+                  </nav>
+                )}
                 <div className={styles.paneBody}>
                   {pane === "files" ? (
                     <Files
@@ -285,6 +510,30 @@ export function NativeWorkspace({ children }: { children: ReactNode }) {
           </aside>
         )}
       </div>
+      {terminalOpened && status.data?.features?.host_terminal && (
+        <div
+          onFocusCapture={() => setFocusedArea("terminal")}
+          onPointerDown={() => setFocusedArea("terminal")}
+        >
+          <TerminalPanel
+            visible={terminalOpen}
+            directory={directory}
+            selected={terminalId}
+            select={(id) => {
+              setTerminalId(id);
+              setFocusedArea(id ? "terminal" : "page");
+            }}
+            collapse={() => {
+              setTerminalOpen(false);
+              setFocusedArea(pane ? "native" : "page");
+              refresh();
+              if (pane) paneElement.current?.focus();
+              else pageElement.current?.focus();
+            }}
+            unauthorized={unauthorized}
+          />
+        </div>
+      )}
     </div>
   );
 }

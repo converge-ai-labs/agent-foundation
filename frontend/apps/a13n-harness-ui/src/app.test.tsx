@@ -79,6 +79,13 @@ function fixture(request: Request): Response | Promise<Response> {
   return json([]);
 }
 beforeEach(() => {
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addListener() {},
+    removeListener() {},
+    addEventListener() {},
+    removeEventListener() {},
+  }));
   // jsdom has no layout; real CodeMirror geometry is covered by browser QA.
   Object.defineProperty(Range.prototype, "getClientRects", {
     configurable: true,

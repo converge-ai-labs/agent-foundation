@@ -335,3 +335,21 @@
   gap: 10px;
   padding: 6px 0 10px;
 }
+
+.fileTabs {
+  display: flex;
+  gap: 6px;
+  overflow: auto;
+  flex-shrink: 0;
+  padding-bottom: 8px;
+}
+.fileTabs > span {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+@media (max-width: 1199px) {
+  .withTerminal .layout {
+    display: none;
+  }
+}

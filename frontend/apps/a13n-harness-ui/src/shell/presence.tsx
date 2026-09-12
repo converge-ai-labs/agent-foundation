@@ -55,6 +55,7 @@ export function useLiveWorkbench(
   profile: Profile,
   enabled: boolean,
   unauthorized: () => void,
+  nativeFocus: Schema<"PageTarget"> | null = null,
 ) {
   const transport = useTransport();
   const queries = useQueryClient();
@@ -77,7 +78,14 @@ export function useLiveWorkbench(
   report.current = {
     kind: "presence",
     ...profile,
-    focus: pageFocus(location.pathname, focusedSource),
+    focus: nativeFocus
+      ? {
+          target: nativeFocus,
+          root_thread_id: location.pathname.startsWith("/threads/")
+            ? location.pathname.split("/")[2]
+            : null,
+        }
+      : pageFocus(location.pathname, focusedSource),
     foreground: document.visibilityState === "visible",
   };
 
@@ -179,6 +187,6 @@ export function useLiveWorkbench(
   useEffect(() => {
     if (socket.current?.readyState === WebSocket.OPEN)
       socket.current.send(JSON.stringify(report.current));
-  }, [profile, location.pathname, location.search, focusedSource]);
+  }, [profile, location.pathname, location.search, focusedSource, nativeFocus]);
   return { summary, presenceState, presence };
 }

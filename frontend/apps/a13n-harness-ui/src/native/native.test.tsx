@@ -43,6 +43,7 @@ vi.mock("../configuration/editor", () => ({
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 const file: Schema<"FileText"> = {
   entry: {
@@ -58,6 +59,7 @@ const file: Schema<"FileText"> = {
   text: "first",
 };
 function fixture() {
+  vi.stubGlobal("matchMedia", () => ({ matches: false }));
   const get = vi.fn(async (path: string): Promise<{ data: unknown }> => {
     if (path === "/api/status")
       return { data: { features: { host_files: true, host_git: true } } };
@@ -258,13 +260,15 @@ it("sharing off keeps the page usable and never attempts native reads", async ()
         : [],
   }));
   render(
-    <NativeWorkspace>
+    <NativeWorkspace onFocus={vi.fn()} unauthorized={vi.fn()}>
       <p>Conversation stays mounted</p>
     </NativeWorkspace>,
     { wrapper: f.Wrapper },
   );
-  fireEvent.click(screen.getByText("Files"));
-  await screen.findByText("Native sharing is disabled");
+  await screen.findByText("Native sharing disabled by this server");
+  expect(screen.queryByRole("button", { name: "Files" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Changes" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Terminal" })).toBeNull();
   expect(screen.getByText("Conversation stays mounted")).toBeTruthy();
   expect(f.get.mock.calls.some(([path]) => path.startsWith("/api/host"))).toBe(
     false,

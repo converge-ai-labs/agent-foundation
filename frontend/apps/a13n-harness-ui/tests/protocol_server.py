@@ -24,6 +24,11 @@ async def main() -> None:
         root = Path(directory)
         os.environ["HOME"] = directory
         os.environ["USERPROFILE"] = directory
+        os.environ["XDG_CONFIG_HOME"] = str(root / "xdg")
+        if os.name == "posix":
+            os.environ["SHELL"] = "/bin/sh"
+            os.environ["ENV"] = str(root / "no-shell-init")
+            os.environ["BASH_ENV"] = str(root / "no-shell-init")
         share_computer = "--native" in sys.argv
         native_root = root / "native"
         if share_computer:
