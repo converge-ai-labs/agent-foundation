@@ -11,6 +11,7 @@ from pydantic import JsonValue
 from a13n_service.connectivity.domain import JsonObject
 
 from ...contracts import BeforeSharedSetup, ConnectorProviderError, DiscoveredConnector
+from ...discovery import is_credential_field
 from ...http import ConnectorHttpClient
 from ...validation import optional_string, path_segment, required_object, required_string
 from ..discovery import DirectoryBudget, directory_items
@@ -215,14 +216,29 @@ def connector_metadata(item: JsonObject, configurations: tuple[AuthConfiguration
         }
         if len(choices) == 1:
             selection["default"] = required_object(choices[0])["const"]
+        prefill_constraints: list[JsonValue] = []
+        offered = [required_object(choice)["const"] for choice in choices]
+        for scheme in SUPPORTED_SCHEMES:
+            selections: list[JsonValue] = [config.id for config in configs if config.scheme == scheme]
+            if f"create:{scheme}" in offered:
+                selections.append(f"create:{scheme}")
+            if selections:
+                prefill_constraints.append(
+                    {
+                        "if": {"properties": {"auth_config_id": {"enum": selections}}},
+                        "then": {"properties": {"connection_data": _connection_data_schema(item, scheme)}},
+                    }
+                )
         schema = {
             "type": "object",
             "properties": {
                 "auth_config_id": selection,
                 "toolkit_version": {"type": "string", "const": version},
+                "connection_data": {"type": "object", "properties": {}},
             },
             "required": ["toolkit_version", "auth_config_id"],
             "additionalProperties": False,
+            "allOf": prefill_constraints,
         }
     return DiscoveredConnector(
         key=key,
@@ -273,3 +289,32 @@ def _auth_details(item: JsonObject) -> tuple[JsonObject, ...]:
     if not isinstance(details, list):
         raise ConnectorProviderError("invalid_provider_response")
     return tuple(required_object(detail) for detail in details)
+
+
+def _connection_data_schema(item: JsonObject, scheme: str) -> JsonObject:
+    properties: JsonObject = {}
+    for detail in _auth_details(item):
+        if detail.get("mode") != scheme:
+            continue
+        fields = required_object(required_object(detail.get("fields")).get("connected_account_initiation", {}))
+        for group in ("required", "optional"):
+            entries = fields.get(group, [])
+            if not isinstance(entries, list):
+                raise ConnectorProviderError("invalid_provider_response")
+            for entry in entries:
+                field = required_object(entry)
+                name = required_string(field, "name", max_length=128)
+                kind = field.get("type")
+                if (
+                    is_credential_field(name)
+                    or field.get("is_secret") is True
+                    or kind not in {"string", "number", "integer", "boolean"}
+                ):
+                    continue
+                properties[name] = {"type": kind}
+    return {
+        "type": "object",
+        "description": "Optional non-secret defaults for the selected hosted authentication form.",
+        "properties": properties,
+        "additionalProperties": False,
+    }

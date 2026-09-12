@@ -103,6 +103,7 @@ class ComposioProvider:
             api_key=self._credentials.api_key,
             json_body={
                 "auth_config_id": auth_config.id,
+                **({"connection_data": setup["connection_data"]} if setup.get("connection_data") else {}),
                 "callback_url": context.callback_url,
                 "user_id": context.external_user_correlation,
             },

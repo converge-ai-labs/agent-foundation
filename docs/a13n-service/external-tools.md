@@ -34,7 +34,7 @@ Add a Composio Provider with a name and its write-only project `api_key`. Provid
 
 Choose an authentication configuration for the application. OAuth 2.0, API key, bearer token, and basic authentication are supported through Composio's hosted page. Each existing configuration shows its name, method, OAuth management mode, and scopes. A single choice is preselected; when several exist, choose the intended application and permissions explicitly.
 
-For an application with no existing configuration, choose Composio managed OAuth when available, or the offered API key, bearer, or basic method. Service creates a reusable auth config at connection time if no application-level credentials are required. The hosted page collects the account credentials and required instance fields, such as subdomain or region. Those values never pass through Service.
+For an application with no existing configuration, choose Composio managed OAuth when available, or the offered API key, bearer, or basic method. Service creates a reusable auth config at connection time if no application-level credentials are required. The hosted page collects the account credentials and required instance fields, such as subdomain or region. Account credentials never pass through Service. API clients may optionally prefill non-secret instance fields as described below.
 
 To use your own OAuth app or different scopes:
 
@@ -44,13 +44,38 @@ To use your own OAuth app or different scopes:
 
 If shared configuration creation has an uncertain result, Service does not send another creation request. Check Composio Dashboard and ensure an enabled configuration exists before retrying. Replacing the project API key does not clear that uncertainty.
 
-Set a stable `A13N_SERVICE_CONNECTIVITY_SETUP_CORRELATION_SECRET` of at least 32 bytes, shared by replicas and preserved across restarts. Configure `A13N_SERVICE_CONNECTIVITY_PUBLIC_ORIGIN` and the IAM public origin to the same public HTTPS Console/API ingress. For OAuth, open the Composio project's **Settings → General → OAuth user verification** and set the verifier URL to `https://<your-public-origin>/connector-setup/callback`. A connection-specific return URL does not configure the OAuth verifier. Local testing requires a public HTTPS tunnel; open Console through that tunnel before signing in and starting authorization. Start from Console. See [Composio callback identity verification](https://docs.composio.dev/reference/api-reference/connected-accounts).
+Set a stable `A13N_SERVICE_CONNECTIVITY_SETUP_CORRELATION_SECRET` of at least 32 bytes, shared by replicas and preserved across restarts. Configure `A13N_SERVICE_CONNECTIVITY_PUBLIC_ORIGIN` and the IAM public origin to the same public HTTPS Console/API ingress. For OAuth, open the Composio project's **Settings → General → OAuth user verification** and set the verifier URL to `https://<your-public-origin>/connector-setup/callback`. A connection-specific return URL does not configure the OAuth verifier. Local testing requires a public HTTPS tunnel; open Console through that tunnel before signing in and starting authorization. For the built-in browser flow, start from Console. See [Composio callback identity verification](https://docs.composio.dev/reference/api-reference/connected-accounts).
 
 Complete authorization in the same browser tab. Console retains an expiring nonce in tab storage. OAuth returns are verified automatically. After an API key, bearer token, or basic authentication form, explicitly confirm the named connection and workspace in Console. Only confirm credentials you entered yourself: Composio cannot verify which browser submitted these forms, so forwarding a link and confirming another person’s submission can bind their account. Service requires the original authenticated User, tab nonce, and CSRF proof and checks the fixed upstream account. The reverse proxy serves `/connector-setup/callback` from Console, routes `/api` to Service, and must omit callback query strings from access logs. If the tab context or login expires, sign in and start again.
 
 **Check connection** verifies that the project API key can read connected accounts. It does not verify OAuth callback configuration or third-party credentials. A ready Connection means Composio accepted the account; some API key and token forms store credentials without testing them against the target service. A later tool call may report invalid credentials.
 
 An uncertain initial link request is not automatically repeated. A lost completion response is reconciled by reading the exact upstream account, never by replaying the single-use session. Check connection status before starting another authorization. If the authorization URL was lost, explicitly restart the unbound connection setup. An already verified Composio account cannot use this adapter's reconnect operation; create a new Connection instead of replacing its account identity.
+
+### Create a connection through the API
+
+API clients use the same creation and setup endpoints as Console. Authenticate as a User with the relevant workspace permissions, using a User API key or browser session. Service Accounts cannot initiate interactive setup. API keys belong in the client backend; browser session writes use the normal Origin and CSRF checks.
+
+1. Create the Provider with `POST /api/v1/workspaces/{workspace}/connector-providers`: supply `name`, `type: "composio"`, `configuration: {}`, and `credentials: {"api_key": "..."}`. Alternatively, use an existing Provider.
+2. Discover applications with `POST /api/v1/connector-providers/{provider_id}/discover-connectors`. Read the application's `setup_schema` to select an exact `auth_config_id` and `toolkit_version`. A `create:<METHOD>` choice is valid only when offered by discovery.
+3. Create the local Connection with `POST /api/v1/workspaces/{workspace}/connector-connections`, supplying `connector_provider_id`, `connector_key`, and `name`.
+4. Start authorization with `POST /api/v1/connector-connections/{connection_id}/setup`. Include the Connection's `expected_version`, a cryptographically random `browser_nonce` of 64 hexadecimal characters retained in the initiating tab, a local `return_path`, and `setup`. Creation and setup requests require distinct `Idempotency-Key` headers.
+
+For an application whose selected method advertises a non-secret `subdomain` field, `setup` can be:
+
+```json
+{
+  "auth_config_id": "ac_selected",
+  "toolkit_version": "20260903_01",
+  "connection_data": {"subdomain": "team"}
+}
+```
+
+Use values from current discovery rather than these illustrative identifiers. `connection_data` is optional. Its allowed fields are described in the setup schema's method-specific `allOf` conditions; Service checks them against current metadata before creating an upstream config or link. Unknown fields, secrets, and incorrect types are rejected. Omitted fields are collected on Composio's hosted page.
+
+Open the returned `redirect_url` in the initiating browser tab and retain `attempt_id` and `completion_method`. A custom client must implement the same browser ceremony: serve its callback at the configured public origin's `/connector-setup/callback`, preserve the tab nonce, and complete as the same User. The built-in Console callback requires Console's own stored tab context; opening an API-created link alone does not establish that context. There is no per-request external callback URL override.
+
+Call `POST /api/v1/connector-setup/complete` with `attempt_id` and `browser_nonce`. For `oauth_verifier`, also pass the returned single-use `session_uri`. For `browser_confirmation`, require the initiating user's explicit confirmation of the named connection and workspace before completing; do not auto-confirm a hosted return. Then read `GET /api/v1/connector-connections/{connection_id}` to check status. This API supports programmatic orchestration of hosted authorization; it does not accept third-party account secrets or import an arbitrary existing Composio account for unattended binding.
 
 The pre-public setup schema replaces the old callback flag and digest with an explicit completion method. Recreate disposable development databases and deploy Console and Service together; generated clients expose the completion method and require an OAuth session only for OAuth completion. Remote test accounts remain owned by Composio and are not automatically deleted.
 

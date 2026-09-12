@@ -47,7 +47,12 @@ async def composio_setup(composio_sessions, credential_protector):
                 "auth_config_details": [
                     {
                         "mode": state.get("scheme", "OAUTH2"),
-                        "fields": {"connected_account_initiation": {"required": [], "optional": []}},
+                        "fields": {
+                            "connected_account_initiation": {
+                                "required": [],
+                                "optional": [{"name": "subdomain", "type": "string"}],
+                            }
+                        },
                     }
                 ],
             }
@@ -441,3 +446,68 @@ async def test_non_oauth_confirmation_rejects_an_account_with_changed_owner(comp
         await service.complete_callback(actor=actor(), attempt_id=result.attempt_id, browser_nonce=NONCE)
     assert (await service.get(actor=actor(), connection_id=connection.id)).status != "ready"
     assert state["redeem_calls"] == 0
+
+
+@pytest.mark.parametrize("scheme", ["OAUTH2", "API_KEY", "BEARER_TOKEN", "BASIC"])
+async def test_http_api_creates_and_authorizes_composio_with_optional_prefill(composio_setup, monkeypatch, scheme):
+    from dataclasses import replace
+
+    from a13n_service.api import install_api_conventions
+    from a13n_service.connectivity.connectors import router
+    from a13n_service.iam import authenticate_request
+    from a13n_service.iam.http.resource_dependencies import resolve_workspace
+    from fastapi import FastAPI
+
+    service, existing, _, _, requests, state, _ = composio_setup
+    state["scheme"] = scheme
+    app = FastAPI()
+    install_api_conventions(app)
+    app.include_router(router.router)
+    # Exercise the HTTP contract and real service using an already authenticated User API principal.
+    app.dependency_overrides[authenticate_request] = lambda: replace(actor(), auth_method="api_key")
+    app.dependency_overrides[resolve_workspace] = lambda: WORKSPACE_ID
+    monkeypatch.setattr(router, "_connections", lambda request: service)
+    async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app), base_url="https://foundation.example") as client:
+        created = await client.post(
+            f"/api/v1/workspaces/{WORKSPACE_ID}/connector-connections",
+            headers={"Idempotency-Key": "http-create"},
+            json={
+                "connector_provider_id": existing.connector_provider_id,
+                "connector_key": "github",
+                "name": "API-created account",
+            },
+        )
+        assert created.status_code == 201, created.text
+        connection = created.json()
+        path = f"/api/v1/connector-connections/{connection['id']}"
+        started = await client.post(
+            path + "/setup",
+            headers={"Idempotency-Key": "http-start"},
+            json={
+                "expected_version": connection["version"],
+                "browser_nonce": NONCE,
+                "return_path": "/connections",
+                "setup": {
+                    "auth_config_id": "ac_test",
+                    "toolkit_version": "20260903_01",
+                    "connection_data": {"subdomain": "team"},
+                },
+            },
+        )
+        assert started.status_code == 200, started.text
+        launch = started.json()
+        assert launch["redirect_url"] == "https://connect.composio.dev/link/test"
+        assert launch["completion_method"] == ("oauth_verifier" if scheme == "OAUTH2" else "browser_confirmation")
+        upstream = next(request for request in requests if request.url.path.endswith("/link"))
+        assert json.loads(upstream.content)["connection_data"] == {"subdomain": "team"}
+        state["status"] = "ACTIVE"
+        completed = await client.post(
+            "/api/v1/connector-setup/complete",
+            json={
+                "attempt_id": launch["attempt_id"],
+                "browser_nonce": NONCE,
+                **({"session_uri": "opaque-single-use-session"} if scheme == "OAUTH2" else {}),
+            },
+        )
+        assert completed.status_code == 200, completed.text
+        assert (await client.get(path)).json()["status"] == "ready"

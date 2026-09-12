@@ -17,6 +17,7 @@ class ComposioConfiguration(StrictModel):
 class ComposioSetup(StrictModel):
     auth_config_id: str = Field(min_length=1, max_length=256)
     toolkit_version: str = Field(pattern=r"^[0-9]{8}_[0-9]{2}$")
+    connection_data: JsonObject = Field(default_factory=dict)
 
 
 def validate_setup(configuration: JsonObject, connector_key: str, value: object) -> JsonObject:

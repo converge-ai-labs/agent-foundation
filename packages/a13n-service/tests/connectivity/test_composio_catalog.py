@@ -77,7 +77,7 @@ def test_hosted_credentials_and_instance_fields_do_not_enter_local_schema(scheme
     assert app.unavailable_reason is None
     assert app.authentication_methods == (scheme,)
     assert app.setup_schema["properties"]["auth_config_id"]["default"] == f"create:{scheme}"
-    assert "connection_data" not in app.setup_schema["properties"]
+    assert app.setup_schema["properties"]["connection_data"]["properties"] == {}
 
 
 @pytest.mark.anyio
@@ -245,3 +245,62 @@ async def test_catalog_projects_scopes_without_app_or_account_credentials():
         encoded = connector_metadata(toolkit(), values).model_dump_json()
     assert "read:user, repo" in encoded
     assert not any(secret in encoded for secret in ("must-not-escape", "also-secret", "provider-secret"))
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("scheme", ["OAUTH2", "API_KEY", "BEARER_TOKEN", "BASIC"])
+async def test_prefill_is_optional_typed_and_selected_scheme_specific_before_any_write(scheme):
+    from jsonschema import Draft202012Validator
+
+    other = "BASIC" if scheme != "BASIC" else "API_KEY"
+    item = toolkit(
+        auth_schemes=[scheme, other],
+        auth_config_details=[
+            {
+                "mode": mode,
+                "fields": {
+                    "connected_account_initiation": {
+                        "required": [
+                            {"name": "subdomain", "type": "string", "is_secret": mode == other},
+                            {"name": "password", "type": "string"},
+                            {"name": "private_field", "type": "string", "is_secret": True},
+                            {"name": "structured", "type": "object"},
+                        ],
+                        "optional": [{"name": "port", "type": "integer"}],
+                    }
+                },
+            }
+            for mode in (scheme, other)
+        ],
+    )
+    configurations = (
+        AuthConfiguration("ac_selected", "Selected", "github", True, scheme),
+        AuthConfiguration("ac_other", "Other", "github", True, other),
+    )
+    validator = Draft202012Validator(connector_metadata(item, configurations).setup_schema)
+    setup = {"auth_config_id": "ac_selected", "toolkit_version": "20260903_01"}
+    assert validator.is_valid(setup)
+    assert validator.is_valid({**setup, "connection_data": {"subdomain": "team", "port": 443}})
+    assert not validator.is_valid({**setup, "auth_config_id": "ac_other", "connection_data": {"subdomain": "team"}})
+    for prefill in (
+        {"password": "secret"},
+        {"private_field": "secret"},
+        {"unknown": "x"},
+        {"port": "443"},
+        {"structured": {}},
+        {"subdomain": None},
+    ):
+        assert not validator.is_valid({**setup, "connection_data": prefill})
+
+    def respond(request):
+        assert request.method == "GET", "Invalid prefill must fail before creating a shared auth config or link"
+        return httpx2.Response(200, json=item if "/toolkits/" in request.url.path else {"items": []})
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
+        catalog = ComposioCatalog(ConnectorHttpClient(http, AllowEndpoint(), response_max_bytes=65536), "secret")
+        with pytest.raises(ConnectorProviderError, match="invalid_setup_options"):
+            await catalog.prepare_setup(
+                "github",
+                {**setup, "auth_config_id": f"create:{scheme}", "connection_data": {"password": "secret"}},
+                None,
+            )
