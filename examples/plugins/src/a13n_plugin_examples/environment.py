@@ -19,7 +19,7 @@ from a13n_environment import (
     EnvironmentProviderRecoveryHint,
     EnvironmentState,
 )
-from pydantic import BaseModel, ConfigDict, JsonValue, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 PROVIDER_KEY = "example.workspace"
 _CONFIGURATION_VERSION = "1"
@@ -57,25 +57,8 @@ class WorkspaceEnvironmentProvider(EnvironmentProvider):
         return PROVIDER_KEY
 
     @property
-    def configuration_versions(self) -> frozenset[str]:
-        return frozenset({_CONFIGURATION_VERSION})
-
-    def validate_configuration(self, *, schema_version: str, value: JsonValue) -> BaseModel:
-        if schema_version != _CONFIGURATION_VERSION:
-            raise _error(
-                "Unsupported example.workspace schema version.",
-                code="provider_schema_unsupported",
-                category=EnvironmentProviderErrorCategory.UNSUPPORTED,
-                schema_version=schema_version,
-            )
-        try:
-            return WorkspaceEnvironmentConfiguration.model_validate(value)
-        except ValidationError as error:
-            raise _error(
-                "Invalid example.workspace configuration.",
-                code="provider_spec_invalid",
-                schema_version=schema_version,
-            ) from error
+    def configuration_models(self) -> dict[str, type[BaseModel]]:
+        return {"1": WorkspaceEnvironmentConfiguration}
 
     def describe_configuration(self, configuration: BaseModel):
         if not isinstance(configuration, WorkspaceEnvironmentConfiguration):

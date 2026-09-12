@@ -1745,5 +1745,19 @@
   "Manage authentication project settings": "管理身份验证项目设置",
   "Marketing data, analytics, and reporting": "营销数据、分析和报告",
   "Marketing data connectors and attribution": "营销数据连接和归因",
-  "Supply a LunarCrush API key. Tool access and request limits depend on your plan.": "提供 LunarCrush API key；可用工具和请求限额取决于你的套餐。"
+  "Supply a LunarCrush API key. Tool access and request limits depend on your plan.": "提供 LunarCrush API key；可用工具和请求限额取决于你的套餐。",
+  "1,000,000,000 nanocpus equals one CPU core.": "1,000,000,000 纳核等于一个 CPU 核心。",
+  "Advanced environment configuration": "高级环境配置",
+  "Allow internet access": "允许访问互联网",
+  "CPU limit (nanocpus)": "CPU 限额（纳核）",
+  "Configured by deployment": "由部署配置",
+  "Configured by deployment. Change backend settings in the Service configuration.": "由部署配置。请在 Service 配置中修改后端设置。",
+  "E2B template name or ID": "E2B 模板名称或 ID",
+  "Environment configuration editor": "环境配置编辑器",
+  "Leave empty to generate a name.": "留空则自动生成名称。",
+  "Memory limit (bytes)": "内存限额（字节）",
+  "Process limit": "进程数上限",
+  "Sandbox timeout (seconds)": "沙箱超时时间（秒）",
+  "Save name": "保存名称",
+  "Use an existing E2B template. Preinstalled software, CPU and memory are configured when building that template in E2B.": "使用已有的 E2B 模板。预装软件、CPU 和内存在 E2B 中构建该模板时配置。"
 }

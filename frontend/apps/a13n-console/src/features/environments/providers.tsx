@@ -15,7 +15,7 @@ import { ProviderKeyLink } from "../../shared/provider-key-link";
 import { ResourceEditorButton } from "../../shared/resource-editor-button";
 import { ResourceIdentity } from "../../shared/collection";
 import { ScopeBadge } from "../../shared/scope-badge";
-import { FormField, Input, ModalFrame } from "a13n-ui";
+import { Button, FormField, Input, ModalFrame } from "a13n-ui";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -81,7 +81,12 @@ export function EnvironmentProviders({ scope }: { scope: EnvironmentScope }) {
       : can("environment_provider.manage");
   return (
     <div className={styles.stack}>
-      <PageActions>{manage && <ProviderEditor scope={scope} />}</PageActions>
+      <PageActions>
+        {manage &&
+          providerTypes.data?.items.some(
+            (type) => !type.deployment_managed,
+          ) && <ProviderEditor scope={scope} />}
+      </PageActions>
       {rows.selected && (
         <ProviderEditor
           key={rows.selected.id}
@@ -102,7 +107,8 @@ export function EnvironmentProviders({ scope }: { scope: EnvironmentScope }) {
           <ResourceTable
             items={query.data.items}
             canActivateRow={(item) =>
-              item.workspace_id ? manage : organizationAdmin
+              item.configuration_source === "deployment" ||
+              (item.workspace_id ? manage : organizationAdmin)
             }
             onRowActivate={rows.activate}
             columns={[
@@ -115,11 +121,15 @@ export function EnvironmentProviders({ scope }: { scope: EnvironmentScope }) {
                     <ResourceIdentity
                       name={item.name}
                       resourceId={item.id}
-                      description={String(
-                        providerTypes.data?.items.find(
-                          (entry) => entry.type === item.type,
-                        )?.display_name ?? item.type,
-                      )}
+                      description={
+                        item.configuration_source === "deployment"
+                          ? t("Configured by deployment")
+                          : String(
+                              providerTypes.data?.items.find(
+                                (entry) => entry.type === item.type,
+                              )?.display_name ?? item.type,
+                            )
+                      }
                     />
                   </div>
                 ),
@@ -135,9 +145,13 @@ export function EnvironmentProviders({ scope }: { scope: EnvironmentScope }) {
                 label: t("Credentials"),
                 render: (item) =>
                   t(
-                    item.credential_configured
-                      ? "Configured"
-                      : "Not configured",
+                    providerTypes.data?.items.find(
+                      (entry) => entry.type === item.type,
+                    )?.credential_schema == null
+                      ? "Not required"
+                      : item.credential_configured
+                        ? "Configured"
+                        : "Not configured",
                   ),
               },
               {
@@ -213,7 +227,13 @@ function ProviderEditor({
         ) : undefined
       }
       size={"md"}
-      title={t(providerId ? "Edit provider" : "Add provider")}
+      title={t(
+        query.data?.value.configuration_source === "deployment"
+          ? "Environment provider"
+          : providerId
+            ? "Edit provider"
+            : "Add provider",
+      )}
       description={
         providerId ? undefined : t("Choose where your environments run.")
       }
@@ -265,6 +285,7 @@ function ProviderForm({
     ),
     [removeCredential, setRemoveCredential] = useState(false),
     [credential, setCredential] = useState<Record<string, unknown>>({});
+  const deployment = basis?.value.configuration_source === "deployment";
   const definition = definitions.find((item) => item.type === type),
     configSchema = schema(definition?.configuration_schema),
     credentialSchema = schema(definition?.credential_schema);
@@ -315,7 +336,7 @@ function ProviderForm({
         className={formSectionStyles.form}
         onSubmit={(event) => {
           event.preventDefault();
-          save.mutate();
+          if (!deployment) save.mutate();
         }}
       >
         <FormSection>
@@ -326,6 +347,7 @@ function ProviderForm({
           >
             <Input
               required={true}
+              readOnly={deployment}
               value={name}
               onChange={(event) => setName(event.target.value)}
               maxLength={128}
@@ -335,7 +357,11 @@ function ProviderForm({
         <FormSection title={t("Connection")}>
           <div className={styles.twoColumns}>
             <ProviderTypeField
-              definitions={definitions}
+              definitions={
+                basis
+                  ? definitions
+                  : definitions.filter((item) => !item.deployment_managed)
+              }
               value={type}
               readOnly={!!basis}
               onValueChange={(value) => {
@@ -400,20 +426,34 @@ function ProviderForm({
             </>
           )}
         </FormSection>
-        {basis && (
-          <FormSection>
-            <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
-          </FormSection>
+        {deployment ? (
+          <p className={styles.muted}>
+            {t(
+              "Configured by deployment. Change backend settings in the Service configuration.",
+            )}
+          </p>
+        ) : (
+          basis && (
+            <FormSection>
+              <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
+            </FormSection>
+          )
         )}
         <ErrorNotice
           error={save.error}
           retry={basis ? () => void reload() : undefined}
         />
-        <FormActions
-          pending={save.isPending}
-          onCancel={close}
-          label={t(basis ? "Save changes" : "Add provider")}
-        />
+        {deployment ? (
+          <Button type="button" variant="outline" onClick={close}>
+            {t("Close")}
+          </Button>
+        ) : (
+          <FormActions
+            pending={save.isPending}
+            onCancel={close}
+            label={t(basis ? "Save changes" : "Add provider")}
+          />
+        )}
       </form>
     </div>
   );

@@ -5,6 +5,7 @@ import pytest
 from a13n_environment import build_environment_provider_catalog
 from a13n_service.agents.models import AgentRecord
 from a13n_service.environments.domain import (
+    CreateManagedEnvironmentRequest,
     CreateProviderRequest,
     CreateTemplateRequest,
     ExistingEnvironmentSelection,
@@ -119,7 +120,7 @@ async def test_switching_defaults_does_not_retarget_retry_or_reuse_template_allo
     other = await service.create_environment(
         actor=hook_actor(),
         workspace_id=WORKSPACE_ID,
-        request=NewEnvironmentSelection(template_id=template.id),
+        request=CreateManagedEnvironmentRequest(template_id=template.id),
         idempotency_key="other",
     )
     async with transaction(interaction_sessions) as session:

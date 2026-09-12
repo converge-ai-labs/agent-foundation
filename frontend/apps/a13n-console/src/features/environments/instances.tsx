@@ -1,3 +1,4 @@
+import { EnvironmentNameEditor } from "./instance-name";
 import { ResourceIdentity } from "../../shared/collection";
 import { ProviderIcon } from "../../shared/provider-icon";
 import { CopyableId } from "../../shared/copy";
@@ -18,7 +19,13 @@ import { PageActions } from "../../shared/page-actions";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { allPages, commandHeaders, data, type Schema } from "../../shared/api";
+import {
+  allPages,
+  commandHeaders,
+  data,
+  representation,
+  type Schema,
+} from "../../shared/api";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import {
   Empty,
@@ -71,7 +78,7 @@ export function EnvironmentInstances() {
                 tone: "primary",
                 render: (item) => (
                   <>
-                    <CopyableId value={item.id} primary />
+                    <ResourceIdentity name={item.name} resourceId={item.id} />
                     <small>
                       {t(item.ownership === "managed" ? "Managed" : "External")}
                     </small>
@@ -129,6 +136,7 @@ function EnvironmentDetails({
     { workspace, can } = useWorkspace(),
     { t } = useTranslation(),
     [open, setOpen] = useState(false),
+    [nameEditorKey, setNameEditorKey] = useState(0),
     [commandId, setCommandId] = useState<string>(),
     key = useIdempotency();
   const detail = useQuery({
@@ -140,7 +148,7 @@ function EnvironmentDetails({
           params: { path: { resource_id: environment.id } },
           signal,
         })
-        .then(data),
+        .then(representation),
   });
   const provider = useQuery({
     queryKey: ["environment-provider", environment.provider_id],
@@ -210,34 +218,49 @@ function EnvironmentDetails({
         ) : (
           detail.data && (
             <>
-              <CopyableId value={detail.data.id} primary />
+              <ResourceIdentity
+                name={detail.data.value.name}
+                resourceId={detail.data.value.id}
+              />
+              {can("environment.manage") && (
+                <EnvironmentNameEditor
+                  key={nameEditorKey}
+                  environment={detail.data.value}
+                  etag={detail.data?.etag}
+                  reload={async () => {
+                    const result = await detail.refetch();
+                    if (result.isSuccess)
+                      setNameEditorKey((value) => value + 1);
+                  }}
+                />
+              )}
               <div className={styles.twoColumns}>
                 <ReadOnlyField label={t("Status")}>
-                  <StateBadge state={detail.data.status} />
+                  <StateBadge state={detail.data.value.status} />
                 </ReadOnlyField>
                 <ReadOnlyField label={t("Activity")}>
-                  <StateBadge state={detail.data.retention_condition} />
+                  <StateBadge state={detail.data.value.retention_condition} />
                 </ReadOnlyField>
                 <ReadOnlyField label={t("Generation")}>
-                  {detail.data.generation}
+                  {detail.data.value.generation}
                 </ReadOnlyField>
                 <ReadOnlyField label={t("Access ceiling")}>
                   {t(
-                    detail.data.access === "full"
+                    detail.data.value.access === "full"
                       ? "Full access"
-                      : detail.data.access === "read_only"
+                      : detail.data.value.access === "read_only"
                         ? "Read only"
                         : "Read and write",
                   )}
                 </ReadOnlyField>
                 <ReadOnlyField label={t("Updated")}>
-                  <Timestamp value={detail.data.updated_at} />
+                  <Timestamp value={detail.data.value.updated_at} />
                 </ReadOnlyField>
               </div>
               <div className={`${styles.stack} border-t border-border pt-4`}>
                 <ReadOnlyField label={t("Ownership")}>
                   {t(
-                    detail.data.ownership === "managed"
+                    detail.data.value.ownership === "managed"
                       ? "Managed"
                       : "External",
                   )}
@@ -250,12 +273,14 @@ function EnvironmentDetails({
                       icon={<ProviderIcon type={provider.data.type} />}
                     />
                   ) : (
-                    <CopyableId value={detail.data.provider_id} />
+                    <CopyableId value={detail.data.value.provider_id} />
                   )}
                 </ReadOnlyField>
-                {detail.data.template_revision_id && (
+                {detail.data.value.template_revision_id && (
                   <ReadOnlyField label={t("Template revision")}>
-                    <CopyableId value={detail.data.template_revision_id} />
+                    <CopyableId
+                      value={detail.data.value.template_revision_id}
+                    />
                   </ReadOnlyField>
                 )}
               </div>
@@ -341,6 +366,7 @@ function EnvironmentForm({ close }: { close: () => void }) {
       ),
   });
   const [kind, setKind] = useState("managed"),
+    [name, setName] = useState(""),
     [templateId, setTemplateId] = useState(""),
     [providerId, setProviderId] = useState(""),
     [version, setVersion] = useState(""),
@@ -355,15 +381,17 @@ function EnvironmentForm({ close }: { close: () => void }) {
       if (kind === "external" && !provider)
         throw new Error(t("Select an environment provider."));
       const body:
-        | Schema["NewEnvironmentSelection"]
+        | Schema["CreateManagedEnvironmentRequest"]
         | Schema["RegisterEnvironmentRequest"] =
         kind === "managed"
           ? {
               template_id: templateId,
+              ...(name.trim() && { name: name.trim() }),
               ...(version && { version: Number(version) }),
             }
           : {
               provider_id: providerId,
+              ...(name.trim() && { name: name.trim() }),
               configuration: jsonObject(configuration),
               configuration_schema_version: schemaVersion,
               access,
@@ -399,6 +427,16 @@ function EnvironmentForm({ close }: { close: () => void }) {
         save.mutate();
       }}
     >
+      <FormField
+        label={t("Name")}
+        description={t("Leave empty to generate a name.")}
+      >
+        <Input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          maxLength={128}
+        />
+      </FormField>
       <ChoiceField
         placeholder={t("Select ownership")}
         value={kind}

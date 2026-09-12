@@ -770,6 +770,24 @@ func (e EnvironmentCommandStatus) Valid() bool {
 	}
 }
 
+// Defines values for EnvironmentProviderConfigurationSource.
+const (
+	EnvironmentProviderConfigurationSourceDeployment EnvironmentProviderConfigurationSource = "deployment"
+	EnvironmentProviderConfigurationSourceUser       EnvironmentProviderConfigurationSource = "user"
+)
+
+// Valid indicates whether the value is a known member of the EnvironmentProviderConfigurationSource enum.
+func (e EnvironmentProviderConfigurationSource) Valid() bool {
+	switch e {
+	case EnvironmentProviderConfigurationSourceDeployment:
+		return true
+	case EnvironmentProviderConfigurationSourceUser:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for EnvironmentStatus.
 const (
 	EnvironmentStatusDeleted     EnvironmentStatus = "deleted"
@@ -3289,6 +3307,13 @@ type CreateMCPConnectionRequest struct {
 	StaticHeaderNames *[]string   `json:"static_header_names,omitempty"`
 }
 
+// CreateManagedEnvironmentRequest defines model for CreateManagedEnvironmentRequest.
+type CreateManagedEnvironmentRequest struct {
+	Name       nullable.Nullable[string] `json:"name,omitempty"`
+	TemplateId string                    `json:"template_id"`
+	Version    nullable.Nullable[int]    `json:"version,omitempty"`
+}
+
 // CreateModelProviderRequest defines model for CreateModelProviderRequest.
 type CreateModelProviderRequest struct {
 	Configuration *map[string]interface{}   `json:"configuration,omitempty"`
@@ -3491,6 +3516,7 @@ type Environment struct {
 	CreatedAt          time.Time                     `json:"created_at"`
 	Generation         int                           `json:"generation"`
 	Id                 string                        `json:"id"`
+	Name               string                        `json:"name"`
 	OrganizationId     string                        `json:"organization_id"`
 	Ownership          EnvironmentOwnership          `json:"ownership"`
 	ProviderId         string                        `json:"provider_id"`
@@ -3528,29 +3554,35 @@ type EnvironmentCommandStatus string
 
 // EnvironmentProvider defines model for EnvironmentProvider.
 type EnvironmentProvider struct {
-	Configuration        map[string]JsonValue      `json:"configuration"`
-	CreatedAt            time.Time                 `json:"created_at"`
-	CredentialConfigured bool                      `json:"credential_configured"`
-	Enabled              bool                      `json:"enabled"`
-	Id                   string                    `json:"id"`
-	Name                 string                    `json:"name"`
-	OrganizationId       string                    `json:"organization_id"`
-	Type                 string                    `json:"type"`
-	UpdatedAt            time.Time                 `json:"updated_at"`
-	WorkspaceId          nullable.Nullable[string] `json:"workspace_id"`
+	Configuration        map[string]JsonValue                    `json:"configuration"`
+	ConfigurationSource  *EnvironmentProviderConfigurationSource `json:"configuration_source,omitempty"`
+	CreatedAt            time.Time                               `json:"created_at"`
+	CredentialConfigured bool                                    `json:"credential_configured"`
+	Enabled              bool                                    `json:"enabled"`
+	Id                   string                                  `json:"id"`
+	Name                 string                                  `json:"name"`
+	OrganizationId       string                                  `json:"organization_id"`
+	Type                 string                                  `json:"type"`
+	UpdatedAt            time.Time                               `json:"updated_at"`
+	WorkspaceId          nullable.Nullable[string]               `json:"workspace_id"`
 }
+
+// EnvironmentProviderConfigurationSource defines model for EnvironmentProvider.ConfigurationSource.
+type EnvironmentProviderConfigurationSource string
 
 // EnvironmentProviderDefinition defines model for EnvironmentProviderDefinition.
 type EnvironmentProviderDefinition struct {
-	ConfigurationSchema   map[string]JsonValue                    `json:"configuration_schema"`
-	ConfigurationVersions []string                                `json:"configuration_versions"`
-	CredentialSchema      nullable.Nullable[map[string]JsonValue] `json:"credential_schema"`
-	DisplayName           string                                  `json:"display_name"`
-	RequiresKeepalive     bool                                    `json:"requires_keepalive"`
-	SupportsDestroy       bool                                    `json:"supports_destroy"`
-	SupportsManaged       bool                                    `json:"supports_managed"`
-	SupportsStop          bool                                    `json:"supports_stop"`
-	Type                  string                                  `json:"type"`
+	ConfigurationSchema          map[string]JsonValue                    `json:"configuration_schema"`
+	ConfigurationVersions        []string                                `json:"configuration_versions"`
+	CredentialSchema             nullable.Nullable[map[string]JsonValue] `json:"credential_schema"`
+	DeploymentManaged            *bool                                   `json:"deployment_managed,omitempty"`
+	DisplayName                  string                                  `json:"display_name"`
+	RequiresKeepalive            bool                                    `json:"requires_keepalive"`
+	SupportsDestroy              bool                                    `json:"supports_destroy"`
+	SupportsManaged              bool                                    `json:"supports_managed"`
+	SupportsStop                 bool                                    `json:"supports_stop"`
+	TemplateConfigurationSchemas map[string]map[string]JsonValue         `json:"template_configuration_schemas"`
+	Type                         string                                  `json:"type"`
 }
 
 // EnvironmentSelection defines model for EnvironmentSelection.
@@ -4553,6 +4585,7 @@ type RegisterEnvironmentRequest struct {
 	Access                     *EnvironmentAccess                  `json:"access,omitempty"`
 	Configuration              map[string]JsonValue                `json:"configuration"`
 	ConfigurationSchemaVersion *string                             `json:"configuration_schema_version,omitempty"`
+	Name                       nullable.Nullable[string]           `json:"name,omitempty"`
 	ProviderId                 string                              `json:"provider_id"`
 	State                      nullable.Nullable[EnvironmentState] `json:"state,omitempty"`
 }
@@ -5532,6 +5565,11 @@ type UpdateConnectorProviderRequest struct {
 	Status          nullable.Nullable[ConnectorProviderStatus] `json:"status,omitempty"`
 }
 
+// UpdateEnvironmentRequest defines model for UpdateEnvironmentRequest.
+type UpdateEnvironmentRequest struct {
+	Name string `json:"name"`
+}
+
 // UpdateHookSubscriptionRequest defines model for UpdateHookSubscriptionRequest.
 type UpdateHookSubscriptionRequest struct {
 	HookNames []string                  `json:"hook_names"`
@@ -5956,6 +5994,11 @@ type PatchEnvironmentTemplatesTemplateIdParams struct {
 type GetEnvironmentTemplatesTemplateIdRevisionsParams struct {
 	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// PatchEnvironmentsEnvironmentIdParams defines parameters for PatchEnvironmentsEnvironmentId.
+type PatchEnvironmentsEnvironmentIdParams struct {
+	IfMatch string `json:"If-Match"`
 }
 
 // PostEnvironmentsEnvironmentIdDeleteParams defines parameters for PostEnvironmentsEnvironmentIdDelete.
@@ -6732,6 +6775,9 @@ type PatchEnvironmentTemplatesTemplateIdJSONRequestBody = UpdateTemplateRequest
 
 // PostEnvironmentTemplatesTemplateIdRevisionsJSONRequestBody defines body for PostEnvironmentTemplatesTemplateIdRevisions for application/json ContentType.
 type PostEnvironmentTemplatesTemplateIdRevisionsJSONRequestBody = CreateTemplateRevisionRequest
+
+// PatchEnvironmentsEnvironmentIdJSONRequestBody defines body for PatchEnvironmentsEnvironmentId for application/json ContentType.
+type PatchEnvironmentsEnvironmentIdJSONRequestBody = UpdateEnvironmentRequest
 
 // PatchHookSubscriptionsSubscriptionIdJSONRequestBody defines body for PatchHookSubscriptionsSubscriptionId for application/json ContentType.
 type PatchHookSubscriptionsSubscriptionIdJSONRequestBody = UpdateHookSubscriptionStateRequest
@@ -11419,22 +11465,22 @@ func (t *WaitingRunFeedbackRequest_Resolutions_Item) UnmarshalJSON(b []byte) err
 	return err
 }
 
-// AsNewEnvironmentSelection returns the union data inside the PostWorkspacesWorkspaceEnvironmentsJSONBody as a NewEnvironmentSelection
-func (t PostWorkspacesWorkspaceEnvironmentsJSONBody) AsNewEnvironmentSelection() (NewEnvironmentSelection, error) {
-	var body NewEnvironmentSelection
+// AsCreateManagedEnvironmentRequest returns the union data inside the PostWorkspacesWorkspaceEnvironmentsJSONBody as a CreateManagedEnvironmentRequest
+func (t PostWorkspacesWorkspaceEnvironmentsJSONBody) AsCreateManagedEnvironmentRequest() (CreateManagedEnvironmentRequest, error) {
+	var body CreateManagedEnvironmentRequest
 	err := json.Unmarshal(t.union, &body)
 	return body, err
 }
 
-// FromNewEnvironmentSelection overwrites any union data inside the PostWorkspacesWorkspaceEnvironmentsJSONBody as the provided NewEnvironmentSelection
-func (t *PostWorkspacesWorkspaceEnvironmentsJSONBody) FromNewEnvironmentSelection(v NewEnvironmentSelection) error {
+// FromCreateManagedEnvironmentRequest overwrites any union data inside the PostWorkspacesWorkspaceEnvironmentsJSONBody as the provided CreateManagedEnvironmentRequest
+func (t *PostWorkspacesWorkspaceEnvironmentsJSONBody) FromCreateManagedEnvironmentRequest(v CreateManagedEnvironmentRequest) error {
 	b, err := json.Marshal(v)
 	t.union = b
 	return err
 }
 
-// MergeNewEnvironmentSelection performs a merge with any union data inside the PostWorkspacesWorkspaceEnvironmentsJSONBody, using the provided NewEnvironmentSelection
-func (t *PostWorkspacesWorkspaceEnvironmentsJSONBody) MergeNewEnvironmentSelection(v NewEnvironmentSelection) error {
+// MergeCreateManagedEnvironmentRequest performs a merge with any union data inside the PostWorkspacesWorkspaceEnvironmentsJSONBody, using the provided CreateManagedEnvironmentRequest
+func (t *PostWorkspacesWorkspaceEnvironmentsJSONBody) MergeCreateManagedEnvironmentRequest(v CreateManagedEnvironmentRequest) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -12007,6 +12053,20 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /api/v1/environment-templates/{template_id}/revisions (the `PostEnvironmentTemplatesTemplateIdRevisions` operationId).
 	PostEnvironmentTemplatesTemplateIdRevisions(ctx context.Context, templateId string, body PostEnvironmentTemplatesTemplateIdRevisionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PatchEnvironmentsEnvironmentIdWithBody Update Environment
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PATCH /api/v1/environments/{environment_id} (the `PatchEnvironmentsEnvironmentId` operationId).
+	PatchEnvironmentsEnvironmentIdWithBody(ctx context.Context, environmentId string, params *PatchEnvironmentsEnvironmentIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PatchEnvironmentsEnvironmentId Update Environment
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PATCH /api/v1/environments/{environment_id} (the `PatchEnvironmentsEnvironmentId` operationId).
+	PatchEnvironmentsEnvironmentId(ctx context.Context, environmentId string, params *PatchEnvironmentsEnvironmentIdParams, body PatchEnvironmentsEnvironmentIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostEnvironmentsEnvironmentIdDelete Delete Environment
 	//
@@ -14933,6 +14993,40 @@ func (c *Client) PostEnvironmentTemplatesTemplateIdRevisionsWithBody(ctx context
 // Corresponds with POST /api/v1/environment-templates/{template_id}/revisions (the `PostEnvironmentTemplatesTemplateIdRevisions` operationId).
 func (c *Client) PostEnvironmentTemplatesTemplateIdRevisions(ctx context.Context, templateId string, body PostEnvironmentTemplatesTemplateIdRevisionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostEnvironmentTemplatesTemplateIdRevisionsRequest(c.Server, templateId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PatchEnvironmentsEnvironmentIdWithBody Update Environment
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PATCH /api/v1/environments/{environment_id} (the `PatchEnvironmentsEnvironmentId` operationId).
+func (c *Client) PatchEnvironmentsEnvironmentIdWithBody(ctx context.Context, environmentId string, params *PatchEnvironmentsEnvironmentIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchEnvironmentsEnvironmentIdRequestWithBody(c.Server, environmentId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PatchEnvironmentsEnvironmentId Update Environment
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PATCH /api/v1/environments/{environment_id} (the `PatchEnvironmentsEnvironmentId` operationId).
+func (c *Client) PatchEnvironmentsEnvironmentId(ctx context.Context, environmentId string, params *PatchEnvironmentsEnvironmentIdParams, body PatchEnvironmentsEnvironmentIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchEnvironmentsEnvironmentIdRequest(c.Server, environmentId, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -21918,6 +22012,66 @@ func NewPostEnvironmentTemplatesTemplateIdRevisionsRequestWithBody(server string
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPatchEnvironmentsEnvironmentIdRequest calls the generic PatchEnvironmentsEnvironmentId builder with application/json body
+func NewPatchEnvironmentsEnvironmentIdRequest(server string, environmentId string, params *PatchEnvironmentsEnvironmentIdParams, body PatchEnvironmentsEnvironmentIdJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPatchEnvironmentsEnvironmentIdRequestWithBody(server, environmentId, params, "application/json", bodyReader)
+}
+
+// NewPatchEnvironmentsEnvironmentIdRequestWithBody constructs an http.Request for the PatchEnvironmentsEnvironmentId method, with any body, and a specified content type
+func NewPatchEnvironmentsEnvironmentIdRequestWithBody(server string, environmentId string, params *PatchEnvironmentsEnvironmentIdParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "environment_id", environmentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/environments/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "If-Match", params.IfMatch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("If-Match", headerParam0)
+
+	}
 
 	return req, nil
 }
@@ -34089,6 +34243,20 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /api/v1/environment-templates/{template_id}/revisions (the `PostEnvironmentTemplatesTemplateIdRevisions` operationId).
 	PostEnvironmentTemplatesTemplateIdRevisionsWithResponse(ctx context.Context, templateId string, body PostEnvironmentTemplatesTemplateIdRevisionsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostEnvironmentTemplatesTemplateIdRevisionsResponse, error)
 
+	// PatchEnvironmentsEnvironmentIdWithBodyWithResponse Update Environment
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /api/v1/environments/{environment_id} (the `PatchEnvironmentsEnvironmentId` operationId).
+	PatchEnvironmentsEnvironmentIdWithBodyWithResponse(ctx context.Context, environmentId string, params *PatchEnvironmentsEnvironmentIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchEnvironmentsEnvironmentIdResponse, error)
+
+	// PatchEnvironmentsEnvironmentIdWithResponse Update Environment
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /api/v1/environments/{environment_id} (the `PatchEnvironmentsEnvironmentId` operationId).
+	PatchEnvironmentsEnvironmentIdWithResponse(ctx context.Context, environmentId string, params *PatchEnvironmentsEnvironmentIdParams, body PatchEnvironmentsEnvironmentIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchEnvironmentsEnvironmentIdResponse, error)
+
 	// PostEnvironmentsEnvironmentIdDeleteWithResponse Delete Environment
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -39867,6 +40035,83 @@ func (r PostEnvironmentTemplatesTemplateIdRevisionsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r PostEnvironmentTemplatesTemplateIdRevisionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PatchEnvironmentsEnvironmentIdResponse200Headers the declared response headers of an HTTP 200 response for PatchEnvironmentsEnvironmentId
+type PatchEnvironmentsEnvironmentIdResponse200Headers struct {
+	XRequestID *string
+}
+
+// PatchEnvironmentsEnvironmentIdResponse400Headers the declared response headers of an HTTP 400 response for PatchEnvironmentsEnvironmentId
+type PatchEnvironmentsEnvironmentIdResponse400Headers struct {
+	XRequestID *string
+}
+
+// PatchEnvironmentsEnvironmentIdResponseDefaultHeaders the declared response headers of an HTTP default response for PatchEnvironmentsEnvironmentId
+type PatchEnvironmentsEnvironmentIdResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PatchEnvironmentsEnvironmentIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Environment
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PatchEnvironmentsEnvironmentIdResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PatchEnvironmentsEnvironmentIdResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PatchEnvironmentsEnvironmentIdResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PatchEnvironmentsEnvironmentIdResponse) GetJSON200() *Environment {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PatchEnvironmentsEnvironmentIdResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PatchEnvironmentsEnvironmentIdResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PatchEnvironmentsEnvironmentIdResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PatchEnvironmentsEnvironmentIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PatchEnvironmentsEnvironmentIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PatchEnvironmentsEnvironmentIdResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -56228,6 +56473,32 @@ func (c *ClientWithResponses) PostEnvironmentTemplatesTemplateIdRevisionsWithRes
 	return ParsePostEnvironmentTemplatesTemplateIdRevisionsResponse(rsp)
 }
 
+// PatchEnvironmentsEnvironmentIdWithBodyWithResponse Update Environment
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /api/v1/environments/{environment_id} (the `PatchEnvironmentsEnvironmentId` operationId).
+func (c *ClientWithResponses) PatchEnvironmentsEnvironmentIdWithBodyWithResponse(ctx context.Context, environmentId string, params *PatchEnvironmentsEnvironmentIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchEnvironmentsEnvironmentIdResponse, error) {
+	rsp, err := c.PatchEnvironmentsEnvironmentIdWithBody(ctx, environmentId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchEnvironmentsEnvironmentIdResponse(rsp)
+}
+
+// PatchEnvironmentsEnvironmentIdWithResponse Update Environment
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /api/v1/environments/{environment_id} (the `PatchEnvironmentsEnvironmentId` operationId).
+func (c *ClientWithResponses) PatchEnvironmentsEnvironmentIdWithResponse(ctx context.Context, environmentId string, params *PatchEnvironmentsEnvironmentIdParams, body PatchEnvironmentsEnvironmentIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchEnvironmentsEnvironmentIdResponse, error) {
+	rsp, err := c.PatchEnvironmentsEnvironmentId(ctx, environmentId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchEnvironmentsEnvironmentIdResponse(rsp)
+}
+
 // PostEnvironmentsEnvironmentIdDeleteWithResponse Delete Environment
 //
 // Returns a wrapper object for the known response body format(s).
@@ -63845,6 +64116,86 @@ func ParsePostEnvironmentTemplatesTemplateIdRevisionsResponse(rsp *http.Response
 		response.Headers400 = &headers
 	case true:
 		var headers PostEnvironmentTemplatesTemplateIdRevisionsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePatchEnvironmentsEnvironmentIdResponse parses an HTTP response from a PatchEnvironmentsEnvironmentIdWithResponse call
+func ParsePatchEnvironmentsEnvironmentIdResponse(rsp *http.Response) (*PatchEnvironmentsEnvironmentIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PatchEnvironmentsEnvironmentIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Environment
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PatchEnvironmentsEnvironmentIdResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PatchEnvironmentsEnvironmentIdResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PatchEnvironmentsEnvironmentIdResponseDefaultHeaders
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {

@@ -56,7 +56,11 @@ const cases = ["workspace", "organization"].flatMap((kind) =>
   })),
 );
 
-function setup(kind: "workspace" | "organization", surface: string) {
+function setup(
+  kind: "workspace" | "organization",
+  surface: string,
+  deployment = false,
+) {
   const connector = surface === "connector";
   const scope = { kind, id: kind === "workspace" ? "ws_test" : "org_test" };
   const type = connector ? "composio" : "e2b";
@@ -71,8 +75,10 @@ function setup(kind: "workspace" | "organization", surface: string) {
     enabled: true,
     version: 3,
     credential_configured: true,
+    configuration_source: deployment ? "deployment" : "user",
   };
   const definition = {
+    deployment_managed: deployment,
     type,
     display_name: connector ? "Composio" : "e2b",
     configuration_schema: {
@@ -258,4 +264,18 @@ it("saves connector name, credentials and enabled state in one atomic update", a
   );
   expect(http.POST).not.toHaveBeenCalled();
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+});
+
+it("shows deployment providers read-only without a manual creation action", async () => {
+  const user = userEvent.setup();
+  setup("organization", "environment", true);
+  await screen.findByText("Existing provider");
+  expect(screen.queryByRole("button", { name: "Add provider" })).toBeNull();
+  await user.click(screen.getByText("Existing provider"));
+  await screen.findByRole("group", {
+    name: "Name",
+  });
+  expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+  expect(http.PATCH).not.toHaveBeenCalled();
 });

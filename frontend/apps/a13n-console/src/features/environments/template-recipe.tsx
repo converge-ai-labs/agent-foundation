@@ -12,10 +12,10 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { allPages, data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { TextAreaField } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
-import { jsonObject } from "../../shared/validation";
+import { jsonObject, validateSettings } from "../../shared/validation";
+import { RecipeConfiguration } from "./recipe-configuration";
 import { environmentApi, type EnvironmentScope } from "./api";
 import { useEnvironmentTypes } from "./providers";
 import editorStyles from "./template-editor.module.css";
@@ -51,9 +51,6 @@ export function TemplateRecipe({
   const [name, setName] = useState(""),
     [description, setDescription] = useState(""),
     [providerId, setProviderId] = useState(revision?.provider_id ?? ""),
-    [configuration, setConfiguration] = useState(
-      JSON.stringify(revision?.configuration ?? {}, null, 2),
-    ),
     [version, setVersion] = useState(
       revision?.configuration_schema_version ?? "1",
     ),
@@ -63,6 +60,17 @@ export function TemplateRecipe({
     [preparation, setPreparation] = useState<"on_run" | "on_use">(
       revision?.preparation ?? "on_run",
     );
+  const [configurations, setConfigurations] = useState<Record<string, string>>({
+    [`${revision?.provider_id ?? ""}:${revision?.configuration_schema_version ?? "1"}`]:
+      JSON.stringify(revision?.configuration ?? {}, null, 2),
+  });
+  const [configurationError, setConfigurationError] = useState<string>();
+  const configurationKey = `${providerId}:${version}`;
+  const configuration = configurations[configurationKey] ?? "{}";
+  function setConfiguration(value: string) {
+    setConfigurations((current) => ({ ...current, [configurationKey]: value }));
+    setConfigurationError(undefined);
+  }
   const [stop, setStop] = useState(
       revision?.retention.idle.stop_after?.toString() ?? "",
     ),
@@ -74,11 +82,25 @@ export function TemplateRecipe({
       item.type ===
       providers.data?.find((provider) => provider.id === providerId)?.type,
   );
+  const configurationSchema =
+    definition?.template_configuration_schemas[version];
   const save = useMutation({
     mutationFn: async () => {
+      let parsedConfiguration;
+      try {
+        parsedConfiguration = jsonObject(configuration);
+        if (configurationSchema)
+          validateSettings(configurationSchema, parsedConfiguration);
+        setConfigurationError(undefined);
+      } catch (error) {
+        setConfigurationError(
+          error instanceof Error ? error.message : t("Invalid configuration"),
+        );
+        throw error;
+      }
       const recipe = {
         provider_id: providerId,
-        configuration: jsonObject(configuration),
+        configuration: parsedConfiguration,
         configuration_schema_version: version,
         access,
         preparation,
@@ -155,7 +177,17 @@ export function TemplateRecipe({
               value={providerId}
               className="min-w-0"
               required
-              onValueChange={setProviderId}
+              onValueChange={(value) => {
+                setProviderId(value);
+                const type = providers.data?.find(
+                  (provider) => provider.id === value,
+                )?.type;
+                const versions = types.data?.items.find(
+                  (entry) => entry.type === type,
+                )?.configuration_versions;
+                setVersion(versions?.at(-1) ?? "1");
+                setConfigurationError(undefined);
+              }}
               label={t("Provider")}
               options={
                 providers.data
@@ -196,17 +228,16 @@ export function TemplateRecipe({
               ]}
             />
           </div>
-          <TextAreaField
-            readOnly={readOnly}
-            label={t("Environment recipe (JSON)")}
-            hint={t(
-              "Use the configuration accepted by this environment provider.",
-            )}
-            value={configuration}
-            onChange={setConfiguration}
-            code
-            rows={5}
-          />
+          {providerId && (
+            <RecipeConfiguration
+              key={configurationKey}
+              readOnly={readOnly}
+              schema={configurationSchema}
+              text={configuration}
+              onChange={setConfiguration}
+              error={configurationError}
+            />
+          )}
         </div>
       </FormSection>
       <FormSection aside title={t("Lifecycle")}>
@@ -230,17 +261,20 @@ export function TemplateRecipe({
                   { value: "on_use", label: t("On first use") },
                 ]}
               />
-              <FormField
-                className="min-w-0 w-full"
-                label={t("Configuration schema version")}
-              >
-                <Input
+              {(definition?.configuration_versions.length ?? 0) > 1 && (
+                <ChoiceField
                   readOnly={readOnly}
-                  required={true}
+                  label={t("Configuration schema version")}
                   value={version}
-                  onChange={(event) => setVersion(event.target.value)}
+                  onValueChange={setVersion}
+                  options={
+                    definition?.configuration_versions.map((value) => ({
+                      value,
+                      label: value,
+                    })) ?? []
+                  }
                 />
-              </FormField>
+              )}
             </div>
             <div className={styles.twoColumns}>
               <FormField

@@ -14,7 +14,7 @@ from a13n_environment import (
     build_environment_provider_catalog,
     discover_environment_provider_references,
 )
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, ConfigDict
 
 
 class _Configuration(BaseModel):
@@ -29,13 +29,8 @@ class _Provider(EnvironmentProvider):
         return "test.provider"
 
     @property
-    def configuration_versions(self) -> frozenset[str]:
-        return frozenset({"1"})
-
-    def validate_configuration(self, *, schema_version: str, value: JsonValue) -> BaseModel:
-        if schema_version != "1":
-            raise ValueError("unsupported")
-        return _Configuration.model_validate(value)
+    def configuration_models(self) -> dict[str, type[BaseModel]]:
+        return {"1": _Configuration}
 
     def describe_configuration(self, configuration):
         raise NotImplementedError

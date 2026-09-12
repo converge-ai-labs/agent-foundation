@@ -11,8 +11,15 @@ from pathlib import Path
 from types import TracebackType
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 
+from .errors import (
+    EnvironmentProviderError,
+    EnvironmentProviderErrorCategory,
+    EnvironmentProviderErrorContext,
+    EnvironmentProviderOutcomeCertainty,
+    EnvironmentProviderRecoveryHint,
+)
 from .models import (
     EnvironmentAvailability,
     EnvironmentDescriptor,
@@ -343,10 +350,37 @@ class EnvironmentProvider(ABC):
 
     @property
     @abstractmethod
-    def configuration_versions(self) -> frozenset[str]: ...
+    def configuration_models(self) -> Mapping[str, type[BaseModel]]:
+        """Versioned recipe models own both validation and authoring schemas."""
+        ...
 
-    @abstractmethod
-    def validate_configuration(self, *, schema_version: str, value: JsonValue) -> BaseModel: ...
+    @property
+    def configuration_versions(self) -> frozenset[str]:
+        return frozenset(self.configuration_models)
+
+    def validate_configuration(self, *, schema_version: str, value: JsonValue) -> BaseModel:
+        model = self.configuration_models.get(schema_version)
+        context = EnvironmentProviderErrorContext(provider_key=self.key, schema_version=schema_version)
+        if model is None:
+            raise EnvironmentProviderError(
+                "Environment configuration version is unsupported.",
+                code="provider_schema_unsupported",
+                category=EnvironmentProviderErrorCategory.UNSUPPORTED,
+                certainty=EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
+                recovery_hint=EnvironmentProviderRecoveryHint.FIX_INPUT,
+                context=context,
+            )
+        try:
+            return model.model_validate(value)
+        except ValidationError as error:
+            raise EnvironmentProviderError(
+                "Environment configuration is invalid.",
+                code="provider_spec_invalid",
+                category=EnvironmentProviderErrorCategory.INVALID,
+                certainty=EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
+                recovery_hint=EnvironmentProviderRecoveryHint.FIX_INPUT,
+                context=context,
+            ) from error
 
     @abstractmethod
     def create_environment(

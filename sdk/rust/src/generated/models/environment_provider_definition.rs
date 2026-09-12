@@ -22,6 +22,9 @@ pub struct EnvironmentProviderDefinition {
     #[serde(rename = "credential_schema", deserialize_with = "Option::deserialize")]
     pub credential_schema: Option<std::collections::HashMap<String, serde_json::Value>>,
 
+    #[serde(rename = "deployment_managed", skip_serializing_if = "Option::is_none")]
+    pub deployment_managed: Option<bool>,
+
     #[serde(rename = "display_name")]
     pub display_name: String,
 
@@ -37,6 +40,10 @@ pub struct EnvironmentProviderDefinition {
     #[serde(rename = "supports_stop")]
     pub supports_stop: bool,
 
+    #[serde(rename = "template_configuration_schemas")]
+    pub template_configuration_schemas:
+        std::collections::HashMap<String, std::collections::HashMap<String, serde_json::Value>>,
+
     #[serde(rename = "type")]
     pub r#type: String,
 }
@@ -51,17 +58,23 @@ impl EnvironmentProviderDefinition {
         supports_destroy: bool,
         supports_managed: bool,
         supports_stop: bool,
+        template_configuration_schemas: std::collections::HashMap<
+            String,
+            std::collections::HashMap<String, serde_json::Value>,
+        >,
         r#type: String,
     ) -> EnvironmentProviderDefinition {
         EnvironmentProviderDefinition {
             configuration_schema,
             configuration_versions,
             credential_schema,
+            deployment_managed: None,
             display_name,
             requires_keepalive,
             supports_destroy,
             supports_managed,
             supports_stop,
+            template_configuration_schemas,
             r#type,
         }
     }

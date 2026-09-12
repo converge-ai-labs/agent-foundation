@@ -25,6 +25,14 @@ pub struct RegisterEnvironmentRequest {
     )]
     pub configuration_schema_version: Option<String>,
 
+    #[serde(
+        rename = "name",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub name: Option<Option<String>>,
+
     #[serde(rename = "provider_id")]
     pub provider_id: String,
 
@@ -46,6 +54,7 @@ impl RegisterEnvironmentRequest {
             access: None,
             configuration,
             configuration_schema_version: None,
+            name: None,
             provider_id,
             state: None,
         }

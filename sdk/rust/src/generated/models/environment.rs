@@ -28,6 +28,9 @@ pub struct Environment {
     #[serde(rename = "id")]
     pub id: String,
 
+    #[serde(rename = "name")]
+    pub name: String,
+
     #[serde(rename = "organization_id")]
     pub organization_id: String,
 
@@ -63,6 +66,7 @@ impl Environment {
         created_at: chrono::DateTime<chrono::FixedOffset>,
         generation: i32,
         id: String,
+        name: String,
         organization_id: String,
         ownership: Ownership,
         provider_id: String,
@@ -78,6 +82,7 @@ impl Environment {
             created_at,
             generation,
             id,
+            name,
             organization_id,
             ownership,
             provider_id,

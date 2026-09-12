@@ -58,16 +58,17 @@ The complete machine-readable validation schema, including named enum/union defi
 
 ## `environments`
 
-| Setting                                     | Environment variable                                    | Type / choices  | Constraints and default                                                                       |
-| ------------------------------------------- | ------------------------------------------------------- | --------------- | --------------------------------------------------------------------------------------------- |
-| `environments.provider_builtins`            | `A13N_SERVICE_ENVIRONMENT_PROVIDER_BUILTINS`            | array of string | default=["a13n.direct-local", "a13n.local-envd", "a13n.docker", "a13n.e2b", "a13n.http-envd"] |
-| `environments.provider_extensions`          | `A13N_SERVICE_ENVIRONMENT_PROVIDER_EXTENSIONS`          | array of string | default=[]                                                                                    |
-| `environments.maintenance_interval_seconds` | `A13N_SERVICE_ENVIRONMENT_MAINTENANCE_INTERVAL_SECONDS` | number          | maximum=300; exclusiveMinimum=0; default=5                                                    |
-| `environments.operation_timeout_seconds`    | `A13N_SERVICE_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS`    | number          | maximum=3600; exclusiveMinimum=0; default=60                                                  |
-| `environments.max_targets_per_workspace`    | `A13N_SERVICE_ENVIRONMENT_MAX_TARGETS_PER_WORKSPACE`    | integer         | minimum=1; default=1000                                                                       |
-| `environments.max_active_per_workspace`     | `A13N_SERVICE_ENVIRONMENT_MAX_ACTIVE_PER_WORKSPACE`     | integer         | minimum=1; default=100                                                                        |
-| `environments.maintenance_batch_size`       | `A13N_SERVICE_ENVIRONMENT_MAINTENANCE_BATCH_SIZE`       | integer         | minimum=1; maximum=10000; default=64                                                          |
-| `environments.maintenance_concurrency`      | `A13N_SERVICE_ENVIRONMENT_MAINTENANCE_CONCURRENCY`      | integer         | minimum=1; maximum=128; default=4                                                             |
+| Setting                                     | Environment variable                                    | Type / choices  | Constraints and default                      |
+| ------------------------------------------- | ------------------------------------------------------- | --------------- | -------------------------------------------- |
+| `environments.provider_builtins`            | `A13N_SERVICE_ENVIRONMENT_PROVIDER_BUILTINS`            | array of string | default=["a13n.e2b", "a13n.http-envd"]       |
+| `environments.local_providers`              | `A13N_SERVICE_ENVIRONMENT_LOCAL_PROVIDERS`              | object          | —                                            |
+| `environments.provider_extensions`          | `A13N_SERVICE_ENVIRONMENT_PROVIDER_EXTENSIONS`          | array of string | default=[]                                   |
+| `environments.maintenance_interval_seconds` | `A13N_SERVICE_ENVIRONMENT_MAINTENANCE_INTERVAL_SECONDS` | number          | maximum=300; exclusiveMinimum=0; default=5   |
+| `environments.operation_timeout_seconds`    | `A13N_SERVICE_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS`    | number          | maximum=3600; exclusiveMinimum=0; default=60 |
+| `environments.max_targets_per_workspace`    | `A13N_SERVICE_ENVIRONMENT_MAX_TARGETS_PER_WORKSPACE`    | integer         | minimum=1; default=1000                      |
+| `environments.max_active_per_workspace`     | `A13N_SERVICE_ENVIRONMENT_MAX_ACTIVE_PER_WORKSPACE`     | integer         | minimum=1; default=100                       |
+| `environments.maintenance_batch_size`       | `A13N_SERVICE_ENVIRONMENT_MAINTENANCE_BATCH_SIZE`       | integer         | minimum=1; maximum=10000; default=64         |
+| `environments.maintenance_concurrency`      | `A13N_SERVICE_ENVIRONMENT_MAINTENANCE_CONCURRENCY`      | integer         | minimum=1; maximum=128; default=4            |
 
 ## `pricing`
 

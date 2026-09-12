@@ -6,6 +6,9 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 
+from ..models.environment_provider_configuration_source import EnvironmentProviderConfigurationSource
+from ..types import UNSET, Unset
+
 if TYPE_CHECKING:
     from ..models.environment_provider_configuration import EnvironmentProviderConfiguration
 
@@ -27,6 +30,7 @@ class EnvironmentProvider:
         type_ (str):
         updated_at (datetime.datetime):
         workspace_id (None | str):
+        configuration_source (EnvironmentProviderConfigurationSource | Unset):
     """
 
     configuration: EnvironmentProviderConfiguration
@@ -39,6 +43,7 @@ class EnvironmentProvider:
     type_: str
     updated_at: datetime.datetime
     workspace_id: str | None
+    configuration_source: EnvironmentProviderConfigurationSource | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         configuration = self.configuration.to_dict()
@@ -62,6 +67,10 @@ class EnvironmentProvider:
         workspace_id: str | None
         workspace_id = self.workspace_id
 
+        configuration_source: str | Unset = UNSET
+        if not isinstance(self.configuration_source, Unset):
+            configuration_source = self.configuration_source.value
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -78,6 +87,8 @@ class EnvironmentProvider:
                 "workspace_id": workspace_id,
             }
         )
+        if configuration_source is not UNSET:
+            field_dict["configuration_source"] = configuration_source
 
         return field_dict
 
@@ -111,6 +122,13 @@ class EnvironmentProvider:
 
         workspace_id = _parse_workspace_id(d.pop("workspace_id"))
 
+        _configuration_source = d.pop("configuration_source", UNSET)
+        configuration_source: EnvironmentProviderConfigurationSource | Unset
+        if isinstance(_configuration_source, Unset):
+            configuration_source = UNSET
+        else:
+            configuration_source = EnvironmentProviderConfigurationSource(_configuration_source)
+
         environment_provider = cls(
             configuration=configuration,
             created_at=created_at,
@@ -122,6 +140,7 @@ class EnvironmentProvider:
             type_=type_,
             updated_at=updated_at,
             workspace_id=workspace_id,
+            configuration_source=configuration_source,
         )
 
         return environment_provider

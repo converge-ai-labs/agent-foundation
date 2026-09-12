@@ -58,7 +58,7 @@ def install_openapi(app: FastAPI) -> None:
                 operation["operationId"] = f"{method}_{name}"
                 for parameter in operation.get("parameters", []):
                     if parameter.get("in") == "header" and parameter["name"].lower() == "if-match":
-                        # Search keeps the dependency optional only to return its specific 428 error.
+                        # The dependency accepts absence only to return the required 428 error.
                         parameter["required"] = True
                         parameter["schema"] = {"type": "string", "minLength": 1, "maxLength": 256}
                 responses = operation["responses"]

@@ -3885,6 +3885,47 @@
         "title": "CreateMCPConnectionRequest",
         "type": "object"
       },
+      "CreateManagedEnvironmentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "template_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Template Id",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "template_id"
+        ],
+        "title": "CreateManagedEnvironmentRequest",
+        "type": "object"
+      },
       "CreateModelProviderRequest": {
         "additionalProperties": false,
         "properties": {
@@ -4714,6 +4755,12 @@
             "title": "Id",
             "type": "string"
           },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
           "organization_id": {
             "maxLength": 72,
             "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
@@ -4772,6 +4819,7 @@
         },
         "required": [
           "id",
+          "name",
           "organization_id",
           "workspace_id",
           "provider_id",
@@ -4867,6 +4915,15 @@
             },
             "title": "Configuration",
             "type": "object"
+          },
+          "configuration_source": {
+            "default": "user",
+            "enum": [
+              "user",
+              "deployment"
+            ],
+            "title": "Configuration Source",
+            "type": "string"
           },
           "created_at": {
             "format": "date-time",
@@ -4968,6 +5025,11 @@
             ],
             "title": "Credential Schema"
           },
+          "deployment_managed": {
+            "default": false,
+            "title": "Deployment Managed",
+            "type": "boolean"
+          },
           "display_name": {
             "title": "Display Name",
             "type": "string"
@@ -4988,6 +5050,16 @@
             "title": "Supports Stop",
             "type": "boolean"
           },
+          "template_configuration_schemas": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              "type": "object"
+            },
+            "title": "Template Configuration Schemas",
+            "type": "object"
+          },
           "type": {
             "title": "Type",
             "type": "string"
@@ -4998,6 +5070,7 @@
           "display_name",
           "configuration_versions",
           "configuration_schema",
+          "template_configuration_schemas",
           "credential_schema",
           "supports_managed",
           "supports_stop",
@@ -9561,6 +9634,19 @@
             "default": "1",
             "title": "Configuration Schema Version",
             "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
           },
           "provider_id": {
             "maxLength": 72,
@@ -14421,6 +14507,22 @@
           "expected_version"
         ],
         "title": "UpdateConnectorProviderRequest",
+        "type": "object"
+      },
+      "UpdateEnvironmentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "UpdateEnvironmentRequest",
         "type": "object"
       },
       "UpdateHookSubscriptionRequest": {
@@ -20398,6 +20500,112 @@
           }
         ],
         "summary": "Create Revision",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/environments/{environment_id}": {
+      "patch": {
+        "operationId": "patch_environments_environment_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateEnvironmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Environment"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Update Environment",
         "tags": [
           "environments"
         ]
@@ -35900,7 +36108,7 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/NewEnvironmentSelection"
+                    "$ref": "#/components/schemas/CreateManagedEnvironmentRequest"
                   },
                   {
                     "$ref": "#/components/schemas/RegisterEnvironmentRequest"

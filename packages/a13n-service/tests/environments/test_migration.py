@@ -24,7 +24,11 @@ def _assert_tables(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
         tables = set(inspect(engine).get_table_names())
         if present:
             assert ENVIRONMENT_TABLES <= tables
-            assert "expires_at" in {column["name"] for column in inspect(engine).get_columns("environments")}
+            columns = {column["name"]: column for column in inspect(engine).get_columns("environments")}
+            assert "expires_at" in columns
+            assert not columns["name"]["nullable"]
+            provider_columns = {column["name"] for column in inspect(engine).get_columns("environment_providers")}
+            assert "configuration_source" in provider_columns
             assert "ix_environments_capacity" in {
                 index["name"] for index in inspect(engine).get_indexes("environments")
             }

@@ -5,9 +5,9 @@ from urllib.parse import quote
 import httpx2 as httpx
 
 from ...client import AuthenticatedClient, Client
+from ...models.create_managed_environment_request import CreateManagedEnvironmentRequest
 from ...models.environment import Environment
 from ...models.error_response import ErrorResponse
-from ...models.new_environment_selection import NewEnvironmentSelection
 from ...models.register_environment_request import RegisterEnvironmentRequest
 from ...types import Response
 
@@ -15,7 +15,7 @@ from ...types import Response
 def build_request(
     workspace: str,
     *,
-    body: NewEnvironmentSelection | RegisterEnvironmentRequest,
+    body: CreateManagedEnvironmentRequest | RegisterEnvironmentRequest,
     idempotency_key: str,
 ) -> dict[str, Any]:
     headers: dict[str, Any] = {}
@@ -28,7 +28,7 @@ def build_request(
         ),
     }
 
-    if isinstance(body, NewEnvironmentSelection):
+    if isinstance(body, CreateManagedEnvironmentRequest):
         _kwargs["json"] = body.to_dict()
     else:
         _kwargs["json"] = body.to_dict()
@@ -70,7 +70,7 @@ def sync_detailed(
     workspace: str,
     *,
     client: AuthenticatedClient,
-    body: NewEnvironmentSelection | RegisterEnvironmentRequest,
+    body: CreateManagedEnvironmentRequest | RegisterEnvironmentRequest,
     idempotency_key: str,
 ) -> Response[Environment | ErrorResponse]:
     """Create Environment
@@ -78,7 +78,7 @@ def sync_detailed(
     Args:
         workspace (str):
         idempotency_key (str):
-        body (NewEnvironmentSelection | RegisterEnvironmentRequest):
+        body (CreateManagedEnvironmentRequest | RegisterEnvironmentRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -105,7 +105,7 @@ def sync(
     workspace: str,
     *,
     client: AuthenticatedClient,
-    body: NewEnvironmentSelection | RegisterEnvironmentRequest,
+    body: CreateManagedEnvironmentRequest | RegisterEnvironmentRequest,
     idempotency_key: str,
 ) -> Environment | ErrorResponse | None:
     """Create Environment
@@ -113,7 +113,7 @@ def sync(
     Args:
         workspace (str):
         idempotency_key (str):
-        body (NewEnvironmentSelection | RegisterEnvironmentRequest):
+        body (CreateManagedEnvironmentRequest | RegisterEnvironmentRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -135,7 +135,7 @@ async def asyncio_detailed(
     workspace: str,
     *,
     client: AuthenticatedClient,
-    body: NewEnvironmentSelection | RegisterEnvironmentRequest,
+    body: CreateManagedEnvironmentRequest | RegisterEnvironmentRequest,
     idempotency_key: str,
 ) -> Response[Environment | ErrorResponse]:
     """Create Environment
@@ -143,7 +143,7 @@ async def asyncio_detailed(
     Args:
         workspace (str):
         idempotency_key (str):
-        body (NewEnvironmentSelection | RegisterEnvironmentRequest):
+        body (CreateManagedEnvironmentRequest | RegisterEnvironmentRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -168,7 +168,7 @@ async def asyncio(
     workspace: str,
     *,
     client: AuthenticatedClient,
-    body: NewEnvironmentSelection | RegisterEnvironmentRequest,
+    body: CreateManagedEnvironmentRequest | RegisterEnvironmentRequest,
     idempotency_key: str,
 ) -> Environment | ErrorResponse | None:
     """Create Environment
@@ -176,7 +176,7 @@ async def asyncio(
     Args:
         workspace (str):
         idempotency_key (str):
-        body (NewEnvironmentSelection | RegisterEnvironmentRequest):
+        body (CreateManagedEnvironmentRequest | RegisterEnvironmentRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.

@@ -2,8 +2,10 @@
 
 import logging
 from datetime import datetime, timedelta
+from uuid import uuid4
 
 import anyio
+import httpx2
 import pytest
 
 from ..infrastructure.round_two_lab import open_lab
@@ -21,9 +23,9 @@ def anyio_backend():
 
 
 @pytest.fixture(scope="module")
-async def e2b_lab(e2b_settings):
+async def e2b_lab(e2b_settings, request):
     # e2b_settings gates collection before Docker or private configuration is used.
-    async with open_lab(suite="management", e2b_lifecycle=True) as lab:
+    async with open_lab(suite=getattr(request, "param", "management"), e2b_lifecycle=True) as lab:
         await lab.stop(lab.workers[-1])
         lab.worker_environment["A13N_SERVICE_WORKER_CONCURRENCY"] = "2"
         await lab.start_worker()
@@ -134,3 +136,74 @@ class TestE2BLifecycle(LifecycleCases):
     @pytest.fixture
     def service(self, e2b_service):
         return e2b_service
+
+
+@pytest.mark.parametrize("e2b_lab", ["core"], indirect=True)
+async def test_real_model_uses_named_e2b_environment(e2b_service):
+    from e2b import AsyncSandbox
+
+    from ..infrastructure.client import agent_input
+    from ..protocol.stream import assert_stream
+    from ..providers.provider_config import load_provider_settings
+    from ..providers.real_providers import provision_provider
+
+    settings = load_provider_settings().model
+    if settings is None:
+        pytest.skip("Configure both model and environment for the complete remote journey")
+    service, journey = e2b_service, e2b_service.journey
+    journey.live.timeout = 300
+    journey.live.http.timeout = httpx2.Timeout(90)
+    model = await provision_provider(journey, "model", settings)
+    await journey.patch(f"{journey.base}/models/{model['id']}", {"settings": {"timeout": 120, "max_tokens": 4096}})
+    environment = await service.allocate()
+    original_name = environment["name"]
+    renamed = await journey.patch(f"/api/v1/environments/{environment['id']}", {"name": "Remote model verification"})
+    assert renamed["name"] != original_name and renamed["generation"] == environment["generation"]
+    proof = "E2E_" + uuid4().hex
+    agent = await journey.agent(
+        model_key=model["key"],
+        instructions="Execute the requested shell and file tools. Report the actual file content after reading it.",
+    )
+    receipt = await journey.post(
+        journey.base + "/runs",
+        {
+            "agent_id": agent["agent"]["id"],
+            "environment": {"environment_id": environment["id"]},
+            "input": agent_input(
+                f"Use shell_exec to write the exact text {proof} to proof.txt in the workspace. "
+                "Then use view to read /workspace/proof.txt and return its exact content."
+            ),
+        },
+        expected=202,
+    )
+    journey.live.track(receipt)
+    result = await journey.live.finish(receipt["run_id"])
+    assert proof in result["output_text"]
+    events = await journey.live.events(receipt["run_id"])
+    assert_stream(events, receipt["run_id"])
+
+    # Closing the live stream precedes publication of the retained replay object.
+    async def retained_items():
+        response = await journey.live.http.get(f"/api/v1/runs/{receipt['run_id']}/items")
+        if response.status_code == 409:
+            assert response.json()["error"]["code"] == "items_unavailable"
+        else:
+            assert response.status_code == 200
+        return response
+
+    await eventually(retained_items, lambda response: response.status_code == 200, "retained E2B tool records")
+    items = await journey.live.collection(f"/api/v1/runs/{receipt['run_id']}/items")
+    calls = [item for item in items if item["kind"] == "tool_call" and item["state"] == "completed"]
+    assert len(calls) >= 2
+    target = await service.target(environment)
+    sandbox = await AsyncSandbox.connect(target, **service.pool.options)
+    assert await sandbox.files.read("/home/user/proof.txt") == proof
+    listed = await journey.live.collection(journey.base + "/environments")
+    assert next(item for item in listed if item["id"] == environment["id"])["name"] == renamed["name"]
+    logger.info(
+        "Real model/E2B verified: model=%s run=%s sandbox=%s tools=%d",
+        settings.model,
+        receipt["run_id"],
+        target,
+        len(calls),
+    )

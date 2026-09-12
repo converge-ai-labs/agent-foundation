@@ -7,6 +7,7 @@ from pathlib import Path
 
 import httpx2
 import pytest
+from a13n_environment import build_environment_provider_catalog
 from a13n_service.app import Components, create_app
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
@@ -37,7 +38,7 @@ def settings(tmp_path: Path, database_path: Path) -> Settings:
         redis={"backend": "memory"},
         objects={"backend": "local", "local_root": tmp_path / "objects"},
         filesystem={"root": tmp_path / "files"},
-        environments={"provider_builtins": (PROVIDER_KEY,)},
+        environments={"provider_builtins": ()},
         models={"resolve_dns_on_save": False},
         secrets={
             "master_key_base64": b64encode(b"0123456789abcdef0123456789abcdef").decode(),
@@ -122,6 +123,7 @@ async def environment_api_client(
         config,
         components=Components(
             request_authenticator=authenticate,
+            environment_provider_catalog=build_environment_provider_catalog(builtin_keys=(PROVIDER_KEY,)),
         ),
     )
     async with app.router.lifespan_context(app):
@@ -142,9 +144,7 @@ async def test_environment_create_requires_idempotency_key(
     assert response.json()["error"]["code"] == "invalid_request"
 
 
-@pytest.mark.anyio
-async def test_template_and_empty_thread_http_contract(environment_api_client, tmp_path):
-    client = environment_api_client
+async def create_template(client, tmp_path):
     types = await client.get("/api/v1/environment-provider-types")
     assert types.status_code == 200
     assert types.json()["items"][0]["type"] == PROVIDER_KEY
@@ -165,7 +165,14 @@ async def test_template_and_empty_thread_http_contract(environment_api_client, t
         },
     )
     assert response.status_code == 201, response.text
-    template = response.json()
+    return response.json()
+
+
+@pytest.mark.anyio
+async def test_template_and_empty_thread_http_contract(environment_api_client, tmp_path):
+    client = environment_api_client
+    template = await create_template(client, tmp_path)
+    base = f"/api/v1/workspaces/{WORKSPACE_ID}"
     response = await client.post(
         f"{base}/threads", headers={"Idempotency-Key": "thread"}, json={"environment": {"template_id": template["id"]}}
     )
@@ -174,6 +181,50 @@ async def test_template_and_empty_thread_http_contract(environment_api_client, t
     assert thread["current_run_id"] is None and thread["default_environment_id"]
     environment = await client.get(f"/api/v1/environments/{thread['default_environment_id']}")
     assert environment.status_code == 200 and environment.json()["status"] == "unprepared"
+    assert environment.json()["name"].startswith("Environment ")
     assert "state" not in environment.json()
     assert not (tmp_path / "absent").exists()
     assert (await client.post(f"/api/v1/environments/{thread['default_environment_id']}/test")).status_code == 404
+
+
+@pytest.mark.anyio
+async def test_instance_name_creation_rename_and_stale_write(environment_api_client, tmp_path):
+    client = environment_api_client
+    template = await create_template(client, tmp_path)
+    url = f"/api/v1/workspaces/{WORKSPACE_ID}/environments"
+    body = {"template_id": template["id"], "name": "  Project A  "}
+    response = await client.post(url, headers={"Idempotency-Key": "named"}, json=body)
+    assert response.status_code == 201, response.text
+    created = response.json()
+    assert created["name"] == "Project A"
+    replay = await client.post(url, headers={"Idempotency-Key": "named"}, json=body)
+    assert replay.json() == created
+    resource_url = f"/api/v1/environments/{created['id']}"
+    missing = await client.patch(resource_url, json={"name": "Missing precondition"})
+    assert missing.status_code == 428
+    detail = await client.get(resource_url)
+    header = {"If-Match": detail.headers["etag"]}
+    renamed = await client.patch(resource_url, headers=header, json={"name": "Project B"})
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["name"] == "Project B"
+    assert renamed.headers["etag"] != detail.headers["etag"]
+    assert {k: v for k, v in renamed.json().items() if k not in {"name", "updated_at"}} == {
+        k: v for k, v in created.items() if k not in {"name", "updated_at"}
+    }
+    stale = await client.patch(resource_url, headers=header, json={"name": "Lost edit"})
+    assert stale.status_code == 412
+    invalid = await client.patch(resource_url, headers=header, json={"name": "   "})
+    assert invalid.status_code in {400, 422}
+    listed = await client.get(url)
+    assert listed.json()["items"][0]["name"] == "Project B"
+
+
+@pytest.mark.anyio
+async def test_template_schemas_are_versioned_and_provider_specific(environment_api_client):
+    response = await environment_api_client.get("/api/v1/environment-provider-types")
+    definition = response.json()["items"][0]
+    assert set(definition["template_configuration_schemas"]) == set(definition["configuration_versions"])
+    recipe = definition["template_configuration_schemas"]["1"]
+    assert "root" in recipe["required"]
+    assert "host_id" in definition["configuration_schema"]["properties"]
+    assert "host_id" not in recipe["properties"]

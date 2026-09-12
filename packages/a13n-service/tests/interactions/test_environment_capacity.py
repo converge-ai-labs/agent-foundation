@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 from a13n_environment import EnvironmentError
 from a13n_service.environments.capacity import CapacityLimits
-from a13n_service.environments.domain import NewEnvironmentSelection
+from a13n_service.environments.domain import CreateManagedEnvironmentRequest
 from a13n_service.environments.models import EnvironmentRecord
 from a13n_service.environments.runtime import prepare_run_environment
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
@@ -76,7 +76,7 @@ async def test_postgresql_last_slot_admits_only_one_concurrent_run(
     other = await service.create_environment(
         actor=hook_actor(),
         workspace_id=WORKSPACE_ID,
-        request=NewEnvironmentSelection(template_id=template.id),
+        request=CreateManagedEnvironmentRequest(template_id=template.id),
         idempotency_key="second-target",
     )
     second = await sibling_run(sessions, first, other.id)
@@ -129,7 +129,7 @@ async def test_shared_run_reuses_active_slot_and_stopped_target_counts_until_del
     other = await service.create_environment(
         actor=hook_actor(),
         workspace_id=WORKSPACE_ID,
-        request=NewEnvironmentSelection(template_id=template.id),
+        request=CreateManagedEnvironmentRequest(template_id=template.id),
         idempotency_key="next-target",
     )
     async with transaction(sessions) as session:

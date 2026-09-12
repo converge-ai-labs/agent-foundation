@@ -1745,5 +1745,19 @@
   "Manage authentication project settings": "Manage authentication project settings",
   "Marketing data, analytics, and reporting": "Marketing data, analytics, and reporting",
   "Marketing data connectors and attribution": "Marketing data connectors and attribution",
-  "Supply a LunarCrush API key. Tool access and request limits depend on your plan.": "Supply a LunarCrush API key. Tool access and request limits depend on your plan."
+  "Supply a LunarCrush API key. Tool access and request limits depend on your plan.": "Supply a LunarCrush API key. Tool access and request limits depend on your plan.",
+  "1,000,000,000 nanocpus equals one CPU core.": "1,000,000,000 nanocpus equals one CPU core.",
+  "Advanced environment configuration": "Advanced environment configuration",
+  "Allow internet access": "Allow internet access",
+  "CPU limit (nanocpus)": "CPU limit (nanocpus)",
+  "Configured by deployment": "Configured by deployment",
+  "Configured by deployment. Change backend settings in the Service configuration.": "Configured by deployment. Change backend settings in the Service configuration.",
+  "E2B template name or ID": "E2B template name or ID",
+  "Environment configuration editor": "Environment configuration editor",
+  "Leave empty to generate a name.": "Leave empty to generate a name.",
+  "Memory limit (bytes)": "Memory limit (bytes)",
+  "Process limit": "Process limit",
+  "Sandbox timeout (seconds)": "Sandbox timeout (seconds)",
+  "Save name": "Save name",
+  "Use an existing E2B template. Preinstalled software, CPU and memory are configured when building that template in E2B.": "Use an existing E2B template. Preinstalled software, CPU and memory are configured when building that template in E2B."
 }
