@@ -38,6 +38,8 @@ function json(body: unknown, code = 200) {
 function fixture(request: Request): Response | Promise<Response> {
   const path = decodeURIComponent(new URL(request.url).pathname);
   if (path === "/api/status") return json(status);
+  if (path === "/api/threads/activity")
+    return json({ rows: [], total: 0, next_cursor: null });
   if (path === "/api/setup")
     return json({
       needed: true,

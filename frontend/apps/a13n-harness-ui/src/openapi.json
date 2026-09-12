@@ -3338,6 +3338,54 @@
         }
       }
     },
+    "/api/threads/{thread_id}/attachments/{attachment_id}/metadata": {
+      "get": {
+        "summary": "Attachment Metadata",
+        "operationId": "attachment_metadata_api_threads__thread_id__attachments__attachment_id__metadata_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Attachment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadAttachment"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/threads/{thread_id}/attachments/{attachment_id}": {
       "get": {
         "summary": "Download Attachment",

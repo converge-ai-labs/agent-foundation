@@ -1113,6 +1113,14 @@ def create_webui(
         except ValueError as exc:
             raise HarnessUiError(str(exc), code="attachment_invalid") from exc
 
+    @server.get("/api/threads/{thread_id}/attachments/{attachment_id}/metadata", response_model=ThreadAttachment)
+    async def attachment_metadata(thread_id: str, attachment_id: str) -> ThreadAttachment:
+        try:
+            attachment, _ = await app().read_thread_attachment(thread_id=thread_id, attachment_id=attachment_id)
+        except ValueError as exc:
+            raise HarnessUiError(str(exc), code="attachment_invalid") from exc
+        return attachment
+
     @server.get("/api/threads/{thread_id}/attachments/{attachment_id}")
     async def download_attachment(thread_id: str, attachment_id: str) -> Response:
         try:

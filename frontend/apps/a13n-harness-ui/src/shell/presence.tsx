@@ -31,6 +31,11 @@ export function pageFocus(
         target: { kind: "resource", resource_kind: kind, resource_id: id },
       };
   }
+  if (parts[0] === "threads" && parts[1])
+    return {
+      root_thread_id: parts[1],
+      target: { kind: "conversation", thread_id: parts[1] },
+    };
   if (parts[0] === "projects" && parts[1])
     return { target: { kind: "project", project_id: parts[1] } };
   return {

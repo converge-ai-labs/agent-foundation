@@ -95,7 +95,14 @@ export function watchSummary(
         // Reconcile missed changes on every new subscription, even without a cursor.
         if (
           frame.kind === "open" ||
-          ["configuration", "catalog", "project"].includes(frame.event.kind)
+          [
+            "configuration",
+            "catalog",
+            "project",
+            "thread",
+            "root_operation",
+            "child_execution",
+          ].includes(frame.event.kind)
         )
           invalidate();
       });

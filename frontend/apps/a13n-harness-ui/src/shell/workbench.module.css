@@ -117,6 +117,16 @@
   flex-direction: column;
   gap: 24px;
 }
+.main.conversationMain {
+  height: calc(100dvh - 65px);
+  padding: 20px 28px 16px;
+  gap: 8px;
+  max-width: none;
+}
+.main.conversationMain h1 {
+  font-size: 18px;
+  font-weight: 500;
+}
 .main h1 {
   font-size: 25px;
   font-weight: 600;

@@ -24,7 +24,9 @@ it("opens an empty custom selection without enabling a resource and keeps the la
   render(<Fields />);
   const user = userEvent.setup();
   await user.click(screen.getByRole("combobox"));
-  await user.click(screen.getByRole("option", { name: "Custom selection" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Custom selection" }),
+  );
   expect(screen.getByRole("checkbox").getAttribute("checked")).toBeNull();
   expect(screen.getByRole("status").textContent).toBe("[]");
   fireEvent.click(screen.getByLabelText("One"));

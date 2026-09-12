@@ -1,10 +1,10 @@
 # Browser server
 
-Harness UI's HTTP server shares the local `HarnessUiApp` with the terminal product. Its English-only browser workbench provides setup, provider accounts, configuration resources and Project readiness, **not** Service Console business models. Browser capabilities and backend API availability remain distinct.
+Harness UI's HTTP server shares the local `HarnessUiApp` with the terminal product. Its English-only browser workbench provides collaborative conversations, execution controls, setup, provider accounts, configuration resources and Project readiness, **not** Service Console business models. Browser capabilities and backend API availability remain distinct.
 
 ## Start the server
 
-The bundled workbench accepts the instance API key, displays the installed Python package version, and provides light/dark themes, guided setup, provider-account/key management, resource editing and Project readiness. Conversation, shared prompting, comments, Host Files, Git and terminal pages are subsequent workbench blocks. The HTTP API is independent: native Host Files and read-only Git Changes are enabled by default (Git requires an installed executable), with real native terminal sessions on POSIX Hosts and process-local shared CRDT drafts through authenticated WebSockets.
+The bundled workbench accepts the instance API key, displays the installed Python package version, and provides light/dark themes, guided setup, provider-account/key management, resource editing and Project readiness. Conversations include a shared prompt editor, saved history, live output, pending decisions and execution/configuration inspection. Comments, Host Files, Git and terminal browser panels are subsequent workbench blocks. The HTTP API is independent: native Host Files and read-only Git Changes are enabled by default (Git requires an installed executable), with real native terminal sessions on POSIX Hosts and process-local shared CRDT drafts through authenticated WebSockets.
 
 ```bash
 a13n-harness-ui webui                       # 127.0.0.1:8765, generated per-process API key
@@ -21,6 +21,20 @@ Use **Setup & readiness** for first-use configuration: choose a model connection
 **Resources** supports source creation, validation, publication and deletion. Common fields and the advanced YAML editor share one local draft. Edits survive navigation and access-key replacement in the current tab, but not a reload. Publication is a complete-file, last-write-wins operation; an observed external change never silently overwrites a dirty draft. Validation does not publish, and active Runs keep their captured configuration. MCP source content is not readable through this API: replacing it explicitly replaces every resource and unseen field in that file.
 
 **Projects** displays server directories and previews accepted defaults with per-axis provenance. Default, None and Custom list selections remain distinct. Preview does not include unsaved source changes or execute a model. The online indicator displays per-tab presence and lets each collaborator set a display profile; this is not provider login or an authenticated identity.
+
+## Work in a conversation
+
+The sidebar groups root conversations by Project and supports search, Project scope and archived history. **New conversation** previews the effective Agent and Environment before creating an empty Thread; it does not call a model. A direct Thread link takes precedence over restoring your last accessible conversation. Rename, Share and Details are secondary header actions. Archived conversations keep their history and can be restored.
+
+The shared CodeMirror editor shows collaborator cursors and synchronization status. Enter adds a line; Ctrl+Enter or Cmd+Enter sends. **Send** is enabled only after this browser's pending edits have synchronized. Uploads and immutable captured context are Thread-scoped, with metadata and original-byte download available to collaborators. A positive receipt clears only the submitted snapshot; edits outside that snapshot remain. An uncertain acknowledgement preserves input and requires inspection before an explicitly new submission; nothing retries execution automatically.
+
+While a Run is active, **Next message** remains editable without becoming a queue. **Send as instruction** targets the current operation, rather than creating a new turn. Ordinary uploads and unsupported captured content cannot be steered; the draft stays intact. **Stop** addresses the exact displayed receipt. Closing a page stops observation, not execution. Questions, approvals (including allowed argument overrides) and external-result requests have complete-set response controls; stale or competing decisions are refreshed rather than represented as a second success.
+
+Saved transcript pages remain visible while replacement history loads or fails. Live output is provisional until replacement saved history arrives; stream completion alone is not proof of a saved continuation. Reasoning, tool activity, media, context operations and diagnostics remain distinguishable. Original assistant source and its saved identity remain available without offering comments on provisional output.
+
+**Details** separates root operation, child executions, tasks/notes/usage, captured configuration and next-Run selections. Model execution, continuation publication and Environment cleanup have separate outcomes. Child review/control uses the exact parent execution. Applying Project defaults requires a before/after preview and the reviewed Thread version/digest. Competing configuration changes retain local selection edits and require another review, never silently replace the edit base.
+
+Draft collaboration lives only in this App instance. In-app navigation retains the browser's editor state, and reconnecting to the same instance resynchronizes it. After server restart, explicitly rejoin the replacement draft and choose whether to restore this browser's text. Reload/browser-process-loss recovery is not promised. Display profiles are not authenticated identities; undo is local to the editor, and accepted Send establishes a new undo boundary.
 
 ## Authentication and key retention
 

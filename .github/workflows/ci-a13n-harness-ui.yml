@@ -202,9 +202,10 @@ jobs:
       - name: Prepare bundled configuration Skill
         run: uv run --locked --no-sync python packages/a13n-harness-ui/build_skills.py
 
-      - name: Build WebUI assets
+      - name: Check and build WebUI assets
         run: |
           pnpm --dir frontend install --frozen-lockfile
+          pnpm --dir frontend --filter a13n-harness-ui-webui run check
           pnpm --dir frontend --filter a13n-harness-ui-webui run build
 
       - name: Prepare bundled WebUI assets

@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
-import { Link, NavLink, Route, Routes, useLocation } from "react-router";
+import {
+  Link,
+  NavLink,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   Button,
@@ -42,21 +49,10 @@ import {
 import { ErrorNotice, PageHeader, Panel, TextField } from "./ui";
 import { useLiveWorkbench, type Profile } from "./presence";
 import styles from "./workbench.module.css";
+import { ConversationNavigation } from "../conversations/navigation";
+import { ConversationPage } from "../conversations/conversation";
 
-export function readPreference(key: string, fallback: string) {
-  try {
-    return localStorage.getItem(`a13n-harness-ui.${key}`) ?? fallback;
-  } catch {
-    return fallback;
-  }
-}
-export function writePreference(key: string, value: string) {
-  try {
-    localStorage.setItem(`a13n-harness-ui.${key}`, value);
-  } catch {
-    /* Browser preferences are optional. */
-  }
-}
+import { readPreference, writePreference } from "./preferences";
 
 export function Workbench({
   status: initialStatus,
@@ -82,6 +78,38 @@ export function Workbench({
     unauthorized,
   );
   const location = useLocation();
+  const navigate = useNavigate();
+  const { client } = useTransport();
+  const [restoreTarget, setRestoreTarget] = useState(() =>
+    location.pathname === "/" ? readPreference("last-thread", "") : "",
+  );
+  useEffect(() => {
+    if (!restoreTarget) return;
+    if (location.pathname !== "/") {
+      setRestoreTarget("");
+      return;
+    }
+    const abort = new AbortController();
+    void result(
+      client.GET("/api/threads/{thread_id}", {
+        params: { path: { thread_id: restoreTarget } },
+        signal: abort.signal,
+      }),
+    ).then(
+      (detail) => {
+        if (abort.signal.aborted) return;
+        setRestoreTarget("");
+        if (!detail.thread.archived && !detail.thread.parent_thread_id)
+          navigate(`/threads/${encodeURIComponent(restoreTarget)}`, {
+            replace: true,
+          });
+      },
+      () => {
+        if (!abort.signal.aborted) setRestoreTarget("");
+      },
+    );
+    return () => abort.abort();
+  }, [client, restoreTarget, location.pathname, navigate]);
   useEffect(() => {
     setMenu(false);
   }, [location.pathname]);
@@ -111,21 +139,24 @@ export function Workbench({
     { to: "/setup", label: "Setup & readiness", icon: Gear },
   ];
   const navigation = (
-    <nav>
-      {links.map(({ to, label, icon: Icon }) => (
-        <NavLink
-          key={to}
-          to={to}
-          end={to === "/"}
-          className={({ isActive }) =>
-            isActive ? styles.activeNav : styles.navLink
-          }
-        >
-          <Icon size={18} />
-          <span>{label}</span>
-        </NavLink>
-      ))}
-    </nav>
+    <>
+      <ConversationNavigation />
+      <nav>
+        {links.map(({ to, label, icon: Icon }) => (
+          <NavLink
+            key={to}
+            to={to}
+            end={to === "/"}
+            className={({ isActive }) =>
+              isActive ? styles.activeNav : styles.navLink
+            }
+          >
+            <Icon size={18} />
+            <span>{label}</span>
+          </NavLink>
+        ))}
+      </nav>
+    </>
   );
   return (
     <Sheet open={menu} onOpenChange={setMenu}>
@@ -196,7 +227,10 @@ export function Workbench({
               </Button>
             </div>
           </header>
-          <main id="main-content" className={styles.main}>
+          <main
+            id="main-content"
+            className={`${styles.main} ${location.pathname.startsWith("/threads/") ? styles.conversationMain : ""}`}
+          >
             {status.access === "dangerous_bypass" && (
               <div className={styles.notice}>
                 Instance authentication is disabled by the server's explicit
@@ -220,6 +254,15 @@ export function Workbench({
             />
             <Routes>
               <Route path="/" element={<HomePage />} />
+              <Route
+                path="/threads/:threadId"
+                element={
+                  <ConversationPage
+                    profile={profile}
+                    unauthorized={unauthorized}
+                  />
+                }
+              />
               <Route path="/setup" element={<SetupPage />} />
               <Route path="/projects" element={<ProjectsPage />} />
               <Route path="/projects/:projectId" element={<ProjectPage />} />
@@ -376,8 +419,8 @@ function HomePage() {
         </Panel>
       ) : null}
       <p className={styles.muted}>
-        Conversation, comments, Files, Git and terminal pages are delivered in
-        the following workbench blocks. This entry does not start runs.
+        Open a conversation from the sidebar or create one to start working.
+        Opening this workbench does not start a Run.
       </p>
     </>
   );

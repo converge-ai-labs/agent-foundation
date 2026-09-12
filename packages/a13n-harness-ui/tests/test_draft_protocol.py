@@ -81,6 +81,12 @@ async def test_real_shared_composer_submit_capture_steer_rejoin_restart(
             )
             assert capture.status_code == 200, capture.text
             attachment = capture.json()["attachment"]["attachment_id"]
+            inspected = await api.get(prefix + f"/attachments/{attachment}/metadata")
+            assert inspected.status_code == 200, inspected.text
+            assert inspected.json() == capture.json()["attachment"]
+            assert inspected.json()["source"]["revision"] == metadata["revision"]
+            foreign_metadata = await api.get(f"/api/threads/{other}/attachments/{attachment}/metadata")
+            assert foreign_metadata.status_code == 400
             source.write_text("changed after capture")
             diff_request = {"repository_path": str(checkout), "path": "selected", "comparison": "staged"}
             diff = (await api.get("/api/host/git/diff", params=diff_request)).json()

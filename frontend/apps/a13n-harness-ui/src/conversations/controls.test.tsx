@@ -1,0 +1,350 @@
+// @vitest-environment jsdom
+import { afterEach, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
+import { TransportContext } from "../transport/context";
+import { ApiError, type Schema, type Transport } from "../transport/client";
+import { ThreadSelections } from "./configuration";
+import { DecisionForm } from "./decisions";
+import { Child } from "./details";
+
+afterEach(cleanup);
+function harness(client: object) {
+  const queries = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return function Wrapper({ children }: { children: ReactNode }) {
+    return (
+      <QueryClientProvider client={queries}>
+        <TransportContext value={{ client } as Transport}>
+          {children}
+        </TransportContext>
+      </QueryClientProvider>
+    );
+  };
+}
+const configuration: Schema<"ThreadConfiguration"> = {
+  version: 1,
+  agent_source: { kind: "agent", id: "agent-one" },
+  environment_profile_id: "local",
+};
+it("keeps dirty selections on external changes and requires review before versioned apply", async () => {
+  const PATCH = vi
+    .fn()
+    .mockResolvedValue({ data: { ...configuration, version: 3 } });
+  const wrapper = harness({
+    PATCH,
+    GET: vi.fn(async (path) => ({
+      data:
+        path === "/api/projects"
+          ? []
+          : {
+              agents: [],
+              environments: [],
+              mcp_servers: [{ resource_id: "mcp-one", name: "Tools" }],
+            },
+    })),
+  });
+  const reconcile = vi.fn();
+  const view = render(
+    <ThreadSelections
+      threadId="one"
+      configuration={configuration}
+      reconcile={reconcile}
+    />,
+    { wrapper },
+  );
+  fireEvent.click(screen.getByText("Change next Run selections"));
+  const checkbox = await screen.findByRole("checkbox", { name: "Tools" });
+  fireEvent.click(checkbox);
+  view.rerender(
+    <ThreadSelections
+      threadId="one"
+      configuration={{
+        ...configuration,
+        version: 2,
+        agent_source: { kind: "agent", id: "other-agent" },
+      }}
+      reconcile={reconcile}
+    />,
+  );
+  expect((checkbox as HTMLInputElement).checked).toBe(true);
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Save next Run selections",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  expect(
+    screen.getByText(/Your edits are retained against version 1/),
+  ).toBeTruthy();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Keep my edits against version 2" }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Save next Run selections" }),
+  );
+  await waitFor(() => expect(PATCH).toHaveBeenCalledOnce());
+  expect(PATCH.mock.calls[0][1].body).toEqual({
+    expected_version: 2,
+    patch: { mcp_server_ids: ["mcp-one"] },
+  });
+});
+const batch = {
+  thread_id: "one",
+  continuation_id: "C1",
+  requests: [
+    {
+      kind: "question",
+      tool_name: "ask",
+      request_id: "question-one",
+      questions: [
+        {
+          question: "Which direction?",
+          header: "Direction",
+          multi_select: false,
+          options: [
+            { label: "Left", description: "Choose left" },
+            { label: "Right", description: "Choose right" },
+          ],
+        },
+      ],
+    },
+  ],
+} as Schema<"DecisionBatchView">;
+it("sends a complete decision set keyed by question text and does not retry an unknown acknowledgement", async () => {
+  const POST = vi.fn().mockRejectedValue(new TypeError("Connection lost"));
+  render(<DecisionForm threadId="one" batch={batch} reconcile={vi.fn()} />, {
+    wrapper: harness({ POST }),
+  });
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Submit responses",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.click(screen.getByRole("radio", { name: "Left Choose left" }));
+  fireEvent.click(screen.getByRole("button", { name: "Submit responses" }));
+  await screen.findByText(/Acknowledgement unavailable/);
+  expect(POST.mock.calls[0][1].body).toEqual({
+    expected_continuation_id: "C1",
+    responses: [
+      {
+        kind: "question",
+        request_id: "question-one",
+        answers: { "Which direction?": "Left" },
+      },
+    ],
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Submit responses" }));
+  expect(POST).toHaveBeenCalledOnce();
+});
+it("invalidating a previously complete answer prevents stale submission", () => {
+  const POST = vi.fn();
+  render(<DecisionForm threadId="one" batch={batch} reconcile={vi.fn()} />, {
+    wrapper: harness({ POST }),
+  });
+  fireEvent.click(screen.getByRole("radio", { name: "Left Choose left" }));
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "Or write your own answer" }),
+    { target: { value: "other" } },
+  );
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "Or write your own answer" }),
+    { target: { value: "" } },
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Submit responses" }));
+  expect(POST).not.toHaveBeenCalled();
+});
+it("keeps child instructions after unknown control and addresses the exact parent execution", async () => {
+  const POST = vi
+    .fn()
+    .mockRejectedValue(new ApiError("Proxy unavailable", 502));
+  const child = {
+    execution_id: "child-one",
+    root_thread_id: "root",
+    parent_thread_id: "parent",
+    subagent_name: "Explorer",
+    persisted_status: "running",
+    local_status: "active",
+    segment_index: 0,
+    child_thread_id: "child-thread",
+    child_run_id: "child-run",
+    composition_id: "composition",
+    child_definition_id: "explorer",
+    resumable: false,
+    created_at: "2026-09-12T00:00:00Z",
+    updated_at: "2026-09-12T00:00:00Z",
+    activity: {},
+    available_actions: ["steer", "cancel"],
+  } as Schema<"ChildExecutionView">;
+  render(<Child child={child} reconcile={vi.fn()} />, {
+    wrapper: harness({ POST, GET: vi.fn().mockResolvedValue({ data: {} }) }),
+  });
+  fireEvent.click(screen.getByText("Explorer · running"));
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "Instruction for Explorer" }),
+    { target: { value: "Inspect this" } },
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Send child instruction" }),
+  );
+  await screen.findByText(/Acknowledgement unavailable/);
+  expect(POST.mock.calls[0]).toEqual([
+    "/api/threads/{thread_id}/children/{execution_id}/steer",
+    {
+      params: { path: { thread_id: "parent", execution_id: "child-one" } },
+      body: { prompt: "Inspect this" },
+    },
+  ]);
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: "Instruction for Explorer",
+      }) as HTMLInputElement
+    ).value,
+  ).toBe("Inspect this");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Send child instruction" }),
+  );
+  expect(POST).toHaveBeenCalledOnce();
+});
+
+it("disables selection editing during the submitted versioned write", async () => {
+  const PATCH = vi.fn(() => new Promise(() => {}));
+  const wrapper = harness({
+    PATCH,
+    GET: vi.fn(async (path) => ({
+      data:
+        path === "/api/projects"
+          ? []
+          : {
+              agents: [],
+              environments: [],
+              mcp_servers: [
+                { resource_id: "a", name: "A" },
+                { resource_id: "b", name: "B" },
+              ],
+            },
+    })),
+  });
+  render(
+    <ThreadSelections
+      threadId="one"
+      configuration={configuration}
+      reconcile={vi.fn()}
+    />,
+    { wrapper },
+  );
+  fireEvent.click(screen.getByText("Change next Run selections"));
+  fireEvent.click(await screen.findByRole("checkbox", { name: "A" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Save next Run selections" }),
+  );
+  await waitFor(() => expect(PATCH).toHaveBeenCalledOnce());
+  expect(screen.getByRole("checkbox", { name: "B" }).matches(":disabled")).toBe(
+    true,
+  );
+  expect(
+    screen.getByRole("combobox", { name: "Agent" }).matches(":disabled"),
+  ).toBe(true);
+});
+it("submits an external denial with a valid default reason, and no invented result", async () => {
+  const POST = vi
+    .fn()
+    .mockResolvedValue({ data: { receipt_id: "receipt-one" } });
+  render(
+    <DecisionForm
+      threadId="one"
+      reconcile={vi.fn()}
+      batch={{
+        continuation_id: "C1",
+        requests: [
+          {
+            kind: "external",
+            request_id: "external-one",
+            tool_name: "Review",
+            arguments: {},
+          },
+        ],
+      }}
+    />,
+    { wrapper: harness({ POST }) },
+  );
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "External result" }));
+  await user.click(await screen.findByRole("option", { name: "Deny" }));
+  fireEvent.click(screen.getByRole("button", { name: "Submit responses" }));
+  await waitFor(() => expect(POST).toHaveBeenCalledOnce());
+  expect(POST.mock.calls[0][1].body.responses).toEqual([
+    {
+      kind: "external",
+      request_id: "external-one",
+      denied: true,
+      denial_message: "Denied.",
+    },
+  ]);
+});
+it("validates an approval override as a JSON object before allowing the complete response", async () => {
+  const POST = vi
+    .fn()
+    .mockResolvedValue({ data: { receipt_id: "receipt-one" } });
+  render(
+    <DecisionForm
+      threadId="one"
+      reconcile={vi.fn()}
+      batch={{
+        continuation_id: "C1",
+        requests: [
+          {
+            kind: "approval",
+            request_id: "approval-one",
+            tool_name: "Run",
+            arguments: { command: "inspect" },
+            override_allowed: true,
+          },
+        ],
+      }}
+    />,
+    { wrapper: harness({ POST }) },
+  );
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "Approval" }));
+  await user.click(
+    await screen.findByRole("option", {
+      name: "Approve with edited arguments",
+    }),
+  );
+  const input = screen.getByRole("textbox", {
+    name: "Replacement arguments (JSON object)",
+  });
+  fireEvent.change(input, { target: { value: "[]" } });
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Submit responses",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.change(input, { target: { value: '{"command":"review"}' } });
+  fireEvent.click(screen.getByRole("button", { name: "Submit responses" }));
+  await waitFor(() => expect(POST).toHaveBeenCalledOnce());
+  expect(POST.mock.calls[0][1].body.responses).toEqual([
+    {
+      kind: "approval",
+      request_id: "approval-one",
+      approved: true,
+      override_arguments: { command: "review" },
+    },
+  ]);
+});
