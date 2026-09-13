@@ -19,7 +19,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { allPages, data, type Schema } from "../../shared/api";
-import { ErrorNotice, Loading } from "../../shared/feedback";
+import { ErrorNotice, InlineLoading, Loading } from "../../shared/feedback";
 import { FormActions } from "../../shared/form";
 import styles from "../../shared/shared.module.css";
 import { jsonObject, validateSettings } from "../../shared/validation";
@@ -301,7 +301,9 @@ export function ModelForm({
           />
         )}
         <div>
-          <strong>{selectedProvider?.name ?? t("Loading…")}</strong>
+          <strong>
+            {selectedProvider?.name ?? <InlineLoading width="8rem" />}
+          </strong>
           {typeof selectedProvider?.configuration.base_url === "string" && (
             <span>{selectedProvider.configuration.base_url}</span>
           )}
@@ -332,7 +334,7 @@ export function ModelForm({
         {!original && !manual && definition?.supports_model_discovery ? (
           <div className={styles.stack}>
             {catalog.isPending ? (
-              <Loading />
+              <Loading variant="list" rows={3} />
             ) : catalog.data?.items.length ? (
               <FormField label={t("Model")}>
                 <SearchPicker

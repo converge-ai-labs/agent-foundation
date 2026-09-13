@@ -69,7 +69,7 @@ export function ModelEditor({
     >
       {open &&
         (modelId && model.isPending ? (
-          <Loading />
+          <Loading variant="form" rows={5} />
         ) : model.error && !model.data ? (
           <ErrorNotice error={model.error} />
         ) : (

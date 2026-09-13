@@ -46,7 +46,7 @@ export function SkillFiles({
       return revision;
     },
   });
-  if (query.isPending) return <Loading />;
+  if (query.isPending) return <Loading variant="detail" />;
   if (!query.data)
     return (
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
@@ -192,7 +192,7 @@ function FileContent({
           {t("This file is too large to preview. Download the ZIP to view it.")}
         </p>
       ) : archive.isPending ? (
-        <Loading />
+        <Loading variant="code" />
       ) : archive.error || preview.error ? (
         <ErrorNotice
           error={archive.error ?? preview.error}

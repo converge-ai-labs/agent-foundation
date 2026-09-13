@@ -65,7 +65,7 @@ export function SearchProviders({ scope }: { scope: SearchScope }) {
         />
       )}
       {query.isPending ? (
-        <Loading />
+        <Loading variant="table" columns={4} />
       ) : query.error ? (
         <ErrorNotice error={query.error} />
       ) : query.data?.items.length ? (
@@ -164,7 +164,7 @@ function SearchReferences({
       }
     >
       {query.isPending ? (
-        <Loading />
+        <Loading variant="table" columns={2} rows={5} />
       ) : query.error ? (
         <ErrorNotice error={query.error} />
       ) : (

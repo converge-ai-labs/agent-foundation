@@ -68,7 +68,7 @@ export function EnvironmentInstances() {
       </PageActions>
       <ErrorNotice error={query.error} />
       {query.isPending ? (
-        <Loading />
+        <Loading variant="table" columns={6} />
       ) : query.data?.items.length ? (
         <>
           <ResourceTable
@@ -216,7 +216,7 @@ function EnvironmentDetails({
         <ErrorNotice error={detail.error} />
         <ErrorToast error={command.error} />
         {detail.isPending ? (
-          <Loading />
+          <Loading variant="form" rows={5} />
         ) : (
           detail.data && (
             <>

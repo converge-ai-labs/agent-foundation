@@ -82,7 +82,7 @@ export function SearchProviderEditor({
     >
       {open &&
         (definitions.isPending || (providerId && resource.isPending) ? (
-          <Loading />
+          <Loading variant="form" rows={4} />
         ) : definitions.error || resource.error ? (
           <ErrorNotice error={definitions.error ?? resource.error} />
         ) : (

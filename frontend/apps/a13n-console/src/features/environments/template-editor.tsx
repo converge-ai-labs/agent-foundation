@@ -96,7 +96,7 @@ export function TemplateEditor({
     >
       {open &&
         (templateId && query.isPending ? (
-          <Loading />
+          <Loading variant="form" rows={5} />
         ) : query.error ? (
           <ErrorNotice error={query.error} />
         ) : !templateId ? (
@@ -161,7 +161,7 @@ export function CurrentRecipe({
         .then(data),
   });
   return query.isPending ? (
-    <Loading />
+    <Loading variant="form" rows={5} />
   ) : query.error ? (
     <ErrorNotice error={query.error} />
   ) : (

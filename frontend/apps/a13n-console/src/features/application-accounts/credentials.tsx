@@ -58,7 +58,7 @@ export function AccountCredentials({
     },
   });
   return definitions.isPending ? (
-    <Loading />
+    <Loading variant="form" rows={3} />
   ) : (
     <form
       className={styles.form}

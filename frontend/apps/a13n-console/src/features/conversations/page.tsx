@@ -198,7 +198,7 @@ export function SessionLayout() {
           ) : first ? (
             <Navigate to={`threads/${first.id}`} replace />
           ) : threads.isPending ? (
-            <Loading />
+            <Loading variant="list" rows={3} />
           ) : (
             <Empty
               title={t("No threads yet")}
@@ -248,7 +248,7 @@ export function ThreadLayout() {
         }}
       />
       {thread.isPending ? (
-        <Loading />
+        <Loading variant="detail" />
       ) : runId ? (
         <Outlet />
       ) : selected ? (

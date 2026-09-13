@@ -121,7 +121,7 @@ export function AccountForm({
       onSuccess(result);
     },
   });
-  if (definitions.isPending) return <Loading />;
+  if (definitions.isPending) return <Loading variant="form" rows={5} />;
   return (
     <form
       autoComplete="off"

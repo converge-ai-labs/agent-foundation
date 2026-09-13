@@ -121,7 +121,7 @@ export function ConnectionSetup({
       </p>
       <ErrorNotice error={definition.error ?? launch.error} />
       {definition.isPending ? (
-        <Loading />
+        <Loading variant="form" rows={3} />
       ) : (
         <form
           className={styles.form}

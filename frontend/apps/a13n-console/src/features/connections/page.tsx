@@ -110,7 +110,7 @@ export function ConnectionsPage() {
       )}
       <ErrorNotice error={connections.error} />
       {connections.isLoading ? (
-        <Loading />
+        <Loading variant="table" columns={4} />
       ) : rows.length ? (
         <ResourceTable
           items={rows}

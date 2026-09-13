@@ -108,7 +108,7 @@ export function EnvironmentProviders({ scope }: { scope: EnvironmentScope }) {
       )}
       <ErrorNotice error={query.error} />
       {query.isPending ? (
-        <Loading />
+        <Loading variant="table" columns={4} />
       ) : query.data?.items.length ? (
         <>
           <ResourceTable
@@ -248,7 +248,7 @@ function ProviderEditor({
     >
       {open &&
         (definitions.isPending || (providerId && query.isPending) ? (
-          <Loading />
+          <Loading variant="form" rows={4} />
         ) : definitions.error || query.error ? (
           <ErrorNotice error={definitions.error ?? query.error} />
         ) : (

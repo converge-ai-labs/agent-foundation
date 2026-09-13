@@ -82,7 +82,7 @@ export function RunInspector({ run }: { run: Schema["RunResource"] }) {
         <h3>{t("Attempts")}</h3>
         <ErrorNotice error={attempts.error ?? lineage.error} />
         {attempts.isPending ? (
-          <Loading />
+          <Loading variant="list" rows={3} />
         ) : (
           attempts.data?.map((attempt) => (
             <DisclosureSection

@@ -19,6 +19,7 @@ import {
 import {
   Empty,
   ErrorNotice,
+  InlineLoading,
   Loading,
   Page,
   StateBadge,
@@ -100,7 +101,7 @@ export function Agents() {
         />
       </div>
       {query.isPending ? (
-        <Loading />
+        <Loading variant="table" columns={4} />
       ) : query.error ? (
         <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       ) : !visible.length ? (
@@ -201,9 +202,11 @@ function AgentModel({ revisionId }: { revisionId: string }) {
   return (
     <span className={styles.modelName}>
       <StackIcon size={13} aria-hidden="true" />
-      {revision.isPending
-        ? "…"
-        : (revision.data?.config.model.model_key ?? t("Unavailable"))}
+      {revision.isPending ? (
+        <InlineLoading width="5.5rem" />
+      ) : (
+        (revision.data?.config.model.model_key ?? t("Unavailable"))
+      )}
     </span>
   );
 }

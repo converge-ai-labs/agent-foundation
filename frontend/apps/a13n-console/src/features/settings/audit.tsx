@@ -43,7 +43,7 @@ export function Audit({ scope }: { scope: ProfileTarget }) {
         .then(data);
     },
   });
-  if (query.isPending) return <Loading />;
+  if (query.isPending) return <Loading variant="table" columns={4} />;
   if (!query.data)
     return (
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />

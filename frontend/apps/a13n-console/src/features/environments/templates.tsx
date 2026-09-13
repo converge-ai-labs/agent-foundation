@@ -9,7 +9,13 @@ import { useClient } from "../../auth/context";
 import { useAccess } from "../../layout/workspace";
 import { allPages, data, type Schema } from "../../shared/api";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
-import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
+import {
+  Empty,
+  ErrorNotice,
+  InlineLoading,
+  Loading,
+  StateBadge,
+} from "../../shared/feedback";
 import { PageActions } from "../../shared/page-actions";
 import styles from "../../shared/shared.module.css";
 import { environmentApi, type EnvironmentScope } from "./api";
@@ -82,7 +88,7 @@ export function EnvironmentTemplates({ scope }: { scope: EnvironmentScope }) {
         retry={() => void providers.refetch()}
       />
       {query.isPending ? (
-        <Loading />
+        <Loading variant="table" columns={4} />
       ) : query.data?.items.length ? (
         <>
           <ResourceTable
@@ -122,11 +128,11 @@ export function EnvironmentTemplates({ scope }: { scope: EnvironmentScope }) {
                     </div>
                   ) : (
                     <span className="text-muted-foreground">
-                      {t(
-                        providers.isPending ||
-                          revisions.some((entry) => entry.isPending)
-                          ? "Loading…"
-                          : "Provider unavailable",
+                      {providers.isPending ||
+                      revisions.some((entry) => entry.isPending) ? (
+                        <InlineLoading width="7rem" />
+                      ) : (
+                        t("Provider unavailable")
                       )}
                     </span>
                   );

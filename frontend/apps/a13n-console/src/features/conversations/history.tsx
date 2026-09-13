@@ -70,7 +70,8 @@ function HistoricalRun({ runId }: { runId: string }) {
     void runQuery.refetch();
     void retained.refetch();
   };
-  if (runQuery.isPending || retained.isPending) return <Loading />;
+  if (runQuery.isPending || retained.isPending)
+    return <Loading variant="list" rows={2} />;
   if (!runQuery.data || !retained.data)
     return (
       <ErrorNotice error={runQuery.error ?? retained.error} retry={reload} />

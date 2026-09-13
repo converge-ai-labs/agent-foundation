@@ -127,7 +127,7 @@ export function SessionMap({
               error={query.error}
               retry={() => void query.refetch()}
             />
-            {query.isPending && <Loading />}
+            {query.isPending && <Loading variant="list" rows={3} />}
             {query.data?.length === 0 && (
               <p className={styles.empty}>{t("No runs yet")}</p>
             )}

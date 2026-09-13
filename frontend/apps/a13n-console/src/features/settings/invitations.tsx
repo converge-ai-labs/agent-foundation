@@ -54,7 +54,7 @@ export function Invitations({ scope }: { scope: MembershipScope }) {
         <InvitationEditor scope={scope} />
       </PageActions>
       {query.isPending ? (
-        <Loading />
+        <Loading variant="table" columns={5} rows={5} />
       ) : query.error ? (
         <ErrorNotice error={query.error} />
       ) : query.data?.items.length ? (

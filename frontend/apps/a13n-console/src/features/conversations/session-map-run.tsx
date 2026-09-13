@@ -131,7 +131,7 @@ export function MapRun({
           {state.status === "error" && (
             <ErrorNotice error={state.error} retry={retry} />
           )}
-          {state.status === "loading" && <Loading />}
+          {state.status === "loading" && <Loading variant="list" rows={3} />}
           {state.status === "unavailable" ? (
             <p>{t("Execution history is unavailable or incomplete.")}</p>
           ) : execution ? (

@@ -51,7 +51,7 @@ function BrowserSessions() {
         })
         .then(data),
   });
-  if (sessions.isPending) return <Loading />;
+  if (sessions.isPending) return <Loading variant="table" columns={5} />;
   if (!sessions.data) return <ErrorNotice error={sessions.error} />;
   return (
     <>

@@ -71,7 +71,7 @@ export function ApiKeys({
         )}
       </PageActions>
       {query.isPending ? (
-        <Loading />
+        <Loading variant="table" columns={memberKeys ? 6 : 5} rows={5} />
       ) : query.error ? (
         <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       ) : query.data?.items.length ? (

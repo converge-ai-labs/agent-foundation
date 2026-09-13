@@ -64,7 +64,7 @@ export function AccountTargets({ account }: { account: Schema["Account"] }) {
       </div>
       <ErrorNotice error={query.error} />
       {query.isPending ? (
-        <Loading />
+        <Loading variant="table" columns={4} rows={5} />
       ) : query.data?.items.length ? (
         <>
           <ResourceTable

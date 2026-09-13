@@ -52,6 +52,233 @@
 .page > .loading {
   min-height: calc(100svh - 160px);
 }
+.skeletonLoading {
+  width: 100%;
+  overflow: hidden;
+}
+.pageSkeleton {
+  min-height: 100svh;
+  padding: 28px 32px 56px;
+}
+.inlineSkeleton {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  vertical-align: middle;
+}
+.inlineSkeleton > [data-slot="skeleton"] {
+  height: 12px;
+}
+.skeletonTable {
+  min-width: 680px;
+  overflow: hidden;
+}
+.skeletonTableRow {
+  display: grid;
+  align-items: center;
+  gap: 24px;
+  min-height: 63px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--a13n-border-soft);
+}
+.skeletonTableRow[data-header] {
+  min-height: 38px;
+  background: color-mix(in srgb, var(--a13n-surface) 72%, transparent);
+}
+.skeletonTableHeading {
+  width: 46px;
+  height: 9px;
+}
+.skeletonTableCell,
+.skeletonListRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.skeletonCellCopy,
+.skeletonListRow > div {
+  display: grid;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+}
+.skeletonIcon {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 8px;
+}
+.skeletonLine {
+  width: 72%;
+  height: 11px;
+}
+.skeletonLine[data-width="1"] {
+  width: 54%;
+}
+.skeletonLine[data-width="2"] {
+  width: 84%;
+}
+.skeletonLine[data-secondary] {
+  width: 46%;
+  height: 8px;
+}
+.skeletonCards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.skeletonCard {
+  min-height: 128px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  border-radius: 12px;
+  background: var(--a13n-surface);
+}
+.skeletonCardHeading,
+.skeletonCardFooter,
+.skeletonActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.skeletonCardFooter {
+  margin-top: auto;
+}
+.skeletonTitle {
+  width: 36%;
+  height: 14px;
+}
+.skeletonBadge {
+  width: 28px;
+  height: 18px;
+  border-radius: 999px;
+}
+.skeletonKey {
+  width: 30%;
+  height: 10px;
+}
+.skeletonMeta {
+  width: 64px;
+  height: 9px;
+}
+.skeletonDate {
+  width: 136px;
+  height: 9px;
+}
+.skeletonForm {
+  display: grid;
+  gap: 16px;
+  width: 100%;
+  max-width: 760px;
+}
+.skeletonFormIntro {
+  width: min(420px, 72%);
+  height: 10px;
+  margin-bottom: 4px;
+}
+.skeletonField {
+  display: grid;
+  gap: 7px;
+}
+.skeletonLabel {
+  width: 92px;
+  height: 9px;
+}
+.skeletonControl {
+  width: 100%;
+  height: 38px;
+  border-radius: 8px;
+}
+.skeletonActions {
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.skeletonActions > [data-slot="skeleton"] {
+  width: 84px;
+  height: 36px;
+  border-radius: 8px;
+}
+.skeletonDetail {
+  display: grid;
+  gap: 24px;
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+.skeletonDetail > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+.skeletonDetail > header > div {
+  display: grid;
+  gap: 9px;
+  width: min(420px, 60%);
+}
+.skeletonDetailTitle {
+  width: 156px;
+  height: 22px;
+}
+.skeletonDetailDescription {
+  width: 72%;
+  height: 11px;
+}
+.skeletonDetailAction {
+  width: 108px;
+  height: 36px;
+  border-radius: 8px;
+}
+.skeletonTabs {
+  width: 260px;
+  height: 34px;
+  border-radius: 9px;
+}
+.skeletonDetailBody {
+  display: grid;
+  gap: 14px;
+  max-width: 860px;
+}
+.skeletonSectionTitle {
+  width: 128px;
+  height: 14px;
+}
+.skeletonParagraph {
+  width: min(560px, 78%);
+  height: 10px;
+}
+.skeletonPanel {
+  width: 100%;
+  height: 156px;
+  border-radius: 12px;
+  margin-bottom: 10px;
+}
+.skeletonList {
+  display: grid;
+  gap: 10px;
+}
+.skeletonListRow {
+  min-height: 66px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--a13n-surface);
+}
+.skeletonCode {
+  display: grid;
+  gap: 11px;
+  min-height: 180px;
+  padding: 18px;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 8px;
+  background: var(--a13n-surface);
+}
+.skeletonCode .skeletonLine {
+  height: 9px;
+}
 .errorPage {
   min-height: 100svh;
   display: flex;
@@ -186,6 +413,19 @@
   }
   .toolbar {
     flex-wrap: wrap;
+  }
+  .pageSkeleton {
+    padding: 24px 18px 40px;
+  }
+  .skeletonCards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .skeletonDetail > header {
+    flex-direction: column;
+    gap: 14px;
+  }
+  .skeletonDetail > header > div {
+    width: 82%;
   }
 }
 .resourceIdentity {

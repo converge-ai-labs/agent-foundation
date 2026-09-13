@@ -56,7 +56,7 @@ export function Providers({ scope }: { scope: ModelScope }) {
         />
       )}
       {query.isPending ? (
-        <Loading />
+        <Loading variant="table" columns={4} />
       ) : query.error ? (
         <ErrorNotice error={query.error} />
       ) : query.data?.items.length ? (
@@ -182,7 +182,7 @@ export function ProviderEditor({
     >
       {open &&
         (definitions.isPending || (providerId && resource.isPending) ? (
-          <Loading />
+          <Loading variant="form" rows={4} />
         ) : (!definitions.data && definitions.error) ||
           (!resource.data && resource.error) ? (
           <ErrorNotice error={definitions.error ?? resource.error} />

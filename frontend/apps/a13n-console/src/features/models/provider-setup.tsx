@@ -31,7 +31,7 @@ export function ProviderSetup({
   const { t } = useTranslation(),
     [connecting, setConnecting] = useState(false);
   if (error) return <ErrorNotice error={error} />;
-  if (!providers || !definitions) return <Loading />;
+  if (!providers || !definitions) return <Loading variant="form" rows={3} />;
   if (connecting || !providers.length)
     return (
       <div className={styles.stack}>

@@ -23,6 +23,7 @@ import {
 import {
   Empty,
   ErrorNotice,
+  InlineLoading,
   Loading,
   Page,
   StateBadge,
@@ -238,7 +239,7 @@ export function Models({ scope }: { scope: ModelScope }) {
         )}
       </div>
       {query.isPending ? (
-        <Loading />
+        <Loading variant="table" columns={5} />
       ) : query.error ? (
         <ErrorNotice error={query.error} />
       ) : query.data?.items.length ? (
@@ -286,10 +287,10 @@ export function Models({ scope }: { scope: ModelScope }) {
                       </div>
                     ) : (
                       <span className="text-muted-foreground">
-                        {t(
-                          providers.isPending
-                            ? "Loading…"
-                            : "Provider unavailable",
+                        {providers.isPending ? (
+                          <InlineLoading width="7rem" />
+                        ) : (
+                          t("Provider unavailable")
                         )}
                       </span>
                     );

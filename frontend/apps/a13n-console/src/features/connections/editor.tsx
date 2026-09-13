@@ -116,7 +116,7 @@ export function ConnectionDetails({
     >
       {open &&
         (query.isPending ? (
-          <Loading />
+          <Loading variant="form" rows={4} />
         ) : query.error ? (
           <ErrorNotice error={query.error} />
         ) : (

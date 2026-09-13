@@ -36,7 +36,7 @@ export function Revisions({ skill }: { skill: Schema["Skill"] }) {
     <div className={styles.stack}>
       <ErrorNotice error={query.error} />
       {query.isPending ? (
-        <Loading />
+        <Loading variant="table" columns={5} rows={5} />
       ) : (
         query.data && (
           <>

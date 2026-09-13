@@ -28,6 +28,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import { useWorkspace } from "../../layout/workspace";
+import { Loading } from "../../shared/feedback";
 import styles from "./agents.module.css";
 import { EditorSection } from "./section";
 import type { useAgentChoices } from "./choices";
@@ -312,13 +313,12 @@ function CapabilityGroup({
                       </div>
                     </div>
                   ))}
-                  {!choices.length && (
+                  {!choices.length && loading && (
+                    <Loading variant="list" rows={3} />
+                  )}
+                  {!choices.length && !loading && (
                     <p className={styles.capabilityEmpty}>
-                      {t(
-                        loading
-                          ? "Loading…"
-                          : "None available in this workspace.",
-                      )}
+                      {t("None available in this workspace.")}
                     </p>
                   )}
                   {!!choices.length && !visible.length && (

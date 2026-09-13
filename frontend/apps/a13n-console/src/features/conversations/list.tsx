@@ -55,7 +55,7 @@ function SessionResults({ filters }: { filters: SessionFilters }) {
         retry={() => void sessions.refetch()}
       />
       {sessions.isPending ? (
-        <Loading />
+        <Loading variant="table" columns={7} />
       ) : sessions.data?.items.length ? (
         <ResourceTable
           items={sessions.data.items}

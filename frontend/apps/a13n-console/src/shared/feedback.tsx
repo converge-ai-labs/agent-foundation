@@ -5,7 +5,6 @@ import {
   AlertTitle,
   Badge,
   Button,
-  Spinner,
   useToast,
 } from "a13n-ui";
 
@@ -32,18 +31,7 @@ import { Link } from "react-router";
 import styles from "./shared.module.css";
 import { relativeTime } from "./time";
 
-export function Loading({ page = false }: { page?: boolean }) {
-  const { t } = useTranslation();
-  return (
-    <div
-      role="status"
-      className={`${styles.loading} ${page ? styles.pageLoading : ""}`}
-    >
-      <Spinner aria-hidden="true" />
-      {t("Loading…")}
-    </div>
-  );
-}
+export { InlineLoading, Loading } from "./loading";
 
 function errorDetails(error: unknown, t: (value: string) => string) {
   const conflict =

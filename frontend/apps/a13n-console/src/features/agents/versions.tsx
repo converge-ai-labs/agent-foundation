@@ -38,7 +38,7 @@ export function AgentVersions({ agent }: { agent: Schema["Agent"] }) {
         })
         .then(data),
   });
-  if (query.isPending) return <Loading />;
+  if (query.isPending) return <Loading variant="table" columns={4} rows={5} />;
   if (!query.data) return <ErrorNotice error={query.error} />;
   return (
     <div className={styles.stack}>

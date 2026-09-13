@@ -109,7 +109,7 @@ export function SkillsPage() {
       </div>
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       {query.isPending ? (
-        <Loading />
+        <Loading variant="cards" />
       ) : query.data?.items.length ? (
         <>
           <div className={cards.grid}>
@@ -179,7 +179,7 @@ export function SkillDetail() {
         })
         .then(representation),
   });
-  if (query.isPending) return <Loading />;
+  if (query.isPending) return <Loading variant="detail" page />;
   if (!query.data)
     return (
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
@@ -269,7 +269,7 @@ function References({ skill }: { skill: Schema["Skill"] }) {
       </p>
       <ErrorNotice error={query.error} />
       {query.isPending ? (
-        <Loading />
+        <Loading variant="table" columns={2} rows={5} />
       ) : query.data?.items.length ? (
         <>
           <ResourceTable

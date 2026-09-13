@@ -58,7 +58,7 @@ export function Profile({
         .then(representation);
     },
   });
-  if (query.isPending) return <Loading />;
+  if (query.isPending) return <Loading variant="form" rows={3} />;
   if (!query.data)
     return (
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />

@@ -79,7 +79,7 @@ export function ApplicationAccountsPage() {
     >
       <ErrorNotice error={query.error} />
       {query.isPending ? (
-        <Loading />
+        <Loading variant="table" columns={4} />
       ) : query.data?.items.length ? (
         <>
           <ResourceTable
@@ -155,7 +155,7 @@ export function ApplicationAccountDetail() {
     await query.refetch();
     setGeneration((value) => value + 1);
   }
-  if (query.isPending) return <Loading />;
+  if (query.isPending) return <Loading variant="detail" page />;
   if (!query.data)
     return <ErrorNotice error={query.error} retry={() => void reload()} />;
   const account = query.data,

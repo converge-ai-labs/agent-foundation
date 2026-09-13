@@ -102,7 +102,7 @@ export function TraceDetail({ traceId }: { traceId: string }) {
         />
       </Page>
     );
-  if (!query.data) return <Loading />;
+  if (!query.data) return <Loading variant="detail" page />;
   const trace = query.data,
     root = trace.root,
     correlation = trace.correlation;
@@ -311,7 +311,7 @@ export function TraceDetail({ traceId }: { traceId: string }) {
               );
             })}
           </div>
-          {observationsQuery.isPending && <Loading />}
+          {observationsQuery.isPending && <Loading variant="list" rows={6} />}
           <ErrorNotice
             error={observationsQuery.error}
             retry={() =>

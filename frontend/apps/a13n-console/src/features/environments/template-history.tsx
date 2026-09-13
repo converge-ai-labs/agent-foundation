@@ -63,7 +63,7 @@ export function TemplateHistory({
     <div className={styles.stack}>
       <ErrorNotice error={query.error} />
       {query.isPending ? (
-        <Loading />
+        <Loading variant="table" columns={4} rows={5} />
       ) : (
         query.data && (
           <>

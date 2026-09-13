@@ -84,7 +84,7 @@ export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
       )}
       <ErrorNotice error={query.error} />
       {query.isPending ? (
-        <Loading />
+        <Loading variant="table" columns={3} />
       ) : query.data?.items.length ? (
         <>
           <ResourceTable
@@ -213,7 +213,7 @@ function ProviderEditor({
     >
       {open &&
         (definitions.isPending || (providerId && resource.isPending) ? (
-          <Loading />
+          <Loading variant="form" rows={4} />
         ) : definitions.error || resource.error ? (
           <ErrorNotice error={definitions.error ?? resource.error} />
         ) : readOnly && resource.data ? (

@@ -165,7 +165,8 @@ function RunContent({
     );
     navigate(runPath(basePath, receipt));
   }
-  if (runQuery.isPending || threadQuery.isPending) return <Loading />;
+  if (runQuery.isPending || threadQuery.isPending)
+    return <Loading variant="detail" />;
   if (!run || !thread)
     return (
       <ErrorNotice

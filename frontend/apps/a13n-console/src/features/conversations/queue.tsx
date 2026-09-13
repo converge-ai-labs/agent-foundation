@@ -173,7 +173,7 @@ export function ThreadQueue({
           </p>
         )}
         {query.isPending ? (
-          <Loading />
+          <Loading variant="list" rows={3} />
         ) : !items.length ? (
           <p>{t("No messages in this queue state.")}</p>
         ) : (

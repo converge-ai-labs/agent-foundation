@@ -96,7 +96,7 @@ export function AgentDetail() {
   });
   if (!isResourceKey(agentKey))
     return <ErrorNotice error={new Error(t("Agent not found"))} />;
-  if (query.isPending) return <Loading />;
+  if (query.isPending) return <Loading variant="detail" page />;
   if (!query.data)
     return (
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />

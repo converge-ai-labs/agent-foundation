@@ -28,7 +28,7 @@ export function RunEvents({ runId }: { runId: string }) {
       <h3>{t("Lifecycle events")}</h3>
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       {query.isPending ? (
-        <Loading />
+        <Loading variant="code" rows={6} />
       ) : (
         query.data && (
           <>

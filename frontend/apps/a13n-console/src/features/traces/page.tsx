@@ -47,7 +47,7 @@ export function TracesPage() {
         })
         .then(data),
   });
-  if (descriptor.isPending) return <Loading />;
+  if (descriptor.isPending) return <Loading variant="detail" page />;
   if (descriptor.error)
     return (
       <ErrorNotice
@@ -322,7 +322,7 @@ function TraceResults({
     workspace.id,
     query.isSuccess ? query.data.items : [],
   );
-  if (query.isPending) return <Loading />;
+  if (query.isPending) return <Loading variant="table" columns={6} />;
   if (query.error instanceof ApiError && query.error.status === 503)
     return (
       <Empty

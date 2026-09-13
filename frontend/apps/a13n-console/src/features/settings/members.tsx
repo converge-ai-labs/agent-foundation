@@ -109,7 +109,7 @@ export function Members({ scope }: { scope: MembershipScope }) {
         )}
       </PageActions>
       {members.isPending || bindings.isPending ? (
-        <Loading />
+        <Loading variant="table" columns={3} rows={5} />
       ) : members.error || bindings.error ? (
         <ErrorNotice error={members.error ?? bindings.error} />
       ) : bindings.data?.items.length ? (

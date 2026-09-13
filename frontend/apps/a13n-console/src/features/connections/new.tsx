@@ -10,7 +10,7 @@ import {
 import { ArrowLeftIcon, PlusIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
-import { ErrorToast } from "../../shared/feedback";
+import { ErrorToast, Loading } from "../../shared/feedback";
 import type { Schema } from "../../shared/api";
 import { ManageProvidersLink } from "../providers/manage-link";
 import { ConnectionSetup } from "../connectors/setup";
@@ -243,12 +243,7 @@ function ConnectionChoice({
           }}
           footer={
             directory.pending ? (
-              <p
-                role="status"
-                className="px-2 py-1 text-sm text-muted-foreground"
-              >
-                {t("Loading sources…")}
-              </p>
+              <Loading variant="list" rows={3} />
             ) : directory.hasMore ? (
               <Button
                 className="w-full"
