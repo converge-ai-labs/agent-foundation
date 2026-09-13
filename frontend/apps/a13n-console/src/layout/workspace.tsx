@@ -13,6 +13,7 @@ import {
   Empty,
   ErrorNotice,
   ErrorPage,
+  ErrorToast,
   Loading,
   Page,
 } from "../shared/feedback";
@@ -235,9 +236,10 @@ function NoWorkspace({
           }
         >
           <ErrorNotice
-            error={permissions.error ?? logout.error}
+            error={permissions.error}
             retry={() => void permissions.refetch()}
           />
+          <ErrorToast error={logout.error} />
           {["/settings/profile", "/organization/settings"].includes(
             location.pathname,
           ) && !permissions.isPending ? (
@@ -285,7 +287,7 @@ function NoOrganization() {
           </Button>
         }
       >
-        <ErrorNotice error={logout.error} />
+        <ErrorToast error={logout.error} />
         {location.pathname === "/settings/profile" ? (
           <Outlet />
         ) : (

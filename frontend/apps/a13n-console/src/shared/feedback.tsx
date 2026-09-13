@@ -1,5 +1,6 @@
 import {
   Alert,
+  AlertAction,
   AlertDescription,
   AlertTitle,
   Badge,
@@ -22,7 +23,6 @@ import {
   WarningCircleIcon,
   ArrowLeftIcon,
   TrayIcon,
-  ArrowsClockwiseIcon,
 } from "@phosphor-icons/react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { PageActionsTarget } from "./page-actions";
@@ -81,8 +81,8 @@ function ErrorToastContent({ error }: { error: unknown }) {
   const toastId = useId();
   const toastRef = useRef(toast);
   toastRef.current = toast;
+  const details = errorDetails(error, t);
   useEffect(() => {
-    const details = errorDetails(error, t);
     toastRef.current.add({
       id: toastId,
       type: "error",
@@ -100,7 +100,7 @@ function ErrorToastContent({ error }: { error: unknown }) {
         </>
       ),
     });
-  }, [error, t, toastId]);
+  }, [details.description, details.requestId, details.title, toastId]);
   useEffect(
     () => () => {
       toastRef.current.close(toastId);
@@ -159,13 +159,14 @@ export function ErrorNotice({
             {t("Request ID")}: {details.requestId}
           </small>
         )}
-        {retry && (
+      </AlertDescription>
+      {retry && (
+        <AlertAction>
           <Button size="sm" variant="outline" onClick={retry} type="button">
-            {<ArrowsClockwiseIcon size={14} />}
             {t("Reload")}
           </Button>
-        )}
-      </AlertDescription>
+        </AlertAction>
+      )}
     </Alert>
   );
 }

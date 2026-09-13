@@ -30,6 +30,7 @@ import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import {
   Empty,
   ErrorNotice,
+  ErrorToast,
   Loading,
   StateBadge,
   Timestamp,
@@ -212,7 +213,8 @@ function EnvironmentDetails({
       open={open}
     >
       <div className={styles.stack}>
-        <ErrorNotice error={detail.error ?? command.error} />
+        <ErrorNotice error={detail.error} />
+        <ErrorToast error={command.error} />
         {detail.isPending ? (
           <Loading />
         ) : (

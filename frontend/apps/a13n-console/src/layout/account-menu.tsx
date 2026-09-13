@@ -17,7 +17,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import { useAuth } from "../auth/context";
-import { ErrorNotice } from "../shared/feedback";
+import { ErrorToast } from "../shared/feedback";
 import { UserAvatar } from "./avatar";
 
 export function AccountMenu({ onNavigate }: { onNavigate: () => void }) {
@@ -70,7 +70,7 @@ export function AccountMenu({ onNavigate }: { onNavigate: () => void }) {
           </MenuGroup>
         </MenuPopup>
       </Menu>
-      <ErrorNotice error={logout.error} />
+      <ErrorToast error={logout.error} />
     </>
   );
 }

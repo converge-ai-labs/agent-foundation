@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { data, workspaceHeaders, type Schema } from "../../shared/api";
 import { downloadBlob } from "../../shared/download";
-import { ErrorNotice } from "../../shared/feedback";
+import { ErrorToast } from "../../shared/feedback";
 
 export function archiveQuery(
   client: ReturnType<typeof useClient>,
@@ -67,7 +67,7 @@ export function DownloadRevision({
       >
         {t("Download ZIP")}
       </Button>
-      <ErrorNotice error={download.error} />
+      <ErrorToast error={download.error} />
     </div>
   );
 }

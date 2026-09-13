@@ -11,6 +11,7 @@ import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import {
   ErrorNotice,
+  ErrorToast,
   Loading,
   StateBadge,
   Timestamp,
@@ -157,12 +158,13 @@ export function ThreadQueue({
           </p>
         )}
         <ErrorNotice
-          error={query.error ?? reorder.error ?? consume.error}
+          error={query.error}
           retry={() => {
             refresh();
             void query.refetch();
           }}
         />
+        <ErrorToast error={reorder.error ?? consume.error} />
         {consume.data?.outcome === "submission_failed" && (
           <p role="status">
             {t(

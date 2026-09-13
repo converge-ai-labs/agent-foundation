@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { ToastProvider } from "a13n-ui";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { CopyableId } from "./copy";
@@ -17,7 +18,9 @@ function setup() {
   const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <CopyableId value="ws_example_123" />
+      <ToastProvider closeLabel="Dismiss">
+        <CopyableId value="ws_example_123" />
+      </ToastProvider>
     </QueryClientProvider>,
   );
   return user;
@@ -42,10 +45,14 @@ it("shows a failed copy without reporting success and permits retry", async () =
   );
   await user.click(screen.getByRole("button", { name: "Copy ID" }));
   await act(() => vi.advanceTimersByTimeAsync(0));
-  expect(screen.getByRole("alert")).toBeDefined();
+  expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain(
+    "Copy failed.",
+  );
   expect(screen.getByRole("status").textContent).toBe("");
   await user.click(screen.getByRole("button", { name: "Copy ID" }));
   await act(() => vi.advanceTimersByTimeAsync(0));
   expect(screen.getByRole("button", { name: "Copied" })).toBeDefined();
-  expect(screen.queryByRole("alert")).toBeNull();
+  await waitFor(() =>
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull(),
+  );
 });

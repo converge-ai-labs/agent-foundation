@@ -24,18 +24,3 @@
   position: relative;
   flex-shrink: 0;
 }
-.error {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  z-index: 1;
-  width: max-content;
-  max-width: 200px;
-  padding: 6px 8px;
-  border: 1px solid var(--a13n-border-soft);
-  border-radius: 6px;
-  background: var(--a13n-elevated);
-  color: var(--a13n-danger);
-  font-size: 12px;
-  white-space: normal;
-}

@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import { CheckIcon, CopyIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import styles from "./copy.module.css";
+import { ErrorToast } from "./feedback";
 
 export function CopyButton({
   value,
@@ -18,7 +19,13 @@ export function CopyButton({
 }) {
   const { t } = useTranslation();
   const copy = useMutation({
-    mutationFn: () => navigator.clipboard.writeText(value),
+    mutationFn: async () => {
+      try {
+        await navigator.clipboard.writeText(value);
+      } catch {
+        throw new Error(t("Copy failed."));
+      }
+    },
   });
   useEffect(() => {
     if (!copy.isSuccess) return;
@@ -49,11 +56,7 @@ export function CopyButton({
       <span role="status" className="visually-hidden">
         {copy.isSuccess ? t("Copied") : ""}
       </span>
-      {copy.isError && (
-        <span className={styles.error} role="alert">
-          {t("Copy failed. Try again.")}
-        </span>
-      )}
+      <ErrorToast error={copy.error} />
     </span>
   );
 }

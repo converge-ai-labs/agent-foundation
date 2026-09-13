@@ -16,6 +16,7 @@ import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import {
   ErrorNotice,
+  ErrorToast,
   Loading,
   StateBadge,
   Timestamp,
@@ -253,11 +254,8 @@ function RunContent({
           )}
         </div>
       </header>
-      <ErrorNotice
-        error={
-          runQuery.error ?? threadQuery.error ?? retry.error ?? interrupt.error
-        }
-      />
+      <ErrorNotice error={runQuery.error ?? threadQuery.error} />
+      <ErrorToast error={retry.error ?? interrupt.error} />
       {live.gap && (
         <p role="status" className={styles.notice}>
           {t(
