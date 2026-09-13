@@ -1,7 +1,13 @@
 "use client";
 
 import { Toast as ToastPrimitive } from "@base-ui/react/toast";
-import { XIcon } from "@phosphor-icons/react";
+import {
+  CheckCircleIcon,
+  InfoIcon,
+  WarningCircleIcon,
+  WarningIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 import type React from "react";
 import { cn } from "../lib/utils";
 
@@ -26,41 +32,54 @@ function ToastViewport({ closeLabel }: { closeLabel: string }) {
   const { toasts } = ToastPrimitive.useToastManager();
   return (
     <ToastPrimitive.Portal>
-      <ToastPrimitive.Viewport className="fixed end-4 top-4 z-100 flex w-[min(26rem,calc(100vw-2rem))] flex-col gap-2 outline-none sm:end-6 sm:top-6">
+      <ToastPrimitive.Viewport className="fixed top-4 left-1/2 z-100 flex w-[min(32rem,calc(100vw-2rem))] -translate-x-1/2 flex-col gap-2 outline-none sm:top-5">
         {toasts.map((toast) => (
           <ToastPrimitive.Root
             key={toast.id}
             toast={toast}
-            className={cn(
-              "grid grid-cols-[0.25rem_minmax(0,1fr)_auto] gap-x-3 overflow-hidden rounded-xl border bg-popover p-3.5 text-popover-foreground shadow-xl/10 transition-[opacity,translate,scale] duration-200 data-ending-style:translate-x-2 data-starting-style:translate-x-2 data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0",
-              toast.type === "error" && "border-destructive/24",
-            )}
+            className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 overflow-hidden rounded-xl border bg-popover p-3.5 text-popover-foreground shadow-lg/10 transition-[opacity,translate,scale] duration-200 data-ending-style:-translate-y-2 data-starting-style:-translate-y-2 data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0"
           >
-            <span
-              aria-hidden="true"
-              className={cn(
-                "row-span-2 h-full min-h-8 rounded-full bg-info",
-                toast.type === "error" && "bg-destructive",
-                toast.type === "success" && "bg-success",
-                toast.type === "warning" && "bg-warning",
-              )}
-            />
+            <ToastStatusIcon type={toast.type} />
             <ToastPrimitive.Content className="min-w-0 self-center">
-              <ToastPrimitive.Title className="text-sm font-medium" />
-              <ToastPrimitive.Description className="mt-0.5 text-sm text-muted-foreground [&_small]:mt-1.5 [&_small]:block [&_small]:text-xs" />
+              <ToastPrimitive.Title className="text-sm leading-5 font-medium" />
+              <ToastPrimitive.Description className="mt-0.5 text-[13px] leading-5 text-muted-foreground [&_small]:mt-1 [&_small]:block [&_small]:break-all [&_small]:text-[11px] [&_small]:leading-4" />
             </ToastPrimitive.Content>
             <ToastPrimitive.Close
               aria-label={closeLabel}
-              className="row-start-1 -me-1 -mt-1 grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2"
+              className="-me-1 -mt-1 grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2"
             >
               <XIcon aria-hidden="true" className="size-4" />
             </ToastPrimitive.Close>
             {toast.actionProps && (
-              <ToastPrimitive.Action className="col-start-2 mt-2.5 w-fit rounded-md border px-2.5 py-1.5 text-xs font-medium hover:bg-muted focus-visible:outline-2" />
+              <ToastPrimitive.Action className="col-start-2 mt-2 w-fit rounded-md border px-2.5 py-1 text-xs leading-5 font-medium hover:bg-muted focus-visible:outline-2" />
             )}
           </ToastPrimitive.Root>
         ))}
       </ToastPrimitive.Viewport>
     </ToastPrimitive.Portal>
+  );
+}
+
+function ToastStatusIcon({ type }: { type?: string }) {
+  const Icon =
+    type === "error"
+      ? WarningCircleIcon
+      : type === "success"
+        ? CheckCircleIcon
+        : type === "warning"
+          ? WarningIcon
+          : InfoIcon;
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "grid size-8 place-items-center rounded-full bg-info/10 text-info-foreground",
+        type === "error" && "bg-destructive/10 text-destructive-foreground",
+        type === "success" && "bg-success/10 text-success-foreground",
+        type === "warning" && "bg-warning/10 text-warning-foreground",
+      )}
+    >
+      <Icon className="size-4" weight="fill" />
+    </span>
   );
 }

@@ -1,6 +1,5 @@
 import { ToastProvider } from "a13n-ui";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { ErrorToast } from "./feedback";
 
@@ -11,39 +10,35 @@ vi.mock("react-i18next", () => ({
 
 afterEach(cleanup);
 
-function view(error: unknown, retry?: () => void, mounted = true) {
+function view(error: unknown, mounted = true) {
   return (
     <ToastProvider closeLabel="Dismiss">
-      {mounted && <ErrorToast error={error} retry={retry} />}
+      {mounted && <ErrorToast error={error} />}
     </ToastProvider>
   );
 }
 
-it("updates an error toast and its action, then closes it when cleared", async () => {
-  const firstRetry = vi.fn();
-  const latestRetry = vi.fn();
-  const { rerender } = render(view(new Error("First failure"), firstRetry));
+it("updates an error toast without offering an action, then closes it when cleared", async () => {
+  const { rerender } = render(view(new Error("First failure")));
   await waitFor(() =>
     expect(
       document.querySelector('[role="alertdialog"]')?.textContent,
     ).toContain("First failure"),
   );
 
-  rerender(view(new Error("Latest failure"), latestRetry));
+  rerender(view(new Error("Latest failure")));
   await waitFor(() => {
     const content = document.querySelector('[role="alertdialog"]')?.textContent;
     expect(content).toContain("Latest failure");
     expect(content).not.toContain("First failure");
   });
-  const action = [
-    ...document.querySelectorAll('[role="alertdialog"] button'),
-  ].find((button) => button.textContent === "Try again");
-  expect(action).toBeDefined();
-  await userEvent.click(action!);
-  expect(latestRetry).toHaveBeenCalledOnce();
-  expect(firstRetry).not.toHaveBeenCalled();
+  expect(
+    [...document.querySelectorAll('[role="alertdialog"] button')].some(
+      (button) => button.textContent === "Try again",
+    ),
+  ).toBe(false);
 
-  rerender(view(null, latestRetry));
+  rerender(view(null));
   await waitFor(() =>
     expect(document.querySelector('[role="alertdialog"]')).toBeNull(),
   );
@@ -57,16 +52,16 @@ it("closes an error toast when its owner unmounts", async () => {
     ).toContain("Owned failure"),
   );
 
-  rerender(view(new Error("Owned failure"), undefined, false));
+  rerender(view(new Error("Owned failure"), false));
   await waitFor(() =>
     expect(document.querySelector('[role="alertdialog"]')).toBeNull(),
   );
 });
 
-it("keeps an actionable error visible until its owner resolves it", () => {
+it("keeps an error visible until its owner resolves it", () => {
   vi.useFakeTimers();
   try {
-    render(view(new Error("Persistent failure"), vi.fn()));
+    render(view(new Error("Persistent failure")));
     expect(
       document.querySelector('[role="alertdialog"]')?.textContent,
     ).toContain("Persistent failure");

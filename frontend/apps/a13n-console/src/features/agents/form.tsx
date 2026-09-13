@@ -410,13 +410,7 @@ export function AgentForm({
             )}
           </div>
         </aside>
-        <ErrorToast
-          error={error ?? choices.error}
-          retry={() => {
-            void choices.refetch();
-            reload?.();
-          }}
-        />
+        <ErrorToast error={error ?? choices.error} />
       </form>
     </div>
   );

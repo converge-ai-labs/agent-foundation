@@ -257,7 +257,7 @@ function ConnectionChoice({
           }
         />
       </FormField>
-      <ErrorToast error={directory.error} retry={directory.refresh} />
+      <ErrorToast error={directory.error} />
       <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
         <ManageProvidersLink category="connectors" scope="workspace" />
         {!!directory.providers.length && (

@@ -71,23 +71,11 @@ function errorDetails(error: unknown, t: (value: string) => string) {
   };
 }
 
-export function ErrorToast({
-  error,
-  retry,
-}: {
-  error: unknown;
-  retry?: () => void;
-}) {
-  return error ? <ErrorToastContent error={error} retry={retry} /> : null;
+export function ErrorToast({ error }: { error: unknown }) {
+  return error ? <ErrorToastContent error={error} /> : null;
 }
 
-function ErrorToastContent({
-  error,
-  retry,
-}: {
-  error: unknown;
-  retry?: () => void;
-}) {
+function ErrorToastContent({ error }: { error: unknown }) {
   const { t } = useTranslation();
   const toast = useToast();
   const toastId = useId();
@@ -111,11 +99,8 @@ function ErrorToastContent({
           )}
         </>
       ),
-      actionProps: retry
-        ? { children: t("Try again"), onClick: retry }
-        : undefined,
     });
-  }, [error, retry, t, toastId]);
+  }, [error, t, toastId]);
   useEffect(
     () => () => {
       toastRef.current.close(toastId);
