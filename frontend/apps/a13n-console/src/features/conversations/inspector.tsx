@@ -17,9 +17,11 @@ import {
 } from "../../shared/feedback";
 import { JsonView } from "../../shared/form";
 import { conversationQueries, runPath } from "./api";
-import styles from "./conversations.module.css";
+import styles from "./inspector.module.css";
 import { AgentLink } from "../agents/link";
 import { RunEvents } from "./events";
+import { useAgent } from "../agents/queries";
+import { CopyableId } from "../../shared/copy";
 
 export function RunInspector({ run }: { run: Schema["RunResource"] }) {
   const { t } = useTranslation(),
@@ -46,11 +48,8 @@ export function RunInspector({ run }: { run: Schema["RunResource"] }) {
       closeLabel={t("Close")}
       open={open}
     >
-      <div className={styles.composerOptions}>
-        <div className={styles.inline}>
-          <StateBadge state={run.status} />
-          <Timestamp value={run.created_at} />
-        </div>
+      <div className={styles.inspectorBody}>
+        <RunFacts run={run} />
         <DisclosureSection title={t("Configuration evidence")}>
           {can("trace.read") && (
             <p>
@@ -63,7 +62,9 @@ export function RunInspector({ run }: { run: Schema["RunResource"] }) {
           )}
           <dl className={styles.metadata}>
             <dt>{t("Run")}</dt>
-            <dd>{run.id}</dd>
+            <dd>
+              <CopyableId value={run.id} />
+            </dd>
             <dt>{t("Agent revision")}</dt>
             <dd>
               <AgentLink agentId={run.agent_id}>
@@ -71,7 +72,9 @@ export function RunInspector({ run }: { run: Schema["RunResource"] }) {
               </AgentLink>
             </dd>
             <dt>{t("Effective configuration digest")}</dt>
-            <dd>{run.effective_agent_config_digest}</dd>
+            <dd>
+              <CopyableId value={run.effective_agent_config_digest} />
+            </dd>
             <dt>{t("Environment")}</dt>
             <dd>{run.environment_id ?? t("None")}</dd>
           </dl>
@@ -99,12 +102,22 @@ export function RunInspector({ run }: { run: Schema["RunResource"] }) {
         )}
         <h3>{t("Lineage")}</h3>
         {lineage.data?.items.map((entry) => (
-          <p key={entry.run_id}>
+          <div key={entry.run_id} className={styles.inspectorLineage}>
             <Link to={runPath(basePath, entry)} onClick={() => setOpen(false)}>
-              {entry.run_id}
+              {t(
+                entry.lineage_kind === "fork"
+                  ? "Branch run"
+                  : entry.lineage_kind === "continue"
+                    ? "Continued run"
+                    : "Initial run",
+              )}
+              <small>
+                <Timestamp value={entry.created_at} />
+              </small>
             </Link>{" "}
             <StateBadge state={entry.status} />
-          </p>
+            <CopyableId value={entry.run_id} />
+          </div>
         ))}
         <DisclosureSection title={t("Events")}>
           <RunEvents runId={run.id} />
@@ -114,5 +127,40 @@ export function RunInspector({ run }: { run: Schema["RunResource"] }) {
         </DisclosureSection>
       </div>
     </ModalFrame>
+  );
+}
+
+function RunFacts({ run }: { run: Schema["RunResource"] }) {
+  const { t, i18n } = useTranslation();
+  const agent = useAgent(run.agent_id);
+  const duration =
+    run.started_at && run.completed_at
+      ? (Date.parse(run.completed_at) - Date.parse(run.started_at)) / 1000
+      : null;
+  return (
+    <dl className={styles.runFacts}>
+      <dt>{t("Status")}</dt>
+      <dd>
+        <StateBadge state={run.status} />
+      </dd>
+      <dt>{t("Agent")}</dt>
+      <dd>
+        <AgentLink agentId={run.agent_id}>
+          {agent.data?.name ?? run.agent_id}
+        </AgentLink>
+      </dd>
+      <dt>{t("Started")}</dt>
+      <dd>{run.started_at ? <Timestamp value={run.started_at} /> : "—"}</dd>
+      <dt>{t("Duration")}</dt>
+      <dd>
+        {duration !== null && Number.isFinite(duration)
+          ? `${new Intl.NumberFormat(i18n.resolvedLanguage, { maximumFractionDigits: 2 }).format(duration)} s`
+          : "—"}
+      </dd>
+      <dt>{t("Trigger source")}</dt>
+      <dd>
+        {t(`trigger.${run.trigger_type}`, { defaultValue: run.trigger_type })}
+      </dd>
+    </dl>
   );
 }

@@ -364,6 +364,7 @@ async def test_parent_and_inline_children_keep_separate_tool_items(redis_client:
     starts = [entry.event for entry in page.items if entry.event.event_type == "agui.tool_call_start"]
     assert len({event.payload["toolCallId"] for event in starts}) == 3
     assert starts[0].payload["toolCallId"] == "call-0"
+    assert {event.payload["source_tool_call_id"] for event in starts} == {"call-0"}
     for event in starts:
         same_run = [entry.event for entry in page.items if entry.event.harness_run_id == event.harness_run_id]
         assert {entry.item_id for entry in same_run} == {event.item_id}

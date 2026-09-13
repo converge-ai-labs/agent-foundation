@@ -13,10 +13,10 @@ from a13n_service.storage import transaction
 from .conftest import NOW, WORKSPACE_ID, actor
 from .connection_helpers import management, mcp_checks
 from .test_mcp_service import (
+    APP_CALLBACK,
     MCP_ENDPOINT,
     MCPAuthMode,
     RemoteServer,
-    capture_receipt,
     stored_generation,
 )
 from .test_mcp_service import (
@@ -42,10 +42,17 @@ async def _authorize_connection(mcp_services):
         connection_id=created.id,
         idempotency_key="authorize",
         expected_version=created.version,
+        redirect_uri=APP_CALLBACK,
     )
     state = parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
-    receipt = await capture_receipt(oauth, state)
-    return await oauth.callback(actor=actor(), state=state, receipt=receipt)
+    return await oauth.complete(
+        actor=actor(),
+        authorization_id=launch.id,
+        state=state,
+        code="code",
+        issuer="https://8.8.4.4",
+        response_error=None,
+    )
 
 
 async def _expired_connection(mcp_services, sessions, protector):

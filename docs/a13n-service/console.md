@@ -38,7 +38,7 @@ The following routes are relative to `/workspace/:workspaceKey`:
 | Traces               | `traces`, `traces/:traceId`                               | Authorized backend diagnostics or an explicit unavailable state             |
 | Workspace settings   | `settings`                                                | Membership, invitations, keys, service accounts, permissions, and settings  |
 
-Provider management lives in Workspace or Organization settings under `section=providers`, with `category=connectors` for Composio. The Connections dialog combines Provider applications, remote MCP presets, and a custom URL; saved accounts and servers retain their separate backend resources.
+Provider management lives in Workspace or Organization settings under `section=providers`, with `category=connectors` for Composio. The Connections dialog combines Provider applications, the deployment-resolved Remote MCP catalog from Service, and a custom URL; saved accounts and servers retain their separate backend resources. Operators can extend or override the catalog through Service configuration without rebuilding Console.
 
 Organization settings live at `/organization/settings`; personal settings live at `/settings/profile`. Profile images, active sessions, password/email changes, and security activity belong to their identity settings, not Agent configuration.
 
@@ -62,7 +62,7 @@ Usage and Schedules are marked coming soon. Console does not provide Asset manag
 
 Traces offers only the configured backend's supported search targets and distinguishes disabled querying from temporary backend failures. Detail loads a root plus paginated observations, merges the root by ID, and preserves missing parents until their pages arrive. Root metrics are not trace totals; status and severity are separate. Full/compact selection controls retained content and diagnostic attributes, while the Run link provides authoritative execution outcome.
 
-Trace querying requires query-backend configuration and permission to read the owning Run and its traces. Default Service composition supplies the Run/IAM authorizer. A configured exporter or reachable Langfuse UI is insufficient. MCP OAuth also has [callback requirements](identity.md#browser-oauth-callbacks); a provider redirect alone cannot bypass session/CSRF validation.
+Trace querying requires query-backend configuration and permission to read the owning Run and its traces. Default Service composition supplies the Run/IAM authorizer. A configured exporter or reachable Langfuse UI is insufficient. MCP OAuth also has [callback requirements](identity.md#browser-oauth-callbacks): the provider returns to Console, which completes the attempt through the authenticated Service API as the initiating principal. A provider redirect alone cannot bypass state, callback-allowlist, authority, expiry, or replay validation.
 
 ## Hosting and development
 

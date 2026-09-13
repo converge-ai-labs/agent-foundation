@@ -24,6 +24,19 @@ export function useConnectionDirectory(search: string) {
         ),
       ),
   });
+  const mcpServers = useQuery({
+    queryKey: ["mcp-servers", search],
+    enabled: can("connection.manage"),
+    queryFn: ({ signal }) =>
+      allPages((cursor) =>
+        client.http
+          .GET("/api/v1/mcp-servers", {
+            params: { query: { query: search, limit: 200, cursor } },
+            signal,
+          })
+          .then(data),
+      ),
+  });
   const active =
     providers.data?.filter((provider) => provider.status === "active") ?? [];
   const key = (provider: Schema["ConnectorProvider"]) => [
@@ -89,10 +102,15 @@ export function useConnectionDirectory(search: string) {
         provider: active[index],
       })),
     ),
+    mcpServers: mcpServers.data ?? [],
     providers: active,
-    pending: providers.isLoading || queries.some((query) => query.isLoading),
+    pending:
+      providers.isLoading ||
+      mcpServers.isLoading ||
+      queries.some((query) => query.isLoading),
     error:
       providers.error ??
+      mcpServers.error ??
       queries.find((query) => query.error)?.error ??
       load.error,
     hasMore: queries.some((query) => !!query.data?.next_cursor),

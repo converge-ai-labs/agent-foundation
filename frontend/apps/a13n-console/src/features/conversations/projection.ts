@@ -15,6 +15,7 @@ export interface PresentedItem {
   failure?: unknown;
   protectedReasoning: boolean;
   detail?: unknown;
+  display?: boolean;
 }
 export function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -60,6 +61,10 @@ function applyPayload(
     next.parentId = payload.parent_item_id;
   if (typeof payload.item_state === "string") next.state = payload.item_state;
   if (typeof payload.role === "string") next.role = payload.role;
+  if (isObject(payload.metadata)) {
+    if (typeof payload.metadata.display === "boolean")
+      next.display = payload.metadata.display;
+  }
   if (
     ["agui.text_message_content", "agui.reasoning_message_content"].includes(
       type,
@@ -140,4 +145,13 @@ export function mergeRetainedItems(
       merged.set(item.id, presentRetainedItem(item));
   }
   return merged;
+}
+
+export function parseItemValue(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
 }

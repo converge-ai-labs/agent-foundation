@@ -68,6 +68,16 @@ a2a_enabled = true
 handoff_preference_window = "30s"
 
 [connectivity]
+public_origin = "https://agents.example.com"
+authorization_callback_urls = ["https://console.example.com/connections/callback"]
+
+[[connectivity.mcp_servers]]
+key = "internal-tools"
+name = "Internal tools"
+description = "Company-hosted remote tools"
+endpoint_url = "https://tools.example.com/mcp"
+auth_mode = "oauth"
+documentation_url = "https://docs.example.com/tools"
 
 [plugins]
 keys = []
@@ -117,7 +127,7 @@ Real Redis is a required distributed data-flow and coordination dependency. Requ
 
 `control`, `worker`, and `connectivity` are independently deployable roles. `all` is their exact process composition. One Worker process runs `WorkerExecutionLoop`, its claimed `RunAttemptExecutor` tasks, and a separately capacity-bounded `EnvironmentMaintenanceLoop`. The execution loop owns bounded relational scan, local-capacity admission, claim, and takeover. Each successful claim starts one executor async task that owns lease renewal, control watching, installed-plugin and Agent reconstruction, and Harness execution. Environment maintenance uses the deployment-selected Provider catalog independently of Run presence and never consumes an Agent execution slot. No OS thread or plugin child process is created per Attempt or target.
 
-The `connectivity` role owns provider event webhooks, long connections, polling, and durable external-event admission processing. Control owns Account, AccountTarget, ConnectorProvider, Connection management, including connection setup, advisory discovery, revocation, reconciliation, and MCP OAuth callbacks. The executing Worker loads trusted native-action and ConnectorProvider runtime adapters, constructs per-Attempt in-process a13n MCP tool groups, and directly connects selected Remote MCP servers through Harness clients. These roles share Service application operations and durable stores; none uses a private cross-pod Service API for this work. [External Connectivity](40-connectivity/README.md) owns the complete boundary.
+The `connectivity` role owns provider event webhooks, long connections, polling, and durable external-event admission processing. Control owns Account, AccountTarget, ConnectorProvider, Connection management, including connection setup, advisory discovery, revocation, reconciliation, the Remote MCP setup catalog, and authenticated MCP OAuth completion. The executing Worker loads trusted native-action and ConnectorProvider runtime adapters, constructs per-Attempt in-process a13n MCP tool groups, and directly connects selected Remote MCP servers through Harness clients. These roles share Service application operations and durable stores; none uses a private cross-pod Service API for this work. [External Connectivity](40-connectivity/README.md) owns the complete boundary.
 
 | Capability                                                                            | `control` | `worker` | `connectivity` |    `all` |
 | ------------------------------------------------------------------------------------- | --------: | -------: | -------------: | -------: |

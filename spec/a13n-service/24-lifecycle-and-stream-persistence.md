@@ -135,6 +135,8 @@ class RunStreamEvent:
 
 The Redis Stream entry ID is the live replay cursor. `event_id` is the stable event identity carried into retained snapshots; `item_id` is present only when the event creates, changes, or closes one semantic Item. Redis entry IDs, lifecycle `seq`, lifecycle event IDs, Item IDs, and Harness Run IDs remain distinct identifier domains.
 
+Tool observations carrying `toolCallId` also preserve the native call reference as `payload.source_tool_call_id`, scoped by the envelope's RunAttempt and Harness Run. The presentation `toolCallId` remains namespaced for inline children. Consumers use the native reference and source scope to join delegation and CodeAct observations; the reference grants no authority and does not replace Item identity.
+
 Writers bound payloads and stream length, use deterministic event identities for retryable publication, and set a retention TTL that never expires an active Run's stream. Consumers resume within the live horizon from the last Redis Stream entry ID.
 
 The public Native SSE framing, `Last-Event-ID` behavior, and replay-to-live cutover are owned by [Native Streaming and Notifications](21-native-streaming-and-notifications.md#run-sse). Hosted AG-UI and A2A can project this source under their own protocol identities, but they do not reinterpret the Redis entry ID as an AG-UI or A2A cursor.

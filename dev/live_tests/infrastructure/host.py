@@ -38,7 +38,7 @@ def settings_for(config: dict, role: str) -> Settings:
                 "http_origins": (config["control_url"],),
                 "private_endpoint_cidrs": ("127.0.0.1/32",),
                 "setup_correlation_secret": config["token"],
-                "authorization_return_urls": ("https://live.example/complete",),
+                "authorization_callback_urls": ("https://live.example/complete",),
             },
             "models": {"private_endpoint_cidrs": ("127.0.0.1/32",)},
             "filesystem": {"root": Path(config["workspace_root"]).parent / role},

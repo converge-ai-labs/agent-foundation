@@ -104,24 +104,33 @@ class CreateAuthorizationRequest(ConnectionCommandRequest):
     return_url: str | None = Field(default=None, min_length=1, max_length=2048)
     state: str | None = Field(default=None, min_length=32, max_length=512, repr=False)
     completion_challenge: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$", repr=False)
+    redirect_uri: str | None = Field(default=None, min_length=1, max_length=2048)
 
     @model_validator(mode="after")
     def validate_method(self) -> CreateAuthorizationRequest:
         if self.method == "browser":
-            if (
-                self.return_url is None
-                or self.state is None
-                or self.completion_challenge is None
-                or self.credentials is not None
+            connector_handoff = (
+                self.return_url is not None or self.state is not None or self.completion_challenge is not None
+            )
+            mcp_callback = self.redirect_uri is not None
+            if connector_handoff == mcp_callback or self.credentials is not None:
+                raise ValueError("Browser authorization requires either an application callback or a connector handoff")
+            if connector_handoff and (
+                self.return_url is None or self.state is None or self.completion_challenge is None
             ):
-                raise ValueError("Browser authorization requires a return URL, state, and completion challenge")
+                raise ValueError("Connector authorization requires a return URL, state, and completion challenge")
             try:
-                split_browser_url(self.return_url)
+                split_browser_url(self.redirect_uri or self.return_url or "")
             except ValueError as error:
                 raise ValueError(
-                    "Authorization return URL must use HTTPS or exact loopback HTTP without credentials or a fragment"
+                    "Authorization callback must use HTTPS or exact loopback HTTP without credentials or a fragment"
                 ) from error
-        elif self.return_url is not None or self.state is not None or self.completion_challenge is not None:
+        elif (
+            self.return_url is not None
+            or self.state is not None
+            or self.completion_challenge is not None
+            or self.redirect_uri is not None
+        ):
             raise ValueError("Noninteractive authorization does not accept browser parameters")
         if (self.method == "credentials") != (self.credentials is not None):
             raise ValueError("Credentials are supplied only for direct credential authorization")
@@ -129,8 +138,13 @@ class CreateAuthorizationRequest(ConnectionCommandRequest):
 
 
 class AuthorizationAction(StrictModel):
-    type: Literal["open_url", "check_connection", "restart"]
+    type: Literal["open_url", "configure_oauth_client", "check_connection", "restart"]
     url: str | None = Field(default=None, max_length=8192, repr=False)
+    redirect_uri: str | None = None
+    issuer_url: str | None = None
+    token_endpoint_auth_methods: tuple[str, ...] = ()
+    grant_types: tuple[str, ...] = ()
+    client_registration: str | None = None
 
 
 class Authorization(StrictModel):
@@ -147,8 +161,24 @@ class Authorization(StrictModel):
 
 
 class CompleteAuthorizationRequest(StrictModel):
-    receipt: str = Field(min_length=32, max_length=512, repr=False)
-    completion_verifier: str = Field(min_length=43, max_length=128, repr=False)
+    receipt: str | None = Field(default=None, min_length=32, max_length=512, repr=False)
+    completion_verifier: str | None = Field(default=None, min_length=43, max_length=128, repr=False)
+    state: str | None = Field(default=None, min_length=32, max_length=512, repr=False)
+    code: str | None = Field(default=None, min_length=1, max_length=8192, repr=False)
+    iss: str | None = Field(default=None, min_length=1, max_length=2048)
+    error: str | None = Field(default=None, min_length=1, max_length=256)
+
+    @model_validator(mode="after")
+    def validate_response(self) -> CompleteAuthorizationRequest:
+        connector = self.receipt is not None or self.completion_verifier is not None
+        oauth = self.state is not None or self.code is not None or self.iss is not None or self.error is not None
+        if connector == oauth:
+            raise ValueError("Completion requires either a connector proof or an OAuth response")
+        if connector and (self.receipt is None or self.completion_verifier is None):
+            raise ValueError("Connector completion requires a receipt and verifier")
+        if oauth and (self.state is None or (self.code is None) == (self.error is None)):
+            raise ValueError("OAuth completion requires state and exactly one of code or error")
+        return self
 
 
 class LaunchAuthorizationRequest(StrictModel):

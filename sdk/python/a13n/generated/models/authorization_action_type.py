@@ -3,6 +3,7 @@ from enum import StrEnum
 
 class AuthorizationActionType(StrEnum):
     CHECK_CONNECTION = "check_connection"
+    CONFIGURE_OAUTH_CLIENT = "configure_oauth_client"
     OPEN_URL = "open_url"
     RESTART = "restart"
 

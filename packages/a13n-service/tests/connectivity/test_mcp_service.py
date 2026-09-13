@@ -24,7 +24,7 @@ from a13n_service.connectivity.mcp.models import (
     MCPConnectionOAuthClientRecord,
     MCPConnectionRecord,
 )
-from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient, issuer_key
+from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient, issuer_key, redirect_key
 from a13n_service.connectivity.mcp.oauth_service import MCPOAuthService
 from a13n_service.connectivity.mcp.refresh import OAuthCredentialRefresh
 from a13n_service.connectivity.mcp.service import MCPConnectionService
@@ -43,18 +43,7 @@ from .connection_helpers import management, mcp_checks
 MCP_ENDPOINT = "https://8.8.8.8/mcp"
 ISSUER = "https://8.8.4.4"
 PUBLIC_ORIGIN = "https://1.1.1.1"
-
-
-async def capture_receipt(oauth: MCPOAuthService, state: str, *, issuer: str | None = ISSUER) -> str:
-    from a13n_service.connectivity.connections.handoff import digest, secret_bundle
-
-    await oauth.receive_callback(callback_key=issuer_key(ISSUER), state=state, code="code", issuer=issuer)
-    async with transaction(oauth._sessions) as session:
-        attempt = await session.scalar(
-            select(MCPAuthorizationRecord).where(MCPAuthorizationRecord.state_digest == digest(state))
-        )
-        assert attempt is not None
-        return secret_bundle(attempt, oauth._protector)["protocol_receipt"]
+APP_CALLBACK = "https://app.example/callback"
 
 
 async def stored_generation(service, connection_id):
@@ -259,6 +248,7 @@ async def service_bundle(connectivity_sessions, credential_protector):
             credential_protector,
             discovery,
             public_origin=PUBLIC_ORIGIN,
+            redirect_uris=(APP_CALLBACK,),
             client_name="Service Test",
             instance_id="mcp-test",
             clock=lambda: NOW,
@@ -452,20 +442,23 @@ async def test_oauth_state_is_bound_single_use_and_callback_validates_connection
         connection_id=created.id,
         idempotency_key="authorize-oauth",
         expected_version=1,
+        redirect_uri=APP_CALLBACK,
     )
     replay = await oauth.authorize(
         actor=actor(),
         connection_id=created.id,
         idempotency_key="authorize-oauth",
         expected_version=1,
+        redirect_uri=APP_CALLBACK,
     )
     assert replay == launch
     query = parse_qs(urlsplit(launch.authorization_url).query)
     assert query["resource"] == [MCP_ENDPOINT]
     assert query["code_challenge_method"] == ["S256"]
-    assert query["client_id"] == [f"{PUBLIC_ORIGIN}/api/v1/oauth/mcp/client-metadata/{issuer_key(ISSUER)}.json"]
+    assert query["client_id"] == [
+        f"{PUBLIC_ORIGIN}/api/v1/oauth/mcp/client-metadata/{issuer_key(ISSUER)}/{redirect_key(APP_CALLBACK)}.json"
+    ]
 
-    receipt = await capture_receipt(oauth, query["state"][0])
     other_user = AuthenticatedActor(
         principal=PrincipalRef(principal_type="user", principal_id="usr_0123456789abcdef"),
         auth_method="session",
@@ -473,13 +466,34 @@ async def test_oauth_state_is_bound_single_use_and_callback_validates_connection
         boundary_workspace_id=WORKSPACE_ID,
     )
     with pytest.raises(MCPConnectionError, match="state is invalid"):
-        await oauth.callback(actor=other_user, state=query["state"][0], receipt=receipt)
+        await oauth.complete(
+            actor=other_user,
+            authorization_id=launch.id,
+            state=query["state"][0],
+            code="code",
+            issuer=ISSUER,
+            response_error=None,
+        )
 
-    ready = await oauth.callback(actor=actor(), state=query["state"][0], receipt=receipt)
+    ready = await oauth.complete(
+        actor=actor(),
+        authorization_id=launch.id,
+        state=query["state"][0],
+        code="code",
+        issuer=ISSUER,
+        response_error=None,
+    )
     assert ready.status == "ready"
     assert ready.credential_configured is True
     with pytest.raises(MCPConnectionError, match="already used"):
-        await oauth.callback(actor=actor(), state=query["state"][0], receipt=receipt)
+        await oauth.complete(
+            actor=actor(),
+            authorization_id=launch.id,
+            state=query["state"][0],
+            code="code",
+            issuer=ISSUER,
+            response_error=None,
+        )
 
 
 @pytest.mark.anyio
@@ -501,9 +515,9 @@ async def test_oauth_callback_preserves_credentials_when_verification_is_tempora
         connection_id=created.id,
         idempotency_key="authorize-verification-retry",
         expected_version=created.version,
+        redirect_uri=APP_CALLBACK,
     )
     state = parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
-    receipt = await capture_receipt(oauth, state)
     original = oauth._discovery.discover
 
     async def unavailable(*args, **kwargs):
@@ -514,7 +528,14 @@ async def test_oauth_callback_preserves_credentials_when_verification_is_tempora
         )
 
     monkeypatch.setattr(oauth._discovery, "discover", unavailable)
-    pending = await oauth.callback(actor=actor(), state=state, receipt=receipt)
+    pending = await oauth.complete(
+        actor=actor(),
+        authorization_id=launch.id,
+        state=state,
+        code="code",
+        issuer=ISSUER,
+        response_error=None,
+    )
     assert pending.status == "pending"
     assert pending.credential_configured is True
     assert sum(request.url.path == "/token" for request in remote.requests) == 1
@@ -590,10 +611,12 @@ async def test_delete_fences_connection_and_cleans_exact_dcr_registration(
         connection_id=created.id,
         idempotency_key="authorize-dcr",
         expected_version=1,
+        redirect_uri=APP_CALLBACK,
     )
     state = parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
-    receipt = await capture_receipt(oauth, state)
-    ready = await oauth.callback(actor=actor(), state=state, receipt=receipt)
+    ready = await oauth.complete(
+        actor=actor(), authorization_id=launch.id, state=state, code="code", issuer=ISSUER, response_error=None
+    )
     await connections.delete(
         actor=actor(),
         connection_id=ready.id,
@@ -633,10 +656,12 @@ async def test_oauth_refresh_rotates_bundle_without_coupling_readiness_to_discov
         connection_id=created.id,
         idempotency_key="authorize-refresh",
         expected_version=1,
+        redirect_uri=APP_CALLBACK,
     )
     state = parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
-    receipt = await capture_receipt(oauth, state)
-    ready = await oauth.callback(actor=actor(), state=state, receipt=receipt)
+    ready = await oauth.complete(
+        actor=actor(), authorization_id=launch.id, state=state, code="code", issuer=ISSUER, response_error=None
+    )
     original_generation = await stored_generation(connections, ready.id)
 
     requests_before = len(remote.requests)
@@ -666,6 +691,7 @@ async def test_client_credentials_acquires_and_renews_without_browser_authorizat
         credential_protector,
         oauth._discovery,
         public_origin=None,
+        redirect_uris=(),
         client_name="Service Test",
         instance_id="machine-test",
         clock=lambda: NOW,
@@ -784,10 +810,12 @@ async def test_oauth_invalid_grant_requires_reauthorization(mcp_services, oauth_
         connection_id=created.id,
         idempotency_key="authorize-invalid-grant",
         expected_version=1,
+        redirect_uri=APP_CALLBACK,
     )
     state = parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
-    receipt = await capture_receipt(oauth, state)
-    ready = await oauth.callback(actor=actor(), state=state, receipt=receipt)
+    ready = await oauth.complete(
+        actor=actor(), authorization_id=launch.id, state=state, code="code", issuer=ISSUER, response_error=None
+    )
     original_generation = await stored_generation(connections, ready.id)
     remote.refresh_error = "invalid_grant"
 
@@ -822,10 +850,12 @@ async def test_oauth_refresh_lost_race_does_not_replace_newer_credentials(
         connection_id=created.id,
         idempotency_key="authorize-refresh-race",
         expected_version=1,
+        redirect_uri=APP_CALLBACK,
     )
     state = parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
-    receipt = await capture_receipt(oauth, state)
-    ready = await oauth.callback(actor=actor(), state=state, receipt=receipt)
+    ready = await oauth.complete(
+        actor=actor(), authorization_id=launch.id, state=state, code="code", issuer=ISSUER, response_error=None
+    )
     original_generation = await stored_generation(connections, ready.id)
     started = Event()
     proceed = Event()
@@ -881,12 +911,14 @@ async def test_new_oauth_authorization_expires_and_cleans_prior_dcr_session(
         connection_id=created.id,
         idempotency_key="authorize-first",
         expected_version=1,
+        redirect_uri=APP_CALLBACK,
     )
     await oauth.authorize(
         actor=actor(),
         connection_id=created.id,
         idempotency_key="authorize-second",
         expected_version=2,
+        redirect_uri=APP_CALLBACK,
     )
     assert sum(request.url.path == "/register" for request in remote.requests) == 1
     async with connectivity_sessions() as session:
@@ -903,7 +935,14 @@ async def test_new_oauth_authorization_expires_and_cleans_prior_dcr_session(
     assert remote.registration_deleted is False
     state = parse_qs(urlsplit(first.authorization_url).query)["state"][0]
     with pytest.raises(MCPConnectionError, match="unavailable"):
-        await oauth.callback(actor=actor(), state=state, receipt="unused-receipt")
+        await oauth.complete(
+            actor=actor(),
+            authorization_id=first.id,
+            state=state,
+            code="code",
+            issuer=ISSUER,
+            response_error=None,
+        )
 
 
 @pytest.fixture
@@ -940,6 +979,7 @@ async def test_postgresql_cross_pod_authorization_and_single_refresh(
             credential_protector,
             pod_a._discovery,
             public_origin=PUBLIC_ORIGIN,
+            redirect_uris=(APP_CALLBACK,),
             client_name="Service Test",
             instance_id="pod-b",
             clock=lambda: NOW,
@@ -969,11 +1009,21 @@ async def test_postgresql_cross_pod_authorization_and_single_refresh(
             expected_token = "machine-oauth-secret-2"
         else:
             launch = await pod_a.authorize(
-                actor=actor(), connection_id=created.id, idempotency_key="authorize", expected_version=1
+                actor=actor(),
+                connection_id=created.id,
+                idempotency_key="authorize",
+                expected_version=1,
+                redirect_uri=APP_CALLBACK,
             )
             state = parse_qs(urlsplit(launch.authorization_url).query)["state"][0]
-            receipt = await capture_receipt(pod_a, state)
-            ready = await pod_b.callback(actor=actor(), state=state, receipt=receipt)
+            ready = await pod_b.complete(
+                actor=actor(),
+                authorization_id=launch.id,
+                state=state,
+                code="code",
+                issuer=ISSUER,
+                response_error=None,
+            )
             expected_token = "refreshed-oauth-secret"
         assert ready.status == "ready"
         entered, release = Event(), Event()

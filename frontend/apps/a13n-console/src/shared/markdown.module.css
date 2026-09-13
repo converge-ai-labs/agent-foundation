@@ -1,7 +1,7 @@
 .markdown {
   min-width: 0;
   font-size: 14px;
-  line-height: 1.8;
+  line-height: 1.75;
   overflow-wrap: anywhere;
 }
 .markdown > :first-child {
@@ -16,9 +16,23 @@
 .markdown h1,
 .markdown h2,
 .markdown h3 {
-  font-size: 16px;
-  line-height: 1.5;
-  margin: 20px 0 10px;
+  font-weight: 500;
+  line-height: 1.4;
+  margin: 24px 0 12px;
+}
+.markdown h1 {
+  font-size: 21px;
+  letter-spacing: -0.5px;
+}
+.markdown h2 {
+  font-size: 17px;
+  letter-spacing: -0.2px;
+}
+.markdown h3 {
+  font-size: 15px;
+}
+.markdown strong {
+  font-weight: 600;
 }
 .markdown h4,
 .markdown h5,
@@ -27,8 +41,8 @@
 }
 .markdown pre {
   overflow-x: auto;
-  padding: 14px;
-  background: var(--a13n-elevated);
+  padding: 16px;
+  background: color-mix(in srgb, var(--a13n-surface) 50%, var(--a13n-canvas));
   border: 1px solid var(--a13n-border);
   border-radius: 8px;
   font-size: 12px;
@@ -39,15 +53,18 @@
   font-size: 0.92em;
 }
 .markdown :not(pre) > code {
-  padding: 2px 4px;
-  background: var(--a13n-elevated);
+  padding: 2px 5px;
+  background: var(--a13n-surface);
   border-radius: 3px;
 }
 .markdown blockquote {
-  border-left: 2px solid var(--a13n-border);
-  padding-left: 16px;
+  border-left: 2px solid var(--a13n-secondary);
+  padding: 4px 0 4px 16px;
   color: var(--a13n-secondary);
-  margin-left: 0;
+  margin: 18px 0;
+}
+.markdown blockquote > :last-child {
+  margin-bottom: 0;
 }
 .markdown table {
   display: block;
@@ -57,16 +74,58 @@
 }
 .markdown th,
 .markdown td {
-  padding: 8px 12px;
+  padding: 10px 12px;
   text-align: left;
-  border: 1px solid var(--a13n-border);
+  border-bottom: 1px solid var(--a13n-border);
+  vertical-align: top;
+  overflow-wrap: normal;
+}
+.markdown th {
+  font-weight: 500;
+  background: var(--a13n-surface);
+  font-size: 12px;
 }
 .markdown ul,
 .markdown ol {
   padding-left: 22px;
+  margin: 12px 0 18px;
+}
+.markdown ol {
+  list-style: decimal;
+}
+.markdown ul {
+  list-style: disc;
+}
+.markdown li::marker {
+  color: var(--a13n-secondary);
+}
+.markdown li > p {
+  margin-bottom: 4px;
 }
 .markdown li + li {
   margin-top: 6px;
+}
+.codeBlock {
+  margin: 16px 0;
+  overflow: hidden;
+  border: 1px solid var(--a13n-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--a13n-surface) 50%, var(--a13n-canvas));
+}
+.codeToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 4px 14px;
+  color: var(--a13n-secondary);
+  font: 400 11px/1.5 var(--a13n-mono);
+  border-bottom: 1px solid var(--a13n-border-soft);
+}
+.markdown .codeBlock pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 /* Syntax tokens inherit semantic theme colors in both light and dark modes. */

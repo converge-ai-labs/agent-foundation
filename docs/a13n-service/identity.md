@@ -53,9 +53,11 @@ Manage existing membership through the Organization or Workspace `role-bindings`
 
 ## Browser OAuth callbacks
 
-Browser authorization uses the same Connection Authorization API for Console users and application Service Accounts. The initiating principal supplies an exact registered HTTPS return URL, opaque application state, and a SHA-256 completion challenge. The Service browser bridge binds the provider round trip to that tab; the application receives a short-lived receipt and completes it with the original principal and verifier. An application can keep its own user identities and Connection mapping without creating Console users.
+Browser authorization uses the same Connection Authorization resource for Console users and application Service Accounts, with source-specific callback proof. An application can keep its own user identities and Connection mapping without creating Console users.
 
-Composio returns through `/connection-authorizations/browser`; MCP providers return to `/api/v1/oauth/mcp/callback/{issuer_key}` before entering the same bridge. Console receives the application handoff at `/connections/callback`, removes query material immediately, and completes with the signed-in User and CSRF token. Keep authorization in the same tab. Service omits query strings from access logs; configure ingress access logs to do the same. See [external tool authorization](external-tools.md#application-owned-users) for the API flow and return URL configuration.
+Connector setup supplies a registered return URL, application state, and SHA-256 completion challenge. Composio returns through `/connection-authorizations/browser`; the Service bridge binds the round trip to that tab, then the application completes a short-lived receipt with the original principal and verifier.
+
+MCP authorization instead registers an allowlisted application `redirect_uri`. The provider returns directly to that application with OAuth state and a code or error. The application removes query material immediately and calls authenticated completion as the initiating principal; Service validates the callback, issuer, PKCE, authority, expiry, and one-time exchange. Console owns `/connections/callback` and completes with the signed-in User and CSRF token. Keep authorization in the same tab. Service omits query strings from access logs; configure application and ingress access logs to do the same. See [external tool authorization](external-tools.md#application-owned-users) for both flows and callback configuration.
 
 ## Create application keys
 

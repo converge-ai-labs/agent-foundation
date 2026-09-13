@@ -244,6 +244,10 @@ from .lifecycle_projection_state import LifecycleProjectionState
 from .login_request import LoginRequest
 from .login_result import LoginResult
 from .mcp_client_metadata import MCPClientMetadata
+from .mcp_server import MCPServer
+from .mcp_server_auth_mode import MCPServerAuthMode
+from .mcp_server_collection import MCPServerCollection
+from .mcp_server_origin import MCPServerOrigin
 from .mcp_source import MCPSource
 from .mcp_source_auth_mode import MCPSourceAuthMode
 from .mcp_tool import MCPTool
@@ -266,6 +270,13 @@ from .mcpo_auth_discovery_grant_types_supported_item import MCPOAuthDiscoveryGra
 from .mcpo_auth_discovery_token_endpoint_auth_methods_supported_item import (
     MCPOAuthDiscoveryTokenEndpointAuthMethodsSupportedItem,
 )
+from .mcpo_auth_setup import MCPOAuthSetup
+from .mcpo_auth_setup_action import MCPOAuthSetupAction
+from .mcpo_auth_setup_action_client_registration_type_0 import MCPOAuthSetupActionClientRegistrationType0
+from .mcpo_auth_setup_action_grant_types_item import MCPOAuthSetupActionGrantTypesItem
+from .mcpo_auth_setup_action_token_endpoint_auth_methods_item import MCPOAuthSetupActionTokenEndpointAuthMethodsItem
+from .mcpo_auth_setup_action_type import MCPOAuthSetupActionType
+from .mcpo_auth_setup_request import MCPOAuthSetupRequest
 from .model import Model
 from .model_candidate import ModelCandidate
 from .model_candidate_parameter_support import ModelCandidateParameterSupport
@@ -769,6 +780,17 @@ __all__ = (
     "MCPOAuthDiscoveryClientRegistration",
     "MCPOAuthDiscoveryGrantTypesSupportedItem",
     "MCPOAuthDiscoveryTokenEndpointAuthMethodsSupportedItem",
+    "MCPOAuthSetup",
+    "MCPOAuthSetupAction",
+    "MCPOAuthSetupActionClientRegistrationType0",
+    "MCPOAuthSetupActionGrantTypesItem",
+    "MCPOAuthSetupActionTokenEndpointAuthMethodsItem",
+    "MCPOAuthSetupActionType",
+    "MCPOAuthSetupRequest",
+    "MCPServer",
+    "MCPServerAuthMode",
+    "MCPServerCollection",
+    "MCPServerOrigin",
     "MCPSource",
     "MCPSourceAuthMode",
     "MCPTool",

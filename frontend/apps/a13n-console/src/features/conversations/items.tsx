@@ -1,12 +1,9 @@
-import { Button, DisclosureSection } from "a13n-ui";
-
-import { useState } from "react";
+import type { ReactNode } from "react";
+import { DisclosureSection } from "a13n-ui";
 
 import {
-  HeartIcon,
   BrainIcon,
   CheckIcon,
-  CopyIcon,
   FileIcon,
   CircleNotchIcon,
   WrenchIcon,
@@ -17,19 +14,31 @@ import { JsonView } from "../../shared/form";
 import styles from "./conversations.module.css";
 import { MarkdownContent } from "../../shared/markdown";
 import { isObject, type PresentedItem } from "./projection";
+import { inputText } from "./input";
+import { AssetAttachment } from "./attachment";
+import { ToolDetails } from "./tool-details";
+import { AgentAvatar } from "../agents/avatar";
+import { CopyButton } from "../../shared/copy";
 export function PresentedItems({
   items,
   runState,
   agentName,
+  agentId,
+  agentImageUrl,
+  children,
 }: {
   items: readonly PresentedItem[];
   runState?: string;
   agentName?: string;
+  agentId?: string;
+  agentImageUrl?: string | null;
+  children?: ReactNode;
 }) {
   const { t } = useTranslation();
-  return items
+  const content = items
     .filter(
       (item) =>
+        item.display !== false &&
         item.kind !== "run_output" &&
         (item.kind !== "text_message" || item.role === "assistant"),
     )
@@ -42,11 +51,14 @@ export function PresentedItems({
             title={
               <span className={styles.disclosureTitle}>
                 <WrenchIcon size={14} />
-                <strong>{item.toolName || t("Tool call")}</strong>
+                <strong title={item.toolName}>
+                  {item.toolName || t("Tool call")}
+                </strong>
                 <span className={styles.toolState}>
                   {item.state === "completed" ? (
                     <CheckIcon size={13} aria-label={t("Completed")} />
-                  ) : item.state === "streaming" && runState !== "waiting" ? (
+                  ) : item.state === "streaming" &&
+                    ["running", "queued"].includes(runState ?? "running") ? (
                     <CircleNotchIcon
                       size={13}
                       className={styles.spinning}
@@ -54,24 +66,24 @@ export function PresentedItems({
                     />
                   ) : (
                     <StateBadge
-                      state={runState === "waiting" ? "waiting" : item.state}
+                      state={
+                        item.state === "streaming"
+                          ? ["waiting", "failed", "cancelled"].includes(
+                              runState ?? "",
+                            )
+                            ? runState === "waiting"
+                              ? "waiting"
+                              : "interrupted"
+                            : "unknown"
+                          : item.state
+                      }
                     />
                   )}
                 </span>
               </span>
             }
           >
-            <div className={styles.toolBody}>
-              <h4>{t("Arguments")}</h4>
-              <JsonView value={parseJson(item.arguments)} />
-              {item.result !== undefined && (
-                <>
-                  <h4>{t("Result")}</h4>
-                  <JsonView value={parseJson(item.result)} />
-                </>
-              )}
-              {item.failure !== undefined && <JsonView value={item.failure} />}
-            </div>
+            <ToolDetails item={item} />
           </DisclosureSection>
         );
       if (item.kind === "reasoning_message")
@@ -109,28 +121,45 @@ export function PresentedItems({
         );
       return (
         <article key={item.id} className={styles.message} data-role={item.role}>
-          <div className={styles.messageAvatar}>{<HeartIcon size={16} />}</div>
-          <div className={styles.messageBody}>
-            <div className={styles.messageHeading}>
-              <strong>{agentName ?? t("Agent")}</strong>
-              {item.state !== "completed" && <StateBadge state={item.state} />}
+          <MarkdownContent
+            text={
+              item.text ||
+              (item.state === "streaming"
+                ? t("Thinking…")
+                : t("No text content"))
+            }
+          />
+          {item.text && item.state === "completed" && (
+            <div className={styles.messageActions}>
+              <CopyButton
+                value={item.text}
+                iconOnly
+                copyLabel={t("Copy message")}
+              />
             </div>
-            <MarkdownContent
-              text={
-                item.text ||
-                (item.state === "streaming"
-                  ? t("Thinking…")
-                  : t("No text content"))
-              }
-            />
-            {item.text && item.state === "completed" && (
-              <CopyMessage text={item.text} />
-            )}
-            {item.failure !== undefined && <JsonView value={item.failure} />}
-          </div>
+          )}
+          {item.failure !== undefined && <JsonView value={item.failure} />}
         </article>
       );
     });
+  if (content.length === 0 && !children) return null;
+  return (
+    <section className={styles.agentResponse} aria-label={t("Agent response")}>
+      <div className={styles.agentHeading}>
+        <AgentAvatar
+          name={agentName ?? t("Agent")}
+          id={agentId}
+          url={agentImageUrl}
+          className={styles.messageAvatar}
+        />
+        <strong>{agentName ?? t("Agent")}</strong>
+      </div>
+      <div className={styles.agentContent}>
+        {content}
+        {children}
+      </div>
+    </section>
+  );
 }
 export function InputContent({
   input,
@@ -169,17 +198,7 @@ export function InputContent({
     );
   return (
     <>
-      <div className={styles.prose}>
-        {ordinary.content
-          .flatMap((block) =>
-            isObject(block) &&
-            block.type === "text" &&
-            typeof block.text === "string"
-              ? [block.text]
-              : [],
-          )
-          .join("\n\n") || fallback}
-      </div>
+      <div className={styles.prose}>{inputText(input, fallback)}</div>
       <div className={styles.attachments}>
         {ordinary.content.flatMap((block, index) => {
           if (
@@ -196,6 +215,21 @@ export function InputContent({
                 : block.source.type === "url"
                   ? String(block.source.url)
                   : String(block.source.path);
+          if (
+            block.source.type === "asset" &&
+            typeof block.source.asset_id === "string"
+          )
+            return [
+              <AssetAttachment
+                key={index}
+                assetId={block.source.asset_id}
+                filename={
+                  typeof block.filename === "string"
+                    ? block.filename
+                    : undefined
+                }
+              />,
+            ];
           return [
             <span key={index} className={styles.attachment}>
               <FileIcon size={13} />
@@ -211,45 +245,5 @@ export function InputContent({
           </DisclosureSection>
         )}
     </>
-  );
-}
-function parseJson(value: unknown) {
-  if (typeof value !== "string") return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
-}
-
-function CopyMessage({ text }: { text: string }) {
-  const { t } = useTranslation();
-  const [status, setStatus] = useState("idle");
-  return (
-    <div className={styles.messageActions}>
-      <Button
-        type="button"
-        variant="ghost"
-        aria-label={t(status === "copied" ? "Copied" : "Copy message")}
-        onClick={async () => {
-          try {
-            await navigator.clipboard.writeText(text);
-            setStatus("copied");
-          } catch {
-            setStatus("failed");
-          }
-        }}
-        size="icon-sm"
-      >
-        {status === "copied" ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
-      </Button>
-      <span role="status">
-        {status === "copied"
-          ? t("Copied")
-          : status === "failed"
-            ? t("Could not copy. Select the message to copy it manually.")
-            : ""}
-      </span>
-    </div>
   );
 }

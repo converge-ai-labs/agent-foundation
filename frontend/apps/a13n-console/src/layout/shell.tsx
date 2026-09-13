@@ -29,7 +29,7 @@ import { useWorkspace } from "./workspace";
 import { WorkspaceMenu } from "./workspace-menu";
 function PageOutlet() {
   return (
-    <main id="main-content" className="min-w-0">
+    <main id="main-content" className="min-h-0 min-w-0 flex-1">
       <Suspense fallback={<Loading page />}>
         <Outlet />
       </Suspense>
@@ -145,7 +145,7 @@ function WorkspaceNavigation() {
           <AccountMenu onNavigate={close} />
         </SidebarFooter>
       </Sidebar>
-      <SidebarInset className="min-w-0">
+      <SidebarInset className="h-dvh min-w-0">
         <div className="flex shrink-0 px-4 pt-4 sm:px-7 md:hidden">
           <Button
             variant="ghost"

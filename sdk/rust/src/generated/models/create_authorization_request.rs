@@ -39,6 +39,14 @@ pub struct CreateAuthorizationRequest {
     pub options: Option<std::collections::HashMap<String, serde_json::Value>>,
 
     #[serde(
+        rename = "redirect_uri",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub redirect_uri: Option<Option<String>>,
+
+    #[serde(
         rename = "return_url",
         default,
         with = "::serde_with::rust::double_option",
@@ -63,6 +71,7 @@ impl CreateAuthorizationRequest {
             expected_version,
             method,
             options: None,
+            redirect_uri: None,
             return_url: None,
             state: None,
         }

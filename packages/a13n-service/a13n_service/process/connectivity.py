@@ -25,6 +25,7 @@ from a13n_service.connectivity.ingress.admission import IngressEventService
 from a13n_service.connectivity.ingress.admission_domain import InputAcceptor
 from a13n_service.connectivity.ingress.reconciler import IngressAdmissionReconciler
 from a13n_service.connectivity.ingress.retention import IngressRetentionReconciler
+from a13n_service.connectivity.mcp.catalog import MCPServerCatalog
 from a13n_service.connectivity.mcp.discovery import MCPDiscoveryService
 from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient
 from a13n_service.connectivity.mcp.oauth_service import MCPOAuthService
@@ -138,6 +139,7 @@ async def _build_control_runtime(
         secret_protector,
         public_origin,
     )
+    mcp_servers = MCPServerCatalog(settings.connectivity.mcp_servers, endpoint_policy)
     mcp_http_client = await stack.enter_async_context(
         httpx2.AsyncClient(
             cookies=cookie_free_jar(),
@@ -152,6 +154,7 @@ async def _build_control_runtime(
         secret_protector,
         public_origin,
         mcp_http_client,
+        mcp_servers,
     )
     runtime = ConnectivityControlRuntime(
         public_origin=public_origin,
@@ -171,6 +174,7 @@ async def _build_control_runtime(
         connector_providers=connector.service,
         connector_connections=connector.connections,
         mcp_connections=mcp.connections,
+        mcp_servers=mcp_servers,
         mcp_oauth=mcp.oauth,
         checks=ConnectionChecks(storage.sessions, connector_providers, secret_protector, mcp.connections),
         connections=ConnectionService(storage.sessions, endpoint_policy),
@@ -181,7 +185,7 @@ async def _build_control_runtime(
             mcp.oauth,
             mcp.connections,
             public_origin=public_origin,
-            return_urls=settings.connectivity.authorization_return_urls,
+            callback_urls=settings.connectivity.authorization_callback_urls,
         ),
     )
     background_components = (
@@ -228,6 +232,7 @@ def _build_mcp_control(
     secret_protector: SecretProtector,
     public_origin: str | None,
     http_client: httpx2.AsyncClient,
+    mcp_servers: MCPServerCatalog,
 ) -> _MCPControl:
     instance_id = settings.service.instance_id or new_object_id("svc")
     clients = build_mcp_clients(settings, storage.sessions, secret_protector, http_client, endpoint_policy)
@@ -245,6 +250,8 @@ def _build_mcp_control(
         secret_protector,
         discovery,
         public_origin=public_origin,
+        redirect_uris=settings.connectivity.authorization_callback_urls,
+        documentation_urls=mcp_servers.documentation_urls(),
         client_name=settings.connectivity.oauth_client_name,
         instance_id=instance_id,
         setup_ttl_seconds=settings.connectivity.oauth_setup_ttl_seconds,

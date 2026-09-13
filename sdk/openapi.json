@@ -2033,9 +2033,59 @@
       "AuthorizationAction": {
         "additionalProperties": false,
         "properties": {
+          "client_registration": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Registration"
+          },
+          "grant_types": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Grant Types",
+            "type": "array"
+          },
+          "issuer_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issuer Url"
+          },
+          "redirect_uri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redirect Uri"
+          },
+          "token_endpoint_auth_methods": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Token Endpoint Auth Methods",
+            "type": "array"
+          },
           "type": {
             "enum": [
               "open_url",
+              "configure_oauth_client",
               "check_connection",
               "restart"
             ],
@@ -2509,23 +2559,85 @@
       "CompleteAuthorizationRequest": {
         "additionalProperties": false,
         "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "maxLength": 8192,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
           "completion_verifier": {
-            "maxLength": 128,
-            "minLength": 43,
-            "title": "Completion Verifier",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 43,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Verifier"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "iss": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iss"
           },
           "receipt": {
-            "maxLength": 512,
-            "minLength": 32,
-            "title": "Receipt",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receipt"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
           }
         },
-        "required": [
-          "receipt",
-          "completion_verifier"
-        ],
         "title": "CompleteAuthorizationRequest",
         "type": "object"
       },
@@ -3790,6 +3902,19 @@
             },
             "title": "Options",
             "type": "object"
+          },
+          "redirect_uri": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redirect Uri"
           },
           "return_url": {
             "anyOf": [
@@ -7071,6 +7196,19 @@
             "title": "Issuer Url",
             "type": "string"
           },
+          "redirect_uri": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redirect Uri"
+          },
           "source": {
             "enum": [
               "pre_registered",
@@ -7138,6 +7276,19 @@
             "minLength": 1,
             "title": "Issuer Url",
             "type": "string"
+          },
+          "redirect_uri": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redirect Uri"
           },
           "token_endpoint_auth_method": {
             "enum": [
@@ -7225,6 +7376,277 @@
           "authorization_response_iss_parameter_supported"
         ],
         "title": "MCPOAuthDiscovery",
+        "type": "object"
+      },
+      "MCPOAuthSetup": {
+        "additionalProperties": false,
+        "properties": {
+          "client": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MCPOAuthClientConfiguration"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "next_action": {
+            "$ref": "#/components/schemas/MCPOAuthSetupAction"
+          }
+        },
+        "required": [
+          "next_action"
+        ],
+        "title": "MCPOAuthSetup",
+        "type": "object"
+      },
+      "MCPOAuthSetupAction": {
+        "additionalProperties": false,
+        "properties": {
+          "client_registration": {
+            "anyOf": [
+              {
+                "enum": [
+                  "metadata_document",
+                  "dynamic",
+                  "manual"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Registration"
+          },
+          "documentation_url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Documentation Url"
+          },
+          "grant_types": {
+            "default": [],
+            "items": {
+              "enum": [
+                "authorization_code",
+                "client_credentials"
+              ],
+              "type": "string"
+            },
+            "title": "Grant Types",
+            "type": "array"
+          },
+          "issuer_url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issuer Url"
+          },
+          "redirect_uri": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redirect Uri"
+          },
+          "token_endpoint_auth_methods": {
+            "default": [],
+            "items": {
+              "enum": [
+                "none",
+                "client_secret_basic",
+                "client_secret_post"
+              ],
+              "type": "string"
+            },
+            "title": "Token Endpoint Auth Methods",
+            "type": "array"
+          },
+          "type": {
+            "enum": [
+              "configure_oauth_client",
+              "start_authorization",
+              "authenticate_client_credentials",
+              "check_connection",
+              "completed"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "MCPOAuthSetupAction",
+        "type": "object"
+      },
+      "MCPOAuthSetupRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "redirect_uri": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redirect Uri"
+          }
+        },
+        "title": "MCPOAuthSetupRequest",
+        "type": "object"
+      },
+      "MCPServer": {
+        "additionalProperties": false,
+        "properties": {
+          "auth_mode": {
+            "enum": [
+              "none",
+              "bearer",
+              "oauth",
+              "static_headers"
+            ],
+            "title": "Auth Mode",
+            "type": "string"
+          },
+          "description": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "documentation_url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Documentation Url"
+          },
+          "endpoint_url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Endpoint Url",
+            "type": "string"
+          },
+          "key": {
+            "pattern": "^[a-z][a-z0-9-]{0,127}$",
+            "title": "Key",
+            "type": "string"
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "origin": {
+            "default": "builtin",
+            "enum": [
+              "builtin",
+              "deployment"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "requirements": {
+            "default": "",
+            "maxLength": 2048,
+            "title": "Requirements",
+            "type": "string"
+          },
+          "static_header_names": {
+            "default": [],
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Static Header Names",
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "description",
+          "endpoint_url",
+          "auth_mode"
+        ],
+        "title": "MCPServer",
+        "type": "object"
+      },
+      "MCPServerCollection": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MCPServer"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "MCPServerCollection",
         "type": "object"
       },
       "MCPSource": {
@@ -19139,6 +19561,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPOAuthSetupRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -19206,6 +19638,102 @@
           }
         ],
         "summary": "Discover Mcp Oauth",
+        "tags": [
+          "connectivity-management"
+        ]
+      }
+    },
+    "/api/v1/connections/{connection_id}/mcp/oauth-setup": {
+      "post": {
+        "operationId": "post_connections_connection_id_mcp_oauth_setup",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPOAuthSetupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPOAuthSetup"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Mcp Oauth Setup",
         "tags": [
           "connectivity-management"
         ]
@@ -22258,6 +22786,209 @@
         ]
       }
     },
+    "/api/v1/mcp-servers": {
+      "get": {
+        "operationId": "get_mcp_servers",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 256,
+              "title": "Query",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPServerCollection"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "List Mcp Servers",
+        "tags": [
+          "connectivity-management"
+        ]
+      }
+    },
+    "/api/v1/mcp-servers/{server_key}": {
+      "get": {
+        "operationId": "get_mcp_servers_server_key",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_key",
+            "required": true,
+            "schema": {
+              "title": "Server Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPServer"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Mcp Server",
+        "tags": [
+          "connectivity-management"
+        ]
+      }
+    },
     "/api/v1/model-provider-types": {
       "get": {
         "operationId": "get_model_provider_types",
@@ -22316,9 +23047,9 @@
         ]
       }
     },
-    "/api/v1/oauth/mcp/client-metadata/{issuer_key}.json": {
+    "/api/v1/oauth/mcp/client-metadata/{issuer_key}/{redirect_key}.json": {
       "get": {
-        "operationId": "get_oauth_mcp_client_metadata_issuer_key_json",
+        "operationId": "get_oauth_mcp_client_metadata_issuer_key_redirect_key_json",
         "parameters": [
           {
             "in": "path",
@@ -22327,6 +23058,16 @@
             "schema": {
               "pattern": "^[0-9a-f]{64}$",
               "title": "Issuer Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "redirect_key",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Redirect Key",
               "type": "string"
             }
           }

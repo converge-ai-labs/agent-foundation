@@ -13,18 +13,64 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CompleteAuthorizationRequest {
-    #[serde(rename = "completion_verifier")]
-    pub completion_verifier: String,
+    #[serde(
+        rename = "code",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub code: Option<Option<String>>,
 
-    #[serde(rename = "receipt")]
-    pub receipt: String,
+    #[serde(
+        rename = "completion_verifier",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub completion_verifier: Option<Option<String>>,
+
+    #[serde(
+        rename = "error",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub error: Option<Option<String>>,
+
+    #[serde(
+        rename = "iss",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub iss: Option<Option<String>>,
+
+    #[serde(
+        rename = "receipt",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub receipt: Option<Option<String>>,
+
+    #[serde(
+        rename = "state",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub state: Option<Option<String>>,
 }
 
 impl CompleteAuthorizationRequest {
-    pub fn new(completion_verifier: String, receipt: String) -> CompleteAuthorizationRequest {
+    pub fn new() -> CompleteAuthorizationRequest {
         CompleteAuthorizationRequest {
-            completion_verifier,
-            receipt,
+            code: None,
+            completion_verifier: None,
+            error: None,
+            iss: None,
+            receipt: None,
+            state: None,
         }
     }
 }

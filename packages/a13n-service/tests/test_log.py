@@ -39,10 +39,10 @@ def test_access_logging_removes_callback_secrets_before_formatting() -> None:
         "",
         0,
         '%s - "%s %s HTTP/%s" %d',
-        ("127.0.0.1", "GET", "/api/v1/oauth/mcp/callback/key?code=secret&state=state", "1.1", 303),
+        ("127.0.0.1", "GET", "/connection-authorizations/browser?code=secret&state=state", "1.1", 303),
         None,
     )
     assert RequestTargetFilter().filter(record)
-    assert record.getMessage() == '127.0.0.1 - "GET /api/v1/oauth/mcp/callback/key HTTP/1.1" 303'
+    assert record.getMessage() == '127.0.0.1 - "GET /connection-authorizations/browser HTTP/1.1" 303'
     config = build_log_config(Settings())
     assert config["loggers"]["uvicorn.access"]["filters"] == ["request_target"]

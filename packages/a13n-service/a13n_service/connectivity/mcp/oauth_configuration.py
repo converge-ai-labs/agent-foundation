@@ -21,6 +21,9 @@ from .domain import (
     MCPOAuthClientConfiguration,
     MCPOAuthClientInput,
     MCPOAuthDiscovery,
+    MCPOAuthSetup,
+    MCPOAuthSetupAction,
+    MCPOAuthSetupRequest,
     OAuthClientSource,
     OAuthGrantType,
 )
@@ -32,8 +35,6 @@ from .oauth_client import (
     MCPOAuthError,
     OAuthClientContext,
     OAuthDiscovery,
-    issuer_key,
-    oauth_redirect_uri,
 )
 
 
@@ -120,6 +121,7 @@ def _supports_client(client: MCPOAuthClientInput, discovery: MCPOAuthDiscovery) 
         client.issuer_url == discovery.issuer_url
         and client.token_endpoint_auth_method in discovery.token_endpoint_auth_methods_supported
         and client.grant_type in discovery.grant_types_supported
+        and (client.grant_type == "client_credentials" or client.redirect_uri == discovery.redirect_uri)
     )
 
 
@@ -179,12 +181,16 @@ class OAuthConfiguration:
         protector: SecretProtector,
         *,
         public_origin: str | None,
+        redirect_uris: tuple[str, ...],
+        documentation_urls: dict[str, str],
         clock: Clock,
     ) -> None:
         self._sessions = sessions
         self._oauth = oauth
         self._protector = protector
         self._public_origin = public_origin
+        self._redirect_uris = redirect_uris
+        self._documentation_urls = documentation_urls
         self._clock = clock
 
     async def get(self, *, actor: AuthenticatedActor, connection_id: str) -> MCPOAuthClientConfiguration | None:
@@ -195,8 +201,83 @@ class OAuthConfiguration:
             record = await session.get(MCPConnectionOAuthClientRecord, connection_id)
             return client_configuration(record) if record is not None else None
 
-    async def discover(self, *, actor: AuthenticatedActor, connection_id: str) -> MCPOAuthDiscovery:
-        return self._discovery_projection(await self._discover(actor=actor, connection_id=connection_id))
+    async def discover(
+        self, *, actor: AuthenticatedActor, connection_id: str, request: MCPOAuthSetupRequest
+    ) -> MCPOAuthDiscovery:
+        self._validate_redirect_uri(request.redirect_uri)
+        return self._discovery_projection(
+            await self._discover(actor=actor, connection_id=connection_id), request.redirect_uri
+        )
+
+    async def setup(
+        self, *, actor: AuthenticatedActor, connection_id: str, request: MCPOAuthSetupRequest
+    ) -> MCPOAuthSetup:
+        self._validate_redirect_uri(request.redirect_uri)
+        async with transaction(self._sessions) as session:
+            connection = await require_connection(session, connection_id)
+            await authorize_connection(session, actor, connection, mode="manage")
+            require_oauth(connection)
+            record = await session.get(MCPConnectionOAuthClientRecord, connection_id)
+            configured = client_configuration(record) if record is not None else None
+            documentation_url = self._documentation_urls.get(connection.endpoint_url)
+            if connection.ciphertext is not None and connection.status in {"ready", "pending"}:
+                action = "completed" if connection.status == "ready" else "check_connection"
+                return MCPOAuthSetup(
+                    next_action=MCPOAuthSetupAction(type=action, documentation_url=documentation_url),
+                    client=configured,
+                )
+            if configured is not None:
+                if configured.grant_type == "authorization_code" and configured.redirect_uri != request.redirect_uri:
+                    return MCPOAuthSetup(
+                        next_action=MCPOAuthSetupAction(
+                            type="configure_oauth_client",
+                            redirect_uri=request.redirect_uri,
+                            issuer_url=configured.issuer_url,
+                            token_endpoint_auth_methods=(configured.token_endpoint_auth_method,),
+                            grant_types=(configured.grant_type,),
+                            documentation_url=documentation_url,
+                        ),
+                        client=configured,
+                    )
+                action = (
+                    "authenticate_client_credentials"
+                    if configured.grant_type == "client_credentials"
+                    else "start_authorization"
+                )
+                return MCPOAuthSetup(
+                    next_action=MCPOAuthSetupAction(
+                        type=action,
+                        redirect_uri=configured.redirect_uri,
+                        issuer_url=configured.issuer_url,
+                        token_endpoint_auth_methods=(configured.token_endpoint_auth_method,),
+                        grant_types=(configured.grant_type,),
+                        documentation_url=documentation_url,
+                    ),
+                    client=configured,
+                )
+        discovered = await self._discover(actor=actor, connection_id=connection_id)
+        projection = self._discovery_projection(discovered, request.redirect_uri)
+        automatic = projection.client_registration == "dynamic" or (
+            projection.client_registration == "metadata_document" and self._public_origin is not None
+        )
+        action = (
+            "start_authorization"
+            if automatic
+            and request.redirect_uri is not None
+            and "authorization_code" in projection.grant_types_supported
+            else "configure_oauth_client"
+        )
+        return MCPOAuthSetup(
+            next_action=MCPOAuthSetupAction(
+                type=action,
+                redirect_uri=request.redirect_uri,
+                issuer_url=projection.issuer_url,
+                token_endpoint_auth_methods=projection.token_endpoint_auth_methods_supported,
+                grant_types=projection.grant_types_supported,
+                client_registration=projection.client_registration,
+                documentation_url=documentation_url,
+            )
+        )
 
     async def _discover(self, *, actor: AuthenticatedActor, connection_id: str) -> OAuthDiscovery:
         async with transaction(self._sessions) as session:
@@ -223,19 +304,15 @@ class OAuthConfiguration:
             ) from error
         return discovered
 
-    def _discovery_projection(self, discovered: OAuthDiscovery) -> MCPOAuthDiscovery:
+    def _discovery_projection(self, discovered: OAuthDiscovery, redirect_uri: str | None) -> MCPOAuthDiscovery:
         grant_types: list[OAuthGrantType] = []
-        if "authorization_code" in discovered.grant_types and self._public_origin is not None:
+        if "authorization_code" in discovered.grant_types:
             grant_types.append("authorization_code")
         if "client_credentials" in discovered.grant_types:
             grant_types.append("client_credentials")
         return MCPOAuthDiscovery(
             issuer_url=discovered.issuer_url,
-            redirect_uri=(
-                oauth_redirect_uri(self._public_origin, issuer_key(discovered.issuer_url))
-                if self._public_origin is not None
-                else None
-            ),
+            redirect_uri=redirect_uri,
             token_endpoint_auth_methods_supported=discovered.token_auth_methods,
             grant_types_supported=tuple(grant_types),
             client_registration=discovered.client_registration,
@@ -252,8 +329,9 @@ class OAuthConfiguration:
         client = request.client
         discovered: OAuthDiscovery | None = None
         if client is not None:
+            self._validate_redirect_uri(client.redirect_uri)
             discovered = await self._discover(actor=actor, connection_id=connection_id)
-            projection = self._discovery_projection(discovered)
+            projection = self._discovery_projection(discovered, client.redirect_uri)
             if not _supports_client(client, projection):
                 raise MCPConnectionError(
                     "invalid_oauth_client",
@@ -304,3 +382,11 @@ class OAuthConfiguration:
                 # bounded best-effort attempt and is never retried implicitly.
                 pass
         return result
+
+    def _validate_redirect_uri(self, redirect_uri: str | None) -> None:
+        if redirect_uri is not None and redirect_uri not in self._redirect_uris:
+            raise MCPConnectionError(
+                "invalid_redirect_uri",
+                "OAuth redirect URI is not registered for this deployment.",
+                category=ErrorCategory.invalid_request,
+            )

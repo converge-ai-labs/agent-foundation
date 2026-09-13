@@ -92,6 +92,11 @@ def test_environment_catalog_is_unique_and_preserves_known_names():
     assert fields["A13N_SERVICE_OBJECT_LOCAL_ROOT"] == ("objects", "local_root")
     assert fields["A13N_SERVICE_AUTO_MIGRATE"] == ("migration", "auto_migrate")
     assert fields["A13N_SERVICE_A2A_ENABLED"] == ("gateway", "a2a_enabled")
+    assert fields["A13N_SERVICE_CONNECTIVITY_AUTHORIZATION_CALLBACK_URLS"] == (
+        "connectivity",
+        "authorization_callback_urls",
+    )
+    assert fields["A13N_SERVICE_CONNECTIVITY_MCP_SERVERS"] == ("connectivity", "mcp_servers")
     assert fields["A13N_SERVICE_OBSERVABILITY_QUERY_PROVIDER"] == ("observability", "query", "provider")
 
 

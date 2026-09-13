@@ -3,15 +3,17 @@ import { commandHeaders, data, type Schema } from "../../shared/api";
 import { authorizationHref } from "../../shared/authorization-link";
 
 const storageKey = "a13n.connection-authorization";
+const statePattern = /^[A-Za-z0-9_-]{32,512}$/;
 type AuthorizationContext = {
   state: string;
-  verifier: string;
   authorizationId: string;
   connectionId: string;
   workspaceId: string;
   returnPath: string;
   expiresAt: string;
-};
+} & (
+  { type: "connector"; verifier: string } | { type: "mcp"; verifier?: never }
+);
 const random = () =>
   Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) =>
     byte.toString(16).padStart(2, "0"),
@@ -35,15 +37,21 @@ export async function startBrowserAuthorization(
     throw new Error(
       "Browser authorization requires HTTPS or an exact loopback HTTP origin.",
     );
-  const verifier = random(),
-    state = random();
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(verifier),
-  );
-  const challenge = Array.from(new Uint8Array(digest), (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("");
+  const connector = connection.source.kind === "connector";
+  const verifier = connector ? random() : undefined,
+    state = connector ? random() : undefined;
+  const challenge = verifier
+    ? Array.from(
+        new Uint8Array(
+          await crypto.subtle.digest(
+            "SHA-256",
+            new TextEncoder().encode(verifier),
+          ),
+        ),
+        (byte) => byte.toString(16).padStart(2, "0"),
+      ).join("")
+    : undefined;
+  const callback = `${window.location.origin}/connections/callback`;
   const authorization = data(
     await client.http.POST(
       "/api/v1/connections/{connection_id}/authorizations",
@@ -56,9 +64,13 @@ export async function startBrowserAuthorization(
           expected_version: connection.version,
           method: "browser",
           options,
-          return_url: `${window.location.origin}/connections/callback`,
-          state,
-          completion_challenge: challenge,
+          ...(connector
+            ? {
+                return_url: callback,
+                state: state!,
+                completion_challenge: challenge!,
+              }
+            : { redirect_uri: callback }),
         },
       },
     ),
@@ -66,15 +78,22 @@ export async function startBrowserAuthorization(
   requireAuthorizationProgress(authorization);
   const href = authorizationHref(authorization.next_action?.url);
   if (!href) throw new Error("Invalid authorization URL.");
-  const context: AuthorizationContext = {
-    state,
-    verifier,
+  const providerState = connector
+    ? undefined
+    : new URL(href).searchParams.get("state");
+  if (!connector && !providerState)
+    throw new Error("Authorization URL has no state.");
+  const contextBase = {
+    state: connector ? state! : providerState!,
     authorizationId: authorization.id,
     connectionId: connection.id,
     workspaceId: connection.workspace_id,
     returnPath: `${basePath}/connections`,
     expiresAt: authorization.expires_at,
   };
+  const context: AuthorizationContext = connector
+    ? { ...contextBase, type: "connector", verifier: verifier! }
+    : { ...contextBase, type: "mcp" };
   sessionStorage.setItem(storageKey, JSON.stringify(context));
   window.location.assign(href);
   return authorization;
@@ -84,10 +103,13 @@ export function readAuthorization(): AuthorizationContext | null {
     const value = JSON.parse(sessionStorage.getItem(storageKey) ?? "null");
     if (
       !value ||
+      !["connector", "mcp"].includes(value.type) ||
       typeof value.state !== "string" ||
-      !/^[a-f0-9]{64}$/.test(value.state) ||
-      typeof value.verifier !== "string" ||
-      !/^[a-f0-9]{64}$/.test(value.verifier) ||
+      !statePattern.test(value.state) ||
+      (value.type === "connector" &&
+        (typeof value.verifier !== "string" ||
+          !/^[a-f0-9]{64}$/.test(value.verifier))) ||
+      (value.type === "mcp" && value.verifier !== undefined) ||
       typeof value.authorizationId !== "string" ||
       typeof value.connectionId !== "string" ||
       typeof value.workspaceId !== "string" ||
@@ -106,17 +128,41 @@ export function clearAuthorization() {
   sessionStorage.removeItem(storageKey);
 }
 /** Strip callback material before authentication requests or rendering. */
-export function takeCallback(): {
-  receipt: string;
-  state: string;
-  authorizationId: string;
-} | null {
+export function takeCallback():
+  | ({
+      state: string;
+    } & (
+      | { type: "connector"; receipt: string; authorizationId: string }
+      | { type: "mcp"; code?: string; iss?: string; error?: string }
+    ))
+  | null {
   if (window.location.pathname !== "/connections/callback") return null;
   const params = new URLSearchParams(window.location.search);
   window.history.replaceState(null, "", window.location.pathname);
   const receipt = params.getAll("receipt"),
     state = params.getAll("state"),
-    ids = params.getAll("authorization_id");
+    ids = params.getAll("authorization_id"),
+    code = params.getAll("code"),
+    issuer = params.getAll("iss"),
+    error = params.getAll("error");
+  if (
+    state.length === 1 &&
+    statePattern.test(state[0] ?? "") &&
+    ids.length === 0 &&
+    receipt.length === 0 &&
+    (code.length === 1) !== (error.length === 1) &&
+    (code.length === 0 || (code[0]?.length ?? 0) <= 8192) &&
+    (error.length === 0 || (error[0]?.length ?? 0) <= 256) &&
+    issuer.length <= 1 &&
+    (issuer[0]?.length ?? 0) <= 2048
+  )
+    return {
+      type: "mcp",
+      state: state[0],
+      ...(code[0] ? { code: code[0] } : {}),
+      ...(issuer[0] ? { iss: issuer[0] } : {}),
+      ...(error[0] ? { error: error[0] } : {}),
+    };
   if (
     ids.length !== 1 ||
     !ids[0] ||
@@ -124,11 +170,15 @@ export function takeCallback(): {
     receipt[0].length < 32 ||
     receipt[0].length > 512 ||
     state.length !== 1 ||
-    state[0].length < 32 ||
-    state[0].length > 512
+    !statePattern.test(state[0])
   )
     return null;
-  return { receipt: receipt[0], state: state[0], authorizationId: ids[0] };
+  return {
+    type: "connector",
+    receipt: receipt[0],
+    state: state[0],
+    authorizationId: ids[0],
+  };
 }
 
 export function requireAuthorizationProgress(

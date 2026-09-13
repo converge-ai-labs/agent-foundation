@@ -13,6 +13,39 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AuthorizationAction {
+    #[serde(
+        rename = "client_registration",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub client_registration: Option<Option<String>>,
+
+    #[serde(rename = "grant_types", skip_serializing_if = "Option::is_none")]
+    pub grant_types: Option<Vec<String>>,
+
+    #[serde(
+        rename = "issuer_url",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub issuer_url: Option<Option<String>>,
+
+    #[serde(
+        rename = "redirect_uri",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub redirect_uri: Option<Option<String>>,
+
+    #[serde(
+        rename = "token_endpoint_auth_methods",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub token_endpoint_auth_methods: Option<Vec<String>>,
+
     #[serde(rename = "type")]
     pub r#type: Type,
 
@@ -27,7 +60,15 @@ pub struct AuthorizationAction {
 
 impl AuthorizationAction {
     pub fn new(r#type: Type) -> AuthorizationAction {
-        AuthorizationAction { r#type, url: None }
+        AuthorizationAction {
+            client_registration: None,
+            grant_types: None,
+            issuer_url: None,
+            redirect_uri: None,
+            token_endpoint_auth_methods: None,
+            r#type,
+            url: None,
+        }
     }
 }
 ///
@@ -35,6 +76,8 @@ impl AuthorizationAction {
 pub enum Type {
     #[serde(rename = "open_url")]
     OpenUrl,
+    #[serde(rename = "configure_oauth_client")]
+    ConfigureOauthClient,
     #[serde(rename = "check_connection")]
     CheckConnection,
     #[serde(rename = "restart")]

@@ -17,7 +17,6 @@ import { ConnectionSetup } from "../connectors/setup";
 import { ConnectorToolPreview } from "../connectors/tools";
 import { CreateMCP } from "../mcp/create";
 import { useConnectionDirectory } from "./directory";
-import { mcpPresets, type MCPPreset } from "./presets";
 
 type Selection =
   | {
@@ -25,7 +24,7 @@ type Selection =
       connector: Schema["Connector"];
       provider: Schema["ConnectorProvider"];
     }
-  | { kind: "mcp"; preset?: MCPPreset };
+  | { kind: "mcp"; preset?: Schema["MCPServer"] };
 export function NewConnection({
   onConnected,
 }: {
@@ -93,13 +92,19 @@ function ConnectionChoice({
     })),
     ...(can("connection.manage")
       ? [
-          ...mcpPresets.map((preset) => ({
-            value: `mcp:${preset.id}`,
+          ...directory.mcpServers.map((preset) => ({
+            value: `mcp:${preset.key}`,
             label: preset.name,
             description: t(preset.description),
             badge: t("Remote MCP"),
-            keywords: [preset.id, preset.endpoint],
-            icon: <BrandIcon identity={preset.id} endpoint={preset.endpoint} />,
+            keywords: [preset.key, preset.endpoint_url],
+            icon: (
+              <BrandIcon
+                identity={preset.key}
+                endpoint={preset.endpoint_url}
+                logo={preset.logo_url}
+              />
+            ),
           })),
           {
             value: "mcp:custom",
@@ -139,8 +144,9 @@ function ConnectionChoice({
             />
           ) : (
             <BrandIcon
-              identity={selected.preset?.id}
-              endpoint={selected.preset?.endpoint}
+              identity={selected.preset?.key}
+              endpoint={selected.preset?.endpoint_url}
+              logo={selected.preset?.logo_url}
             />
           )}
           <div>
@@ -229,8 +235,8 @@ function ConnectionChoice({
               setSelected({ kind: "connector", ...connector });
               return;
             }
-            const preset = mcpPresets.find(
-              (entry) => value === `mcp:${entry.id}`,
+            const preset = directory.mcpServers.find(
+              (entry) => value === `mcp:${entry.key}`,
             );
             if (preset) setSelected({ kind: "mcp", preset });
             else if (value === "mcp:custom") setSelected({ kind: "mcp" });

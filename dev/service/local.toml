@@ -49,6 +49,7 @@ encryption_key_id = "local-public-test-key"
 # The local profile permits private and proxy-routed destinations for development.
 private_endpoint_cidrs = ["0.0.0.0/0", "::/0"]
 public_origin = "http://127.0.0.1:5173"
+authorization_callback_urls = ["http://127.0.0.1:5173/connections/callback"]
 http_origins = ["http://127.0.0.1:5173", "http://127.0.0.1:18080"]
 setup_correlation_secret = "local-public-test-correlation-key-not-a-real-secret"
 
