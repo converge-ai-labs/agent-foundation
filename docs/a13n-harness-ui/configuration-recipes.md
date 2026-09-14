@@ -138,6 +138,8 @@ capabilities:
 
 Preserve other Capability entries. `model-review` must be a configured **Model resource**, not a subagent ID. This reviewer examines shell invocations; it is unrelated to delegating a code review to the `code-reviewer` child.
 
+The configuration and setup choices are unchanged. Internally this shell reviewer uses the shared early tool-review gate, `AgentContext.tool_approval` provenance, usage accounting, and `tool_review_result` custom events. You do not need to add Agent-level `permissions` or `reviewer` fields. New approval prompts display the shared review reason rather than a shell-specific risk field; retained older requests remain readable. A separate tool-policy confirmation can still follow reviewer approval.
+
 The example asks for approval for flagged commands and non-timeout review errors. A review timeout denies execution regardless of `on_error`. Shell review is not filesystem or network isolation, and it cannot override a mandatory tool-policy denial. New subscription setup uses the less restrictive starter `extra_high` threshold and `on_error: skip`; choose intentionally rather than assuming all defaults are identical.
 
 ## Enable an MCP server

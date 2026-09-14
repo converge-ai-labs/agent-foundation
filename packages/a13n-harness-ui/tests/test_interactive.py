@@ -1014,7 +1014,8 @@ async def test_pending_shell_decision_is_reviewed_and_resumed_through_app(
         assert interaction is not None
         prompt = interaction.prompt()
         assert "Reason: Needs review" in prompt
-        assert prompt.index("Risk: high") < prompt.index("Reason:") < prompt.index("Command:")
+        assert "Risk:" not in prompt  # The shared gate exposes a decision, not shell risk.
+        assert prompt.index("Reason:") < prompt.index("Command:")
         assert "Command:\necho reviewed > approved-result" in prompt
         response = interaction.accept("yes" if decision == "approve" else "no")
         assert response is not None and not isinstance(response, str)

@@ -54,6 +54,14 @@ pub struct AgentRunOverrideInput {
     pub output_spec: Option<Option<Box<models::OutputSpec>>>,
 
     #[serde(
+        rename = "permissions",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub permissions: Option<Option<Box<models::ToolPermissions>>>,
+
+    #[serde(
         rename = "plugins",
         default,
         with = "::serde_with::rust::double_option",
@@ -68,6 +76,14 @@ pub struct AgentRunOverrideInput {
         skip_serializing_if = "Option::is_none"
     )]
     pub retries: Option<Option<Box<models::RetryOverride>>>,
+
+    #[serde(
+        rename = "reviewer",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub reviewer: Option<Option<Box<models::AgentReviewer>>>,
 
     #[serde(
         rename = "search",
@@ -102,8 +118,10 @@ impl AgentRunOverrideInput {
             instructions: None,
             model: None,
             output_spec: None,
+            permissions: None,
             plugins: None,
             retries: None,
+            reviewer: None,
             search: None,
             skills: None,
             subagents: None,

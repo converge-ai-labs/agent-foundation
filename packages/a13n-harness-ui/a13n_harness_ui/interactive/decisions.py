@@ -193,6 +193,10 @@ def _approval_content(request: ApprovalRequestView, index: int, total: int) -> d
 
     content = {"tool": request.tool_name, "position": f"{index}/{total}", "details": f"/review {request.request_id}"}
     metadata = dict(request.metadata or {})
+    approval = metadata.pop("a13n.harness.tool-approval", None)
+    reason = metadata.pop("reason", None) if isinstance(approval, dict) else None
+    if isinstance(reason, str) and reason:
+        content["reason"] = preview(reason, 2000)
     review = metadata.pop("a13n.harness.shell-review", None)
     if isinstance(review, dict):
         if review.get("status") == "error":
@@ -227,7 +231,7 @@ def _approval_content(request: ApprovalRequestView, index: int, total: int) -> d
             content["environment"] = preview(", ".join(sorted(environment)), 500) + " (values hidden)"
     if arguments is not None and arguments != {}:
         content["arguments"] = preview(json.dumps(arguments, ensure_ascii=False, indent=2))
-    if metadata and review is None:
+    if metadata and review is None and approval is None:
         content["context"] = preview(json.dumps(metadata, ensure_ascii=False, indent=2))
     if incomplete:
         content["notice"] = "Preview incomplete; inspect retained request details before deciding."

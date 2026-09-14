@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
+from a13n_harness.tools import ToolPermissions
 from pydantic import Field, model_validator
 
 from a13n_service.search.domain import SearchSelection
@@ -11,6 +12,7 @@ from a13n_service.search.domain import SearchSelection
 from .domain import (
     AgentConfig,
     AgentModel,
+    AgentReviewer,
     AgentRunOverride,
     AssetPublicationConfig,
     BoundedKey,
@@ -33,6 +35,8 @@ class MergedAgentRunConfig(StrictModel):
     """Typed non-secret config after applying one Run override to a Revision."""
 
     search: SearchSelection | None = Field(default=None, exclude_if=lambda value: value is None)
+    permissions: ToolPermissions | None = Field(default=None, exclude_if=lambda value: value is None)
+    reviewer: AgentReviewer | None = Field(default=None, exclude_if=lambda value: value is None)
     subagent_mode: Literal["inline", "async"] = "inline"
     model: AgentModel
     instructions: str
@@ -234,6 +238,8 @@ def merge_agent_run_override(
         secret_requirements=base.secret_requirements,
         asset_publication=base.asset_publication,
         search=override.search if "search" in fields else base.search,
+        permissions=override.permissions if "permissions" in fields else base.permissions,
+        reviewer=override.reviewer if "reviewer" in fields else base.reviewer,
         protocol=protocol,
     )
 

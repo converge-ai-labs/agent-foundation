@@ -13,7 +13,7 @@ from a13n_environment import (
     build_environment_provider_catalog,
     discover_environment_provider_references,
 )
-from a13n_harness.capabilities import DocumentsCapability, WebCapability
+from a13n_harness.capabilities import DocumentsCapability, ToolReviewCapability, ToolReviewConfig, WebCapability
 from a13n_harness.capabilities.codeact import CodeActCapability, CodeActConfig
 from a13n_harness.capabilities.context import (
     CompactionCapability,
@@ -48,6 +48,7 @@ from a13n_harness.plugin_factories import (
     build_harness_plugin_factory_catalog,
     discover_harness_plugin_factory_references,
 )
+from a13n_harness.tools import ToolPermissions, ToolPermissionsCapability
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError, model_validator
 from pydantic_ai.capabilities import CAPABILITY_TYPES, AbstractCapability, NativeTool
 from pydantic_ai.native_tools import ImageGenerationTool
@@ -483,6 +484,10 @@ def _construct_capability(
         return DocumentsCapability(DocumentsConfiguration.model_validate(configuration))
     if capability_type is WebCapability:
         return WebCapability(WebConfiguration.model_validate(configuration))
+    if capability_type is ToolPermissionsCapability:
+        return ToolPermissionsCapability(ToolPermissions.model_validate(configuration))
+    if capability_type is ToolReviewCapability:
+        return ToolReviewCapability(ToolReviewConfig.model_validate(configuration))
     if capability_type is SkillsCapability:
         return _construct_skills_capability(
             configuration,

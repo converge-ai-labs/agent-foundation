@@ -713,6 +713,16 @@
               }
             ]
           },
+          "permissions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolPermissions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "plugins": {
             "default": [],
             "items": {
@@ -729,6 +739,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/RetryConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reviewer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentReviewer"
               },
               {
                 "type": "null"
@@ -837,6 +857,16 @@
               }
             ]
           },
+          "permissions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolPermissions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "plugins": {
             "default": [],
             "items": {
@@ -853,6 +883,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/RetryConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reviewer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentReviewer"
               },
               {
                 "type": "null"
@@ -984,6 +1024,72 @@
         },
         "required": ["model_key"],
         "title": "AgentModel",
+        "type": "object"
+      },
+      "AgentReviewer": {
+        "additionalProperties": false,
+        "description": "Reviewer selected by immutable managed Model ID, never a provider route.",
+        "properties": {
+          "instruction": {
+            "anyOf": [
+              {
+                "maxLength": 32768,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instruction"
+          },
+          "model": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Model",
+            "type": "string"
+          },
+          "model_settings": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Settings"
+          },
+          "on_error": {
+            "default": "approval_required",
+            "enum": ["deny", "approval_required"],
+            "title": "On Error",
+            "type": "string"
+          },
+          "shell_instruction": {
+            "anyOf": [
+              {
+                "maxLength": 32768,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shell Instruction"
+          },
+          "timeout_seconds": {
+            "default": 120,
+            "exclusiveMinimum": 0.0,
+            "maximum": 120.0,
+            "title": "Timeout Seconds",
+            "type": "number"
+          }
+        },
+        "required": ["model"],
+        "title": "AgentReviewer",
         "type": "object"
       },
       "AgentRevision": {
@@ -1202,6 +1308,16 @@
               }
             ]
           },
+          "permissions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolPermissions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "plugins": {
             "anyOf": [
               {
@@ -1221,6 +1337,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/RetryOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reviewer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentReviewer"
               },
               {
                 "type": "null"
@@ -1345,6 +1471,16 @@
               }
             ]
           },
+          "permissions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolPermissions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "plugins": {
             "anyOf": [
               {
@@ -1364,6 +1500,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/RetryOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reviewer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentReviewer"
               },
               {
                 "type": "null"
@@ -11107,6 +11253,24 @@
       "SearchSelection": {
         "additionalProperties": false,
         "properties": {
+          "allow_domains": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 256,
+            "title": "Allow Domains",
+            "type": "array"
+          },
+          "deny_domains": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 256,
+            "title": "Deny Domains",
+            "type": "array"
+          },
           "include_domains": {
             "default": [],
             "items": {
@@ -13496,6 +13660,43 @@
         },
         "required": ["id", "content", "toolCallId"],
         "title": "ToolMessage",
+        "type": "object"
+      },
+      "ToolPermissionMode": {
+        "enum": ["allow", "deny", "ask", "review"],
+        "title": "ToolPermissionMode",
+        "type": "string"
+      },
+      "ToolPermissionSetting": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/ToolPermissionMode"
+          },
+          {
+            "const": "auto",
+            "type": "string"
+          }
+        ],
+        "title": "ToolPermissionSetting"
+      },
+      "ToolPermissions": {
+        "additionalProperties": false,
+        "description": "Portable configuration. Auto resolves a tool default, never an execution decision.",
+        "properties": {
+          "default": {
+            "$ref": "#/components/schemas/ToolPermissionSetting",
+            "default": "auto"
+          },
+          "rules": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ToolPermissionSetting"
+            },
+            "maxProperties": 1024,
+            "title": "Rules",
+            "type": "object"
+          }
+        },
+        "title": "ToolPermissions",
         "type": "object"
       },
       "Trace": {

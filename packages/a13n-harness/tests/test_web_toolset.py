@@ -340,3 +340,59 @@ async def test_response_cleanup_releases_completed_tasks(behavior: str) -> None:
         await asyncio.sleep(0)
     assert calls == 1
     assert web._RESPONSE_CLOSE_TASKS == baseline
+
+
+@pytest.mark.parametrize(
+    ("url", "allowed"),
+    [
+        ("https://example.com/a", True),
+        ("https://docs.example.com/a", True),
+        ("https://private.example.com", False),
+        ("https://notexample.com", False),
+        ("https://example.com.evil.test", False),
+    ],
+)
+def test_domain_restrictions_are_exact_and_deny_wins(url: str, allowed: bool) -> None:
+    from a13n_harness.toolsets.domains import DomainRestrictions
+
+    restrictions = DomainRestrictions(
+        allow_domains=("EXAMPLE.COM.", "*.example.com"), deny_domains=("private.example.com",)
+    )
+    assert restrictions.allows(url) is allowed
+    assert not DomainRestrictions(allow_domains=("*.example.com",)).allows("https://example.com")
+
+
+@pytest.mark.parametrize(
+    "domain", ["https://example.com", "example.com:443", "user@example.com", "foo.*.example.com", "bad domain"]
+)
+def test_invalid_domain_configuration_is_rejected(domain: str) -> None:
+    from a13n_harness.toolsets.domains import DomainRestrictions
+
+    with pytest.raises(ValueError):
+        DomainRestrictions(allow_domains=(domain,))
+
+
+async def test_search_domain_restrictions_filter_provider_results() -> None:
+    ctx, _ = _run_context()
+    toolset = _toolset(
+        search_provider=_SearchProvider(),
+        configuration=WebConfiguration(
+            search=WebSearchConfiguration(mode="host", deny_domains=("example.com",)),
+        ),
+    )
+    result = await toolset.search(ctx, "query", num=2)
+    assert result["ok"] is True and result["results"] == []
+
+
+async def test_domain_denial_precedes_web_transport() -> None:
+    ctx, _ = _run_context()
+    policy = _Policy()
+    toolset = _toolset(policy=policy, configuration=WebConfiguration(deny_domains=("example.com",)))
+    result = await toolset.fetch(ctx, "https://example.com/page")
+    assert result["ok"] is False and result["error"]["code"] == "web_domain_denied"
+    assert policy.authorized == []
+
+
+def test_restricted_native_search_is_rejected() -> None:
+    with pytest.raises(ValueError, match="Host execution"):
+        WebSearchConfiguration(mode="native", allow_domains=("example.com",))

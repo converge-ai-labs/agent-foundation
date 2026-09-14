@@ -6,7 +6,7 @@ import asyncio
 import contextvars
 import hashlib
 import json
-from collections.abc import AsyncIterable, Generator, Iterator, Mapping, Sequence
+from collections.abc import AsyncIterable, Generator, Iterator, Mapping
 from contextlib import AsyncExitStack, contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, replace
@@ -34,14 +34,10 @@ from a13n_harness._json import (
 )
 from a13n_harness._tool_observation import record_tool_operation_failure
 from a13n_harness.capabilities.shell_review import (
-    SHELL_EXEC_TOOL_ID,
     SHELL_REVIEW_CAPABILITY_ID,
-    ShellReviewAction,
-    ShellReviewAssessment,
     ShellReviewCapability,
-    ShellReviewError,
-    ShellReviewRequest,
 )
+from a13n_harness.capabilities.tool_review import TOOL_REVIEW_CAPABILITY_ID, ToolReviewCapability
 from a13n_harness.capability_types import _validate_capability_id
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.models import EnvironmentError
@@ -51,8 +47,18 @@ from a13n_harness.tools._output import (
     FINAL_TOOL_OUTPUT_HARD_CHARS,
     is_acknowledged_tool_output,
 )
-from a13n_harness.tools.approval import RESOURCE_APPROVAL_KEY, approval_facts, verify_approval_facts
+from a13n_harness.tools.approval import (
+    RESOURCE_APPROVAL_KEY,
+    TOOL_APPROVAL_KEY,
+    ApprovalSource,
+    approval_facts,
+    approval_required,
+    pending_approval_metadata,
+    tool_approval_scope,
+    verify_approval_facts,
+)
 from a13n_harness.tools.deferred import managed_approval_tool_id
+from a13n_harness.tools.identity import identify_tool, tool_identity
 from a13n_harness.tools.metadata import (
     HARNESS_TOOL_METADATA_KEY,
     RECOVERY_RETRY_SAFE_METADATA_KEY,
@@ -61,6 +67,8 @@ from a13n_harness.tools.metadata import (
     ToolOutputPolicy,
     normalize_harness_tool_metadata,
 )
+from a13n_harness.tools.permission_gate import check_permission, gate_tool, permission_mode
+from a13n_harness.tools.permissions import TOOL_PERMISSIONS_CAPABILITY_ID, ToolPermissionsCapability
 from a13n_harness.tools.policy import (
     INVOCATION_POLICY_CAPABILITY_ID,
     CredentialLease,
@@ -70,7 +78,6 @@ from a13n_harness.tools.policy import (
     InvocationScope,
     ToolInvocationContext,
 )
-from a13n_harness.usage import ProviderUsage
 
 TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID = "a13n.tool-execution-boundary"
 logger = get_logger(__name__)
@@ -176,11 +183,25 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
     async def before_model_request(
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
     ) -> ModelRequestContext:
+        ctx.deps._tool_permission_checks.clear()
+        ctx.deps._tool_pending_approvals.clear()
         # Recovery applies only before the model makes its next decision.
         if (recovery := ctx.deps._tool_recovery) is not None:
             recovery.pending.clear()
             recovery.native_results = None
         return request_context
+
+    async def before_tool_validate(
+        self,
+        ctx: RunContext[AgentContext],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: str | dict[str, Any],
+    ) -> str | dict[str, Any]:
+        if permission_mode(ctx, tool_def) == "deny":
+            raise ToolFailed("Tool invocation is denied by its permission configuration.")
+        return args
 
     async def after_tool_validate(
         self,
@@ -236,6 +257,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         normalized: dict[str, ToolsetTool[AgentContext]] = {}
 
         for name, tool in tools.items():
+            tool = identify_tool(tool)
             tool_def = tool.tool_def
             metadata_values = tool_def.metadata or {}
             reserved_present = HARNESS_TOOL_METADATA_KEY in metadata_values
@@ -276,6 +298,18 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
             copied_metadata[HARNESS_TOOL_METADATA_KEY] = managed
             normalized[name] = replace(tool, tool_def=replace(tool_def, metadata=copied_metadata))
 
+        identities: dict[str, str] = {}
+        for name, tool in normalized.items():
+            identity = tool_identity(tool.tool_def)
+            if identity.tool_id in identities:
+                raise DefinitionError("Duplicate tool permission identity.", code="tool_identity_duplicate")
+            identities[identity.tool_id] = name
+            mode = permission_mode(ctx, tool.tool_def)
+            if tool.tool_def.kind == "external" and mode in {"ask", "review"}:
+                raise DefinitionError(
+                    "External tools do not support local approval/review modes.", code="tool_permission_unsupported"
+                )
+            normalized[name] = gate_tool(tool)
         ctx.deps._record_managed_tool_surface({tool_name: tool_id for tool_id, tool_name in managed_ids.items()})
         _validate_resume_surface(ctx, normalized)
         if (recovery := ctx.deps._tool_recovery) is not None:
@@ -288,6 +322,33 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         return normalized
 
     async def call_tool(
+        self,
+        name: str,
+        tool_args: dict[str, Any],
+        ctx: RunContext[AgentContext],
+        tool: ToolsetTool[AgentContext],
+    ) -> Any:
+        tool = identify_tool(tool)
+        check = await check_permission(ctx, tool.tool_def, tool_args)
+        with tool_approval_scope(ctx.deps, check.approval):
+            try:
+                return await self._call_tool(name, tool_args, ctx, tool)
+            except ApprovalRequired as exc:
+                if TOOL_APPROVAL_KEY in (exc.metadata or {}):
+                    raise
+                sources: frozenset[ApprovalSource] = frozenset({"tool"})
+                if _SHELL_REVIEW_APPROVAL_METADATA_KEY in (exc.metadata or {}):
+                    sources = frozenset({"reviewer"})
+                    policy_metadata = (exc.metadata or {}).get(_POLICY_APPROVAL_METADATA_KEY)
+                    if isinstance(policy_metadata, dict) and policy_metadata.get("decision") == "approval_required":
+                        sources |= frozenset({"permission"})
+                elif _POLICY_APPROVAL_METADATA_KEY in (exc.metadata or {}):
+                    sources = frozenset({"permission"})
+                raise approval_required(
+                    ctx, check.approval, binding=check.binding, sources=sources, metadata=exc.metadata
+                ) from exc
+
+    async def _call_tool(
         self,
         name: str,
         tool_args: dict[str, Any],
@@ -336,19 +397,20 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
             raise
         invocation = prepared.context
         await _emit(ctx, managed, "prepared", invocation_id=invocation.invocation_id)
-        if ctx.tool_call_approved:
-            resume = ctx.deps.deferred_resume
-            requested_metadata = resume.requests.metadata.get(invocation.tool_call_id) if resume else None
+        requested_metadata = pending_approval_metadata(ctx)
+        legacy_approval = TOOL_APPROVAL_KEY not in requested_metadata
+        policy_evidence = requested_metadata.get(_POLICY_APPROVAL_METADATA_KEY)
+        policy_approved = ctx.tool_call_approved and (
+            legacy_approval
+            or (isinstance(policy_evidence, Mapping) and policy_evidence.get("decision") == "approval_required")
+        )
+        if ctx.tool_call_approved and (legacy_approval or _POLICY_APPROVAL_METADATA_KEY in requested_metadata):
             verify_approval_facts(invocation, requested_metadata)
         policy_decision = await _evaluate_policy(ctx, policy, invocation, managed)
         if policy_decision.decision == "deny":
             await _emit(ctx, managed, "denied", invocation_id=invocation.invocation_id)
             raise ToolFailed("Managed tool invocation was denied.")
-        if (
-            ctx.tool_call_approved
-            and policy_decision.decision == "approval_required"
-            and policy.approval_verifier is not None
-        ):
+        if policy_approved and policy_decision.decision == "approval_required" and policy.approval_verifier is not None:
             approval_metadata = _policy_approval_metadata(ctx.tool_call_metadata)
             try:
                 verified = await policy.approval_verifier.verify(
@@ -362,16 +424,16 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
                 await _emit(ctx, managed, "denied", invocation_id=invocation.invocation_id)
                 raise ToolFailed("Managed tool approval is no longer valid.")
 
-        shell_action, shell_assessment = await _evaluate_shell_review(ctx, invocation, managed)
-        if shell_action == ShellReviewAction.DENY:
-            await _emit(ctx, managed, "denied", invocation_id=invocation.invocation_id)
-            raise ToolFailed("Shell command review denied the invocation.")
-        requires_approval = (
-            policy_decision.decision == "approval_required" or shell_action == ShellReviewAction.APPROVAL_REQUIRED
-        )
-        if requires_approval and not ctx.tool_call_approved:
+        requires_approval = policy_decision.decision == "approval_required" and not policy_approved
+        if requires_approval:
             await _emit(ctx, managed, "approval_required", invocation_id=invocation.invocation_id)
-            metadata = _combined_approval_metadata(policy_decision, shell_assessment, shell_action)
+            metadata: dict[str, JsonValue] = {
+                **dict(policy_decision.approval_metadata),
+                _POLICY_APPROVAL_METADATA_KEY: {
+                    "decision": policy_decision.decision,
+                    "metadata": dict(policy_decision.approval_metadata),
+                },
+            }
             if (facts := approval_facts(invocation)) is not None:
                 metadata[RESOURCE_APPROVAL_KEY] = facts
             raise ApprovalRequired(metadata=metadata)
@@ -515,126 +577,6 @@ async def _evaluate_policy(
     if not isinstance(decision, InvocationPolicyDecision):
         raise DefinitionError("Invocation policy returned an invalid decision.", code="invocation_policy_invalid")
     return decision
-
-
-async def _evaluate_shell_review(
-    ctx: RunContext[AgentContext],
-    invocation: ToolInvocationContext,
-    metadata: HarnessToolMetadata,
-) -> tuple[ShellReviewAction | None, ShellReviewAssessment | None]:
-    if not metadata.shell_review:
-        return None, None
-    capability = ctx.capabilities.get(SHELL_REVIEW_CAPABILITY_ID)
-    if capability is None:
-        return None, None
-    if type(capability) is not ShellReviewCapability:
-        raise DefinitionError(
-            "The finalized shell review Capability has an incompatible type.",
-            code="capability_scope_invalid",
-        )
-    try:
-        request = _project_shell_review_request(invocation)
-        result = await capability.review(request, context=ctx.deps)
-        await _record_shell_review_usage(ctx, result.usage)
-        return capability.action_for(result.assessment), result.assessment
-    except asyncio.CancelledError:
-        raise
-    except ShellReviewError as exc:
-        await _record_shell_review_usage(ctx, exc.usage)
-        if exc.code == "shell_review_timeout":
-            await _emit(
-                ctx,
-                metadata,
-                "denied",
-                invocation_id=invocation.invocation_id,
-                tool_call_id=invocation.tool_call_id,
-                reason_code=exc.code,
-                timeout_seconds=capability.timeout_seconds,
-            )
-            raise ToolFailed("Shell review timed out. Automatically denied; command was not executed.") from exc
-        return capability.on_error, None
-    except DefinitionError:
-        raise
-    except Exception:
-        return capability.on_error, None
-
-
-def _project_shell_review_request(invocation: ToolInvocationContext) -> ShellReviewRequest:
-    arguments = invocation.normalized_arguments
-    command = arguments.get("command")
-    cwd = arguments.get("cwd")
-    environment = arguments.get("environment")
-    yield_time_seconds = arguments.get("yield_time_seconds")
-    execution_timeout_seconds = arguments.get("execution_timeout_seconds")
-    alias = arguments.get("alias")
-    if not isinstance(command, str):
-        raise ValueError("reviewable shell invocation has no string command")
-    if cwd is not None and not isinstance(cwd, str):
-        raise ValueError("reviewable shell invocation has an invalid cwd")
-    if environment is None:
-        environment_keys: tuple[str, ...] = ()
-    elif isinstance(environment, Mapping) and all(isinstance(key, str) for key in environment):
-        environment_keys = tuple(sorted(environment))
-    else:
-        raise ValueError("reviewable shell invocation has an invalid environment")
-    if yield_time_seconds is not None and (
-        not isinstance(yield_time_seconds, int | float)
-        or isinstance(yield_time_seconds, bool)
-        or yield_time_seconds < 0
-    ):
-        raise ValueError("reviewable shell invocation has an invalid yield window")
-    if execution_timeout_seconds is not None and (
-        not isinstance(execution_timeout_seconds, int | float) or isinstance(execution_timeout_seconds, bool)
-    ):
-        raise ValueError("reviewable shell invocation has an invalid timeout")
-    if alias is not None and not isinstance(alias, str):
-        raise ValueError("reviewable shell invocation has an invalid alias")
-    return ShellReviewRequest(
-        tool_id=invocation.tool_id,
-        tool_call_id=invocation.tool_call_id,
-        command=command,
-        cwd=cwd,
-        environment_keys=environment_keys,
-        yield_time_seconds=yield_time_seconds,
-        execution_timeout_seconds=execution_timeout_seconds,
-        alias=alias,
-    )
-
-
-async def _record_shell_review_usage(
-    ctx: RunContext[AgentContext],
-    usage: Sequence[ProviderUsage],
-) -> None:
-    for receipt in usage:
-        await ctx.deps.record_provider_usage(
-            receipt,
-            source="shell.review",
-            tool_id=SHELL_EXEC_TOOL_ID,
-            tool_call_id=ctx.tool_call_id,
-        )
-
-
-def _combined_approval_metadata(
-    policy_decision: InvocationPolicyDecision,
-    shell_assessment: ShellReviewAssessment | None,
-    shell_action: ShellReviewAction | None,
-) -> dict[str, JsonValue]:
-    if shell_action != ShellReviewAction.APPROVAL_REQUIRED:
-        return dict(policy_decision.approval_metadata)
-    shell_metadata: dict[str, JsonValue] = {
-        "action": ShellReviewAction.APPROVAL_REQUIRED.value,
-        "status": "error" if shell_assessment is None else "flagged",
-    }
-    if shell_assessment is not None:
-        shell_metadata["risk"] = shell_assessment.risk.value
-        shell_metadata["reason"] = shell_assessment.reason
-    return {
-        _POLICY_APPROVAL_METADATA_KEY: {
-            "decision": policy_decision.decision,
-            "metadata": dict(policy_decision.approval_metadata),
-        },
-        _SHELL_REVIEW_APPROVAL_METADATA_KEY: shell_metadata,
-    }
 
 
 def _policy_approval_metadata(value: object) -> Mapping[str, JsonValue]:
@@ -783,6 +725,8 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
             (ShellReviewCapability,),
             provenance.definition_ids,
         ),
+        TOOL_REVIEW_CAPABILITY_ID: ((ToolReviewCapability,), provenance.definition_ids),
+        TOOL_PERMISSIONS_CAPABILITY_ID: ((ToolPermissionsCapability,), provenance.definition_ids),
         RUNTIME_CONTEXT_CAPABILITY_ID: (
             (RuntimeContextCapability,),
             provenance.definition_ids,

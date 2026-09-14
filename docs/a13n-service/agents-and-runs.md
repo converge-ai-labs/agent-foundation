@@ -35,6 +35,38 @@ curl --fail-with-body "$SERVICE_URL/api/v1/workspaces/$WORKSPACE/agents" \
 
 The `201` representation contains `agent` and `revision`. Save their returned IDs; do not fabricate IDs from the display name. The input adapter is the installed `native` adapter. This minimal Agent requires no Environment or external tools; its prompt should contain the material to review.
 
+## Configure tool permissions and a reviewer
+
+Add optional `permissions` and `reviewer` objects to the Agent `config` when local tool calls need a front permission gate. The following is a fragment to merge into a complete config; replace the reviewer placeholder with a real managed Model **ID**, not a Model key or provider route:
+
+```json
+{
+  "permissions": {
+    "default": "auto",
+    "rules": {
+      "environment.shell_exec": "review",
+      "filesystem.remove": "ask",
+      "tool/reporting/*": "review"
+    }
+  },
+  "reviewer": {
+    "model": "REVIEW_MODEL_ID",
+    "instruction": "Ask before sending private customer data.",
+    "shell_instruction": "Ask before destructive shell operations.",
+    "timeout_seconds": 30,
+    "on_error": "approval_required"
+  }
+}
+```
+
+Use actual stable tool IDs from the prepared surface, not display-name guesses. `auto` uses each tool's default; `allow` continues, `deny` blocks, `ask` requests human approval, and `review` consults the reviewer. Without a matching reviewer, review adds no restriction. These settings never widen Service IAM or Environment authority. See the [Harness permission guide](../a13n-harness/managed-tools.md#select-tool-permissions) for selectors, custom instructions, and distinct approval sources.
+
+Run acceptance freezes reviewer Model execution settings alongside the main Model. Later Model edits do not change an accepted Run; credentials still resolve through current managed authentication. In `config_override`, omission inherits either field, null clears it, and an object replaces it entirely. A reviewer approval may be followed by a separate tool-policy approval through the normal waiting/feedback flow.
+
+Review usage enters the existing accounting records with tool/call correlation. The stream exposes `tool_review_result` custom events with a completed assessment/usage result or a safe error code and effective decision. Treat those as observations, not another billable record or proof of execution.
+
+For first-party Web access, `search.allow_domains` and `search.deny_domains` constrain returned search URLs and fetch/download/scrape destinations, including redirect hops. Use exact hosts or explicit `*.` subdomains; deny wins. Existing `include_domains` keeps its separate search-filter semantics. These settings do not sandbox shell or remote MCP network access.
+
 ## Accept a Run
 
 Save as `run.json`, replacing `AGENT_ID_FROM_CREATE` with `agent.id`:

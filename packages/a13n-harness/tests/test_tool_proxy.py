@@ -154,8 +154,10 @@ async def test_groups_support_same_local_name_and_configurable_control_names() -
         (
             ToolProxyCapability(
                 groups={
-                    "crm": ToolProxyGroup(FunctionToolset([lookup]), "Customer operations"),
-                    "docs": ToolProxyGroup(FunctionToolset([Tool(other, name="lookup")]), "Document operations"),
+                    "crm": ToolProxyGroup(FunctionToolset([lookup], id="crm"), "Customer operations"),
+                    "docs": ToolProxyGroup(
+                        FunctionToolset([Tool(other, name="lookup")], id="docs"), "Document operations"
+                    ),
                 },
                 config=config,
             ),
@@ -1102,7 +1104,7 @@ async def test_plan_groups_exact_plugin_instances_and_keeps_unlisted_sources_dir
             def identify() -> str:
                 return self.name
 
-            return (Capability(id=self.name, toolsets=[FunctionToolset([identify])]),)
+            return (Capability(id=self.name, toolsets=[FunctionToolset([identify], id=self.name)]),)
 
     def local() -> str:
         return "local"
@@ -1300,3 +1302,27 @@ async def test_build_plan_survives_model_recovery_without_replaying_completed_ta
     assert result.output_or_raise() == "recovered"
     assert effects == ["written"]
     assert requests == 3
+
+
+@pytest.mark.parametrize("codeact", [False, True])
+@pytest.mark.parametrize("mode", ["deny", "ask"])
+async def test_proxy_target_permission_gate_precedes_business_dispatch(codeact: bool, mode: str) -> None:
+    from a13n_harness.tools import ToolPermissions, ToolPermissionsCapability
+
+    effects = []
+
+    def forbidden() -> str:
+        effects.append(True)
+        return "not allowed"
+
+    capabilities = (
+        _group(forbidden),
+        ToolPermissionsCapability(ToolPermissions(rules={"tool/native/forbidden": mode})),
+    )
+    call = ("call_proxy_tool", {"group": "crm", "tool": "forbidden", "arguments": {}})
+    if codeact:
+        capabilities += (CodeActCapability(),)
+        call = ("run_code", {"code": "await call_proxy_tool(group='crm', tool='forbidden', arguments={})"})
+    result, _ = await _run(capabilities, [call])
+    assert result.status == "completed"
+    assert not effects

@@ -143,6 +143,24 @@ func (e AgentInputSchemaVersion) Valid() bool {
 	}
 }
 
+// Defines values for AgentReviewerOnError.
+const (
+	AgentReviewerOnErrorApprovalRequired AgentReviewerOnError = "approval_required"
+	AgentReviewerOnErrorDeny             AgentReviewerOnError = "deny"
+)
+
+// Valid indicates whether the value is a known member of the AgentReviewerOnError enum.
+func (e AgentReviewerOnError) Valid() bool {
+	switch e {
+	case AgentReviewerOnErrorApprovalRequired:
+		return true
+	case AgentReviewerOnErrorDeny:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AgentSource.
 const (
 	AgentSourceBuiltin AgentSource = "builtin"
@@ -331,22 +349,22 @@ func (e BinaryContentType) Valid() bool {
 
 // Defines values for BinaryContentDelivery.
 const (
-	Auto            BinaryContentDelivery = "auto"
-	EnvironmentPath BinaryContentDelivery = "environment_path"
-	ModelContent    BinaryContentDelivery = "model_content"
-	ModelUrl        BinaryContentDelivery = "model_url"
+	BinaryContentDeliveryAuto            BinaryContentDelivery = "auto"
+	BinaryContentDeliveryEnvironmentPath BinaryContentDelivery = "environment_path"
+	BinaryContentDeliveryModelContent    BinaryContentDelivery = "model_content"
+	BinaryContentDeliveryModelUrl        BinaryContentDelivery = "model_url"
 )
 
 // Valid indicates whether the value is a known member of the BinaryContentDelivery enum.
 func (e BinaryContentDelivery) Valid() bool {
 	switch e {
-	case Auto:
+	case BinaryContentDeliveryAuto:
 		return true
-	case EnvironmentPath:
+	case BinaryContentDeliveryEnvironmentPath:
 		return true
-	case ModelContent:
+	case BinaryContentDeliveryModelContent:
 		return true
-	case ModelUrl:
+	case BinaryContentDeliveryModelUrl:
 		return true
 	default:
 		return false
@@ -2369,6 +2387,45 @@ func (e ToolMessageRole) Valid() bool {
 	}
 }
 
+// Defines values for ToolPermissionMode.
+const (
+	ToolPermissionModeAllow  ToolPermissionMode = "allow"
+	ToolPermissionModeAsk    ToolPermissionMode = "ask"
+	ToolPermissionModeDeny   ToolPermissionMode = "deny"
+	ToolPermissionModeReview ToolPermissionMode = "review"
+)
+
+// Valid indicates whether the value is a known member of the ToolPermissionMode enum.
+func (e ToolPermissionMode) Valid() bool {
+	switch e {
+	case ToolPermissionModeAllow:
+		return true
+	case ToolPermissionModeAsk:
+		return true
+	case ToolPermissionModeDeny:
+		return true
+	case ToolPermissionModeReview:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ToolPermissionSetting1.
+const (
+	ToolPermissionSetting1Auto ToolPermissionSetting1 = "auto"
+)
+
+// Valid indicates whether the value is a known member of the ToolPermissionSetting1 enum.
+func (e ToolPermissionSetting1) Valid() bool {
+	switch e {
+	case ToolPermissionSetting1Auto:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TraceView.
 const (
 	TraceViewCompact TraceView = "compact"
@@ -2803,9 +2860,11 @@ type AgentConfigInput struct {
 	Instructions       *string                                   `json:"instructions,omitempty"`
 	Model              AgentModel                                `json:"model"`
 	OutputSpec         nullable.Nullable[OutputSpec]             `json:"output_spec,omitempty"`
+	Permissions        nullable.Nullable[ToolPermissions]        `json:"permissions,omitempty"`
 	Plugins            *[]PluginSelection                        `json:"plugins,omitempty"`
 	Protocol           ProtocolConfig                            `json:"protocol"`
 	Retries            nullable.Nullable[RetryConfig]            `json:"retries,omitempty"`
+	Reviewer           nullable.Nullable[AgentReviewer]          `json:"reviewer,omitempty"`
 	Search             nullable.Nullable[SearchSelection]        `json:"search,omitempty"`
 	SecretRequirements *[]SecretRequirement                      `json:"secret_requirements,omitempty"`
 	Skills             *[]SkillSelection                         `json:"skills,omitempty"`
@@ -2825,9 +2884,11 @@ type AgentConfigOutput struct {
 	Instructions       *string                                   `json:"instructions,omitempty"`
 	Model              AgentModel                                `json:"model"`
 	OutputSpec         nullable.Nullable[OutputSpec]             `json:"output_spec,omitempty"`
+	Permissions        nullable.Nullable[ToolPermissions]        `json:"permissions,omitempty"`
 	Plugins            *[]PluginSelection                        `json:"plugins,omitempty"`
 	Protocol           ProtocolConfig                            `json:"protocol"`
 	Retries            nullable.Nullable[RetryConfig]            `json:"retries,omitempty"`
+	Reviewer           nullable.Nullable[AgentReviewer]          `json:"reviewer,omitempty"`
 	Search             nullable.Nullable[SearchSelection]        `json:"search,omitempty"`
 	SecretRequirements *[]SecretRequirement                      `json:"secret_requirements,omitempty"`
 	Skills             *[]SkillSelection                         `json:"skills,omitempty"`
@@ -2861,6 +2922,19 @@ type AgentModel struct {
 	ModelKey        string                       `json:"model_key"`
 	Settings        *map[string]JsonValue        `json:"settings,omitempty"`
 }
+
+// AgentReviewer Reviewer selected by immutable managed Model ID, never a provider route.
+type AgentReviewer struct {
+	Instruction      nullable.Nullable[string]               `json:"instruction,omitempty"`
+	Model            string                                  `json:"model"`
+	ModelSettings    nullable.Nullable[map[string]JsonValue] `json:"model_settings,omitempty"`
+	OnError          *AgentReviewerOnError                   `json:"on_error,omitempty"`
+	ShellInstruction nullable.Nullable[string]               `json:"shell_instruction,omitempty"`
+	TimeoutSeconds   *float32                                `json:"timeout_seconds,omitempty"`
+}
+
+// AgentReviewerOnError defines model for AgentReviewer.OnError.
+type AgentReviewerOnError string
 
 // AgentRevision defines model for AgentRevision.
 type AgentRevision struct {
@@ -2900,8 +2974,10 @@ type AgentRunOverrideInput struct {
 	Instructions    nullable.Nullable[string]                    `json:"instructions,omitempty"`
 	Model           nullable.Nullable[ModelOverride]             `json:"model,omitempty"`
 	OutputSpec      nullable.Nullable[OutputSpec]                `json:"output_spec,omitempty"`
+	Permissions     nullable.Nullable[ToolPermissions]           `json:"permissions,omitempty"`
 	Plugins         nullable.Nullable[[]PluginSelection]         `json:"plugins,omitempty"`
 	Retries         nullable.Nullable[RetryOverride]             `json:"retries,omitempty"`
+	Reviewer        nullable.Nullable[AgentReviewer]             `json:"reviewer,omitempty"`
 	Search          nullable.Nullable[SearchSelection]           `json:"search,omitempty"`
 	Skills          nullable.Nullable[[]SkillSelection]          `json:"skills,omitempty"`
 	Subagents       nullable.Nullable[map[string]interface{}]    `json:"subagents,omitempty"`
@@ -2914,8 +2990,10 @@ type AgentRunOverrideOutput struct {
 	Instructions    nullable.Nullable[string]                    `json:"instructions,omitempty"`
 	Model           nullable.Nullable[ModelOverride]             `json:"model,omitempty"`
 	OutputSpec      nullable.Nullable[OutputSpec]                `json:"output_spec,omitempty"`
+	Permissions     nullable.Nullable[ToolPermissions]           `json:"permissions,omitempty"`
 	Plugins         nullable.Nullable[[]PluginSelection]         `json:"plugins,omitempty"`
 	Retries         nullable.Nullable[RetryOverride]             `json:"retries,omitempty"`
+	Reviewer        nullable.Nullable[AgentReviewer]             `json:"reviewer,omitempty"`
 	Search          nullable.Nullable[SearchSelection]           `json:"search,omitempty"`
 	Skills          nullable.Nullable[[]SkillSelection]          `json:"skills,omitempty"`
 	Subagents       nullable.Nullable[map[string]interface{}]    `json:"subagents,omitempty"`
@@ -5212,6 +5290,8 @@ type SearchProviderTestResult struct {
 
 // SearchSelection defines model for SearchSelection.
 type SearchSelection struct {
+	AllowDomains   *[]string `json:"allow_domains,omitempty"`
+	DenyDomains    *[]string `json:"deny_domains,omitempty"`
 	IncludeDomains *[]string `json:"include_domains,omitempty"`
 	MaxResults     *int      `json:"max_results,omitempty"`
 	ProviderId     string    `json:"provider_id"`
@@ -5713,6 +5793,23 @@ type ToolMessage struct {
 
 // ToolMessageRole defines model for ToolMessage.Role.
 type ToolMessageRole string
+
+// ToolPermissionMode defines model for ToolPermissionMode.
+type ToolPermissionMode string
+
+// ToolPermissionSetting defines model for ToolPermissionSetting.
+type ToolPermissionSetting struct {
+	union json.RawMessage
+}
+
+// ToolPermissionSetting1 defines model for ToolPermissionSetting.1.
+type ToolPermissionSetting1 string
+
+// ToolPermissions Portable configuration. Auto resolves a tool default, never an execution decision.
+type ToolPermissions struct {
+	Default *ToolPermissionSetting            `json:"default,omitempty"`
+	Rules   *map[string]ToolPermissionSetting `json:"rules,omitempty"`
+}
 
 // Trace defines model for Trace.
 type Trace struct {
@@ -11122,6 +11219,68 @@ func (t SkillRevision_ImportedFrom) MarshalJSON() ([]byte, error) {
 }
 
 func (t *SkillRevision_ImportedFrom) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsToolPermissionMode returns the union data inside the ToolPermissionSetting as a ToolPermissionMode
+func (t ToolPermissionSetting) AsToolPermissionMode() (ToolPermissionMode, error) {
+	var body ToolPermissionMode
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromToolPermissionMode overwrites any union data inside the ToolPermissionSetting as the provided ToolPermissionMode
+func (t *ToolPermissionSetting) FromToolPermissionMode(v ToolPermissionMode) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeToolPermissionMode performs a merge with any union data inside the ToolPermissionSetting, using the provided ToolPermissionMode
+func (t *ToolPermissionSetting) MergeToolPermissionMode(v ToolPermissionMode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsToolPermissionSetting1 returns the union data inside the ToolPermissionSetting as a ToolPermissionSetting1
+func (t ToolPermissionSetting) AsToolPermissionSetting1() (ToolPermissionSetting1, error) {
+	var body ToolPermissionSetting1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromToolPermissionSetting1 overwrites any union data inside the ToolPermissionSetting as the provided ToolPermissionSetting1
+func (t *ToolPermissionSetting) FromToolPermissionSetting1(v ToolPermissionSetting1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeToolPermissionSetting1 performs a merge with any union data inside the ToolPermissionSetting, using the provided ToolPermissionSetting1
+func (t *ToolPermissionSetting) MergeToolPermissionSetting1(v ToolPermissionSetting1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t ToolPermissionSetting) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *ToolPermissionSetting) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
 	return err
 }

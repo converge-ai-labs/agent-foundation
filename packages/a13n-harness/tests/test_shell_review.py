@@ -405,7 +405,7 @@ async def test_default_reviewer_logs_safe_failure_metadata(
     assert "private-command-value" not in str(record.__dict__)
 
 
-async def test_policy_deny_skips_shell_review_and_dispatch() -> None:
+async def test_policy_deny_still_blocks_dispatch_after_front_review() -> None:
     reviewer = _Reviewer([_result(ShellRiskLevel.LOW)])
     executed: list[dict[str, Any]] = []
     executable = _build(reviewer, executed)
@@ -418,7 +418,7 @@ async def test_policy_deny_skips_shell_review_and_dispatch() -> None:
 
     assert result.status == "completed"
     assert policy.calls == 1
-    assert reviewer.requests == []
+    assert len(reviewer.requests) == 1
     assert executed == []
 
 
@@ -533,7 +533,7 @@ async def test_skip_adds_no_restriction_and_preserves_invocation_policy(
     )
 
     assert policy.calls == 1
-    assert len(reviewer.requests) == (0 if policy_action == "deny" else 1)
+    assert len(reviewer.requests) == 1
     assert len(executed) == (1 if policy_action == "allow" else 0)
     if policy_action == "approval_required":
         assert result.status == "suspended"
@@ -555,14 +555,13 @@ async def test_skip_on_error_does_not_change_flagged_default() -> None:
 
     assert result.status == "suspended"
     assert result.deferred is not None
-    metadata = result.deferred.metadata["shell-call-1"]["a13n.harness.shell-review"]
-    assert metadata["status"] == "flagged"
-    assert metadata["risk"] == "extra_high"
+    metadata = result.deferred.metadata["shell-call-1"]["a13n.harness.tool-approval"]
+    assert metadata["requested_sources"] == ["reviewer"]
     assert executed == []
 
 
-async def test_flagged_review_combines_metadata_and_reruns_on_approved_resume() -> None:
-    reviewer = _Reviewer([_result(ShellRiskLevel.HIGH), _result(ShellRiskLevel.HIGH)])
+async def test_flagged_review_and_policy_require_separate_approvals() -> None:
+    reviewer = _Reviewer([_result(ShellRiskLevel.HIGH) for _ in range(3)])
     executed: list[dict[str, Any]] = []
     executable = _build(reviewer, executed)
     first_policy = _Policy(
@@ -580,16 +579,8 @@ async def test_flagged_review_combines_metadata_and_reruns_on_approved_resume() 
     assert first.state is not None and first.deferred is not None
     call_id = first.deferred.approvals[0].tool_call_id
     metadata = first.deferred.metadata[call_id]
-    assert metadata["a13n.harness.invocation-policy"] == {
-        "decision": "approval_required",
-        "metadata": {"policy_token": "p-1"},
-    }
-    assert metadata["a13n.harness.shell-review"] == {
-        "action": "approval_required",
-        "status": "flagged",
-        "risk": "high",
-        "reason": "high command",
-    }
+    assert first_policy.calls == 0
+    assert metadata["a13n.harness.tool-approval"]["requested_sources"] == ["reviewer"]
 
     verified: list[dict[str, Any]] = []
 
@@ -625,9 +616,26 @@ async def test_flagged_review_combines_metadata_and_reruns_on_approved_resume() 
         ),
     )
 
-    assert second.status == "completed"
-    assert len(reviewer.requests) == 2
-    assert verified == [{"policy_token": "p-1"}]
+    assert second.status == "suspended"
+    assert second.deferred is not None
+    assert verified == [] and executed == []
+    assert second.deferred.metadata[call_id]["a13n.harness.tool-approval"]["requested_sources"] == ["permission"]
+    third = await executable.run(
+        bindings=RunBindings.embedded(
+            capabilities=(InvocationPolicyCapability(evaluator=second_policy, approval_verifier=_Verifier()),)
+        ),
+        previous_state=second.state,
+        deferred_resume=DeferredToolResume(
+            second.deferred,
+            second.deferred.build_results(
+                approvals={call_id: ToolApproved()},
+                metadata=second.deferred.metadata,
+            ),
+        ),
+    )
+    assert third.status == "completed"
+    assert len(reviewer.requests) == 3
+    assert verified == [{"policy_token": "p-2"}]
     assert len(executed) == 1
 
 
@@ -785,10 +793,7 @@ async def test_other_review_failure_still_requests_approval_without_assessment()
     assert result.status == "suspended"
     assert result.deferred is not None
     call_id = result.deferred.approvals[0].tool_call_id
-    assert result.deferred.metadata[call_id]["a13n.harness.shell-review"] == {
-        "action": "approval_required",
-        "status": "error",
-    }
+    assert result.deferred.metadata[call_id]["a13n.harness.tool-approval"]["requested_sources"] == ["reviewer"]
     assert executed == []
 
 
@@ -806,10 +811,19 @@ async def test_timeout_emits_observable_denial_before_any_authorization() -> Non
         and isinstance(item.event, HarnessExtensionEvent)
         and item.event.kind == "invocation"
     ]
-    assert [event["phase"] for event in invocations] == ["prepared", "denied"]
-    assert invocations[-1]["reason_code"] == "shell_review_timeout"
-    assert invocations[-1]["timeout_seconds"] == 120.0
-    assert invocations[-1]["tool_call_id"] == "shell-call-1"
+    assert invocations == []
+    reviews = [
+        item.event.payload
+        for item in events
+        if isinstance(item, HarnessEvent)
+        and isinstance(item.event, HarnessExtensionEvent)
+        and item.event.kind == "tool"
+        and item.event.payload.get("type") == "tool_review_result"
+    ]
+    assert len(reviews) == 1
+    assert reviews[0]["decision"] == "deny"
+    assert reviews[0]["error_code"] == "tool_review_timeout"
+    assert reviews[0]["tool_call_id"] == "shell-call-1"
     assert executed == []
     assert stream.result is not None and stream.result.status == "completed"
 

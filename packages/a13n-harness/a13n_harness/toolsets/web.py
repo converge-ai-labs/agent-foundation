@@ -32,6 +32,7 @@ from a13n_harness.usage import ProviderUsage
 from ._instructions import InstructionFunctionToolset, tool_instruction
 from ._results import ToolFailure, environment_failure, tool_failure
 from ._scoped_files import ScopedFileAccess
+from .domains import DomainRestrictions
 from .output import ToolOutputDisclosure, disclose_sequence_field, disclose_text_fields
 
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
@@ -232,6 +233,21 @@ class WebPolicy(Protocol):
     async def authorize(self, url: str, *, purpose: WebPurpose) -> None: ...
 
 
+@dataclass(frozen=True, slots=True)
+class WebDomainPolicy:
+    domains: DomainRestrictions
+    policy: WebPolicy
+
+    def check_domain(self, url: str) -> None:
+        """Check one hop before a transport performs resolution or network I/O."""
+        if not self.domains.allows(url):
+            raise WebProviderError("web_domain_denied")
+
+    async def authorize(self, url: str, *, purpose: WebPurpose) -> None:
+        self.check_domain(url)
+        await self.policy.authorize(url, purpose=purpose)
+
+
 @runtime_checkable
 class WebClient(Protocol):
     """Async transport that reapplies policy after resolution and before every redirect hop."""
@@ -280,7 +296,7 @@ def _validate_backend_preference(backend: str | None, priority: tuple[str, ...])
         raise ValueError("backend_priority entries must be unique")
 
 
-class WebSearchConfiguration(BaseModel):
+class WebSearchConfiguration(DomainRestrictions):
     """Definition-owned native/Host mode and Host backend preference."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
@@ -293,6 +309,8 @@ class WebSearchConfiguration(BaseModel):
     @model_validator(mode="after")
     def _validate_backend_selection(self) -> WebSearchConfiguration:
         _validate_backend_preference(self.backend, self.backend_priority)
+        if self.restricted and self.mode == "native":
+            raise ValueError("Domain-restricted search requires Host execution")
         if self.mode in {"off", "native"} and (self.backend is not None or self.backend_priority):
             raise ValueError("Host backend preferences require search mode 'host' or 'auto'")
         return self
@@ -315,7 +333,7 @@ class WebScrapeConfiguration(BaseModel):
         return self
 
 
-class WebConfiguration(BaseModel):
+class WebConfiguration(DomainRestrictions):
     """Definition-owned search selection, redirect, deadline, concurrency, and output bounds."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -585,9 +603,15 @@ class WebToolset:
         )
         validated_search_backends = _validate_search_backend_bindings(effective_search_backends)
         validated_scrape_backends = _validate_scrape_backend_bindings(effective_scrape_backends)
+        if (
+            self.configuration.search.restricted
+            and self.configuration.search.mode != "off"
+            and not validated_search_backends
+        ):
+            raise ValueError("Domain-restricted search requires a Host search backend")
         self._binding = WebToolBinding(
             client,
-            policy,
+            WebDomainPolicy(self.configuration, policy) if self.configuration.restricted else policy,
             _select_search_backend_bindings(validated_search_backends, self.configuration.search),
             _select_scrape_backend_bindings(validated_scrape_backends, self.configuration.scrape),
         )
@@ -608,7 +632,9 @@ class WebToolset:
                     tool_id="web.search",
                     name="search",
                     effects=frozenset({"read", "external_communication"}),
-                    prepare=_prefer_native_web_search if search_mode == "auto" else None,
+                    prepare=_prefer_native_web_search
+                    if search_mode == "auto" and not self.configuration.search.restricted
+                    else None,
                 )
             )
         if self.configuration.scrape.mode == "host" and self._binding.scrape_backends:
@@ -758,6 +784,7 @@ class WebToolset:
                     tool_call_id=ctx.tool_call_id,
                 )
             results = [WebSearchResult.model_validate(item) for item in response.results]
+            results = [item for item in results if self.configuration.search.allows(item.url)]
             projected: dict[str, JsonValue] = {
                 "ok": True,
                 "results": cast(
@@ -1242,6 +1269,7 @@ def _web_error(
         "web_download_failed": "The download failed; check the URL and destination.",
         "web_fetch_failed": "The web request failed; check the URL and network access.",
         "web_redirect_invalid": "The server returned an invalid or disallowed redirect.",
+        "web_domain_denied": "The requested domain is denied by Web configuration.",
         "web_response_invalid": "The web client returned an invalid response.",
         "web_scrape_backend_missing": "No scrape backend is configured.",
         "web_scrape_failed": "The scrape provider could not read the page.",

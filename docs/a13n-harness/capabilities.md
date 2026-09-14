@@ -171,6 +171,10 @@ See [Context and memory](context-and-memory.md#context-composition) for configur
 
 See [Context and memory](context-and-memory.md#mem0-long-term-memory) for configuration, examples, and lifecycle boundaries.
 
+## Tool permissions and general review
+
+Use `ToolPermissionsCapability` for stable-ID `allow`, `deny`, `ask`, and `review` rules, and `ToolReviewCapability` for a model-backed or custom reviewer. Both are also available as declarative `AgentSpec` types. [Tool permissions](managed-tools.md#select-tool-permissions) covers configuration, custom instructions, reviewer implementations, approval provenance, result events, and usage. Ordinary Pydantic tools and local MCP targets use the same gate without requiring managed metadata.
+
 ## Shell Command Review
 
 Shell review is off unless the Agent definition includes `ShellReviewCapability`. The declarative form is suitable for an `AgentSpec` loaded from JSON or YAML:
@@ -194,7 +198,7 @@ agent_spec = AgentSpec(
 )
 ```
 
-The review applies only to `environment.shell_exec`; process wait, input, and signal calls are not sent to the reviewer. It runs after typed argument validation, resource resolution, and the fresh invocation policy. A policy denial therefore avoids the review model call. Review happens before credentials, grants, or Environment dispatch and can only add an approval or denial; it never grants permission that policy withheld.
+The review applies only to `environment.shell_exec`; process wait, input, and signal calls are not sent to the reviewer. It uses the shared early permission gate after native structural validation, before custom argument validation, resource resolution, and fresh invocation policy. A front permission denial avoids review cost; resource policy may deny later. Review happens before credentials, grants, or Environment dispatch and can only add an approval or denial; it never grants permission that policy withheld.
 
 The default reviewer receives the command, working directory, yield window, total timeout, Environment alias, and sorted environment variable names. Environment values are never included. Risk order is `low < medium < high < extra_high`; a result at or above `risk_threshold` applies `on_flagged`, while an invalid result or non-timeout reviewer failure applies `on_error`. The AI review deadline defaults to 120 seconds (`timeout_seconds`, up to 120 seconds), including custom reviewers. Timeout always automatically denies the command before execution, even with `on_error: skip`, `on_error: approval_required`, or an earlier approval; it does not start an additional human-approval wait. Both actions also accept `skip`, which adds no review restriction, but never bypasses an invocation-policy denial or approval requirement. The Harness library defaults both actions to `approval_required`; Harness UI starter Agents explicitly select `on_error: skip`. Both policy and review run again after native approval resume, so a fresh denial still wins. Without an explicit `InvocationPolicyCapability`, managed Environment calls use the Harness default allow decision with no dispatch retries; an explicit policy can only narrow or condition dispatch.
 
@@ -236,6 +240,34 @@ bindings = RunBindings.embedded(
 ```
 
 The same pattern applies to the general URL-oriented `MediaCapability` and to Web. The definition owns what behavior the Agent may request; the run collaborator owns current provider access. Environment file [multimedia understanding](multimedia-understanding.md) is a separate first-party path: native support comes from the active `AgentSpec.model_characteristics.capabilities` value supplied through the `model_characteristics` construction key, and dedicated image, video, or audio Agents can be configured directly through process environment variables without a Host collaborator. Web additionally evaluates a live `WebPolicy` for each Host request.
+
+### Restrict Web domains
+
+`WebConfiguration` restricts fetch/download/scrape destinations; nested `WebSearchConfiguration` independently filters returned search URLs:
+
+```python
+from a13n_harness.capabilities import (
+    WebCapability,
+    WebConfiguration,
+    WebSearchConfiguration,
+)
+
+web = WebCapability(
+    WebConfiguration(
+        allow_domains=("example.org", "*.example.org"),
+        deny_domains=("private.example.org",),
+        search=WebSearchConfiguration(
+            mode="host",
+            allow_domains=("example.org", "*.example.org"),
+            deny_domains=("private.example.org",),
+        ),
+    )
+)
+```
+
+An exact host matches only itself; `*.example.org` matches subdomains but not the apex. Entries normalize case, IDNA, and trailing dots. Deny wins; empty lists add no restrictions. Set both destination and search fields when you need both behaviors. Search can return fewer or zero results after filtering. Restricted `native` search is rejected; restricted `auto` uses Host search and needs a bound backend.
+
+Host transports must retain `WebDomainPolicy` checks on each redirect before DNS/network work as well as their normal address and credential checks. These controls are not universal egress restrictions for shell, remote MCP, installed plugins, or model-provider tools.
 
 ### Web search and scrape backends
 

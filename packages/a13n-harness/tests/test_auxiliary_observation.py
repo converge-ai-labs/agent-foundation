@@ -136,7 +136,12 @@ async def test_auxiliary_models_are_native_descendants_of_the_invoking_tool(
         and span.attributes.get("gen_ai.agent.name") == auxiliary_name
     )
     tool = next(span for span in spans if span.attributes.get("gen_ai.tool.name") == tool_name)
-    assert auxiliary.parent.span_id == tool.context.span_id
+    if kind == "shell":
+        review = next(span for span in spans if span.attributes.get("a13n.operation.kind") == "tool_review")
+        assert auxiliary.parent.span_id == review.context.span_id
+        assert review.attributes["a13n.tool.id"] == "environment.shell_exec"
+    else:
+        assert auxiliary.parent.span_id == tool.context.span_id
     model_spans = [
         span
         for span in spans
@@ -399,7 +404,7 @@ async def test_instrumented_review_preserves_failure_policy_and_cancellation(fai
         result = await task
         assert result.status == ("completed" if failure == "timeout" else "suspended")
         if failure == "timeout":
-            assert "Automatically denied; command was not executed" in str(result.all_messages())
+            assert "Tool review timed out; the tool was not executed" in str(result.all_messages())
         if failure == "invalid":
             assert any(
                 isinstance(record, ProviderUsageRecord) and record.source == "shell.review"
@@ -413,7 +418,8 @@ async def test_instrumented_review_preserves_failure_policy_and_cancellation(fai
         if span.attributes.get("gen_ai.operation.name") == "invoke_agent"
         and span.attributes.get("gen_ai.agent.name") == "shell-command-review"
     )
-    tool = next(span for span in spans if span.attributes.get("gen_ai.tool.name") == "shell_exec")
-    assert auxiliary.parent.span_id == tool.context.span_id
+    review = next(span for span in spans if span.attributes.get("a13n.operation.kind") == "tool_review")
+    assert auxiliary.parent.span_id == review.context.span_id
+    assert not any(span.attributes.get("gen_ai.tool.name") == "shell_exec" for span in spans)
     if failure == "invalid":
         assert auxiliary.status.status_code is StatusCode.ERROR

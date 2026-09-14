@@ -8,6 +8,8 @@ from enum import StrEnum
 from typing import Annotated, Literal
 
 from a13n_harness import HarnessModelCharacteristics
+from a13n_harness.capabilities import ToolReviewConfig
+from a13n_harness.tools import ToolPermissions
 from a13n_harness.tools.client import ClientToolDefinition
 from pydantic import (
     AfterValidator,
@@ -214,8 +216,17 @@ class ProtocolConfig(StrictModel):
         return value
 
 
+class AgentReviewer(ToolReviewConfig):
+    """Reviewer selected by immutable managed Model ID, never a provider route."""
+
+    model: ObjectId
+    model_settings: Annotated[JsonObject, AfterValidator(validate_settings_bounds)] | None = None
+
+
 class AgentConfig(StrictModel):
     search: SearchSelection | None = Field(default=None, exclude_if=lambda value: value is None)
+    permissions: ToolPermissions | None = Field(default=None, exclude_if=lambda value: value is None)
+    reviewer: AgentReviewer | None = Field(default=None, exclude_if=lambda value: value is None)
     subagent_mode: Literal["inline", "async"] = "inline"
     model: AgentModel
     instructions: Annotated[str, StringConstraints(max_length=256 * 1024)] = ""
@@ -271,6 +282,8 @@ class RetryOverride(StrictModel):
 
 class AgentRunOverride(StrictModel):
     search: SearchSelection | None = None
+    permissions: ToolPermissions | None = None
+    reviewer: AgentReviewer | None = None
     model: ModelOverride | None = None
     instructions: Annotated[str, StringConstraints(max_length=256 * 1024)] | None = None
     plugins: tuple[PluginSelection, ...] | None = Field(default=None, max_length=128)
@@ -332,7 +345,10 @@ class ChildAgentExecution(StrictModel):
 
 
 class EffectiveAgentConfig(_ResolvedContent[EffectiveAgentModel]):
+    resolved_reviewer_model: EffectiveAgentModel | None = Field(default=None, exclude_if=lambda value: value is None)
     search: SearchSelection | None = Field(default=None, exclude_if=lambda value: value is None)
+    permissions: ToolPermissions | None = Field(default=None, exclude_if=lambda value: value is None)
+    reviewer: AgentReviewer | None = Field(default=None, exclude_if=lambda value: value is None)
     plugins: tuple[PluginSelection, ...] = Field(default=(), max_length=128)
     subagent_mode: Literal["inline", "async"] = "inline"
     child_configs: dict[ObjectId, ChildAgentExecution] = Field(default_factory=dict, max_length=128)

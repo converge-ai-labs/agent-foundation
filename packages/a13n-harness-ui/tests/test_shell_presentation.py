@@ -439,3 +439,55 @@ def test_shell_review_timeout_renders_observed_denial_without_a_frontend_timer(m
         assert renderer.background_hint == ""
     finally:
         renderer.transcript.close()
+
+
+@pytest.mark.parametrize("decision", ["deny", "approval_required", "allow"])
+def test_unified_shell_review_result_uses_existing_custom_event_renderer(decision) -> None:
+    renderer = StreamRenderer(Status(mode="concise"))
+    try:
+        _start(renderer, name="shell_exec")
+        renderer.ingest(
+            "CUSTOM",
+            {
+                "name": "a13n.harness.tool",
+                "value": {
+                    "event": {
+                        "kind": "tool",
+                        "payload": {
+                            "type": "tool_review_result",
+                            "status": "completed",
+                            "tool_id": "environment.shell_exec",
+                            "tool_call_id": "call-one",
+                            "result": {"assessment": {"decision": decision, "reason": "Review reason"}, "usage": []},
+                        },
+                    }
+                },
+            },
+        )
+        visible = _visible(renderer)
+        assert ("Review reason" in visible) is (decision != "allow")
+        if decision != "allow":
+            assert "call-one" in visible
+    finally:
+        renderer.transcript.close()
+
+
+def test_unified_review_timeout_renders_without_local_timer() -> None:
+    from a13n_harness_ui.interactive.panels import capability_panel
+
+    panel = capability_panel(
+        "a13n.harness.tool",
+        {
+            "payload": {
+                "type": "tool_review_result",
+                "status": "error",
+                "error_code": "tool_review_timeout",
+                "tool_id": "environment.shell_exec",
+                "tool_call_id": "call-one",
+                "decision": "deny",
+                "result": None,
+            }
+        },
+    )
+    assert panel is not None and panel.title == "Shell review · timed out"
+    assert "Automatically denied" in panel.body and "call-one" in panel.body

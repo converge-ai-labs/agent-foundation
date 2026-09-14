@@ -75,7 +75,7 @@ class CapabilityTypeCatalog(
 
 Every registered class is a direct dataclass-declared `AbstractCapability`, has a non-blank stable serialization name, does not collide with native or Harness names, is authorized for the `AgentSpec` source, and can participate in deterministic native schema construction. The Host owns package discovery, installation trust, artifact locks, and catalog population. Two builders can use different immutable catalogs in one process without global mutation.
 
-Before `Agent.from_spec()`, the Harness validates every visible `CapabilitySpec` name and nested capability-valued spec against the native registry, the closed first-party Harness declarative set, and the exact Host catalog. The closed first-party declarative set currently includes `ShellReviewCapability`; it is available without Host catalog registration but remains disabled unless the `AgentSpec` explicitly selects it. After construction, the Harness traverses the complete instantiated Capability tree and verifies type/source permission, stable IDs, singleton constraints, and reserved infrastructure provenance before publishing the executable. At each native run boundary it revalidates the finalized Capability mapping so `for_run()` replacement cannot change a protected type, ID, or source. Custom type availability alone grants no Capability; the `AgentSpec` must explicitly select it.
+Before `Agent.from_spec()`, the Harness validates every visible `CapabilitySpec` name and nested capability-valued spec against the native registry, the closed first-party Harness declarative set, and the exact Host catalog. The closed first-party declarative set includes `ToolPermissionsCapability`, `ToolReviewCapability`, and `ShellReviewCapability`; it is available without Host catalog registration but remains disabled unless the `AgentSpec` explicitly selects it. After construction, the Harness traverses the complete instantiated Capability tree and verifies type/source permission, stable IDs, singleton constraints, and reserved infrastructure provenance before publishing the executable. At each native run boundary it revalidates the finalized Capability mapping so `for_run()` replacement cannot change a protected type, ID, or source. Custom type availability alone grants no Capability; the `AgentSpec` must explicitly select it.
 
 ## AgentContext
 
@@ -143,6 +143,9 @@ class AgentContext:
     @property
     def identity(self) -> AgentIdentityRef: ...
 
+    @property
+    def tool_approval(self) -> ToolApprovalContext | None: ...
+
     async def record_provider_usage(
         self,
         usage: ProviderUsage,
@@ -180,6 +183,8 @@ One fresh context is created for every logical Harness run and reused by that ru
 - `tool_metadata` stores typed passive values whose meaning and hard-limit validation belong to the Toolset that defines each key.
 
 `project_model_context()` is the terminal dynamic-context projection. It combines `BoundEnvironment.project_model_context()` with bounded Agent run and conversation context according to the classified input or tool-results request. It returns typed blocks only and does not edit messages, expose opaque Capability namespaces, persist rendered text, or replace Capability-owned projections such as current time, request usage, selected Host metadata, working tasks, and notes.
+
+`tool_approval` exposes only verified, immutable human approval provenance for the active tool call; it is `None` outside that call and is isolated across concurrent calls. [Tool Execution](07-tool-execution.md#approval-and-deferred-calls) owns its sources, binding, and resume semantics.
 
 `identity` is derived from `instance`; no second value can diverge. The context is not a generic service locator and cannot be supplied by plugins or model content. Skill paths and tool metadata contain no callable service, lifecycle hook, ordering edge, dispatch route, authority, or durable state. They are created once with the logical-run context and reused across its internal `ModelAttempt` values.
 

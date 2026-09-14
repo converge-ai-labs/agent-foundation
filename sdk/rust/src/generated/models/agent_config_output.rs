@@ -44,6 +44,14 @@ pub struct AgentConfigOutput {
     )]
     pub output_spec: Option<Option<Box<models::OutputSpec>>>,
 
+    #[serde(
+        rename = "permissions",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub permissions: Option<Option<Box<models::ToolPermissions>>>,
+
     #[serde(rename = "plugins", skip_serializing_if = "Option::is_none")]
     pub plugins: Option<Vec<models::PluginSelection>>,
 
@@ -57,6 +65,14 @@ pub struct AgentConfigOutput {
         skip_serializing_if = "Option::is_none"
     )]
     pub retries: Option<Option<Box<models::RetryConfig>>>,
+
+    #[serde(
+        rename = "reviewer",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub reviewer: Option<Option<Box<models::AgentReviewer>>>,
 
     #[serde(
         rename = "search",
@@ -96,9 +112,11 @@ impl AgentConfigOutput {
             instructions: None,
             model: Box::new(model),
             output_spec: None,
+            permissions: None,
             plugins: None,
             protocol: Box::new(protocol),
             retries: None,
+            reviewer: None,
             search: None,
             secret_requirements: None,
             skills: None,

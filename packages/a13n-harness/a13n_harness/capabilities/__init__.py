@@ -97,6 +97,16 @@ from .subagents import (
     SubagentWaitResult,
 )
 from .tool_proxy import ToolProxyCapability, ToolProxyConfig, ToolProxyGroup, ToolProxyPlan, ToolProxySelection
+from .tool_review import (
+    AgentToolReviewer,
+    ToolReviewAssessment,
+    ToolReviewCapability,
+    ToolReviewConfig,
+    ToolReviewer,
+    ToolReviewError,
+    ToolReviewRequest,
+    ToolReviewResult,
+)
 from .web import (
     WEB_SCRAPE_BACKEND_ENV,
     WEB_SCRAPE_BACKEND_PRIORITY_ENV,
@@ -166,6 +176,7 @@ __all__ = [
     "WEB_SEARCH_CONTEXT_SIZE_ENV",
     "WEB_SEARCH_MODE_ENV",
     "AgentShellCommandReviewer",
+    "AgentToolReviewer",
     "AskUserQuestionRequest",
     "AsyncDelegateRequest",
     "AsyncExecutionView",
@@ -255,6 +266,13 @@ __all__ = [
     "ToolProxyGroup",
     "ToolProxyPlan",
     "ToolProxySelection",
+    "ToolReviewAssessment",
+    "ToolReviewCapability",
+    "ToolReviewConfig",
+    "ToolReviewError",
+    "ToolReviewRequest",
+    "ToolReviewResult",
+    "ToolReviewer",
     "UserInteractionCapability",
     "UserQuestion",
     "UserQuestionAnswers",

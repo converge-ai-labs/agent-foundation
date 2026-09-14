@@ -84,6 +84,9 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
     async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
         result: dict[str, ToolsetTool[AgentContext]] = {}
         for name, tool in (await self.wrapped.get_tools(ctx)).items():
+            from a13n_harness.tools.identity import identify_tool
+
+            tool = identify_tool(tool)
             definition = tool.tool_def
             validate_proxy_target(definition)
             if proxy_membership(definition) is not None:

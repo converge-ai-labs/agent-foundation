@@ -650,3 +650,26 @@ def test_approval_panel_uses_styled_sections_and_code_not_a_metadata_dump(theme_
     assert "HIGH" in risk.plain and any("bold" in str(span.style) for span in risk.spans)
     assert not any(isinstance(part, Text) and "Approve once" in part.plain for part in sections)
     assert interaction.request.metadata == metadata
+
+
+def test_shared_approval_reason_renders_without_an_empty_shell_risk_row() -> None:
+    from a13n_harness_ui.interactive.approvals import approval_panel
+    from a13n_harness_ui.interactive.theme import resolve_theme
+    from rich.console import Group
+    from rich.text import Text
+
+    interaction = _shell_approval(
+        metadata={
+            "a13n.harness.tool-approval": {"requested_sources": ["reviewer"]},
+            "a13n.harness.invocation-policy": {"metadata": {"token": "details-only"}},
+            "reason": "Confirm the export destination",
+        }
+    )
+    assert "Reason: Confirm the export destination" in interaction.prompt()
+    assert "details-only" not in interaction.display_prompt()
+    panel = approval_panel(interaction.display_prompt(), resolve_theme("dark"))
+    assert isinstance(panel.renderable, Group)
+    text = [item.plain for item in panel.renderable.renderables if isinstance(item, Text)]
+    assert "Approval reason" in text
+    assert not any(item.startswith("Risk ") for item in text)
+    assert any("Confirm the export destination" in item for item in text)

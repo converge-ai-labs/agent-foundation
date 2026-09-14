@@ -11,6 +11,7 @@ from ..types import UNSET, Unset
 if TYPE_CHECKING:
     from ..models.agent_config_output_subagents import AgentConfigOutputSubagents
     from ..models.agent_model import AgentModel
+    from ..models.agent_reviewer import AgentReviewer
     from ..models.asset_publication_config import AssetPublicationConfig
     from ..models.client_tool_definition import ClientToolDefinition
     from ..models.connection_tool_selection import ConnectionToolSelection
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
     from ..models.search_selection import SearchSelection
     from ..models.secret_requirement import SecretRequirement
     from ..models.skill_selection import SkillSelection
+    from ..models.tool_permissions import ToolPermissions
 
 
 T = TypeVar("T", bound="AgentConfigOutput")
@@ -39,8 +41,10 @@ class AgentConfigOutput:
         connection_tools (list[ConnectionToolSelection] | Unset):
         instructions (str | Unset):
         output_spec (None | OutputSpec | Unset):
+        permissions (None | ToolPermissions | Unset):
         plugins (list[PluginSelection] | Unset):
         retries (None | RetryConfig | Unset):
+        reviewer (AgentReviewer | None | Unset):
         search (None | SearchSelection | Unset):
         secret_requirements (list[SecretRequirement] | Unset):
         skills (list[SkillSelection] | Unset):
@@ -56,8 +60,10 @@ class AgentConfigOutput:
     connection_tools: list[ConnectionToolSelection] | Unset = UNSET
     instructions: str | Unset = UNSET
     output_spec: OutputSpec | Unset | None = UNSET
+    permissions: ToolPermissions | Unset | None = UNSET
     plugins: list[PluginSelection] | Unset = UNSET
     retries: RetryConfig | Unset | None = UNSET
+    reviewer: AgentReviewer | Unset | None = UNSET
     search: SearchSelection | Unset | None = UNSET
     secret_requirements: list[SecretRequirement] | Unset = UNSET
     skills: list[SkillSelection] | Unset = UNSET
@@ -65,10 +71,12 @@ class AgentConfigOutput:
     subagents: AgentConfigOutputSubagents | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.agent_reviewer import AgentReviewer
         from ..models.asset_publication_config import AssetPublicationConfig
         from ..models.output_spec import OutputSpec
         from ..models.retry_config import RetryConfig
         from ..models.search_selection import SearchSelection
+        from ..models.tool_permissions import ToolPermissions
 
         input_adapter = self.input_adapter.to_dict()
 
@@ -108,6 +116,14 @@ class AgentConfigOutput:
         else:
             output_spec = self.output_spec
 
+        permissions: dict[str, Any] | Unset | None
+        if isinstance(self.permissions, Unset):
+            permissions = UNSET
+        elif isinstance(self.permissions, ToolPermissions):
+            permissions = self.permissions.to_dict()
+        else:
+            permissions = self.permissions
+
         plugins: list[dict[str, Any]] | Unset = UNSET
         if not isinstance(self.plugins, Unset):
             plugins = []
@@ -122,6 +138,14 @@ class AgentConfigOutput:
             retries = self.retries.to_dict()
         else:
             retries = self.retries
+
+        reviewer: dict[str, Any] | Unset | None
+        if isinstance(self.reviewer, Unset):
+            reviewer = UNSET
+        elif isinstance(self.reviewer, AgentReviewer):
+            reviewer = self.reviewer.to_dict()
+        else:
+            reviewer = self.reviewer
 
         search: dict[str, Any] | Unset | None
         if isinstance(self.search, Unset):
@@ -172,10 +196,14 @@ class AgentConfigOutput:
             field_dict["instructions"] = instructions
         if output_spec is not UNSET:
             field_dict["output_spec"] = output_spec
+        if permissions is not UNSET:
+            field_dict["permissions"] = permissions
         if plugins is not UNSET:
             field_dict["plugins"] = plugins
         if retries is not UNSET:
             field_dict["retries"] = retries
+        if reviewer is not UNSET:
+            field_dict["reviewer"] = reviewer
         if search is not UNSET:
             field_dict["search"] = search
         if secret_requirements is not UNSET:
@@ -193,6 +221,7 @@ class AgentConfigOutput:
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         from ..models.agent_config_output_subagents import AgentConfigOutputSubagents
         from ..models.agent_model import AgentModel
+        from ..models.agent_reviewer import AgentReviewer
         from ..models.asset_publication_config import AssetPublicationConfig
         from ..models.client_tool_definition import ClientToolDefinition
         from ..models.connection_tool_selection import ConnectionToolSelection
@@ -204,6 +233,7 @@ class AgentConfigOutput:
         from ..models.search_selection import SearchSelection
         from ..models.secret_requirement import SecretRequirement
         from ..models.skill_selection import SkillSelection
+        from ..models.tool_permissions import ToolPermissions
 
         d = dict(src_dict)
         input_adapter = InputAdapterConfig.from_dict(d.pop("input_adapter"))
@@ -266,6 +296,23 @@ class AgentConfigOutput:
 
         output_spec = _parse_output_spec(d.pop("output_spec", UNSET))
 
+        def _parse_permissions(data: object) -> ToolPermissions | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                permissions_type_0 = ToolPermissions.from_dict(data)
+
+                return permissions_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(ToolPermissions | Unset | None, data)
+
+        permissions = _parse_permissions(d.pop("permissions", UNSET))
+
         _plugins = d.pop("plugins", UNSET)
         plugins: list[PluginSelection] | Unset = UNSET
         if _plugins is not UNSET:
@@ -291,6 +338,23 @@ class AgentConfigOutput:
             return cast(RetryConfig | Unset | None, data)
 
         retries = _parse_retries(d.pop("retries", UNSET))
+
+        def _parse_reviewer(data: object) -> AgentReviewer | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                reviewer_type_0 = AgentReviewer.from_dict(data)
+
+                return reviewer_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(AgentReviewer | Unset | None, data)
+
+        reviewer = _parse_reviewer(d.pop("reviewer", UNSET))
 
         def _parse_search(data: object) -> SearchSelection | Unset | None:
             if data is None:
@@ -350,8 +414,10 @@ class AgentConfigOutput:
             connection_tools=connection_tools,
             instructions=instructions,
             output_spec=output_spec,
+            permissions=permissions,
             plugins=plugins,
             retries=retries,
+            reviewer=reviewer,
             search=search,
             secret_requirements=secret_requirements,
             skills=skills,

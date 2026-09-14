@@ -36,15 +36,16 @@ def approval_panel(source: str, theme: ResolvedTheme) -> Panel:
     tool.append("  ·  " + value("position"), style=f"not bold {muted}")
     content.append(tool)
     if value("risk") or value("reason") or value("error"):
-        content.extend((Text(""), Text("Shell review", style=f"bold {heading}")))
+        title = "Shell review" if value("risk") or value("error") else "Approval reason"
+        content.extend((Text(""), Text(title, style=f"bold {heading}")))
         if value("error"):
             content.append(Text(value("error"), style=accent))
         else:
-            risk = value("risk")
-            risk_color = colors["failed"] if risk in {"high", "extra_high"} else accent
-            row = Text("Risk    ", style=muted)
-            row.append(risk.replace("_", " ").upper(), style=f"bold {risk_color}")
-            content.append(row)
+            if risk := value("risk"):
+                risk_color = colors["failed"] if risk in {"high", "extra_high"} else accent
+                row = Text("Risk    ", style=muted)
+                row.append(risk.replace("_", " ").upper(), style=f"bold {risk_color}")
+                content.append(row)
             reason = Text("Reason  ", style=muted)
             reason.append(value("reason"))
             content.append(reason)

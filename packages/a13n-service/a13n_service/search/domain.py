@@ -7,6 +7,7 @@ import re
 from datetime import datetime
 from typing import Annotated, Literal
 
+from a13n_harness.toolsets.domains import DomainRestrictions
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 from a13n_service.iam.domain import PrincipalRef
@@ -30,7 +31,7 @@ def normalize_domain(value: str) -> str:
         raise ValueError("invalid DNS hostname") from error
 
 
-class SearchSelection(BaseModel):
+class SearchSelection(DomainRestrictions):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     provider_id: ObjectId

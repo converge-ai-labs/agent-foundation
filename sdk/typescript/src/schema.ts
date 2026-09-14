@@ -3426,6 +3426,7 @@ export interface components {
       instructions?: string;
       model: components["schemas"]["AgentModel"];
       output_spec?: components["schemas"]["OutputSpec"] | null;
+      permissions?: components["schemas"]["ToolPermissions"] | null;
       /**
        * Plugins
        * @default []
@@ -3433,6 +3434,7 @@ export interface components {
       plugins?: components["schemas"]["PluginSelection"][];
       protocol: components["schemas"]["ProtocolConfig"];
       retries?: components["schemas"]["RetryConfig"] | null;
+      reviewer?: components["schemas"]["AgentReviewer"] | null;
       search?: components["schemas"]["SearchSelection"] | null;
       /**
        * Secret Requirements
@@ -3477,6 +3479,7 @@ export interface components {
       instructions?: string;
       model: components["schemas"]["AgentModel"];
       output_spec?: components["schemas"]["OutputSpec"] | null;
+      permissions?: components["schemas"]["ToolPermissions"] | null;
       /**
        * Plugins
        * @default []
@@ -3484,6 +3487,7 @@ export interface components {
       plugins?: components["schemas"]["PluginSelection"][];
       protocol: components["schemas"]["ProtocolConfig"];
       retries?: components["schemas"]["RetryConfig"] | null;
+      reviewer?: components["schemas"]["AgentReviewer"] | null;
       search?: components["schemas"]["SearchSelection"] | null;
       /**
        * Secret Requirements
@@ -3540,6 +3544,33 @@ export interface components {
       settings?: {
         [key: string]: components["schemas"]["JsonValue"];
       };
+    };
+    /**
+     * AgentReviewer
+     * @description Reviewer selected by immutable managed Model ID, never a provider route.
+     */
+    AgentReviewer: {
+      /** Instruction */
+      instruction?: string | null;
+      /** Model */
+      model: string;
+      /** Model Settings */
+      model_settings?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      } | null;
+      /**
+       * On Error
+       * @default approval_required
+       * @enum {string}
+       */
+      on_error?: "deny" | "approval_required";
+      /** Shell Instruction */
+      shell_instruction?: string | null;
+      /**
+       * Timeout Seconds
+       * @default 120
+       */
+      timeout_seconds?: number;
     };
     /** AgentRevision */
     AgentRevision: {
@@ -3600,9 +3631,11 @@ export interface components {
       instructions?: string | null;
       model?: components["schemas"]["ModelOverride"] | null;
       output_spec?: components["schemas"]["OutputSpec"] | null;
+      permissions?: components["schemas"]["ToolPermissions"] | null;
       /** Plugins */
       plugins?: components["schemas"]["PluginSelection"][] | null;
       retries?: components["schemas"]["RetryOverride"] | null;
+      reviewer?: components["schemas"]["AgentReviewer"] | null;
       search?: components["schemas"]["SearchSelection"] | null;
       /** Skills */
       skills?: components["schemas"]["SkillSelection"][] | null;
@@ -3622,9 +3655,11 @@ export interface components {
       instructions?: string | null;
       model?: components["schemas"]["ModelOverride"] | null;
       output_spec?: components["schemas"]["OutputSpec"] | null;
+      permissions?: components["schemas"]["ToolPermissions"] | null;
       /** Plugins */
       plugins?: components["schemas"]["PluginSelection"][] | null;
       retries?: components["schemas"]["RetryOverride"] | null;
+      reviewer?: components["schemas"]["AgentReviewer"] | null;
       search?: components["schemas"]["SearchSelection"] | null;
       /** Skills */
       skills?: components["schemas"]["SkillSelection"][] | null;
@@ -7185,6 +7220,16 @@ export interface components {
     /** SearchSelection */
     SearchSelection: {
       /**
+       * Allow Domains
+       * @default []
+       */
+      allow_domains?: string[];
+      /**
+       * Deny Domains
+       * @default []
+       */
+      deny_domains?: string[];
+      /**
        * Include Domains
        * @default []
        */
@@ -7938,6 +7983,25 @@ export interface components {
       toolCallId: string;
     } & {
       [key: string]: unknown;
+    };
+    /**
+     * ToolPermissionMode
+     * @enum {string}
+     */
+    ToolPermissionMode: "allow" | "deny" | "ask" | "review";
+    /** ToolPermissionSetting */
+    ToolPermissionSetting: components["schemas"]["ToolPermissionMode"] | "auto";
+    /**
+     * ToolPermissions
+     * @description Portable configuration. Auto resolves a tool default, never an execution decision.
+     */
+    ToolPermissions: {
+      /** @default auto */
+      default?: components["schemas"]["ToolPermissionSetting"];
+      /** Rules */
+      rules?: {
+        [key: string]: components["schemas"]["ToolPermissionSetting"];
+      };
     };
     /** Trace */
     Trace: {

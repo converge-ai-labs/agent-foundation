@@ -4,31 +4,35 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from decimal import Decimal
 from enum import StrEnum
 from functools import cache
 from importlib.resources import files
 from typing import Protocol, cast, runtime_checkable
-from uuid import uuid4
 
 from a13n_logging import get_logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_ai import Agent, RunContext, ToolOutput
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import ModelHTTPError
-from pydantic_ai.messages import AgentStreamEvent
 from pydantic_ai.models import Model, ModelResolutionContext
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RunUsage, UsageLimits
 
+from a13n_harness.capabilities._review import drain_review_events as _drain_review_events
+from a13n_harness.capabilities._review import provider_usage_receipts as _provider_usage_receipts
+from a13n_harness.capabilities.tool_review import (
+    ToolReviewAssessment,
+    ToolReviewError,
+    ToolReviewRequest,
+    ToolReviewResult,
+)
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.models.structured_output import StructuredOutputAutoToolChoiceModel
 from a13n_harness.observation import _auxiliary_agent_capabilities
-from a13n_harness.usage import ProviderUsage, UsageMeasure
+from a13n_harness.usage import ProviderUsage
 
 SHELL_REVIEW_CAPABILITY_ID = "a13n.shell-review"
 SHELL_EXEC_TOOL_ID = "environment.shell_exec"
@@ -334,6 +338,48 @@ class ShellReviewCapability(AbstractCapability[AgentContext]):
                 raise ShellReviewError("shell_review_timeout") from exc
         return ShellReviewResult.model_validate(result)
 
+    def has_reviewer(self, tool_id: str) -> bool:
+        return tool_id == SHELL_EXEC_TOOL_ID
+
+    async def review_tool(self, request: ToolReviewRequest, *, context: AgentContext) -> ToolReviewResult:
+        """Adapt the existing shell configuration to the unified front review gate."""
+        arguments = dict(request.arguments)
+        environment = arguments.pop("environment", None)
+        environment_keys = environment.get("keys", []) if isinstance(environment, dict) else []
+        try:
+            legacy = ShellReviewRequest.model_validate(
+                {
+                    **{key: value for key, value in arguments.items() if key in ShellReviewRequest.model_fields},
+                    "tool_id": request.tool_id,
+                    "tool_call_id": request.tool_call_id,
+                    "environment_keys": environment_keys,
+                }
+            )
+            result = await self.review(legacy, context=context)
+        except asyncio.CancelledError:
+            raise
+        except ShellReviewError as exc:
+            code = "tool_review_timeout" if exc.code == "shell_review_timeout" else "tool_review_failed"
+            raise ToolReviewError(code, usage=exc.usage) from exc
+        except DefinitionError:
+            raise
+        except Exception as exc:
+            raise ToolReviewError("tool_review_failed") from exc
+        action = self.action_for(result.assessment)
+        return ToolReviewResult(
+            assessment=ToolReviewAssessment(
+                decision=(
+                    "deny"
+                    if action is ShellReviewAction.DENY
+                    else "approval_required"
+                    if action is ShellReviewAction.APPROVAL_REQUIRED
+                    else "allow"
+                ),
+                reason=result.assessment.reason,
+            ),
+            usage=result.usage,
+        )
+
     def action_for(self, assessment: ShellReviewAssessment) -> ShellReviewAction | None:
         """Return the configured restriction when the assessment reaches the threshold."""
         assessment = ShellReviewAssessment.model_validate(assessment)
@@ -346,45 +392,9 @@ class ShellReviewCapability(AbstractCapability[AgentContext]):
             raise DefinitionError("Shell review cannot cross logical runs.", code="capability_scope_invalid")
 
 
-async def _drain_review_events(
-    ctx: RunContext[None],
-    events: AsyncIterable[AgentStreamEvent],
-) -> None:
-    """Force the single review request through the provider streaming path."""
-    del ctx
-    async for _ in events:
-        pass
-
-
 @cache
 def _system_prompt() -> str:
     return files("a13n_harness.toolsets.prompts").joinpath("shell_review.md").read_text(encoding="utf-8").strip()
-
-
-def _provider_usage_receipts(model: Model, usage: RunUsage) -> tuple[ProviderUsage, ...]:
-    measures = tuple(
-        UsageMeasure(unit=unit, quantity=Decimal(value))
-        for unit, value in (
-            ("requests", usage.requests),
-            ("tool_calls", usage.tool_calls),
-            ("input_tokens", usage.input_tokens),
-            ("cache_write_tokens", usage.cache_write_tokens),
-            ("cache_read_tokens", usage.cache_read_tokens),
-            ("output_tokens", usage.output_tokens),
-        )
-        if value
-    )
-    if not measures:
-        return ()
-    return (
-        ProviderUsage(
-            usage_id=f"shell-review-{uuid4()}",
-            provider=model.system,
-            product=model.model_name,
-            timestamp=datetime.now(UTC),
-            measures=measures,
-        ),
-    )
 
 
 __all__ = [

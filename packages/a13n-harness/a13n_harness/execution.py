@@ -104,6 +104,7 @@ from a13n_harness.capabilities.tool_proxy import (
     _ToolProxyGroupCapability,
     _ToolProxySurfaceCapability,
 )
+from a13n_harness.capabilities.tool_review import TOOL_REVIEW_CAPABILITY_ID, ToolReviewCapability
 from a13n_harness.capabilities.web import (
     WEB_CAPABILITY_ID,
     WEB_RUN_CAPABILITY_ID,
@@ -247,6 +248,7 @@ from a13n_harness.tools.invocation import (
     TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID,
     ToolExecutionBoundaryCapability,
 )
+from a13n_harness.tools.permissions import TOOL_PERMISSIONS_CAPABILITY_ID, ToolPermissionsCapability
 from a13n_harness.tools.policy import INVOCATION_POLICY_CAPABILITY_ID, InvocationPolicyCapability
 from a13n_harness.tools.surface import (
     TOOL_SURFACE_CAPABILITY_ID,
@@ -2823,17 +2825,22 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
 def _first_party_spec_reserved_ids(spec: AgentSpec) -> frozenset[str]:
     """Authorize reserved definition IDs selected by exact first-party wire names."""
     names = [capability.name for capability in spec.capabilities]
-    shell_review_name = ShellReviewCapability.get_serialization_name()
-    if shell_review_name is None:
-        raise AssertionError("ShellReviewCapability must be serializable")
-    count = names.count(shell_review_name)
-    if count > 1:
-        raise DefinitionError(
-            "AgentSpec contains duplicate ShellReviewCapability declarations.",
-            code="capability_id_duplicate",
-            details={"capability_id": SHELL_REVIEW_CAPABILITY_ID, "source": "definition"},
-        )
-    return frozenset({SHELL_REVIEW_CAPABILITY_ID}) if count else frozenset()
+    selected: set[str] = set()
+    for capability_type in (ShellReviewCapability, ToolReviewCapability, ToolPermissionsCapability):
+        name = capability_type.get_serialization_name()
+        if name is None:
+            raise AssertionError(f"{capability_type.__name__} must be serializable")
+        count = names.count(name)
+        if count > 1:
+            raise DefinitionError(
+                f"AgentSpec contains duplicate {name} declarations.",
+                code="capability_id_duplicate",
+                details={"capability_id": capability_type.id, "source": "definition"},
+            )
+        if count:
+            assert capability_type.id is not None
+            selected.add(capability_type.id)
+    return frozenset(selected)
 
 
 def _resolve_business_output[OutputT](
@@ -2912,6 +2919,8 @@ def _validate_built_capability_tree(
         TOOL_PROXY_CAPABILITY_ID,
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
         SHELL_REVIEW_CAPABILITY_ID,
+        TOOL_REVIEW_CAPABILITY_ID,
+        TOOL_PERMISSIONS_CAPABILITY_ID,
         FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID,
         RUNTIME_CONTEXT_CAPABILITY_ID,
         WORKSPACE_OUTLINE_CAPABILITY_ID,
@@ -3059,6 +3068,8 @@ def _validate_built_capability_tree(
                 _ToolProxySurfaceCapability,
                 DynamicEnvironmentCapability,
                 ShellReviewCapability,
+                ToolReviewCapability,
+                ToolPermissionsCapability,
                 RuntimeContextCapability,
                 WorkspaceOutlineCapability,
                 FileContextCapability,
@@ -3254,6 +3265,8 @@ def _validate_capability_source(
         TOOL_PROXY_CAPABILITY_ID,
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
         SHELL_REVIEW_CAPABILITY_ID,
+        TOOL_REVIEW_CAPABILITY_ID,
+        TOOL_PERMISSIONS_CAPABILITY_ID,
         FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID,
         RUNTIME_CONTEXT_CAPABILITY_ID,
         WORKSPACE_OUTLINE_CAPABILITY_ID,
@@ -3293,6 +3306,8 @@ def _validate_capability_source(
                         _ToolProxySurfaceCapability,
                         DynamicEnvironmentCapability,
                         ShellReviewCapability,
+                        ToolReviewCapability,
+                        ToolPermissionsCapability,
                         RuntimeContextCapability,
                         WorkspaceOutlineCapability,
                         FileContextCapability,
