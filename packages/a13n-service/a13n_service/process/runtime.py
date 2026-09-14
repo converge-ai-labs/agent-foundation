@@ -27,7 +27,6 @@ if TYPE_CHECKING:
     from a13n_service.models.service import ModelService
     from a13n_service.observability import ObservabilityRuntime
     from a13n_service.run_stream import RedisRunStream, RunReplayStore
-    from a13n_service.search.service import SearchProviderService
     from a13n_service.secrets import SecretProtector
     from a13n_service.settings import Settings
     from a13n_service.skills.catalog import SkillCatalogService
@@ -37,6 +36,7 @@ if TYPE_CHECKING:
     from a13n_service.storage import StorageResources
     from a13n_service.subagents.maintenance import SubagentMaintenance
     from a13n_service.trace_query.service import TraceQueryService
+    from a13n_service.web.service import WebProviderService
 
 logger = logging.getLogger("a13n_service.process.runtime")
 
@@ -68,7 +68,7 @@ class ControlRuntime:
     lifecycle_events: LifecycleEventService
     gateway: GatewayRuntime
     subagent_maintenance: SubagentMaintenance
-    search_providers: SearchProviderService | None = None
+    web_providers: WebProviderService | None = None
     identity: IdentityRuntime | None = None
 
 

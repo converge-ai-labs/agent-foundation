@@ -39,6 +39,12 @@ The complete machine-readable validation schema, including named enum/union defi
 | -------------- | -------------------------- | --------------- | ------------------------ |
 | `plugins.keys` | `A13N_SERVICE_PLUGIN_KEYS` | array of string | maxItems=128; default=[] |
 
+## `provider_plugins`
+
+| Setting                    | Environment variable                   | Type / choices  | Constraints and default  |
+| -------------------------- | -------------------------------------- | --------------- | ------------------------ |
+| `provider_plugins.enabled` | `A13N_SERVICE_PROVIDER_PLUGIN_ENABLED` | array of string | maxItems=128; default=[] |
+
 ## `worker`
 
 | Setting                        | Environment variable                        | Type / choices | Constraints and default                      |
@@ -62,7 +68,6 @@ The complete machine-readable validation schema, including named enum/union defi
 | ------------------------------------------- | ------------------------------------------------------- | --------------- | -------------------------------------------- |
 | `environments.provider_builtins`            | `A13N_SERVICE_ENVIRONMENT_PROVIDER_BUILTINS`            | array of string | default=["a13n.e2b", "a13n.http-envd"]       |
 | `environments.local_providers`              | `A13N_SERVICE_ENVIRONMENT_LOCAL_PROVIDERS`              | object          | —                                            |
-| `environments.provider_extensions`          | `A13N_SERVICE_ENVIRONMENT_PROVIDER_EXTENSIONS`          | array of string | default=[]                                   |
 | `environments.maintenance_interval_seconds` | `A13N_SERVICE_ENVIRONMENT_MAINTENANCE_INTERVAL_SECONDS` | number          | maximum=300; exclusiveMinimum=0; default=5   |
 | `environments.operation_timeout_seconds`    | `A13N_SERVICE_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS`    | number          | maximum=3600; exclusiveMinimum=0; default=60 |
 | `environments.max_targets_per_workspace`    | `A13N_SERVICE_ENVIRONMENT_MAX_TARGETS_PER_WORKSPACE`    | integer         | minimum=1; default=1000                      |

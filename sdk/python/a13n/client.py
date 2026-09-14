@@ -14,14 +14,14 @@ from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
 from .generated.client import AuthenticatedClient
 from .generated.types import Response
 from .models import (
-    CreateSearchProviderRequest,
+    CreateWebProviderRequest,
     Page,
     Representation,
-    SearchProvider,
-    SearchProviderDefinition,
-    SearchProviderReference,
-    SearchProviderTestResult,
-    UpdateSearchProviderRequest,
+    UpdateWebProviderRequest,
+    WebProvider,
+    WebProviderDefinition,
+    WebProviderReference,
+    WebProviderTestResult,
 )
 
 
@@ -50,15 +50,15 @@ class ApiError(Exception):
 
 
 @dataclass(frozen=True)
-class SearchScope:
+class WebProviderScope:
     kind: Literal["workspace", "organization"]
     id: str
 
     @property
     def path(self) -> str:
         if self.kind not in {"workspace", "organization"}:
-            raise ValueError("Invalid search scope")
-        return f"/{self.kind}s/{_segment(self.id)}/search-providers"
+            raise ValueError("Invalid Web Provider scope")
+        return f"/{self.kind}s/{_segment(self.id)}/web-providers"
 
 
 def _segment(value: str) -> str:
@@ -76,7 +76,7 @@ class _EmptyRequest(BaseModel):
 
 
 class Client:
-    """Bearer client for the Search Provider surface of Native /api/v1.
+    """Bearer client for the Web Provider surface of Native /api/v1.
 
     Owns its transport, including a caller-provided transport. Use as an async
     context manager or call aclose(). Every operation makes one HTTP request.
@@ -181,7 +181,7 @@ class Client:
         if self._closed:
             raise TransportError("Client is closed")
         payload = body.model_dump(mode="json", exclude_unset=True) if body else None
-        if isinstance(body, CreateSearchProviderRequest | UpdateSearchProviderRequest) and body.credential is not None:
+        if isinstance(body, CreateWebProviderRequest | UpdateWebProviderRequest) and body.credential is not None:
             assert payload is not None
             payload["credential"] = body.credential.get_secret_value()
         task = asyncio.current_task()
@@ -238,62 +238,62 @@ class Client:
             raise ValueError("Workspace operations require a Workspace-bound credential")
         return WorkspaceClient(self, context.workspace_id)
 
-    async def search_provider_types(self) -> Page[SearchProviderDefinition]:
-        return (await self._request("GET", "/search-provider-types", Page[SearchProviderDefinition])).value
+    async def web_provider_types(self) -> Page[WebProviderDefinition]:
+        return (await self._request("GET", "/web-provider-types", Page[WebProviderDefinition])).value
 
-    async def search_provider_type(self, provider_type: str) -> SearchProviderDefinition:
+    async def web_provider_type(self, provider_type: str) -> WebProviderDefinition:
         return (
-            await self._request("GET", f"/search-provider-types/{_segment(provider_type)}", SearchProviderDefinition)
+            await self._request("GET", f"/web-provider-types/{_segment(provider_type)}", WebProviderDefinition)
         ).value
 
-    async def search_providers(
+    async def web_providers(
         self,
-        scope: SearchScope,
+        scope: WebProviderScope,
         *,
         cursor: str | None = None,
         limit: int = 100,
         type: str | None = None,
         enabled: bool | None = None,
-    ) -> Page[SearchProvider]:
+    ) -> Page[WebProvider]:
         params = {
             key: value
             for key, value in {"cursor": cursor, "limit": limit, "type": type, "enabled": enabled}.items()
             if value is not None
         }
-        return (await self._request("GET", scope.path, Page[SearchProvider], params=params)).value
+        return (await self._request("GET", scope.path, Page[WebProvider], params=params)).value
 
-    async def search_provider(self, scope: SearchScope, provider_id: str) -> Representation[SearchProvider]:
-        return await self._request("GET", f"{scope.path}/{_segment(provider_id)}", SearchProvider)
+    async def web_provider(self, scope: WebProviderScope, provider_id: str) -> Representation[WebProvider]:
+        return await self._request("GET", f"{scope.path}/{_segment(provider_id)}", WebProvider)
 
-    async def create_search_provider(
-        self, scope: SearchScope, request: CreateSearchProviderRequest
-    ) -> Representation[SearchProvider]:
-        return await self._request("POST", scope.path, SearchProvider, body=request)
+    async def create_web_provider(
+        self, scope: WebProviderScope, request: CreateWebProviderRequest
+    ) -> Representation[WebProvider]:
+        return await self._request("POST", scope.path, WebProvider, body=request)
 
-    async def update_search_provider(
-        self, scope: SearchScope, provider_id: str, etag: str, request: UpdateSearchProviderRequest
-    ) -> Representation[SearchProvider]:
+    async def update_web_provider(
+        self, scope: WebProviderScope, provider_id: str, etag: str, request: UpdateWebProviderRequest
+    ) -> Representation[WebProvider]:
         if not etag or etag.startswith("W/"):
             raise ValueError("A strong account ETag is required")
         return await self._request(
-            "PATCH", f"{scope.path}/{_segment(provider_id)}", SearchProvider, body=request, etag=etag
+            "PATCH", f"{scope.path}/{_segment(provider_id)}", WebProvider, body=request, etag=etag
         )
 
-    async def test_search_provider(self, scope: SearchScope, provider_id: str) -> SearchProviderTestResult:
+    async def test_web_provider(self, scope: WebProviderScope, provider_id: str) -> WebProviderTestResult:
         # Explicit empty object; a saved-account probe is never retried.
         return (
             await self._request(
-                "POST", f"{scope.path}/{_segment(provider_id)}/test", SearchProviderTestResult, body=_EmptyRequest()
+                "POST", f"{scope.path}/{_segment(provider_id)}/test", WebProviderTestResult, body=_EmptyRequest()
             )
         ).value
 
-    async def search_provider_references(
-        self, scope: SearchScope, provider_id: str, *, cursor: str | None = None, limit: int = 100
-    ) -> Page[SearchProviderReference]:
+    async def web_provider_references(
+        self, scope: WebProviderScope, provider_id: str, *, cursor: str | None = None, limit: int = 100
+    ) -> Page[WebProviderReference]:
         params = {"limit": limit, **({"cursor": cursor} if cursor is not None else {})}
         return (
             await self._request(
-                "GET", f"{scope.path}/{_segment(provider_id)}/references", Page[SearchProviderReference], params=params
+                "GET", f"{scope.path}/{_segment(provider_id)}/references", Page[WebProviderReference], params=params
             )
         ).value
 
@@ -303,40 +303,40 @@ class WorkspaceClient:
 
     def __init__(self, client: Client, workspace_id: str):
         self._client = client
-        self._scope = SearchScope("workspace", workspace_id)
+        self._scope = WebProviderScope("workspace", workspace_id)
 
-    async def search_providers(
+    async def web_providers(
         self,
         *,
         cursor: str | None = None,
         limit: int = 100,
         type: str | None = None,
         enabled: bool | None = None,
-    ) -> Page[SearchProvider]:
-        return await self._client.search_providers(self._scope, cursor=cursor, limit=limit, type=type, enabled=enabled)
+    ) -> Page[WebProvider]:
+        return await self._client.web_providers(self._scope, cursor=cursor, limit=limit, type=type, enabled=enabled)
 
-    async def search_provider(self, provider_id: str) -> Representation[SearchProvider]:
-        return await self._client.search_provider(self._scope, provider_id)
+    async def web_provider(self, provider_id: str) -> Representation[WebProvider]:
+        return await self._client.web_provider(self._scope, provider_id)
 
-    async def create_search_provider(self, request: CreateSearchProviderRequest) -> Representation[SearchProvider]:
-        return await self._client.create_search_provider(self._scope, request)
+    async def create_web_provider(self, request: CreateWebProviderRequest) -> Representation[WebProvider]:
+        return await self._client.create_web_provider(self._scope, request)
 
-    async def update_search_provider(
+    async def update_web_provider(
         self,
         provider_id: str,
         etag: str,
-        request: UpdateSearchProviderRequest,
-    ) -> Representation[SearchProvider]:
-        return await self._client.update_search_provider(self._scope, provider_id, etag, request)
+        request: UpdateWebProviderRequest,
+    ) -> Representation[WebProvider]:
+        return await self._client.update_web_provider(self._scope, provider_id, etag, request)
 
-    async def test_search_provider(self, provider_id: str) -> SearchProviderTestResult:
-        return await self._client.test_search_provider(self._scope, provider_id)
+    async def test_web_provider(self, provider_id: str) -> WebProviderTestResult:
+        return await self._client.test_web_provider(self._scope, provider_id)
 
-    async def search_provider_references(
+    async def web_provider_references(
         self,
         provider_id: str,
         *,
         cursor: str | None = None,
         limit: int = 100,
-    ) -> Page[SearchProviderReference]:
-        return await self._client.search_provider_references(self._scope, provider_id, cursor=cursor, limit=limit)
+    ) -> Page[WebProviderReference]:
+        return await self._client.web_provider_references(self._scope, provider_id, cursor=cursor, limit=limit)

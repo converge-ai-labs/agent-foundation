@@ -13,14 +13,6 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AgentConfigInput {
-    #[serde(
-        rename = "asset_publication",
-        default,
-        with = "::serde_with::rust::double_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub asset_publication: Option<Option<Box<models::AssetPublicationConfig>>>,
-
     #[serde(rename = "client_tools", skip_serializing_if = "Option::is_none")]
     pub client_tools: Option<Vec<models::ClientToolDefinition>>,
 
@@ -43,14 +35,6 @@ pub struct AgentConfigInput {
         skip_serializing_if = "Option::is_none"
     )]
     pub output_spec: Option<Option<Box<models::OutputSpec>>>,
-
-    #[serde(
-        rename = "permissions",
-        default,
-        with = "::serde_with::rust::double_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub permissions: Option<Option<Box<models::ToolPermissions>>>,
 
     #[serde(rename = "plugins", skip_serializing_if = "Option::is_none")]
     pub plugins: Option<Vec<models::PluginSelection>>,
@@ -75,14 +59,6 @@ pub struct AgentConfigInput {
     pub reviewer: Option<Option<Box<models::AgentReviewer>>>,
 
     #[serde(
-        rename = "search",
-        default,
-        with = "::serde_with::rust::double_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub search: Option<Option<Box<models::SearchSelection>>>,
-
-    #[serde(
         rename = "secret_requirements",
         skip_serializing_if = "Option::is_none"
     )]
@@ -96,6 +72,9 @@ pub struct AgentConfigInput {
 
     #[serde(rename = "subagents", skip_serializing_if = "Option::is_none")]
     pub subagents: Option<serde_json::Value>,
+
+    #[serde(rename = "toolsets", skip_serializing_if = "Option::is_none")]
+    pub toolsets: Option<std::collections::HashMap<String, models::ToolsetSelection>>,
 }
 
 impl AgentConfigInput {
@@ -105,23 +84,21 @@ impl AgentConfigInput {
         protocol: models::ProtocolConfig,
     ) -> AgentConfigInput {
         AgentConfigInput {
-            asset_publication: None,
             client_tools: None,
             connection_tools: None,
             input_adapter: Box::new(input_adapter),
             instructions: None,
             model: Box::new(model),
             output_spec: None,
-            permissions: None,
             plugins: None,
             protocol: Box::new(protocol),
             retries: None,
             reviewer: None,
-            search: None,
             secret_requirements: None,
             skills: None,
             subagent_mode: None,
             subagents: None,
+            toolsets: None,
         }
     }
 }

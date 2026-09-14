@@ -5,13 +5,13 @@ import { useAccess } from "../../layout/workspace";
 import { providerCategories, providerCategory } from "./categories";
 import { Empty } from "../../shared/feedback";
 import { Providers } from "../models/providers";
-import { SearchProviders } from "../search/page";
+import { WebProviders } from "../web/page";
 import { EnvironmentProviders } from "../environments/providers";
 import { ConnectorProviders } from "../connectors/providers";
 
 const components = {
   models: Providers,
-  search: SearchProviders,
+  search: WebProviders,
   environments: EnvironmentProviders,
   connectors: ConnectorProviders,
 };

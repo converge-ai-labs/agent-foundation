@@ -57,9 +57,16 @@ async def test_agent_revision_and_invocation_use_connectivity_resolver(
                 "characteristics": {"context_window": 128000},
             },
             "input_adapter": {"adapter_key": "native"},
+            "reviewer": {"model": MODEL_ID},
             "connection_tools": [
-                *[{"connection_id": CONNECTOR_CONNECTION_ID, "tools": ["find_order"]}],
-                *[{"connection_id": MCP_CONNECTION_ID, "defer_loading": True}],
+                *[
+                    {
+                        "connection_id": CONNECTOR_CONNECTION_ID,
+                        "tools": ["find_order"],
+                        "permission": "allow",
+                    }
+                ],
+                *[{"connection_id": MCP_CONNECTION_ID, "defer_loading": True, "permission": "allow"}],
             ],
             "protocol": {"public_name": "Selection test"},
         }

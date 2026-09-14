@@ -10,10 +10,10 @@ from a13n_service.iam.cleanup import OwnerCleanup
 from a13n_service.object_retention.collector import ObjectCollector
 from a13n_service.process.background import BackgroundTask
 from a13n_service.process.runtime import SharedRuntime
-from a13n_service.search.cleanup import SearchProviderOwnerCleanup
 from a13n_service.secrets.cleanup import SecretOwnerCleanup
 from a13n_service.settings import Settings
 from a13n_service.skills.retention import SkillUploadRetention
+from a13n_service.web.cleanup import WebProviderOwnerCleanup
 
 
 def build_collection_tasks(settings: Settings, shared: SharedRuntime) -> tuple[BackgroundTask, ...]:
@@ -38,7 +38,7 @@ def build_collection_tasks(settings: Settings, shared: SharedRuntime) -> tuple[B
             ).scan,
         ),
         ("secret_owner_cleanup", SecretOwnerCleanup(sessions, batch_limit=limit).scan),
-        ("search_provider_owner_cleanup", SearchProviderOwnerCleanup(sessions, batch_limit=limit).scan),
+        ("web_provider_owner_cleanup", WebProviderOwnerCleanup(sessions, batch_limit=limit).scan),
         ("skill_upload_retention", SkillUploadRetention(sessions, batch_limit=limit).scan),
         (
             "hook_history_retention",

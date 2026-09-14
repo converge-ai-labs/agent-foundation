@@ -33,20 +33,21 @@ from a13n_service.iam.http.profile_router import router as profile_router
 from a13n_service.iam.http.recovery_router import router as recovery_router
 from a13n_service.interactions.threads import router as thread_router
 from a13n_service.lifecycle.router import router as lifecycle_router
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import ProviderRegistry
 from a13n_service.models.router import router as model_router
 from a13n_service.openapi import install_openapi
 from a13n_service.process.components import Components, snapshot_components
 from a13n_service.process.lifecycle import open_process_runtime
 from a13n_service.process.roles import owns_connectivity_data, owns_control
 from a13n_service.process.runtime import ProcessStatus
+from a13n_service.provider_plugins import ProviderCatalogs, load_provider_catalogs
 from a13n_service.request_runtime import get_process_runtime
-from a13n_service.search.router import router as search_router
 from a13n_service.settings import Settings, get_settings
 from a13n_service.skills.router import router as skill_router
 from a13n_service.storage import short_session
 from a13n_service.trace_query.provider import TraceQueryProviderRegistry
 from a13n_service.trace_query.router import router as trace_query_router
+from a13n_service.web.router import router as web_router
 
 logger = logging.getLogger("a13n_service.app")
 
@@ -58,6 +59,7 @@ def _lifespan(
     components: Components,
     process_status: ProcessStatus,
     trace_query_provider_registry: TraceQueryProviderRegistry,
+    provider_catalogs: ProviderCatalogs,
 ):
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -66,7 +68,8 @@ def _lifespan(
             components,
             process_status,
             trace_query_provider_registry=trace_query_provider_registry,
-            model_provider_registry=built_in_provider_registry(),
+            model_provider_registry=ProviderRegistry(provider_catalogs.model),
+            provider_catalogs=provider_catalogs,
             model_endpoint_policy=EndpointPolicy.from_operator_allowlist(
                 private_domains=settings.models.private_endpoint_domains,
                 private_cidrs=settings.models.private_endpoint_cidrs,
@@ -82,6 +85,27 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
     """Create an application without opening external resources."""
 
     resolved_settings = settings or get_settings()
+    provider_catalogs = load_provider_catalogs(resolved_settings.provider_plugins.enabled)
+    logger.info(
+        "provider_plugins_loaded",
+        extra={
+            "event": "provider_plugins_loaded",
+            "plugins": [
+                {
+                    "entry_point": plugin.entry_point,
+                    "distribution": plugin.distribution_name,
+                    "version": plugin.distribution_version,
+                }
+                for plugin in provider_catalogs.plugins
+            ],
+            "provider_types": {
+                "environment": [provider.key for provider in provider_catalogs.environment],
+                "model": [provider.type for provider in provider_catalogs.model],
+                "connector": [provider.type for provider in provider_catalogs.connector],
+                "web": [provider.type for provider in provider_catalogs.web],
+            },
+        },
+    )
     resolved_components = snapshot_components(
         resolved_settings,
         components or Components(),
@@ -103,6 +127,7 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
             resolved_components,
             process_status,
             trace_query_provider_registry.copy(),
+            provider_catalogs,
         ),
         openapi_url="/api/openapi.json" if serves_control_plane else None,
         docs_url="/api/docs" if serves_control_plane else None,
@@ -169,7 +194,7 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
         app.include_router(thread_router)
         app.include_router(asset_router)
         app.include_router(model_router)
-        app.include_router(search_router)
+        app.include_router(web_router)
         app.include_router(skill_router)
         app.include_router(trace_query_router)
         # Match /targets before the Account lifecycle /{action} route.

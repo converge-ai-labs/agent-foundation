@@ -20,8 +20,14 @@ def build_agent_management(
         shared.storage.sessions,
         resources.models,
         connectivity_resolver=resources.connectivity,
+        web_provider_registry=resources.web_providers,
     )
-    return AgentManagement(shared.storage.sessions, resolver, resources.invocations)
+    return AgentManagement(
+        shared.storage.sessions,
+        resolver,
+        resources.invocations,
+        resources.web_providers,
+    )
 
 
 __all__ = ["build_agent_management"]

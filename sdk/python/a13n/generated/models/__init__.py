@@ -24,9 +24,11 @@ from .agent_collection import AgentCollection
 from .agent_config_input import AgentConfigInput
 from .agent_config_input_subagent_mode import AgentConfigInputSubagentMode
 from .agent_config_input_subagents import AgentConfigInputSubagents
+from .agent_config_input_toolsets import AgentConfigInputToolsets
 from .agent_config_output import AgentConfigOutput
 from .agent_config_output_subagent_mode import AgentConfigOutputSubagentMode
 from .agent_config_output_subagents import AgentConfigOutputSubagents
+from .agent_config_output_toolsets import AgentConfigOutputToolsets
 from .agent_input import AgentInput
 from .agent_input_schema_version import AgentInputSchemaVersion
 from .agent_model import AgentModel
@@ -41,8 +43,10 @@ from .agent_revision_collection import AgentRevisionCollection
 from .agent_revision_create_result import AgentRevisionCreateResult
 from .agent_run_override_input import AgentRunOverrideInput
 from .agent_run_override_input_subagents_type_0 import AgentRunOverrideInputSubagentsType0
+from .agent_run_override_input_toolsets_type_0 import AgentRunOverrideInputToolsetsType0
 from .agent_run_override_output import AgentRunOverrideOutput
 from .agent_run_override_output_subagents_type_0 import AgentRunOverrideOutputSubagentsType0
+from .agent_run_override_output_toolsets_type_0 import AgentRunOverrideOutputToolsetsType0
 from .agent_secret_binding import AgentSecretBinding
 from .agent_source import AgentSource
 from .api_key import ApiKey
@@ -50,7 +54,6 @@ from .approve_pending_resolution import ApprovePendingResolution
 from .asset import Asset
 from .asset_binary_source import AssetBinarySource
 from .asset_collection import AssetCollection
-from .asset_publication_config import AssetPublicationConfig
 from .asset_source_kind import AssetSourceKind
 from .assistant_message import AssistantMessage
 from .audio_input_content import AudioInputContent
@@ -72,6 +75,7 @@ from .child_environment_policy_mode import ChildEnvironmentPolicyMode
 from .client_tool_definition import ClientToolDefinition
 from .client_tool_definition_metadata import ClientToolDefinitionMetadata
 from .client_tool_definition_parameters_json_schema import ClientToolDefinitionParametersJsonSchema
+from .client_tool_definition_permission import ClientToolDefinitionPermission
 from .client_tool_policy import ClientToolPolicy
 from .collection_environment import CollectionEnvironment
 from .collection_environment_provider import CollectionEnvironmentProvider
@@ -96,6 +100,7 @@ from .connection_safe_metadata import ConnectionSafeMetadata
 from .connection_status import ConnectionStatus
 from .connection_status_reason import ConnectionStatusReason
 from .connection_tool_selection import ConnectionToolSelection
+from .connection_tool_selection_permissions import ConnectionToolSelectionPermissions
 from .connector import Connector
 from .connector_collection import ConnectorCollection
 from .connector_credential_schemas import ConnectorCredentialSchemas
@@ -148,8 +153,6 @@ from .create_model_request_settings import CreateModelRequestSettings
 from .create_provider_request import CreateProviderRequest
 from .create_provider_request_configuration import CreateProviderRequestConfiguration
 from .create_provider_request_credential_type_0 import CreateProviderRequestCredentialType0
-from .create_search_provider_request import CreateSearchProviderRequest
-from .create_search_provider_request_type import CreateSearchProviderRequestType
 from .create_service_account_request import CreateServiceAccountRequest
 from .create_service_account_request_role import CreateServiceAccountRequestRole
 from .create_skill_request import CreateSkillRequest
@@ -161,6 +164,9 @@ from .create_template_revision_request import CreateTemplateRevisionRequest
 from .create_template_revision_request_configuration import CreateTemplateRevisionRequestConfiguration
 from .create_template_revision_request_preparation import CreateTemplateRevisionRequestPreparation
 from .create_thread_request import CreateThreadRequest
+from .create_web_provider_request import CreateWebProviderRequest
+from .create_web_provider_request_configuration import CreateWebProviderRequestConfiguration
+from .create_web_provider_request_credential import CreateWebProviderRequestCredential
 from .create_workspace_request import CreateWorkspaceRequest
 from .created_key import CreatedKey
 from .credential_context import CredentialContext
@@ -418,19 +424,7 @@ from .run_stream_event_payload import RunStreamEventPayload
 from .safe_failure import SafeFailure
 from .safe_failure_details import SafeFailureDetails
 from .safe_failure_retry_hint import SafeFailureRetryHint
-from .search_configuration import SearchConfiguration
 from .search_in import SearchIn
-from .search_provider import SearchProvider
-from .search_provider_collection import SearchProviderCollection
-from .search_provider_configuration import SearchProviderConfiguration
-from .search_provider_definition import SearchProviderDefinition
-from .search_provider_definition_collection import SearchProviderDefinitionCollection
-from .search_provider_definition_configuration_schema import SearchProviderDefinitionConfigurationSchema
-from .search_provider_definition_credential_schema import SearchProviderDefinitionCredentialSchema
-from .search_provider_reference import SearchProviderReference
-from .search_provider_reference_collection import SearchProviderReferenceCollection
-from .search_provider_test_result import SearchProviderTestResult
-from .search_selection import SearchSelection
 from .secret_requirement import SecretRequirement
 from .security_event import SecurityEvent
 from .service_account import ServiceAccount
@@ -482,13 +476,33 @@ from .thread_run_submission_receipt_outcome import ThreadRunSubmissionReceiptOut
 from .thread_run_submission_request import ThreadRunSubmissionRequest
 from .tool import Tool
 from .tool_call import ToolCall
+from .tool_definition import ToolDefinition
+from .tool_definition_config_schema import ToolDefinitionConfigSchema
+from .tool_definition_supported_permissions_item import ToolDefinitionSupportedPermissionsItem
 from .tool_message import ToolMessage
 from .tool_permission_mode import ToolPermissionMode
-from .tool_permissions import ToolPermissions
-from .tool_permissions_rules import ToolPermissionsRules
+from .tool_resource_selector import ToolResourceSelector
+from .tool_resource_selector_operation import ToolResourceSelectorOperation
 from .tool_review_rule import ToolReviewRule
 from .tool_review_rule_on_flagged_type_0 import ToolReviewRuleOnFlaggedType0
 from .tool_risk_level import ToolRiskLevel
+from .tool_selection import ToolSelection
+from .tool_selection_config import ToolSelectionConfig
+from .tool_setup_destination import ToolSetupDestination
+from .tool_setup_destination_kind import ToolSetupDestinationKind
+from .tool_setup_destination_operation_type_0 import ToolSetupDestinationOperationType0
+from .toolset_candidate import ToolsetCandidate
+from .toolset_candidate_error import ToolsetCandidateError
+from .toolset_candidate_result import ToolsetCandidateResult
+from .toolset_candidate_result_toolsets import ToolsetCandidateResultToolsets
+from .toolset_candidate_toolsets import ToolsetCandidateToolsets
+from .toolset_catalog import ToolsetCatalog
+from .toolset_definition import ToolsetDefinition
+from .toolset_definition_config_schema import ToolsetDefinitionConfigSchema
+from .toolset_definition_key import ToolsetDefinitionKey
+from .toolset_selection import ToolsetSelection
+from .toolset_selection_config import ToolsetSelectionConfig
+from .toolset_selection_tools import ToolsetSelectionTools
 from .trace import Trace
 from .trace_collection import TraceCollection
 from .trace_correlation import TraceCorrelation
@@ -514,12 +528,14 @@ from .update_provider_request import UpdateProviderRequest
 from .update_provider_request_credential_type_0 import UpdateProviderRequestCredentialType0
 from .update_queued_submission_request import UpdateQueuedSubmissionRequest
 from .update_resource_profile_request import UpdateResourceProfileRequest
-from .update_search_provider_request import UpdateSearchProviderRequest
 from .update_service_account_request import UpdateServiceAccountRequest
 from .update_service_account_request_role import UpdateServiceAccountRequestRole
 from .update_service_account_request_status import UpdateServiceAccountRequestStatus
 from .update_skill_request import UpdateSkillRequest
 from .update_template_request import UpdateTemplateRequest
+from .update_web_provider_request import UpdateWebProviderRequest
+from .update_web_provider_request_configuration_type_0 import UpdateWebProviderRequestConfigurationType0
+from .update_web_provider_request_credential_type_0 import UpdateWebProviderRequestCredentialType0
 from .uploaded_asset_source import UploadedAssetSource
 from .url_binary_source import UrlBinarySource
 from .usage_limits_input import UsageLimitsInput
@@ -531,6 +547,17 @@ from .validation_error_context import ValidationErrorContext
 from .video_input_content import VideoInputContent
 from .waiting_resolution_defaults import WaitingResolutionDefaults
 from .waiting_run_feedback_request import WaitingRunFeedbackRequest
+from .web_provider import WebProvider
+from .web_provider_collection import WebProviderCollection
+from .web_provider_configuration import WebProviderConfiguration
+from .web_provider_definition import WebProviderDefinition
+from .web_provider_definition_collection import WebProviderDefinitionCollection
+from .web_provider_definition_configuration_schema import WebProviderDefinitionConfigurationSchema
+from .web_provider_definition_credential_schema import WebProviderDefinitionCredentialSchema
+from .web_provider_definition_operations_item import WebProviderDefinitionOperationsItem
+from .web_provider_reference import WebProviderReference
+from .web_provider_reference_collection import WebProviderReferenceCollection
+from .web_provider_test_result import WebProviderTestResult
 from .webhook_destination_config import WebhookDestinationConfig
 from .workspace import Workspace
 from .workspace_event_page import WorkspaceEventPage
@@ -563,9 +590,11 @@ __all__ = (
     "AgentConfigInput",
     "AgentConfigInputSubagentMode",
     "AgentConfigInputSubagents",
+    "AgentConfigInputToolsets",
     "AgentConfigOutput",
     "AgentConfigOutputSubagentMode",
     "AgentConfigOutputSubagents",
+    "AgentConfigOutputToolsets",
     "AgentInput",
     "AgentInputSchemaVersion",
     "AgentModel",
@@ -580,8 +609,10 @@ __all__ = (
     "AgentRevisionCreateResult",
     "AgentRunOverrideInput",
     "AgentRunOverrideInputSubagentsType0",
+    "AgentRunOverrideInputToolsetsType0",
     "AgentRunOverrideOutput",
     "AgentRunOverrideOutputSubagentsType0",
+    "AgentRunOverrideOutputToolsetsType0",
     "AgentSecretBinding",
     "AgentSource",
     "ApiKey",
@@ -589,7 +620,6 @@ __all__ = (
     "Asset",
     "AssetBinarySource",
     "AssetCollection",
-    "AssetPublicationConfig",
     "AssetSourceKind",
     "AssistantMessage",
     "AudioInputContent",
@@ -611,6 +641,7 @@ __all__ = (
     "ClientToolDefinition",
     "ClientToolDefinitionMetadata",
     "ClientToolDefinitionParametersJsonSchema",
+    "ClientToolDefinitionPermission",
     "ClientToolPolicy",
     "CollectionEnvironment",
     "CollectionEnvironmentProvider",
@@ -635,6 +666,7 @@ __all__ = (
     "ConnectionStatus",
     "ConnectionStatusReason",
     "ConnectionToolSelection",
+    "ConnectionToolSelectionPermissions",
     "Connector",
     "ConnectorCollection",
     "ConnectorCredentialSchemas",
@@ -687,8 +719,6 @@ __all__ = (
     "CreateProviderRequest",
     "CreateProviderRequestConfiguration",
     "CreateProviderRequestCredentialType0",
-    "CreateSearchProviderRequest",
-    "CreateSearchProviderRequestType",
     "CreateServiceAccountRequest",
     "CreateServiceAccountRequestRole",
     "CreateSkillRequest",
@@ -700,6 +730,9 @@ __all__ = (
     "CreateTemplateRevisionRequestConfiguration",
     "CreateTemplateRevisionRequestPreparation",
     "CreateThreadRequest",
+    "CreateWebProviderRequest",
+    "CreateWebProviderRequestConfiguration",
+    "CreateWebProviderRequestCredential",
     "CreateWorkspaceRequest",
     "CreatedKey",
     "CredentialContext",
@@ -945,19 +978,7 @@ __all__ = (
     "SafeFailure",
     "SafeFailureDetails",
     "SafeFailureRetryHint",
-    "SearchConfiguration",
     "SearchIn",
-    "SearchProvider",
-    "SearchProviderCollection",
-    "SearchProviderConfiguration",
-    "SearchProviderDefinition",
-    "SearchProviderDefinitionCollection",
-    "SearchProviderDefinitionConfigurationSchema",
-    "SearchProviderDefinitionCredentialSchema",
-    "SearchProviderReference",
-    "SearchProviderReferenceCollection",
-    "SearchProviderTestResult",
-    "SearchSelection",
     "SecretRequirement",
     "SecurityEvent",
     "ServiceAccount",
@@ -1009,13 +1030,33 @@ __all__ = (
     "ThreadRunSubmissionRequest",
     "Tool",
     "ToolCall",
+    "ToolDefinition",
+    "ToolDefinitionConfigSchema",
+    "ToolDefinitionSupportedPermissionsItem",
     "ToolMessage",
     "ToolPermissionMode",
-    "ToolPermissions",
-    "ToolPermissionsRules",
+    "ToolResourceSelector",
+    "ToolResourceSelectorOperation",
     "ToolReviewRule",
     "ToolReviewRuleOnFlaggedType0",
     "ToolRiskLevel",
+    "ToolSelection",
+    "ToolSelectionConfig",
+    "ToolSetupDestination",
+    "ToolSetupDestinationKind",
+    "ToolSetupDestinationOperationType0",
+    "ToolsetCandidate",
+    "ToolsetCandidateError",
+    "ToolsetCandidateResult",
+    "ToolsetCandidateResultToolsets",
+    "ToolsetCandidateToolsets",
+    "ToolsetCatalog",
+    "ToolsetDefinition",
+    "ToolsetDefinitionConfigSchema",
+    "ToolsetDefinitionKey",
+    "ToolsetSelection",
+    "ToolsetSelectionConfig",
+    "ToolsetSelectionTools",
     "Trace",
     "TraceCollection",
     "TraceCorrelation",
@@ -1041,12 +1082,14 @@ __all__ = (
     "UpdateProviderRequestCredentialType0",
     "UpdateQueuedSubmissionRequest",
     "UpdateResourceProfileRequest",
-    "UpdateSearchProviderRequest",
     "UpdateServiceAccountRequest",
     "UpdateServiceAccountRequestRole",
     "UpdateServiceAccountRequestStatus",
     "UpdateSkillRequest",
     "UpdateTemplateRequest",
+    "UpdateWebProviderRequest",
+    "UpdateWebProviderRequestConfigurationType0",
+    "UpdateWebProviderRequestCredentialType0",
     "UploadedAssetSource",
     "UrlBinarySource",
     "UsageLimitsInput",
@@ -1058,6 +1101,17 @@ __all__ = (
     "VideoInputContent",
     "WaitingResolutionDefaults",
     "WaitingRunFeedbackRequest",
+    "WebProvider",
+    "WebProviderCollection",
+    "WebProviderConfiguration",
+    "WebProviderDefinition",
+    "WebProviderDefinitionCollection",
+    "WebProviderDefinitionConfigurationSchema",
+    "WebProviderDefinitionCredentialSchema",
+    "WebProviderDefinitionOperationsItem",
+    "WebProviderReference",
+    "WebProviderReferenceCollection",
+    "WebProviderTestResult",
     "WebhookDestinationConfig",
     "Workspace",
     "WorkspaceEventPage",

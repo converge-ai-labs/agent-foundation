@@ -41,6 +41,7 @@ from .configuration.sections import (
     ObservabilitySettings,
     PluginsSettings,
     PricingSettings,
+    ProviderPluginsSettings,
     RedisSettings,
     RunsSettings,
     SecretsSettings,
@@ -70,6 +71,7 @@ class Settings(Section):
     service: ServiceSettings = Field(default_factory=ServiceSettings)
     iam: IamSettings = Field(default_factory=IamSettings)
     plugins: PluginsSettings = Field(default_factory=PluginsSettings)
+    provider_plugins: ProviderPluginsSettings = Field(default_factory=ProviderPluginsSettings)
     worker: WorkerSettings = Field(default_factory=WorkerSettings)
     subagents: SubagentsSettings = Field(default_factory=SubagentsSettings)
     environments: EnvironmentsSettings = Field(default_factory=EnvironmentsSettings)

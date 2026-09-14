@@ -16,7 +16,7 @@ from a13n_service.connectivity.connections.authorization import AuthorizationSer
 from a13n_service.connectivity.connections.checks import ConnectionChecks
 from a13n_service.connectivity.connections.service import ConnectionService
 from a13n_service.connectivity.connectors.connections import ConnectorConnectionService
-from a13n_service.connectivity.connectors.providers import built_in_connector_provider_registry
+from a13n_service.connectivity.connectors.http import ConnectorHttpClient
 from a13n_service.connectivity.connectors.reconciler import ConnectorReconciler
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.connectors.service import ConnectorProviderService
@@ -39,6 +39,8 @@ from a13n_service.connectivity.runtime import (
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.ids import new_object_id
 from a13n_service.process.background import BackgroundTask
+from a13n_service.provider_plugins import ProviderCatalogs
+from a13n_service.provider_plugins.connectors import build_connector_provider_registry
 from a13n_service.secrets import SecretProtector
 from a13n_service.settings import Settings
 from a13n_service.storage import StorageResources
@@ -72,6 +74,7 @@ async def build_connectivity_runtime(
     *,
     ingress_adapters: AdapterRegistry[IngressAdapter] | None,
     connector_providers: ConnectorProviderRegistry | None,
+    provider_catalogs: ProviderCatalogs,
     input_acceptor: InputAcceptor | None,
     control_plane: bool,
     data_plane: bool,
@@ -88,6 +91,7 @@ async def build_connectivity_runtime(
             storage,
             ingress_adapters,
             connector_providers,
+            provider_catalogs,
             secret_protector,
             stack,
         )
@@ -113,6 +117,7 @@ async def _build_control_runtime(
     storage: StorageResources,
     ingress_adapters: AdapterRegistry[IngressAdapter],
     connector_providers: ConnectorProviderRegistry | None,
+    provider_catalogs: ProviderCatalogs,
     secret_protector: SecretProtector,
     stack: AsyncExitStack,
 ) -> tuple[ConnectivityControlRuntime, tuple[BackgroundTask, ...]]:
@@ -126,11 +131,14 @@ async def _build_control_runtime(
                 timeout=connectivity_http_timeout(settings),
             )
         )
-        connector_providers = built_in_connector_provider_registry(
-            connector_http_client,
-            endpoint_policy,
-            response_max_bytes=settings.connectivity.response_max_bytes,
-            timeout_seconds=settings.connectivity.total_timeout_seconds,
+        connector_providers = build_connector_provider_registry(
+            provider_catalogs.connector,
+            ConnectorHttpClient(
+                connector_http_client,
+                endpoint_policy,
+                response_max_bytes=settings.connectivity.response_max_bytes,
+                timeout_seconds=settings.connectivity.total_timeout_seconds,
+            ),
         )
     connector = _build_connector_control(
         settings,

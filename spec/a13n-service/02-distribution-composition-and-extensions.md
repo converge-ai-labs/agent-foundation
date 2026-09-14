@@ -18,7 +18,7 @@ A distribution identifies the product release composition, not where or for whom
 | Relational models and revisions                                                   | Domains own model and revision meaning | Assembles one final metadata and migration graph              |
 | License, entitlement, and placement policy                                        | Not a common domain field              | Owned by the distribution that supplies it                    |
 
-Distribution composition does not define generic extension hooks for arbitrary Python code. A common capability exposes a narrow port only where an accepted distribution difference exists. Internal classes, module discovery, installation order, and package naming are not part of the product contract.
+Distribution composition does not define generic extension hooks for arbitrary Python code. A common capability exposes a narrow port only where an accepted distribution difference exists. Deployment Provider packages are one such narrow port: they can register implementations for the existing Environment, Model, Connector, and Web domains, but cannot contribute routers, authorization actions, relational models, migrations, role components, or configuration namespaces. Internal classes, installation order, and arbitrary import targets are not part of the product contract.
 
 Service's [installed Harness plugins](36-installed-harness-plugins.md) supply trusted middleware selected through frozen Agent configuration. Selecting a plugin does not contribute Service routers, authorization actions, relational models, migrations, role components, or configuration namespaces. Those remain explicit build-time distribution contributions.
 
@@ -35,7 +35,7 @@ flowchart BT
 
 Common Service code never imports EE or Cloud code. An EE or Cloud distribution depends inward on a compatible common Service release and imports only explicit public composition surfaces. The OSS composition is a sibling composition, not a superclass whose singleton-Organization behavior is inherited by commercial distributions.
 
-Each OSS, EE, or Cloud build artifact fixes exactly one trusted distribution descriptor. Runtime configuration selects only operational values such as role, endpoints, and limits; no CLI option, configuration field, environment variable, organization value, or license response selects the distribution or names an import target. Automatic entry-point discovery, package scanning, filename conventions, and import side effects never select a capability. A missing, invalid, or incompatible descriptor fails the build or startup instead of silently falling back to OSS.
+Each OSS, EE, or Cloud build artifact fixes exactly one trusted distribution descriptor. Runtime configuration selects operational values and explicitly enabled installed Provider entry-point names; no CLI option, configuration field, environment variable, organization value, or license response selects the distribution or names an import target. Provider metadata enumeration imports only selected `a13n.providers` entry points and cannot add a product capability. Automatic module scanning, filename conventions, and unselected import side effects never select a capability. A missing, invalid, or incompatible descriptor or selected Provider entry point fails the build or startup instead of silently falling back to OSS.
 
 ```mermaid
 flowchart TB
@@ -79,7 +79,17 @@ The OSS capability set also includes [Asset Management](32-asset-management.md):
 
 The common package contains the OSS composition and common capability implementations. It contains no empty EE or Cloud package tree, placeholder feature, license branch, or generic plugin administration surface.
 
-The OSS composition includes the [Connectivity subsystem](40-connectivity/README.md) across its Control management, Connectivity inbound, and Worker outbound contributions. The [runtime role matrix](01-runtime-configuration-and-deployment.md#process-roles) determines where each registered adapter operates; outbound tool execution adds no MCP network listener. The distribution explicitly registers supported Ingress adapters by their owning keys and Connector Provider implementations by `type`. Each Provider implementation owns its strongly typed configuration and safe schema description. It performs no package scanning, runtime import-path loading, or entry-point auto-trust; installing another package does not add a router, role component, action, schema, or adapter trust grant. Domain registries remain independent rather than becoming a universal Provider registry.
+The OSS composition includes the [Connectivity subsystem](40-connectivity/README.md) across its Control management, Connectivity inbound, and Worker outbound contributions. The [runtime role matrix](01-runtime-configuration-and-deployment.md#process-roles) determines where each registered adapter operates; outbound tool execution adds no MCP network listener. Built-ins and explicitly selected Provider packages register Connector Provider implementations by `type`. Each implementation owns its strongly typed configuration and safe schema description. Installing a package alone grants no trust, and selecting it cannot add a router, role component, action, table, migration, or authorization grant. Domain registries remain independent rather than becoming a universal Provider runtime.
+
+## Deployment Provider Packages
+
+An installed Python distribution can declare one or more named entry points under `a13n.providers`. The deployment selects entry-point names through `provider_plugins.enabled`; it never supplies an import target. Each entry point explicitly declares the extension API version it was authored against as a fixed literal rather than deriving it from the installed Service. The Service compares that declaration with its supported version and rejects a mismatch before invoking the registration callback. Distribution name, distribution version, selected entry-point name, and registered domain type are separate identities. One selected entry point can register several types through the typed `environment`, `model`, `connector`, and `web` accessors.
+
+The Service registers its built-ins through the same domain registration contracts and reserves their type identities. Registration supplies deterministic metadata, Pydantic schemas, and factories only. It performs no account, credential, database, or network I/O and creates no live client. Startup rejects duplicate enabled names, missing or ambiguous metadata entries, incompatible extension API versions, import or call failures, invalid definitions or schemas, and duplicate domain types. The completed catalogs are immutable process-local snapshots.
+
+Management and execution roles load the same selected definitions from the same pinned packages and configuration. Each domain retains its own semantics: Environment Providers implement their existing lifecycle, Model Providers construct native Pydantic AI Providers for existing `ModelApiBinding` protocols, Connector Providers implement setup/discovery/connection runtimes, and Web Providers implement search and/or scrape with explicit restricted-scrape support. Domain-owned scopes construct live collaborators and close them on partial initialization, failure, cancellation, and normal completion. A missing implementation never substitutes another type.
+
+This mechanism is distinct from Worker-only `a13n_harness.plugins`. Provider packages make deployment-selected implementation types available to existing Service account and runtime paths; Harness business plugins add Agent-selected execution behavior and are not imported by Control to render schemas. Provider packages are trusted deployment code, not sandboxed organization uploads, hot reload, a marketplace, or a distributed catalog synchronization system.
 
 ## EE and Cloud Composition
 
@@ -98,7 +108,7 @@ A distribution that requires license or operator configuration validates it befo
 
 The artifact's distribution descriptor finalizes one typed configuration schema before the [runtime](01-runtime-configuration-and-deployment.md) parses values. Common section names and meanings remain stable. A distribution can add its own explicit namespace, but cannot shadow a common field or make an unknown common value valid under a different interpretation.
 
-Secrets supplied for an extension follow the same redaction and process-local handling as common secrets. Configuration never installs code, names an arbitrary import target, or enables a capability absent from the artifact distribution.
+Secrets supplied for an extension follow the same redaction and process-local handling as common secrets. Configuration never installs code, names an arbitrary import target, or enables a capability absent from the artifact distribution. `provider_plugins.enabled` selects only metadata entry-point names already installed in the artifact and only for the four existing Provider domains.
 
 A capability already fixed into the distribution can own an explicit operational surface setting. Such a setting can suppress that capability's routes and role components but cannot replace the distribution descriptor, introduce untrusted code, or change common domain meaning. The A2A total switch is one such common setting; no per-Agent protocol switch exists.
 
@@ -137,7 +147,7 @@ Explicit composition requires each distribution to enumerate its application sur
 
 01. Each executable artifact contains exactly one trusted distribution descriptor before configuration parsing or runtime resource construction.
 02. Common Service code never imports EE or Cloud code.
-03. Package installation alone never enables a capability or changes a schema.
+03. Package installation alone never enables a capability or changes a schema; a Provider entry point must also be explicitly selected.
 04. A distribution composes one authorizer, one durable Run/RunAttempt kernel, one metadata registry, and one migration graph.
 05. Duplicate contribution identities fail before startup.
 06. Common rows contain no edition, plan, license, or placement discriminator.
@@ -145,5 +155,5 @@ Explicit composition requires each distribution to enumerate its application sur
 08. Invalid extension input fails closed and never falls back to OSS.
 09. An extension adds behavior through an owned capability or narrow port and cannot reinterpret common contracts.
 10. Every final distribution schema has at most one migration head.
-11. Runtime input, organization state, and license response never select or replace the artifact's distribution.
+11. Runtime input, organization state, license response, and Provider entry-point selection never select or replace the artifact's distribution.
 12. Selecting an installed Harness plugin affects Agent reconstruction and never implicitly contributes Service distribution contents.

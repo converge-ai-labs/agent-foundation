@@ -14,8 +14,8 @@ from a13n.generated.models import (
     AgentInput,
     AgentInputSchemaVersion,
     ConnectorCollection,
-    CreateSearchProviderRequest,
-    CreateSearchProviderRequestType,
+    CreateWebProviderRequest,
+    CreateWebProviderRequestCredential,
     ExistingEnvironmentSelection,
     NewEnvironmentSelection,
     PrincipalRef,
@@ -61,11 +61,13 @@ def test_wire_fixtures_roundtrip() -> None:
         "expected_thread_version": 1,
         "input": {"schema_version": "2"},
     }
-    secret = CreateSearchProviderRequest(
-        type_=CreateSearchProviderRequestType.BRAVE, name="test", credential="do-not-print"
+    secret = CreateWebProviderRequest(
+        type_="brave",
+        name="test",
+        credential=CreateWebProviderRequestCredential.from_dict({"api_key": "do-not-print"}),
     )
     assert "do-not-print" not in repr(secret)
-    assert secret.to_dict()["credential"] == "do-not-print"
+    assert secret.to_dict()["credential"] == {"api_key": "do-not-print"}
 
 
 def test_generated_calls_share_transport_headers_prefix_and_close() -> None:

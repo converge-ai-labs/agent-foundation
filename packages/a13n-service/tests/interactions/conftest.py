@@ -12,6 +12,7 @@ from a13n_service.agents.domain import (
     EffectiveAgentModel,
 )
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
+from a13n_service.agents.toolsets import default_toolsets
 from a13n_service.database.metadata import service_metadata
 from a13n_service.digests import digest_request
 from a13n_service.iam.models import OrganizationRecord, WorkspaceRecord
@@ -38,8 +39,19 @@ NOW = datetime(2026, 9, 3, 0, 30, tzinfo=UTC)
 
 
 def agent_config() -> AgentConfig:
+    toolsets = default_toolsets()
+    for key in ("files", "shell"):
+        selected = toolsets[key]
+        toolsets[key] = selected.model_copy(
+            update={
+                "tools": {
+                    name: tool.model_copy(update={"permission": "allow"}) for name, tool in selected.tools.items()
+                }
+            }
+        )
     return AgentConfig.model_validate(
         {
+            "toolsets": toolsets,
             "model": {
                 "model_key": MODEL_KEY,
                 "settings": {"temperature": 0.2},
@@ -73,11 +85,12 @@ def effective_agent_config() -> EffectiveAgentConfig:
         ),
         instructions=base.instructions,
         input_adapter=base.input_adapter,
+        toolsets=base.toolsets,
+        reviewer=base.reviewer,
         client_tools=base.client_tools,
         output_spec=base.output_spec,
         retries=base.retries,
         secret_requirements=base.secret_requirements,
-        asset_publication=base.asset_publication,
         protocol=base.protocol,
         content_digest="0" * 64,
     )

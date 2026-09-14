@@ -94,7 +94,11 @@ async def record_approval_denials(
                     "kind": "approval",
                     "decision": "deny",
                     "denied_sources": sources,
-                    "reason": "Approval channel denied the request.",
+                    "reason": (
+                        result.message[:400]
+                        if isinstance(result, ToolDenied) and result.message
+                        else "Approval channel denied the request."
+                    ),
                 }
             ),
         )

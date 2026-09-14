@@ -78,9 +78,9 @@ afterEach(() => {
 it("restores category and scope, then switches domains without losing workspace context", async () => {
   const user = userEvent.setup();
   mount();
-  await screen.findByText("No search providers yet");
+  await screen.findByText("No Web Providers yet");
   expect(state.GET).toHaveBeenCalledWith(
-    "/api/v1/workspaces/{workspace}/search-providers",
+    "/api/v1/workspaces/{workspace}/web-providers",
     expect.objectContaining({
       params: expect.objectContaining({ path: { workspace: "ws_test" } }),
     }),
@@ -95,7 +95,7 @@ it("restores category and scope, then switches domains without losing workspace 
 it("allows an organization administrator to manage providers without a workspace", async () => {
   state.hasWorkspace = false;
   mount("section=providers&category=search", "organization");
-  await screen.findByText("No search providers yet");
+  await screen.findByText("No Web Providers yet");
   expect(screen.getByRole("button", { name: "Add provider" })).toBeTruthy();
   expect(
     state.GET.mock.calls.every(([path]) => !path.includes("/workspaces/")),
@@ -112,6 +112,6 @@ it("shows workspace providers without offering mutations to a read-only member",
   state.organizationAdmin = false;
   state.manage = false;
   mount();
-  await screen.findByText("No search providers yet");
+  await screen.findByText("No Web Providers yet");
   expect(screen.queryByRole("button", { name: "Add provider" })).toBeNull();
 });

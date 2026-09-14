@@ -15,8 +15,11 @@ from a13n_harness.toolsets.output import (
 )
 from a13n_harness.toolsets.web import (
     WebConfiguration,
+    WebFetchConfiguration,
     WebRequest,
     WebResponse,
+    WebScrapeBackendBinding,
+    WebScrapeConfiguration,
     WebScrapeRequest,
     WebScrapeResult,
     WebSearchConfiguration,
@@ -52,7 +55,7 @@ class _Policy:
         self.authorized.append((url, purpose))
 
 
-class _SearchProvider:
+class _WebProvider:
     async def search(self, request: WebSearchRequest) -> tuple[WebSearchResult, ...]:
         return tuple(
             WebSearchResult(
@@ -68,9 +71,19 @@ class _ScrapeProvider:
     async def scrape(self, request: WebScrapeRequest, *, policy: _Policy) -> WebScrapeResult:
         del request, policy
         return WebScrapeResult(
-            markdown="m" * 80_000,
-            final_url="https://example.com/final",
+            content="m" * 80_000,
+            source_url="https://example.com/final",
             canonical_url="https://example.com/final",
+        )
+
+
+class _CanonicalEscapeProvider:
+    async def scrape(self, request: WebScrapeRequest, *, policy: _Policy) -> WebScrapeResult:
+        del request, policy
+        return WebScrapeResult(
+            content="must not disclose",
+            source_url="https://example.com/article",
+            canonical_url="https://denied.test/article",
         )
 
 
@@ -126,7 +139,7 @@ async def test_web_instructions_follow_provider_activation() -> None:
 
     provider_parts = (
         await _toolset(
-            search_provider=_SearchProvider(),
+            search_provider=_WebProvider(),
             scrape_provider=_ScrapeProvider(),
         )
         .get_toolset()
@@ -174,7 +187,7 @@ async def test_semantic_disclosure_measures_the_redacted_representation() -> Non
 async def test_web_search_spills_full_results_and_returns_complete_items() -> None:
     ctx, context = _run_context()
     toolset = _toolset(
-        search_provider=_SearchProvider(),
+        search_provider=_WebProvider(),
         configuration=WebConfiguration(max_search_results=10),
     )
 
@@ -191,7 +204,7 @@ async def test_web_search_spills_full_results_and_returns_complete_items() -> No
     assert spilled["showing"] == 10
 
 
-async def test_web_scrape_spills_full_markdown_before_semantic_truncation() -> None:
+async def test_web_scrape_spills_full_content_before_semantic_truncation() -> None:
     ctx, context = _run_context()
     policy = _Policy()
     toolset = _toolset(
@@ -202,13 +215,42 @@ async def test_web_scrape_spills_full_markdown_before_semantic_truncation() -> N
     result = await toolset.scrape(ctx, "https://example.com/start")
 
     assert result["ok"] is True
-    assert len(result["markdown"]) < 80_000
+    assert len(result["content"]) < 80_000
     assert result["disclosure"]["content_complete"] is True
     assert tool_output_size(cast(dict[str, JsonValue], result)) <= DEFAULT_TOOL_OUTPUT_CHARS
-    assert json.loads(context.spills[0])["markdown"] == "m" * 80_000
+    assert json.loads(context.spills[0])["content"] == "m" * 80_000
     assert policy.authorized == [
         ("https://example.com/start", "scrape"),
         ("https://example.com/final", "scrape"),
+    ]
+
+
+async def test_web_scrape_rejects_denied_canonical_url_before_disclosure() -> None:
+    ctx, context = _run_context()
+    policy = _Policy()
+    toolset = _toolset(
+        policy=policy,
+        scrape_backends=(
+            WebScrapeBackendBinding(
+                "domain-capable",
+                _CanonicalEscapeProvider(),
+                supports_domain_restrictions=True,
+            ),
+        ),
+        configuration=WebConfiguration(
+            scrape=WebScrapeConfiguration(allow_domains=("example.com",)),
+        ),
+    )
+
+    result = await toolset.scrape(ctx, "https://example.com/start")
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "web_domain_denied"
+    assert "must not disclose" not in repr(result)
+    assert context.spills == []
+    assert policy.authorized == [
+        ("https://example.com/start", "scrape"),
+        ("https://example.com/article", "scrape"),
     ]
 
 
@@ -352,14 +394,12 @@ async def test_response_cleanup_releases_completed_tasks(behavior: str) -> None:
         ("https://example.com.evil.test", False),
     ],
 )
-def test_domain_restrictions_are_exact_and_deny_wins(url: str, allowed: bool) -> None:
+def test_domain_restrictions_cover_apex_and_subdomains_and_deny_wins(url: str, allowed: bool) -> None:
     from a13n_harness.toolsets.domains import DomainRestrictions
 
-    restrictions = DomainRestrictions(
-        allow_domains=("EXAMPLE.COM.", "*.example.com"), deny_domains=("private.example.com",)
-    )
+    restrictions = DomainRestrictions(allow_domains=("EXAMPLE.COM.",), deny_domains=("private.example.com",))
     assert restrictions.allows(url) is allowed
-    assert not DomainRestrictions(allow_domains=("*.example.com",)).allows("https://example.com")
+    assert DomainRestrictions(allow_domains=("example.com",)).allows("https://docs.example.com")
 
 
 @pytest.mark.parametrize(
@@ -375,7 +415,7 @@ def test_invalid_domain_configuration_is_rejected(domain: str) -> None:
 async def test_search_domain_restrictions_filter_provider_results() -> None:
     ctx, _ = _run_context()
     toolset = _toolset(
-        search_provider=_SearchProvider(),
+        search_provider=_WebProvider(),
         configuration=WebConfiguration(
             search=WebSearchConfiguration(mode="host", deny_domains=("example.com",)),
         ),
@@ -387,7 +427,10 @@ async def test_search_domain_restrictions_filter_provider_results() -> None:
 async def test_domain_denial_precedes_web_transport() -> None:
     ctx, _ = _run_context()
     policy = _Policy()
-    toolset = _toolset(policy=policy, configuration=WebConfiguration(deny_domains=("example.com",)))
+    toolset = _toolset(
+        policy=policy,
+        configuration=WebConfiguration(fetch=WebFetchConfiguration(deny_domains=("example.com",))),
+    )
     result = await toolset.fetch(ctx, "https://example.com/page")
     assert result["ok"] is False and result["error"]["code"] == "web_domain_denied"
     assert policy.authorized == []

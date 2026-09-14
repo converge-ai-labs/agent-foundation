@@ -504,6 +504,37 @@ async def test_environment_access_projects_the_corresponding_tool_surface(
     assert observed_tools == expected_tools
 
 
+@requires_posix_process_groups
+async def test_environment_tool_filters_remove_disabled_tools_before_surface_assembly(tmp_path: Path) -> None:
+    observed_tools: set[str] = set()
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages
+        observed_tools.update(tool.name for tool in info.function_tools)
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(
+            DynamicEnvironmentCapability(
+                _configuration(
+                    file_tools=frozenset({"view"}),
+                    shell_tools=frozenset({"shell_exec"}),
+                )
+            ),
+        ),
+    )
+    result = await executable.run(
+        "inspect",
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path, process_output=True)),
+    )
+
+    assert result.output_or_raise() == "done"
+    assert observed_tools == {"view", "shell_exec"}
+
+
 async def test_mixed_mount_shell_does_not_hide_file_mutations_on_another_mount(tmp_path: Path) -> None:
     observed_tools: set[str] = set()
     (tmp_path / "workspace").mkdir()

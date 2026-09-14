@@ -19,7 +19,7 @@ from a13n_harness import (
     DelegationContextPolicy as HarnessDelegationContextPolicy,
 )
 from a13n_harness.capabilities import SubagentCapability, ToolReviewCapability, ToolReviewConfig
-from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
+from a13n_harness.environment import DynamicEnvironmentCapability
 from a13n_harness.errors import HarnessError
 from a13n_harness.output_schema import structured_output_type
 from a13n_harness.plugin_factories import (
@@ -27,7 +27,13 @@ from a13n_harness.plugin_factories import (
     HarnessPluginFactoryContext,
 )
 from a13n_harness.plugins import AbstractHarnessPlugin
-from a13n_harness.tools import ToolPermissionsCapability
+from a13n_harness.tools import (
+    ToolPermissions,
+    ToolPermissionsCapability,
+    ToolPermissionSetting,
+    source_tool_id,
+    source_tool_prefix,
+)
 from a13n_harness.tools.client import (
     ClientToolsCapability,
     ClientToolsetDefinition,
@@ -39,8 +45,10 @@ from referencing import Registry, Resource
 from referencing.exceptions import CannotDetermineSpecification, Unresolvable
 from referencing.jsonschema import DRAFT202012
 
+from a13n_service.connectivity.selection_domain import connection_kind
+from a13n_service.connectivity.toolsets import source_key
 from a13n_service.digests import digest_request
-from a13n_service.search.runtime import search_capability
+from a13n_service.web.runtime import web_capability
 
 from .domain import (
     EffectiveAgentConfig,
@@ -50,6 +58,7 @@ from .domain import (
 )
 from .plugin_preparation import PluginSelectionError, validate_plugin_selections
 from .resolution import MAX_SUBAGENT_DEPTH, MAX_SUBAGENT_NODES
+from .toolsets import builtin_permission_rules, environment_configuration, web_selection
 
 _CLIENT_TOOLSET_ID = "service"
 _MAX_SCHEMA_REFERENCE_EXPANSIONS = 1024
@@ -237,11 +246,10 @@ class AgentReconstructor:
             )
 
         capabilities = [
-            DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),
+            DynamicEnvironmentCapability(environment_configuration(config.toolsets)),
             *self._provided_capabilities(node),
         ]
-        if config.permissions is not None:
-            capabilities.append(ToolPermissionsCapability(config.permissions))
+        capabilities.append(ToolPermissionsCapability(_permissions(config)))
         if config.reviewer is not None:
             if config.resolved_reviewer_model is None:
                 raise AgentDefinitionReconstructionError("reviewer_model_missing", path="reviewer")
@@ -256,8 +264,9 @@ class AgentReconstructor:
                     )
                 )
             )
-        if config.search is not None:
-            capabilities.append(search_capability(config.search))
+        selected_web = web_selection(config.toolsets)
+        if selected_web is not None:
+            capabilities.append(web_capability(selected_web))
         if config.client_tools:
             capabilities.append(
                 ClientToolsCapability(
@@ -364,6 +373,30 @@ def _output_type(spec: OutputSpec | None) -> Any:
         raise
     except Exception as error:
         raise AgentDefinitionReconstructionError("output_schema_invalid", path="output_spec") from error
+
+
+def _permissions(config: EffectiveAgentConfig) -> ToolPermissions:
+    rules = builtin_permission_rules(config.toolsets)
+
+    def add(tool_id: str, permission: ToolPermissionSetting) -> None:
+        if tool_id in rules:
+            raise AgentDefinitionReconstructionError("tool_permission_conflict")
+        rules[tool_id] = permission
+
+    for selection in config.connection_tools:
+        key = source_key(connection_kind(selection.connection_id), selection.connection_id)
+        if selection.tools is None:
+            add(f"{source_tool_prefix(key, kind='mcp')}*", selection.permission)
+            for name, permission in selection.permissions.items():
+                add(source_tool_id(key, name, kind="mcp"), permission)
+        else:
+            for name in selection.tools:
+                add(source_tool_id(key, name, kind="mcp"), selection.permissions.get(name, selection.permission))
+    for tool in config.client_tools:
+        add(source_tool_id(_CLIENT_TOOLSET_ID, tool.name), tool.permission)
+    # Internal control tools are not an authored Toolset surface. Every authored
+    # built-in, connection, and client tool has an exact rule above.
+    return ToolPermissions(default="allow", rules=rules)
 
 
 def _inline_schema_resources(

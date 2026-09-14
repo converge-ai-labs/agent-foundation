@@ -7,12 +7,12 @@ Service SDKs call a running Service. They do not run a Harness Agent in your pro
 | Client        | Distribution                                          | Implemented surface                                                              |
 | ------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------- |
 | TypeScript    | `@converge.ai/a13n`                                   | Complete checked Native HTTP contract, Workspace binding, Run SSE, notifications |
-| Python        | `a13n`                                                | Generated Native HTTP plus Search Provider facade and Workspace binding          |
-| Go            | `github.com/converge-ai-labs/agent-foundation/sdk/go` | Generated Native HTTP plus Search Provider facade and Workspace binding          |
-| Rust          | `a13n`                                                | Generated Native HTTP plus Search Provider facade and Workspace binding          |
+| Python        | `a13n`                                                | Generated Native HTTP plus Web Provider facade and Workspace binding             |
+| Go            | `github.com/converge-ai-labs/agent-foundation/sdk/go` | Generated Native HTTP plus Web Provider facade and Workspace binding             |
+| Rust          | `a13n`                                                | Generated Native HTTP plus Web Provider facade and Workspace binding             |
 | Companion CLI | `a13n-service-cli`                                    | Help/version only; no resource or network commands yet                           |
 
-Python, Go, and Rust implement the Search Provider type catalog, scoped create/list/get/update/test/references operations. Their `AgentConfig` and `AgentRunOverride` wrappers type **search selection**, preserve other Service-owned fields, and are not complete Agent configuration validators. Their generated low-level bindings now also cover Agent CRUD, Run submission, and binary HTTP operations. Run SSE recovery and notification WebSocket helpers are still TypeScript-only.
+Python, Go, and Rust implement the Web Provider type catalog and scoped create/list/get/update/test/reference operations. Their `AgentConfig` and `AgentRunOverride` wrappers type the independent **Web selection** for search, scrape, fetch, and download, preserve other Service-owned fields, and are not complete Agent configuration validators. Their generated low-level bindings also cover Agent CRUD, Run submission, and binary HTTP operations. Run SSE recovery and notification WebSocket helpers are still TypeScript-only.
 
 The TypeScript generated `paths`, `components`, and `operations` types follow the [Native OpenAPI contract](../assets/reference/service-openapi.json). The generator does not create an alternative Service implementation. AG-UI, A2A, and provider ingress are outside this Native client.
 
@@ -77,7 +77,7 @@ The helper permits two outer transport-failure reconnects in addition to HTTP re
 
 Browser notifications use session cookies. Application keys require a `socketFactory` that can attach authorization headers; credentials never belong in a URL or subprotocol. `gap` requires durable reconciliation. `client.close()` cancels local HTTP, SSE, and notification delivery, clears CSRF state, and does **not** cancel server Runs.
 
-## Python: read Search Providers
+## Python: read Web Providers
 
 ```bash
 uv add a13n
@@ -90,7 +90,7 @@ from a13n import Client
 async def search_accounts(base_url: str, token: str):
     async with Client(base_url, token, timeout=30) as client:
         workspace = await client.workspace()
-        page = await workspace.search_providers(limit=50)
+        page = await workspace.web_providers(limit=50)
         return page.items, page.next_cursor
 ```
 
@@ -98,7 +98,7 @@ async def search_accounts(base_url: str, token: str):
 
 Detail/create/update return `Representation(value, etag, request_id)`. Collection/probe operations return their own values. Updates require a non-weak ETag. `ApiError` carries status/code/message/details/request ID/retry guidance; `ProtocolError` covers invalid, oversized, or schema-invalid responses; `TransportError` can leave mutation outcome unknown. No automatic SDK retries occur.
 
-Use `aclose()` or an async context manager. Closing cancels local requests, clears authentication headers, and releases the owned transport. Workspace clients share that lifetime. [Search](search.md) shows credential inputs, `SearchScope`, and omitted/null/value selection.
+Use `aclose()` or an async context manager. Closing cancels local requests, clears authentication headers, and releases the owned transport. Workspace clients share that lifetime. [Web Providers](web.md) shows credential inputs, `WebProviderScope`, and omitted/null/value selection.
 
 ## Go and Rust
 

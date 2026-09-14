@@ -8,6 +8,7 @@ import pytest
 from a13n_harness import AgentContext, AgentSpec, DeferredToolResume, HarnessBuilder, RunBindings
 from a13n_harness.capabilities import ToolReviewAssessment, ToolReviewCapability, ToolReviewRequest, ToolReviewResult
 from a13n_harness.capabilities.tool_review import ToolReviewPolicy, render_review_instruction
+from a13n_harness.errors import DefinitionError
 from a13n_harness.tools import ToolIdentity, ToolPermissions, ToolPermissionsCapability, source_tool_id
 from pydantic_ai import RunContext, ToolApproved
 from pydantic_ai.capabilities import Capability
@@ -47,9 +48,11 @@ class _Reviewer:
         return ToolReviewResult(assessment=ToolReviewAssessment(risk=self.risk, reason="test review"))
 
 
-def test_selector_specificity_and_auto_defaults() -> None:
+def test_selector_specificity_and_auto_default_resolution() -> None:
     policy = ToolPermissions(default="deny", rules={"environment.*": "ask", "environment.shell_exec": "auto"})
+    assert ToolPermissions().default == "auto"
     assert policy.resolve(ToolIdentity("environment.shell_exec", "review")) == "review"
+    assert policy.resolve(ToolIdentity("environment.shell_exec", "allow")) == "allow"
     assert policy.resolve(ToolIdentity("environment.read")) == "ask"
     assert policy.resolve(ToolIdentity("other")) == "deny"
     assert source_tool_id("a/b", "x*y", kind="mcp") == "mcp/a%2Fb/x%2Ay"
@@ -76,14 +79,17 @@ async def test_native_tools_are_gated_before_custom_validation(mode: str) -> Non
         steps.append("execute")
         return "ok"
 
+    capabilities = [
+        Capability(toolsets=[FunctionToolset([Tool(execute, args_validator=validate)], id="native-tools")]),
+        ToolPermissionsCapability(ToolPermissions(rules={"tool/native-tools/execute": mode})),
+    ]
+    if mode == "review":
+        capabilities.append(ToolReviewCapability(reviewer=_Reviewer()))
     executable = HarnessBuilder().build(
         AgentSpec(),
         model=_model(),
         output_type=str,
-        capabilities=(
-            Capability(toolsets=[FunctionToolset([Tool(execute, args_validator=validate)], id="native-tools")]),
-            ToolPermissionsCapability(ToolPermissions(rules={"tool/native-tools/execute": mode})),
-        ),
+        capabilities=tuple(capabilities),
     )
     result = await executable.run("go", bindings=RunBindings.embedded())
     assert result.status == "completed"
@@ -180,7 +186,7 @@ async def test_renaming_does_not_change_permission_identity() -> None:
     assert executed == []
 
 
-async def test_unmatched_reviewer_does_not_limit_arguments() -> None:
+async def test_unmatched_reviewer_fails_explicitly() -> None:
     reviewer = _Reviewer()
     seen = []
 
@@ -198,9 +204,9 @@ async def test_unmatched_reviewer_does_not_limit_arguments() -> None:
             ToolReviewCapability(reviewers={"environment.shell_exec": reviewer}),
         ),
     )
-    result = await executable.run("go", bindings=RunBindings.embedded())
-    assert result.status == "completed"
-    assert seen == [66000]
+    with pytest.raises(DefinitionError, match="matching reviewer"):
+        await executable.run("go", bindings=RunBindings.embedded())
+    assert seen == []
     assert reviewer.requests == []
 
 
@@ -399,7 +405,10 @@ async def test_approval_context_is_call_local_and_cleared_after_dispatch() -> No
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=model),
-        capabilities=(Capability(toolsets=[FunctionToolset([execute], id="business")]),),
+        capabilities=(
+            Capability(toolsets=[FunctionToolset([execute], id="business")]),
+            ToolPermissionsCapability(ToolPermissions(default="allow")),
+        ),
     )
     result = await executable.run("go", bindings=RunBindings.embedded())
     assert result.status == "completed"

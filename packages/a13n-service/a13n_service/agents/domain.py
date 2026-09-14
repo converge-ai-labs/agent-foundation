@@ -9,7 +9,6 @@ from typing import Annotated, Literal
 
 from a13n_harness import HarnessModelCharacteristics
 from a13n_harness.capabilities import ToolReviewConfig
-from a13n_harness.tools import ToolPermissions
 from a13n_harness.tools.client import ClientToolDefinition
 from pydantic import (
     AfterValidator,
@@ -33,9 +32,10 @@ from a13n_service.ids import ObjectId, new_object_id
 from a13n_service.models.domain import ModelExecutionSnapshot, ModelKey
 from a13n_service.models.settings import validate_settings_bounds
 from a13n_service.resource_keys import ResourceKey
-from a13n_service.search.domain import SearchSelection
 from a13n_service.secrets.domain import SecretKey
 from a13n_service.skills.domain import SkillKey, SkillRevisionLock
+
+from .toolsets import ToolsetOverrides, Toolsets, default_toolsets
 
 BoundedKey = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$")]
 PluginKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_.-]{1,127}$")]
@@ -163,10 +163,6 @@ class InputAdapterConfig(StrictModel):
     config: JsonObject = Field(default_factory=dict)
 
 
-class AssetPublicationConfig(StrictModel):
-    enabled: Literal[True] = True
-
-
 class SecretRequirement(StrictModel):
     key: SecretKey
     description: Annotated[str, StringConstraints(max_length=2048)] | None = None
@@ -224,8 +220,7 @@ class AgentReviewer(ToolReviewConfig):
 
 
 class AgentConfig(StrictModel):
-    search: SearchSelection | None = Field(default=None, exclude_if=lambda value: value is None)
-    permissions: ToolPermissions | None = Field(default=None, exclude_if=lambda value: value is None)
+    toolsets: Toolsets = Field(default_factory=default_toolsets)
     reviewer: AgentReviewer | None = Field(default=None, exclude_if=lambda value: value is None)
     subagent_mode: Literal["inline", "async"] = "inline"
     model: AgentModel
@@ -239,7 +234,6 @@ class AgentConfig(StrictModel):
     output_spec: OutputSpec | None = None
     retries: RetryConfig | None = None
     secret_requirements: tuple[SecretRequirement, ...] = Field(default=(), max_length=128)
-    asset_publication: AssetPublicationConfig | None = None
     protocol: ProtocolConfig
 
     @model_validator(mode="after")
@@ -281,8 +275,7 @@ class RetryOverride(StrictModel):
 
 
 class AgentRunOverride(StrictModel):
-    search: SearchSelection | None = None
-    permissions: ToolPermissions | None = None
+    toolsets: ToolsetOverrides | None = None
     reviewer: AgentReviewer | None = None
     model: ModelOverride | None = None
     instructions: Annotated[str, StringConstraints(max_length=256 * 1024)] | None = None
@@ -346,8 +339,7 @@ class ChildAgentExecution(StrictModel):
 
 class EffectiveAgentConfig(_ResolvedContent[EffectiveAgentModel]):
     resolved_reviewer_model: EffectiveAgentModel | None = Field(default=None, exclude_if=lambda value: value is None)
-    search: SearchSelection | None = Field(default=None, exclude_if=lambda value: value is None)
-    permissions: ToolPermissions | None = Field(default=None, exclude_if=lambda value: value is None)
+    toolsets: Toolsets = Field(default_factory=default_toolsets)
     reviewer: AgentReviewer | None = Field(default=None, exclude_if=lambda value: value is None)
     plugins: tuple[PluginSelection, ...] = Field(default=(), max_length=128)
     subagent_mode: Literal["inline", "async"] = "inline"
@@ -360,7 +352,6 @@ class EffectiveAgentConfig(_ResolvedContent[EffectiveAgentModel]):
     output_spec: OutputSpec | None = None
     retries: RetryConfig | None = None
     secret_requirements: tuple[SecretRequirement, ...] = ()
-    asset_publication: AssetPublicationConfig | None = None
     protocol: ProtocolConfig
     content_digest: Sha256Digest
 

@@ -1,4 +1,4 @@
-use crate::search::*;
+use crate::web::*;
 use reqwest::{Method, Url, header};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -157,7 +157,7 @@ impl Client {
         segments: &[&str],
         body: Option<Value>,
         etag: Option<&str>,
-        query: Option<&SearchListOptions>,
+        query: Option<&WebProviderListOptions>,
     ) -> Result<Representation<T>, Error> {
         let http = self
             .http
@@ -245,59 +245,59 @@ impl Client {
         Ok(crate::WorkspaceClient::new(self, id))
     }
 
-    pub async fn search_provider_types(
+    pub async fn web_provider_types(
         &self,
-    ) -> Result<Representation<Page<SearchProviderDefinition>>, Error> {
-        self.request(Method::GET, &["search-provider-types"], None, None, None)
+    ) -> Result<Representation<Page<WebProviderDefinition>>, Error> {
+        self.request(Method::GET, &["web-provider-types"], None, None, None)
             .await
     }
-    pub async fn search_provider_type(
+    pub async fn web_provider_type(
         &self,
         provider_type: &str,
-    ) -> Result<Representation<SearchProviderDefinition>, Error> {
+    ) -> Result<Representation<WebProviderDefinition>, Error> {
         self.request(
             Method::GET,
-            &["search-provider-types", provider_type],
+            &["web-provider-types", provider_type],
             None,
             None,
             None,
         )
         .await
     }
-    pub async fn search_providers(
+    pub async fn web_providers(
         &self,
-        scope: &SearchScope,
-        options: &SearchListOptions,
-    ) -> Result<Representation<Page<SearchProvider>>, Error> {
+        scope: &WebProviderScope,
+        options: &WebProviderListOptions,
+    ) -> Result<Representation<Page<WebProvider>>, Error> {
         self.request(Method::GET, &scope.segments(), None, None, Some(options))
             .await
     }
-    pub async fn search_provider(
+    pub async fn web_provider(
         &self,
-        scope: &SearchScope,
+        scope: &WebProviderScope,
         provider_id: &str,
-    ) -> Result<Representation<SearchProvider>, Error> {
+    ) -> Result<Representation<WebProvider>, Error> {
         let mut path = scope.segments().to_vec();
         path.push(provider_id);
         self.request(Method::GET, &path, None, None, None).await
     }
-    pub async fn create_search_provider(
+    pub async fn create_web_provider(
         &self,
-        scope: &SearchScope,
-        request: &CreateSearchProviderRequest,
-    ) -> Result<Representation<SearchProvider>, Error> {
+        scope: &WebProviderScope,
+        request: &CreateWebProviderRequest,
+    ) -> Result<Representation<WebProvider>, Error> {
         let mut body = serde_json::to_value(request).map_err(|_| Error::InvalidInput)?;
         body["credential"] = Value::String(request.credential.0.clone());
         self.request(Method::POST, &scope.segments(), Some(body), None, None)
             .await
     }
-    pub async fn update_search_provider(
+    pub async fn update_web_provider(
         &self,
-        scope: &SearchScope,
+        scope: &WebProviderScope,
         provider_id: &str,
         etag: &str,
-        request: &UpdateSearchProviderRequest,
-    ) -> Result<Representation<SearchProvider>, Error> {
+        request: &UpdateWebProviderRequest,
+    ) -> Result<Representation<WebProvider>, Error> {
         let mut body = serde_json::to_value(request).map_err(|_| Error::InvalidInput)?;
         if let Some(credential) = &request.credential {
             body["credential"] = Value::String(credential.0.clone());
@@ -307,25 +307,25 @@ impl Client {
         self.request(Method::PATCH, &path, Some(body), Some(etag), None)
             .await
     }
-    pub async fn test_search_provider(
+    pub async fn test_web_provider(
         &self,
-        scope: &SearchScope,
+        scope: &WebProviderScope,
         provider_id: &str,
-    ) -> Result<Representation<SearchProviderTestResult>, Error> {
+    ) -> Result<Representation<WebProviderTestResult>, Error> {
         let mut path = scope.segments().to_vec();
         path.extend([provider_id, "test"]);
         self.request(Method::POST, &path, Some(json!({})), None, None)
             .await
     }
-    pub async fn search_provider_references(
+    pub async fn web_provider_references(
         &self,
-        scope: &SearchScope,
+        scope: &WebProviderScope,
         provider_id: &str,
-        options: &SearchListOptions,
-    ) -> Result<Representation<Page<SearchProviderReference>>, Error> {
+        options: &WebProviderListOptions,
+    ) -> Result<Representation<Page<WebProviderReference>>, Error> {
         let mut path = scope.segments().to_vec();
         path.extend([provider_id, "references"]);
-        let options = SearchListOptions {
+        let options = WebProviderListOptions {
             cursor: options.cursor.clone(),
             limit: options.limit,
             ..Default::default()

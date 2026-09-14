@@ -176,6 +176,7 @@ class ConnectivitySelectionResolver:
                     authorization_generation=connection.authorization_generation,
                     tools=selection.tools,
                     defer_loading=selection.defer_loading,
+                    permissions=selection.permissions,
                 )
             )
         return FrozenRunConnectivity(tuple(selections))

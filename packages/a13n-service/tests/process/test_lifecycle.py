@@ -148,7 +148,7 @@ async def test_connectivity_role_does_not_build_control_adapters(
         raise AssertionError("data-plane role built control-plane adapters")
 
     monkeypatch.setattr(
-        "a13n_service.process.connectivity.built_in_connector_provider_registry",
+        "a13n_service.process.connectivity.build_connector_provider_registry",
         fail_if_called,
     )
     app = create_app(local_settings(tmp_path, role=ProcessRole.connectivity))

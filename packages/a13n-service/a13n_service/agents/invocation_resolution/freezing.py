@@ -18,10 +18,14 @@ from a13n_service.iam import (
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.models.service import ModelError
 from a13n_service.models.settings import effective_settings
-from a13n_service.search.resources import require_provider as require_search_provider
+from a13n_service.web.domain import ScrapeSelection, provider_selections
+from a13n_service.web.registry import WebProviderRegistry
+from a13n_service.web.resources import require_operation
+from a13n_service.web.resources import require_provider as require_web_provider
 
 from ..connectivity_resolution import freeze_invocation_connectivity
 from ..domain import (
+    AgentConfig,
     ChildAgentExecution,
     EffectiveAgentConfig,
     EffectiveAgentModel,
@@ -32,6 +36,7 @@ from ..errors import (
     map_authorization_error,
     map_model_error,
 )
+from ..toolsets import web_selection
 from .contracts import (
     AgentSelectorKind,
     FrozenAgentInvocation,
@@ -49,9 +54,11 @@ class AgentInvocationFreezer:
         model_selector: AcceptedModelSelector,
         *,
         connectivity_resolver: ConnectivitySelectionResolver,
+        web_provider_registry: WebProviderRegistry,
     ) -> None:
         self._model_selector = model_selector
         self._connectivity_resolver = connectivity_resolver
+        self._web_provider_registry = web_provider_registry
 
     async def freeze_in_transaction(
         self,
@@ -113,22 +120,31 @@ class AgentInvocationFreezer:
                 )
             except ModelError as error:
                 raise map_model_error(error) from error
-            if prepared.merged.search is not None:
-                await require_search_provider(
+            original_web = web_selection(AgentConfig.model_validate(revision_record.config).toolsets)
+            original_by_operation = dict(provider_selections(original_web))
+            for operation, selection in provider_selections(web_selection(prepared.merged.toolsets)):
+                provider = await require_web_provider(
                     session,
                     organization_id=prepared.organization_id,
                     workspace_id=prepared.workspace_id,
-                    provider_id=prepared.merged.search.provider_id,
+                    provider_id=selection.provider_id,
                     eligible=True,
+                    registry=self._web_provider_registry,
                 )
-                original_search = revision_record.config.get("search")
-                original_provider = original_search.get("provider_id") if isinstance(original_search, dict) else None
-                if original_provider != prepared.merged.search.provider_id:
+                require_operation(
+                    provider,
+                    operation,
+                    self._web_provider_registry,
+                    selection=selection if isinstance(selection, ScrapeSelection) else None,
+                )
+                original_operation = original_by_operation.get(operation)
+                original_provider = original_operation.provider_id if original_operation is not None else None
+                if original_provider != selection.provider_id:
                     await authorize_workspace(
                         session,
                         actor=prepared.actor,
                         workspace_id=prepared.workspace_id,
-                        action=WorkspaceAction.search_provider_read,
+                        action=WorkspaceAction.web_provider_read,
                     )
             skills = await freeze_skills(session, prepared)
             connectivity = await freeze_invocation_connectivity(
@@ -161,7 +177,7 @@ class AgentInvocationFreezer:
                 ),
                 characteristics=prepared.merged.model.characteristics,
             ),
-            "permissions": prepared.merged.permissions,
+            "toolsets": prepared.merged.toolsets,
             "reviewer": prepared.merged.reviewer,
             "resolved_reviewer_model": (
                 EffectiveAgentModel(
@@ -188,8 +204,6 @@ class AgentInvocationFreezer:
             "output_spec": prepared.merged.output_spec,
             "retries": prepared.merged.retries,
             "secret_requirements": prepared.merged.secret_requirements,
-            "asset_publication": prepared.merged.asset_publication,
-            "search": prepared.merged.search,
             "protocol": prepared.merged.protocol,
         }
         effective_without_digest = EffectiveAgentConfig(

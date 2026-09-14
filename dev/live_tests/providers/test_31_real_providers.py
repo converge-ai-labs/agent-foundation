@@ -23,7 +23,7 @@ SEARCH_PROVIDERS = [
 @pytest.mark.parametrize("configured_provider", SEARCH_PROVIDERS, indirect=True)
 async def test_configured_search_account_probe(configured_provider):
     journey, provider = configured_provider
-    path = journey.base + f"/search-providers/{provider['id']}"
+    path = journey.base + f"/web-providers/{provider['id']}"
     persisted = await journey.live.request("GET", path)
     assert persisted["type"] == provider["type"] and persisted["credential_configured"] is True
     assert "credential" not in persisted and persisted["configuration"] == {}
@@ -39,19 +39,24 @@ async def test_configured_search_account_probe(configured_provider):
 
 @pytest.mark.parametrize("configured_provider", SEARCH_PROVIDERS, indirect=True)
 @pytest.mark.parametrize(
-    "include_domains,max_results,num",
+    "allow_domains,max_results,num",
     [
         pytest.param([], 3, 2, id="requested-limit"),
         pytest.param(["python.org"], 2, 10, id="domain-and-agent-limit"),
         pytest.param(["python.org"], 1, 1, id="single-result"),
     ],
 )
-async def test_configured_search_run(configured_provider, include_domains, max_results, num):
+async def test_configured_search_run(configured_provider, allow_domains, max_results, num):
     journey, provider = configured_provider
     assert provider["type"] in {"exa", "brave"}
-    environment, _ = await journey.environment()
     agent = await journey.agent(
-        search={"provider_id": provider["id"], "max_results": max_results, "include_domains": include_domains}
+        web={
+            "search": {
+                "provider_id": provider["id"],
+                "max_results": max_results,
+                "allow_domains": allow_domains,
+            }
+        }
     )
     arguments = {"query": "Python asyncio documentation", "num": num}
     # Only the decision is scripted. Neither the search response nor the final
@@ -60,7 +65,6 @@ async def test_configured_search_run(configured_provider, include_domains, max_r
     receipt = await journey.start(
         case,
         agent_id=agent["agent"]["id"],
-        environment={"environment_id": environment["id"]},
         input=agent_input(
             "LIVE_TEST " + json.dumps(case) + "\nUse web search to find official Python asyncio documentation."
         ),
@@ -93,8 +97,8 @@ async def test_configured_search_run(configured_provider, include_domains, max_r
         assert isinstance(result["snippet"], str)
         url = urlsplit(result["url"])
         assert url.scheme in {"http", "https"} and url.hostname
-        if include_domains:
-            assert any(url.hostname == domain or url.hostname.endswith("." + domain) for domain in include_domains)
+        if allow_domains:
+            assert any(url.hostname == domain or url.hostname.endswith("." + domain) for domain in allow_domains)
         assert result["url"] not in json.dumps(first["body"]), "A source must not be preseeded in the LLM request"
 
     # The scripted LLM echoes the tool result as its final answer over streamed
@@ -112,7 +116,7 @@ async def test_configured_search_run(configured_provider, include_domains, max_r
         len(outcome["results"]),
         num,
         max_results,
-        include_domains,
+        allow_domains,
     )
 
 

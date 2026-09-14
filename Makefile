@@ -3,7 +3,7 @@
 A13N_SERVICE_IMAGE ?= a13n-service:local
 SANDBOX_IMAGE ?= a13n-sandbox:local
 A13N_HARNESS_UI_IMAGE ?= a13n-harness-ui:local
-EXAMPLE_DIRS := examples/agent-app examples/environment-provider examples/plugins
+EXAMPLE_DIRS := examples/agent-app examples/environment-provider examples/plugins examples/provider-plugin
 PYTHON_TEST_DIRS ?=
 PYTHON_TEST_WORKERS ?=
 SERVICE_CONFIG ?= dev/service/local.toml

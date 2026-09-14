@@ -96,6 +96,10 @@ class PluginsSettings(Section):
     keys: tuple[PluginKey, ...] = Field(default=(), max_length=128)
 
 
+class ProviderPluginsSettings(Section):
+    enabled: tuple[str, ...] = Field(default=(), max_length=128)
+
+
 class WorkerSettings(Section):
     concurrency: int = Field(default=8, ge=1, le=1024)
     poll_interval_seconds: float = Field(default=1, gt=0, le=60)
@@ -112,7 +116,6 @@ class SubagentsSettings(Section):
 class EnvironmentsSettings(Section):
     provider_builtins: tuple[str, ...] = ("a13n.e2b", "a13n.http-envd")
     local_providers: dict[LocalProviderType, JsonObject] = Field(default_factory=dict)
-    provider_extensions: tuple[str, ...] = ()
     maintenance_interval_seconds: float = Field(default=5, gt=0, le=300)
     operation_timeout_seconds: float = Field(default=60, gt=0, le=3600)
     max_targets_per_workspace: int = Field(default=DEFAULT_MAX_TARGETS, ge=1)

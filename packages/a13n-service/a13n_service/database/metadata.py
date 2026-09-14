@@ -40,10 +40,10 @@ def service_metadata() -> MetaData:
     from a13n_service.lifecycle import models as lifecycle_models
     from a13n_service.models import models as model_models
     from a13n_service.object_retention import models as object_retention_models
-    from a13n_service.search import models as search_models
     from a13n_service.secrets import models as secret_models
     from a13n_service.skills import models as skill_models
     from a13n_service.subagents import models as subagent_models
+    from a13n_service.web import models as web_models
 
     del (
         agent_models,
@@ -63,7 +63,7 @@ def service_metadata() -> MetaData:
         mcp_models,
         model_models,
         object_retention_models,
-        search_models,
+        web_models,
         secret_models,
         skill_models,
         subagent_models,

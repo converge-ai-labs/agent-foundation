@@ -40,7 +40,7 @@ def match_selector[T](rules: Mapping[str, T], tool_id: str) -> T | None:
 
 
 class ToolPermissions(BaseModel):
-    """Portable configuration. Auto resolves a tool default, never an execution decision."""
+    """Portable rules; optional auto resolves the matched tool's trusted default."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 

@@ -217,7 +217,7 @@ class RunAttemptExecutor[OutputT]:
                         code = error.reason
                     elif isinstance(error, RunError) and error.code in {
                         "environment_required",
-                        "search_provider_unavailable",
+                        "web_provider_unavailable",
                         "web_operation_unavailable",
                     }:
                         code = error.code

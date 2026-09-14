@@ -40,7 +40,7 @@ def test_authentication_is_described_on_protected_not_public_operations() -> Non
 def test_native_errors_use_the_runtime_envelope() -> None:
     app = create_app(Settings())
     schema = app.openapi()
-    operation = schema["paths"]["/api/v1/workspaces/{workspace}/search-providers"]["post"]
+    operation = schema["paths"]["/api/v1/workspaces/{workspace}/web-providers"]["post"]
     assert "422" not in operation["responses"]
     for status in ("400", "default"):
         assert operation["responses"][status]["content"]["application/json"]["schema"] == {
@@ -62,7 +62,7 @@ def test_binary_streams_and_preconditions_are_explicit() -> None:
     assert set(image["content"]) == {"image/webp"}
     stream = paths["/api/v1/runs/{run_id}/stream"]["get"]["responses"]["200"]
     assert set(stream["content"]) == {"text/event-stream"}
-    search = paths["/api/v1/workspaces/{workspace}/search-providers/{provider_id}"]["patch"]
+    search = paths["/api/v1/workspaces/{workspace}/web-providers/{provider_id}"]["patch"]
     header = next(parameter for parameter in search["parameters"] if parameter["name"] == "If-Match")
     assert header["required"] is True
     assert header["schema"]["type"] == "string"

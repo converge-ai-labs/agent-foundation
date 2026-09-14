@@ -37,16 +37,17 @@ The `201` representation contains `agent` and `revision`. Save their returned ID
 
 ## Configure tool permissions and a reviewer
 
-Add optional `permissions` and `reviewer` objects to the Agent `config` when local tool calls need a front permission gate. The following is a fragment to merge into a complete config; replace the reviewer placeholder with a real managed Model **ID**, not a Model key or provider route:
+Each built-in Tool owns its permission in `toolsets`. Authored permissions default to persisted `auto`; replace the reviewer placeholder with a real managed Model **ID**, not a Model key or provider route:
 
 ```json
 {
-  "permissions": {
-    "default": "auto",
-    "rules": {
-      "environment.shell_exec": "review",
-      "filesystem.remove": "ask",
-      "tool/reporting/*": "review"
+  "toolsets": {
+    "shell": {
+      "enabled": true,
+      "tools": {
+        "exec": {"enabled": true, "permission": "review", "config": {}},
+        "signal": {"enabled": true, "permission": "ask", "config": {}}
+      }
     }
   },
   "reviewer": {
@@ -64,13 +65,13 @@ Add optional `permissions` and `reviewer` objects to the Agent `config` when loc
 }
 ```
 
-Use actual stable tool IDs from the prepared surface, not display-name guesses. `auto` defaults all local tools to review; `allow` continues, `deny` blocks, `ask` requests human approval, and `review` consults the reviewer. Without a matching reviewer, review adds no restriction. These settings never widen Service IAM or Environment authority. See the [Harness permission guide](../a13n-harness/managed-tools.md#select-tool-permissions) for selectors, custom instructions, and distinct approval sources.
+`auto` resolves through each Tool's catalogued code-owned default; `allow` continues, `deny` blocks, `ask` requests human approval, and `review` consults the reviewer. Effective review without a matching reviewer is invalid at save/override and fails explicitly at runtime. These settings never widen Service IAM or Environment authority. Code-first Harness consumers can still use stable-ID selectors; Service built-ins keep exact permission ownership in their Tool entries.
 
-Run acceptance freezes reviewer Model execution settings alongside the main Model. Later Model edits do not change an accepted Run; credentials still resolve through current managed authentication. In `config_override`, omission inherits either field, null clears it, and an object replaces it entirely. A reviewer approval may be followed by a separate tool-policy approval through the normal waiting/feedback flow.
+Run acceptance freezes reviewer Model execution settings alongside the main Model. Later Model edits do not change an accepted Run; credentials still resolve through current managed authentication. In `config_override`, each supplied Toolset entry replaces that whole entry while omitted entries inherit. Reviewer omission inherits; null can clear it only when no active Tool resolves to review. A reviewer approval may be followed by a separate tool-policy approval through the normal waiting/feedback flow.
 
 Review usage enters the existing accounting records with tool/call correlation. The stream exposes `tool_review_result` custom events with a completed risk/reason/usage result and independently computed decision, or a safe error code and effective decision. Treat those as observations, not another billable record or proof of execution.
 
-For first-party Web access, `search.allow_domains` and `search.deny_domains` constrain returned search URLs and fetch/download/scrape destinations, including redirect hops. Use exact hosts or explicit `*.` subdomains; deny wins. Existing `include_domains` keeps its separate search-filter semantics. These settings do not sandbox shell or remote MCP network access.
+For first-party Web access, each selected operation has independent `allow_domains` and `deny_domains`. A bare host includes its apex and subdomains; wildcard syntax is invalid and deny wins. Search always filters returned result URLs locally. Fetch and download check every redirect, while restricted Provider scrape requires explicit adapter support. These settings do not sandbox shell or remote MCP network access.
 
 ## Accept a Run
 

@@ -38,7 +38,7 @@ flowchart TB
     subgraph Service[a13n-service]
         Gateway[Protocol Gateway]
         Control[Control plane]
-        Definitions[AgentRevisions, Skill revisions, Assets, Model Providers, Models, and Search Providers]
+        Definitions[AgentRevisions, Skill revisions, Assets, Model Providers, Models, and Web Providers]
         Connectivity[Connectivity resources]
         Lifecycle[Durable Runs and RunAttempts]
         Worker[Worker]
@@ -289,7 +289,7 @@ flowchart LR
     Agent --> Provider[Feature provider]
 ```
 
-Installed plugins and native objects are trusted in-process code. Harness Plugin, Environment Run Extension, Connectivity adapter, and Environment extension package presence is only availability; an operator explicitly selects trusted implementations before use. Capabilities remain native Agent features rather than a fourth Harness plugin plane. Provider-constructed Environment adapters, Connectivity adapters, and directly constructed code-first objects enter their owning concrete composition paths. Untrusted or independently governed behavior belongs behind feature-specific protocols. The core defines no universal remote-plugin or package-installation system. Service's [installed Harness plugins](a13n-service/36-installed-harness-plugins.md) are packaged in its build artifact and update through image rolling deployment. Retained Runs preserve normalized configuration and state while allowing compatible new plugin code.
+Installed plugins and native objects are trusted in-process code. Harness Plugin, Environment Run Extension, Connectivity adapter, and Provider package presence is only availability; an operator explicitly selects trusted implementations before use. Capabilities remain native Agent features rather than a fourth Harness plugin plane. Provider-constructed Environment adapters, Connectivity adapters, and directly constructed code-first objects enter their owning concrete composition paths. Untrusted or independently governed behavior belongs behind feature-specific protocols. The core defines no universal remote-plugin or runtime package-installation system. Service's [installed Harness plugins](a13n-service/36-installed-harness-plugins.md) and selected [deployment Provider packages](a13n-service/02-distribution-composition-and-extensions.md#deployment-provider-packages) are packaged in its build artifact and update through image rolling deployment; their catalogs and runtimes remain distinct. Retained Runs preserve normalized configuration and state while allowing compatible new plugin code.
 
 ## Observability and Cost
 

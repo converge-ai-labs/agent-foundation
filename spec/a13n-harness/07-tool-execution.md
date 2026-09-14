@@ -194,7 +194,7 @@ Managed tools retain `HarnessToolMetadata.tool_id`. Other tools use `tool/<sourc
 | `allow`  | Continue without front-gate review or permission approval.                               |
 | `deny`   | Return a native tool failure before custom validation, resource resolution, or dispatch. |
 | `ask`    | Require a verified human approval with source `permission`.                              |
-| `review` | Invoke the selected reviewer; if none matches, continue without an added restriction.    |
+| `review` | Invoke the selected reviewer; if none matches, fail explicitly before dispatch.          |
 
 The order is native structural validation and conversion, permission/review, tool-owned argument validation, managed resource resolution and current invocation policy where present, credentials/grants, then dispatch. A front permission denial incurs no review cost. An invocation-policy denial may occur after review because that policy needs resolved resources. No mode or reviewer outcome bypasses current tool, Host, Environment, or Provider authority.
 
@@ -250,7 +250,7 @@ Review history is compact advisory evidence in existing portable `HarnessState`,
 
 Observed dispatch starts as `unknown` and becomes `tool_returned` or `tool_reported_failure` only when the local tool returns. A returned value is not proof that an external effect succeeded; exceptions and cancellation leave the outcome unknown. Reviews and confirmed human denials are `not_executed`. Actual root human denials are recorded from native typed results and retained pending-request provenance, including inline and resumed paths; response text or model-supplied metadata never creates approval facts. Nested ToolProxy and CodeAct local calls use the same history boundary. Concurrent record updates do not lose evidence; no history lock is held across model or tool I/O.
 
-History does not grant permission, lower a risk threshold, automatically reuse a review, or prove execution. Fresh review runs again after approval resume; a current denial wins over earlier approval. A missing matching reviewer adds no restriction and emits no assessment.
+History does not grant permission, lower a risk threshold, automatically reuse a review, or prove execution. Fresh review runs again after approval resume; a current denial wins over earlier approval. A missing matching reviewer fails explicitly and emits no assessment.
 
 ### Model-backed Review and Shell Specialization
 

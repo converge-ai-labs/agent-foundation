@@ -136,9 +136,9 @@ pub mod identity_settings_api;
 pub mod lifecycle_events_api;
 pub mod model_management_api;
 pub mod protocol_gateway_api;
-pub mod search_providers_api;
 pub mod skill_management_api;
 pub mod threads_api;
 pub mod trace_query_api;
+pub mod web_providers_api;
 
 pub mod configuration;

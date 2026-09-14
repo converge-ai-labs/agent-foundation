@@ -82,6 +82,9 @@ documentation_url = "https://docs.example.com/tools"
 [plugins]
 keys = []
 
+[provider_plugins]
+enabled = ["acme"]
+
 [observability]
 tracing = true
 trace_content = "none"
@@ -92,7 +95,7 @@ provider = "none"
 
 The example defines section ownership, not an exhaustive setting catalog. The executable package documents concrete fields and environment names. An environment variable maps to its section and field under the `A13N_SERVICE_` prefix. Unknown TOML sections and fields are rejected; a misspelled or distribution-unsupported setting never disappears silently.
 
-The artifact's fixed distribution descriptor supplies the complete typed configuration schema before values are parsed. No CLI option, TOML field, or environment variable selects a distribution or names an import target. Distribution-specific settings live in an explicit namespaced section and cannot reinterpret a common field. Secret-bearing values can come from the selected TOML file or environment. They remain redacted from representations, logs, traces, errors, probes, and generated configuration output. The deployment protects any file or environment source containing credentials.
+The artifact's fixed distribution descriptor supplies the complete typed configuration schema before values are parsed. No CLI option, TOML field, or environment variable selects a distribution or names an import target. `provider_plugins.enabled` selects metadata names from installed `a13n.providers` entry points; installation remains a build/deployment action and the selected entry points can register only implementations of the four existing Provider domains. Distribution-specific settings live in an explicit namespaced section and cannot reinterpret a common field. Secret-bearing values can come from the selected TOML file or environment. They remain redacted from representations, logs, traces, errors, probes, and generated configuration output. The deployment protects any file or environment source containing credentials.
 
 Configuration is immutable after startup. Changing a setting requires a new process. The service performs no partial or hot reload that could leave replicas or role components using different configuration generations.
 
@@ -269,6 +272,8 @@ The `gateway.a2a_enabled` field is a common operational compatibility contract; 
 The effective configuration is deployment input, not a durable product resource or public API representation. Replicas participating in one deployment use configuration and distribution versions that are compatible with the same schema and data-flow contracts.
 
 `A13N_SERVICE_PLUGIN_KEYS` selects installed factory entry points for the Worker process lifetime. Control and Connectivity do not consume the catalog. Plugin code and dependencies update only through a new build and rolling deployment. Frozen configuration and state compatibility replace exact-code pinning under [Installed Harness Plugins](36-installed-harness-plugins.md).
+
+`A13N_SERVICE_PROVIDER_PLUGIN_ENABLED` is the JSON-array environment form of `provider_plugins.enabled`. Every role loads the same selected Provider metadata before readiness; Control uses definitions for management, Worker uses Environment, Model, Connector, and Web implementations for execution, and the `all` process shares one immutable catalog. Connectivity-only loads the catalog for deployment consistency but does not construct management or outbound execution runtimes. Duplicate, missing, ambiguous, incompatible, or invalid selected entries fail startup. This does not import or change the Worker-only Harness plugin catalog.
 
 ## Invariants
 

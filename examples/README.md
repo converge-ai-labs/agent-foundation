@@ -12,6 +12,7 @@ This directory contains runnable, tested examples of public Agent Foundation ext
 | Wrap the complete Harness run               | [Harness plugin example](plugins/README.md#harness-plugin)                       | YAML/JSON configuration, runtime directory discovery, direct objects, parameters, and per-run isolation           |
 | Span the complete Environment lifecycle     | [Environment run-extension example](plugins/README.md#environment-run-extension) | Explicit factory selection, public Harness execution, aggregate setup, and reverse-order cleanup                  |
 | Publish and compose an Environment Provider | [Environment Provider example](plugins/README.md#environment-provider)           | Entry-point and explicit Provider catalogs, strict configuration, fresh adapters, and multi-mount routing         |
+| Install deployment Provider implementations | [Deployment Provider plugin example](provider-plugin/README.md)                  | Selected package metadata, typed Web and Model registration, and operation-scoped runtime construction            |
 
 Run every example and its focused checks from the repository root:
 
@@ -43,6 +44,10 @@ uv run plugin-example-environment-extension-entrypoint
 uv run plugin-example-environment-extension-code
 uv run plugin-example-harness-entrypoint
 uv run plugin-example-harness-code
+uv run pytest
+
+cd ../provider-plugin
+uv sync --locked
 uv run pytest
 ```
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from a13n_service.interactions.control_domain import (
     CompletePendingResolution,
+    RejectPendingResolution,
     RespondPendingResolution,
     normalize_feedback,
 )
@@ -67,6 +68,21 @@ def test_waiting_feedback_no_response_is_an_explicit_failed_or_empty_result() ->
         "answers": {},
         "response": "The user supplied no response.",
     }
+
+
+def test_waiting_feedback_preserves_denial_reason() -> None:
+    parent, pending = _waiting_parent()
+    feedback = normalize_feedback(
+        waiting_run_id=RUN_ID,
+        sealed_state_digest_sha256="a" * 64,
+        pending=pending,
+        submitted=(RejectPendingResolution(call_id="approval-1", reason="Unsafe destination"),),
+    )
+
+    denial = map_waiting_feedback(feedback, parent).results.approvals["approval-1"]
+
+    assert isinstance(denial, ToolDenied)
+    assert denial.message == "Unsafe destination"
 
 
 def _waiting_parent() -> tuple[RunCheckpoint, RunPendingSummary]:

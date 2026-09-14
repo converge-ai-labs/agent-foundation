@@ -1,4 +1,4 @@
-//! Typed Native HTTP bindings and an async Search Provider convenience client.
+//! Typed Native HTTP bindings and an async Web Provider convenience client.
 #![forbid(unsafe_code)]
 mod client;
 /// Low-level Native bindings. Request fields retain concrete types.
@@ -11,8 +11,8 @@ mod client;
 /// let _ = UserMessage { content: 42, ..Default::default() };
 /// ```
 pub mod generated;
-mod search;
+mod web;
 mod workspace;
 pub use client::{ApiError, CallError, Client, Error};
-pub use search::*;
+pub use web::*;
 pub use workspace::WorkspaceClient;

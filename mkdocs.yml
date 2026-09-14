@@ -106,7 +106,7 @@ nav:
           - Resource lifecycles: a13n-service/resources.md
           - Models: a13n-service/models.md
           - External tools: a13n-service/external-tools.md
-          - Web search: a13n-service/search.md
+          - Web Providers: a13n-service/web.md
       - Integrate:
           - Language SDKs: a13n-service/sdks.md
           - HTTP contracts: a13n-service/http-contracts.md

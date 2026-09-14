@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.agents.execution_graph import inline_child_executions
 from a13n_service.agents.plugin_preparation import prepare_agent_plugins
 from a13n_service.agents.reconstruction import AgentDefinitionReconstructionContext, AgentReconstructor
+from a13n_service.agents.toolsets import web_selection
 from a13n_service.assets.runtime import AssetRuntime
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
@@ -37,12 +38,12 @@ from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.models.runtime import SnapshotRunModelResolver
 from a13n_service.observability import observe_input
-from a13n_service.search.runtime import SearchRuntime, graph_uses_search
 from a13n_service.secrets.agent_inputs import graph_secret_requirements
 from a13n_service.secrets.agent_runtime import AgentSecretRuntime, BoundAgentSecrets
 from a13n_service.skills.runtime import PreparedSkillRuntime, SkillRuntimePreparer
 from a13n_service.storage import short_session
 from a13n_service.subagents.result_delivery import AsyncSubagentResultMaterializer
+from a13n_service.web.runtime import WebRuntime, graph_uses_web
 
 from .agent_resources import prepare_agent_resources, validate_agent_resources
 from .attempt_resources import attempt_resource_stack
@@ -89,11 +90,11 @@ class WorkerAttemptPreparer:
         external_tools: ExternalToolRuntime,
         subagent_capability: Callable[[], SubagentCapability],
         secrets: AgentSecretRuntime | None = None,
-        search: SearchRuntime | None = None,
+        web: WebRuntime | None = None,
     ) -> None:
         self._subagent_capability = subagent_capability
         self._secrets = secrets
-        self._search = search
+        self._web = web
         self._bound_secrets: BoundAgentSecrets | None = None
         self._environments = environments
         self._external_tools = external_tools
@@ -130,15 +131,15 @@ class WorkerAttemptPreparer:
             run_attempt_id=context.run_attempt_id,
             environment_id=self._run.environment_id,
         )
-        if self._search is not None:
-            await self._search.validate(
+        if self._web is not None:
+            await self._web.validate(
                 run=self._run,
                 workspace_id=self._workspace_id,
                 config=config,
                 current_context=lambda: self._control.current_context,
             )
-        elif graph_uses_search(config):
-            raise RunError("Search runtime is unavailable.", code="search_provider_unavailable")
+        elif graph_uses_web(config):
+            raise RunError("Web runtime is unavailable.", code="web_provider_unavailable")
         bindings = self._control.current_state.envelope.secret_bindings
         if bindings or graph_secret_requirements(config):
             if self._secrets is None:
@@ -219,21 +220,22 @@ class WorkerAttemptPreparer:
             return (*selected, WorkerInputCapability(self._sources)) if context.is_root else selected
 
         def run_capabilities(node: AgentDefinitionReconstructionContext):
-            if node.config.search is None:
+            selection = web_selection(node.config.toolsets)
+            if selection is None:
                 return ()
-            if self._search is None:
-                raise RuntimeError("Search runtime is unavailable")
+            if self._web is None:
+                raise RuntimeError("Web runtime is unavailable")
             return (
-                self._search.binding(
+                self._web.binding(
                     run=run,
                     workspace_id=self._workspace_id,
                     agent_id=node.agent_id,
-                    selection=node.config.search,
+                    selection=selection,
                     current_context=lambda: self._control.current_context,
                 ),
             )
 
-        root_search = run_capabilities(
+        root_web = run_capabilities(
             AgentDefinitionReconstructionContext(
                 agent_id=run.agent_id,
                 agent_revision_id=run.agent_revision_id,
@@ -279,7 +281,11 @@ class WorkerAttemptPreparer:
                 results = DeferredToolResults()
                 for resolution in feedback.resolutions:
                     if resolution.kind.value == "approval":
-                        results.approvals[resolution.call_id] = resolution.outcome.value == "approve"
+                        results.approvals[resolution.call_id] = (
+                            True
+                            if resolution.outcome.value == "approve"
+                            else ToolDenied(resolution.reason or "Approval was denied.")
+                        )
                     else:
                         results.calls[resolution.call_id] = (
                             ToolDenied("No response was supplied.")
@@ -334,7 +340,7 @@ class WorkerAttemptPreparer:
             collaborators=HarnessCollaborators(
                 instance=instance,
                 capabilities=(
-                    *root_search,
+                    *root_web,
                     *((self._bound_secrets.capability(),) if self._bound_secrets is not None else ()),
                 ),
                 model_resolver=SnapshotRunModelResolver(

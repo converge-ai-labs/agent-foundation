@@ -33,6 +33,9 @@ pub struct ClientToolDefinition {
 
     #[serde(rename = "parameters_json_schema")]
     pub parameters_json_schema: std::collections::HashMap<String, serde_json::Value>,
+
+    #[serde(rename = "permission", skip_serializing_if = "Option::is_none")]
+    pub permission: Option<Permission>,
 }
 
 impl ClientToolDefinition {
@@ -48,6 +51,23 @@ impl ClientToolDefinition {
             metadata: None,
             name,
             parameters_json_schema,
+            permission: None,
         }
+    }
+}
+///
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum Permission {
+    #[serde(rename = "auto")]
+    Auto,
+    #[serde(rename = "allow")]
+    Allow,
+    #[serde(rename = "deny")]
+    Deny,
+}
+
+impl Default for Permission {
+    fn default() -> Permission {
+        Self::Auto
     }
 }

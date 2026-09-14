@@ -68,8 +68,7 @@ def _agent(reviewer, execute, *, policy=None, permissions=None):
         Capability(toolsets=[FunctionToolset([execute], id="business")]),
         ToolReviewCapability(reviewer=reviewer, policy=policy),
     ]
-    if permissions is not None:
-        capabilities.append(ToolPermissionsCapability(permissions))
+    capabilities.append(ToolPermissionsCapability(permissions or ToolPermissions(default="review")))
     return HarnessBuilder().build(AgentSpec(), model=_model(), output_type=str, capabilities=tuple(capabilities))
 
 
@@ -334,6 +333,7 @@ async def test_approval_denial_is_observed_without_reviewer_replay_or_execution(
     capabilities = [
         Capability(toolsets=[FunctionToolset([Tool(execute, requires_approval=native)], id="business")]),
         ToolReviewCapability(reviewer=reviewer, policy=ToolReviewPolicy(on_flagged="approval_required")),
+        ToolPermissionsCapability(ToolPermissions(default="review")),
     ]
     if inline:
         capabilities.append(HandleDeferredToolCalls(deny))
@@ -370,7 +370,11 @@ async def test_nested_proxy_and_codeact_targets_share_review_and_compact_traject
         return value * 2
 
     reviewer = Reviewer()
-    capabilities = [_group(double), ToolReviewCapability(reviewer=reviewer)]
+    capabilities = [
+        _group(double),
+        ToolReviewCapability(reviewer=reviewer),
+        ToolPermissionsCapability(ToolPermissions(default="review")),
+    ]
     if codeact:
         capabilities.append(CodeActCapability())
         call = ("run_code", {"code": "await call_proxy_tool(group='crm', tool='double', arguments={'value': 3})"})
@@ -407,9 +411,7 @@ def test_xml_preserves_json_types_and_empty_container_shapes():
     assert "<object></object>" in prompts[4]
 
 
-@pytest.mark.parametrize("mode", [None, "allow", "deny", "review"])
-async def test_identity_wrapper_preserves_external_defaults_and_explicit_modes(mode):
-    from a13n_harness.errors import DefinitionError
+async def test_identity_wrapper_does_not_own_permission_policy():
     from a13n_harness.tools import ToolIdentityToolset
     from pydantic_ai.tools import ToolDefinition
     from pydantic_ai.toolsets.external import ExternalToolset
@@ -417,7 +419,6 @@ async def test_identity_wrapper_preserves_external_defaults_and_explicit_modes(m
     tools = ToolIdentityToolset(
         ExternalToolset([ToolDefinition(name="execute", parameters_json_schema={"type": "object"})], id="external"),
         source_id="external",
-        default_mode=mode,
     )
     agent = HarnessBuilder().build(
         AgentSpec(),
@@ -425,11 +426,6 @@ async def test_identity_wrapper_preserves_external_defaults_and_explicit_modes(m
         output_type=str,
         capabilities=(Capability(toolsets=[tools]),),
     )
-    if mode == "review":
-        with pytest.raises(DefinitionError, match="External tools"):
-            await agent.run("Go", bindings=RunBindings.embedded())
-    else:
-        result = await agent.run("Go", bindings=RunBindings.embedded())
-        assert result.status == ("completed" if mode == "deny" else "suspended")
-        if mode != "deny":
-            assert len(result.deferred.calls) == 1
+    result = await agent.run("Go", bindings=RunBindings.embedded())
+    assert result.status == "suspended"
+    assert len(result.deferred.calls) == 1

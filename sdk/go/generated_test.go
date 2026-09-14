@@ -82,8 +82,8 @@ func TestGeneratedWireFixtures(t *testing.T) {
 	if err != nil || decoded.PrincipalId != "usr_test" {
 		t.Fatalf("typed union branch: %v %v", decoded, err)
 	}
-	credential := "do-not-print"
-	secret := generated.CreateSearchProviderRequest{Credential: &credential}
+	credential := map[string]any{"api_key": "do-not-print"}
+	secret := generated.CreateWebProviderRequest{Credential: &credential}
 	if strings.Contains(fmt.Sprintf("%+v %#v", secret, secret), "do-not-print") {
 		t.Fatal("credential leaked")
 	}

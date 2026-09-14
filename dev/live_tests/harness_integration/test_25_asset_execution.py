@@ -88,7 +88,7 @@ async def test_output_publication_is_explicit_immutable_and_run_linked(managemen
     receipt = await journey.start(case, agent_id=plain["agent"]["id"], environment=selection)
     await live.finish(receipt["run_id"])
     assert not has_tool(journey.observations(case)[0], "publish_asset")
-    enabled = await journey.agent(asset_publication={"enabled": True})
+    enabled = await journey.agent(toolsets={"assets": {"enabled": True, "tools": {"publish": {"permission": "allow"}}}})
     data = "GENERATED_THROUGH_HARNESS"
     case = await journey.case(
         steps=[

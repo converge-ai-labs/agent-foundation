@@ -1,7 +1,8 @@
-"""Explicit domain restrictions for Web fetches and returned search results."""
+"""Explicit domain restrictions shared by the four Web tools."""
 
 from __future__ import annotations
 
+import ipaddress
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -10,11 +11,16 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 def _domain(value: str) -> str:
     if not value or value != value.strip() or any(char in value for char in "/:@?#\\"):
         raise ValueError("Domains must be hostnames, not URLs, ports, or credentials")
-    wildcard = value.startswith("*.")
-    host = value[2:] if wildcard else value
-    if "*" in host:
-        raise ValueError("Only a leading '*.' domain wildcard is supported")
+    if "*" in value:
+        raise ValueError("Domain wildcards are not supported")
+    host = value
     host = host.rstrip(".").encode("idna").decode("ascii").lower()
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    else:
+        raise ValueError("IP addresses are not domain names")
     if (
         not host
         or len(host) > 253
@@ -28,11 +34,11 @@ def _domain(value: str) -> str:
         )
     ):
         raise ValueError("Invalid domain name")
-    return f"*.{host}" if wildcard else host
+    return host
 
 
 class DomainRestrictions(BaseModel):
-    """Empty lists are unrestricted; deny wins, and '*.x' excludes the apex x."""
+    """Empty allow lists are unrestricted; bare hosts include their subdomains."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -57,8 +63,8 @@ class DomainRestrictions(BaseModel):
         except (ValueError, UnicodeError):
             return False
 
-        def matches(pattern: str) -> bool:
-            return normalized.endswith(pattern[1:]) if pattern.startswith("*.") else normalized == pattern
+        def matches(domain: str) -> bool:
+            return normalized == domain or normalized.endswith(f".{domain}")
 
         return not any(matches(pattern) for pattern in self.deny_domains) and (
             not self.allow_domains or any(matches(pattern) for pattern in self.allow_domains)

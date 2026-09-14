@@ -36,7 +36,7 @@ Ownership and automatic visibility follow [Organization-owned configuration](33-
 
 ## Trusted Provider-type and calling-API registry
 
-The distribution assembles a finite registry from trusted code. Public requests cannot register code, import a package, invent a calling API, or supply request transformations. Package installation alone grants no trust.
+The distribution assembles a finite registry from trusted code. It combines built-ins with Model integrations registered by deployment-selected `a13n.providers` entry points before readiness. Package installation alone grants no trust; selection names installed metadata rather than an import target. Public requests cannot register code, import a package, invent a calling API, or supply request transformations. Every selected integration still implements this native Model contract and uses the same management and per-request runtime construction path.
 
 Each safe `ModelProviderDefinition` exposes:
 
