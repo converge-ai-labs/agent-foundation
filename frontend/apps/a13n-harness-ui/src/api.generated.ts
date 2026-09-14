@@ -1207,6 +1207,8 @@ export interface components {
                 [key: string]: components["schemas"]["AgentToolProxyGroup"];
             };
             config?: components["schemas"]["ToolProxyConfig"];
+        } & {
+            [key: string]: components["schemas"]["JsonValue"];
         };
         /** AgentToolProxyGroup */
         AgentToolProxyGroup: {
@@ -1222,6 +1224,8 @@ export interface components {
              * @default []
              */
             harness_plugins?: components["schemas"]["ResourceId"][];
+        } & {
+            [key: string]: components["schemas"]["JsonValue"];
         };
         /**
          * AgentToolProxyView
@@ -2476,6 +2480,8 @@ export interface components {
             environment_run_extensions?: components["schemas"]["ResourceId"][] | null;
             /** Mcp Servers */
             mcp_servers?: components["schemas"]["ResourceId"][] | null;
+        } & {
+            [key: string]: components["schemas"]["JsonValue"];
         };
         /**
          * ProjectDefaultsPatch
@@ -3801,6 +3807,8 @@ export interface components {
             configuration?: {
                 [key: string]: components["schemas"]["JsonValue"];
             };
+        } & {
+            [key: string]: components["schemas"]["JsonValue"];
         };
         CatalogKey: string;
         /**
