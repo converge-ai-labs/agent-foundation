@@ -98,6 +98,19 @@ async def completion(case, path, body):
         answer = "STEERS:" + ",".join(steers)
     else:
         answer = json.dumps(tool_results[-1]["content"]) if tool_results else case.token
+    if plan.get("inline_child"):
+        child = any(
+            message.get("role") == "user" and "LIVE_INLINE_CHILD" in _message_text(message)
+            for message in body["messages"]
+        )
+        if child:
+            answer = "CHILD_" + case.token
+        elif not tool_results:
+            tool = tool_call(
+                body,
+                "delegate",
+                {"subagent": "child", "prompt": "LIVE_TEST " + case.model_dump_json() + "\nLIVE_INLINE_CHILD"},
+            )
     return StreamingResponse(usage_chunks(case, path, answer, tool, plan), media_type="text/event-stream")
 
 
