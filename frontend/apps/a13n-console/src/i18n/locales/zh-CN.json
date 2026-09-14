@@ -1118,6 +1118,7 @@
   "Versions": "版本",
   "Versions are immutable. Restoring one creates a new version.": "版本不可修改。恢复旧版本会创建一个新版本。",
   "View current version": "查看当前版本",
+  "View in {{provider}}": "在 {{provider}} 中查看",
   "View recipe": "查看环境配置",
   "View run": "查看运行",
   "We'll send a recovery link if your email is eligible.": "如果邮箱符合条件，我们会发送恢复链接。",

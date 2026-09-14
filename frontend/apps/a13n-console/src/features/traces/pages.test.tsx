@@ -24,8 +24,11 @@ vi.mock("../../layout/workspace", () => ({
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { defaultValue?: string }) =>
-      options?.defaultValue ?? key,
+    t: (key: string, options?: { defaultValue?: string; provider?: string }) =>
+      (options?.defaultValue ?? key).replace(
+        "{{provider}}",
+        options?.provider ?? "",
+      ),
     i18n: { resolvedLanguage: "en" },
   }),
 }));
@@ -190,7 +193,7 @@ it("loads separate observation pages, deduplicates the root, and retains paginat
   expect(screen.queryByText("Attempt outcome")).toBeNull();
   expect(screen.getByText("Loaded cost")).toBeTruthy();
   expect(
-    screen.getByRole("link", { name: "Open run" }).getAttribute("href"),
+    screen.getByRole("link", { name: "View run" }).getAttribute("href"),
   ).toContain("/sessions/session/threads/thread/runs/run");
   await user.click(
     screen.getByRole("button", { name: "Load more observations" }),
@@ -234,6 +237,54 @@ it("loads separate observation pages, deduplicates the root, and retains paginat
   ).toBeTruthy();
 });
 
+it.each(["langfuse", "logfire"] as const)(
+  "keeps Run navigation local and names the external %s destination",
+  async (provider) => {
+    http.GET.mockImplementation(async (path) =>
+      response(
+        path.endsWith("observations")
+          ? { items: [], next_cursor: null }
+          : { ...trace(), provider },
+      ),
+    );
+    mount(<TraceDetail traceId="trace-1" />);
+    const run = await screen.findByRole("link", { name: "View run" });
+    expect(run.getAttribute("href")).toBe(
+      "/workspaces/test/sessions/session/threads/thread/runs/run",
+    );
+    expect(run.getAttribute("target")).toBeNull();
+    const backend = screen.getByRole("link", {
+      name: `View in ${provider === "langfuse" ? "Langfuse" : "Logfire"}`,
+    });
+    expect(backend.getAttribute("href")).toBe(trace().source_url);
+    expect(backend.getAttribute("target")).toBe("_blank");
+    expect(backend.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(
+      document.getElementById(backend.getAttribute("aria-describedby")!)
+        ?.textContent,
+    ).toBe("Opens in a new tab");
+    run.focus();
+    await userEvent.setup().tab();
+    expect(document.activeElement).toBe(backend);
+  },
+);
+
+it.each([null, "javascript:alert(1)", "https://user:password@trace.example"])(
+  "omits the backend action when the source is unavailable or unsafe: %s",
+  async (source_url) => {
+    http.GET.mockImplementation(async (path) =>
+      response(
+        path.endsWith("observations")
+          ? { items: [], next_cursor: null }
+          : { ...trace(), source_url },
+      ),
+    );
+    mount(<TraceDetail traceId="trace-1" />);
+    await screen.findByRole("link", { name: "View run" });
+    expect(screen.queryByRole("link", { name: /View in/ })).toBeNull();
+  },
+);
+
 it("hides cached detail after observation authorization is revoked", async () => {
   const user = userEvent.setup();
   http.GET.mockImplementation(async (path, options) => {
@@ -252,7 +303,7 @@ it("hides cached detail after observation authorization is revoked", async () =>
   );
   await screen.findByText("Trace not found");
   expect(screen.queryByRole("button", { name: /private-child/ })).toBeNull();
-  expect(screen.queryByRole("link", { name: "Open run" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "View run" })).toBeNull();
 });
 
 it("shows a loaded cost subtotal until pagination succeeds, without counting the root twice", async () => {
