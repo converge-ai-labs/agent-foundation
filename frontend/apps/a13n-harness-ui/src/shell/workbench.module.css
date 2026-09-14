@@ -5,7 +5,7 @@
   background: var(--a13n-canvas);
 }
 .sidebar {
-  width: 232px;
+  width: 280px;
   flex-shrink: 0;
   min-height: 0;
   z-index: 30;

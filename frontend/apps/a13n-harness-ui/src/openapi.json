@@ -2581,6 +2581,21 @@
             }
           },
           {
+            "name": "project_scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "projectless",
+                "unavailable"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Project Scope"
+            }
+          },
+          {
             "name": "query",
             "in": "query",
             "required": false,

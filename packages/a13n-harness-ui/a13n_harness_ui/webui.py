@@ -1061,13 +1061,19 @@ def create_webui(
     @server.get("/api/threads/activity", response_model=ThreadActivityPage)
     async def thread_activity(
         project_id: Annotated[str | None, Query(max_length=128)] = None,
+        project_scope: Literal["all", "projectless", "unavailable"] = "all",
         query: Annotated[str | None, Query(max_length=512)] = None,
         include_archived: bool = False,
         cursor: Annotated[str | None, Query(max_length=2048)] = None,
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
     ) -> ThreadActivityPage:
         return await app().thread_activity(
-            project_id=project_id, query=query, include_archived=include_archived, cursor=cursor, limit=limit
+            project_id=project_id,
+            project_scope=project_scope,
+            query=query,
+            include_archived=include_archived,
+            cursor=cursor,
+            limit=limit,
         )
 
     @server.get("/api/threads/{thread_id}/tasks", response_model=TaskPage)

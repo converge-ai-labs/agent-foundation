@@ -731,6 +731,7 @@ class HarnessUiApp:
         self,
         *,
         project_id: str | None,
+        project_scope: Literal["all", "projectless", "unavailable"] = "all",
         query: str | None = None,
         include_archived: bool = False,
         cursor: str | None = None,
@@ -739,6 +740,7 @@ class HarnessUiApp:
         async with self._operation():
             return await self._terminal_projections.thread_activity(
                 project_id=project_id,
+                project_scope=project_scope,
                 query=query,
                 include_archived=include_archived,
                 cursor=cursor,

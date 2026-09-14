@@ -3,10 +3,24 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useTransport } from "../transport/context";
 import { result } from "../transport/client";
 
-export function useThreads(query = "", projectId?: string, archived = false) {
+export function useThreads(
+  query = "",
+  projectId?: string,
+  archived = false,
+  {
+    scope = "all",
+    enabled = true,
+    limit = 30,
+  }: {
+    scope?: "all" | "projectless" | "unavailable";
+    enabled?: boolean;
+    limit?: number;
+  } = {},
+) {
   const { client } = useTransport();
   return useInfiniteQuery({
-    queryKey: ["threads", query, projectId, archived],
+    queryKey: ["threads", query, projectId, archived, scope, limit],
+    enabled,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
       result(
@@ -15,9 +29,10 @@ export function useThreads(query = "", projectId?: string, archived = false) {
             query: {
               query: query || undefined,
               project_id: projectId,
+              project_scope: scope,
               include_archived: archived,
               cursor: pageParam,
-              limit: 30,
+              limit,
             },
           },
           signal,

@@ -83,7 +83,10 @@ function Conversation({
   const [newOutput, setNewOutput] = useState(false);
   const reconcile = useCallback(() => {
     void queries.invalidateQueries({ queryKey: ["thread", threadId] });
-    void queries.invalidateQueries({ queryKey: ["threads"] });
+    void queries.invalidateQueries(
+      { queryKey: ["threads"] },
+      { cancelRefetch: false },
+    );
   }, [queries, threadId]);
   useEffect(() => {
     let paint: ReturnType<typeof setTimeout> | undefined;

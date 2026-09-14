@@ -6133,6 +6133,7 @@ export interface operations {
         parameters: {
             query?: {
                 project_id?: string | null;
+                project_scope?: "all" | "projectless" | "unavailable";
                 query?: string | null;
                 include_archived?: boolean;
                 cursor?: string | null;

@@ -11,6 +11,8 @@
 .threadGroups {
   overflow: auto;
   min-height: 80px;
+  flex: 1;
+  scrollbar-gutter: stable;
 }
 .groupHeading {
   display: flex;
@@ -21,12 +23,82 @@
   color: var(--a13n-secondary);
   font-size: 12px;
 }
-.groupHeading > div {
-  display: flex;
+.groupHeading:not(:has(.projectDrag)) {
+  padding-inline-start: 22px;
 }
-.groupHeading > span {
+.groupActions {
+  display: flex;
+  flex-shrink: 0;
+}
+.groupToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.groupToggle > span {
   overflow: hidden;
+  white-space: nowrap;
   text-overflow: ellipsis;
+  font-weight: 500;
+}
+.groupToggle > svg {
+  flex-shrink: 0;
+}
+.groupToggle:focus-visible {
+  outline: 2px solid var(--ring);
+}
+.expandedChevron {
+  transform: rotate(90deg);
+}
+.projectDrag {
+  touch-action: none;
+  cursor: grab;
+  opacity: 0;
+  width: 16px;
+  flex-shrink: 0;
+}
+.groupHeading:hover .projectDrag,
+.groupHeading:focus-within .projectDrag,
+.projectDrag[aria-pressed="true"] {
+  opacity: 1;
+}
+.projectDrag[aria-pressed="true"] {
+  cursor: grabbing;
+}
+.movingProject {
+  background: var(--a13n-surface);
+  box-shadow: 0 -2px 0 var(--ring);
+  border-radius: 6px;
+}
+.groupThreads {
+  margin-inline-start: 22px;
+}
+.pinnedThread {
+  border-bottom: 1px solid var(--a13n-border);
+  margin-bottom: 4px;
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (hover: none) {
+  .projectDrag {
+    opacity: 1;
+  }
 }
 .threadRow {
   display: flex;

@@ -101,12 +101,20 @@ export function useLiveWorkbench(
                 ? ["comments", event.root_thread_id]
                 : ["comments"],
             });
-          else
+          else {
+            // A background hint must not cancel a user's in-flight Show more.
+            void queries.invalidateQueries(
+              { queryKey: ["threads"] },
+              { cancelRefetch: false },
+            );
             void queries.invalidateQueries({
               // Native observations refresh on return/actions/reconnect, not each
               // unrelated conversation event. They are not a filesystem watcher.
-              predicate: (query) => !event || query.queryKey[0] !== "native",
+              predicate: (query) =>
+                query.queryKey[0] !== "threads" &&
+                (!event || query.queryKey[0] !== "native"),
             });
+          }
         },
         setSummary,
       ),
