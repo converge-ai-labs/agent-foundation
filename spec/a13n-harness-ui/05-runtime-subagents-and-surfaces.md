@@ -296,6 +296,8 @@ The capability calls the same in-memory `HarnessUiApp` services as other adapter
 
 ## Live Presentation
 
+Saved transcript tool results preserve the native `ToolReturnPart.outcome` (`success`, `failed`, `denied`, or `interrupted`) as an optional projection field. Absence remains compatible with older projections and non-result parts; clients do not infer success solely from arbitrary result content. Retry parts retain their distinct kind. This presentation projection does not change persisted history.
+
 Live input uses the [Stream Protocol input mapping](../a13n-stream-protocol/00-overview.md#standard-event-conversion), not a second terminal echo of submitted text. Transcript parts retain the same `ContentMetadata` projection from native `TextContent`. CLI history and live rendering hide parts marked `display: false`; absence of the flag remains visible for compatibility. HTTP transcript and event projections retain this metadata, and browser rendering respects the same display flag without changing saved history. Filtering affects presentation only, never the continuation or persisted message history. Event type strings use AG-UI wire values such as `TEXT_MESSAGE_CONTENT`, not Python Enum representations.
 
 Each App lifetime has an opaque detailed-live epoch and one global monotonic event sequence. Each root or child Harness Run has one observer. A detailed live event identifies the root Thread, immediate parent Thread when present, producing Thread, Run kind, Run ID, and child execution ID when present. A subscription focused on one root receives that root's entire descendant lineage; child events are not hidden merely because their producing Thread ID differs from the root.

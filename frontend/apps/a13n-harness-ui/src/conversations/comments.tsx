@@ -22,7 +22,12 @@ import {
   MenuPopup,
   MenuItem,
 } from "a13n-ui";
-import { ChatCircle, DotsThree, X } from "@phosphor-icons/react";
+import {
+  ArrowClockwise,
+  ChatCircle,
+  DotsThree,
+  X,
+} from "@phosphor-icons/react";
 import { ApiError, result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import type { Profile } from "../shell/presence";
@@ -455,7 +460,7 @@ export function Discussion({
     setOpen(true);
   };
   const panel = (
-    <div className={styles.form}>
+    <div className={`${styles.form} ${styles.commentsPanel}`}>
       {message && <p role="status">{message}</p>}
       {draft?.status === "published" && (
         <section className={styles.commentDraft}>
@@ -572,16 +577,17 @@ export function Discussion({
         </section>
       )}
       {(!anchor || !draft || draft.status === "published" || !!rows.length) && (
-        <div className={styles.commentActions}>
-          {!anchor && (
-            <h3>{filter ? "Comments on this output" : "All saved comments"}</h3>
-          )}
+        <div className={styles.commentToolbar}>
+          <span>{filter ? "Selected output" : "All outputs"}</span>
           <Button
             variant="ghost"
-            size="sm"
+            size="icon-sm"
+            aria-label="Refresh comments"
+            title="Refresh comments"
+            loading={comments.isFetching && !comments.isFetchingNextPage}
             onClick={() => void comments.refetch()}
           >
-            Refresh comments
+            <ArrowClockwise />
           </Button>
           {filter && !anchor && (
             <Button
@@ -597,7 +603,15 @@ export function Discussion({
       <ErrorNotice error={comments.error || capture.error} />
       {comments.isPending && <p>Loading comments…</p>}
       {comments.isSuccess && !rows.length && (!anchor || !draft) && (
-        <p>No comments on this selection yet.</p>
+        <div className={styles.commentEmpty}>
+          <ChatCircle size={28} aria-hidden="true" />
+          <strong>No comments yet</strong>
+          <p>
+            {filter
+              ? "Leave feedback on this output using its comment action."
+              : "Select text in a saved response to leave feedback."}
+          </p>
+        </div>
       )}
       {rows.map((comment) => (
         <article key={comment.comment_id} className={styles.commentCard}>
@@ -699,9 +713,9 @@ export function Discussion({
           setOpen(next);
           if (!next) closeList?.();
         }}
-        title="Saved output discussion"
-        description="Comments are saved human feedback. They enter model input only when explicitly added and sent."
-        closeLabel="Close"
+        title="Comments"
+        description="Feedback on saved output. Only sent to the agent when you add it to a prompt and send."
+        closeLabel="Close comments"
       >
         {panel}
       </ModalFrame>

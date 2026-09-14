@@ -1,4 +1,6 @@
 import { memo } from "react";
+import { ToolCall } from "./tool-call";
+import { savedTools, type ToolView } from "./tool-presentation";
 import { MessageText } from "./message-text";
 import { SavedOutput } from "./comments";
 export { MessageText } from "./message-text";
@@ -10,15 +12,15 @@ import styles from "./conversation.module.css";
 export const SavedEntry = memo(function SavedEntry({
   entry,
   threadId,
+  toolViews,
 }: {
+  toolViews?: Map<Schema<"TranscriptPart">, ToolView | null>;
   entry: Schema<"TranscriptEntry">;
   threadId?: string;
 }) {
   const parts = entry.parts.filter((part) => part.metadata?.display !== false);
   if (!parts.length) return null;
-  const tools = parts.filter(
-    (part) => part.kind === "tool_call" || part.kind === "tool_result",
-  );
+  const tools = toolViews ?? savedTools([entry]);
   return (
     <article className={styles.entry} data-position={entry.position}>
       {parts.some((part) => part.kind === "user" || part.kind === "media") && (
@@ -32,8 +34,10 @@ export const SavedEntry = memo(function SavedEntry({
       )}
       {parts.map((part, index) => {
         if (part.kind === "user" || part.kind === "media") return null;
-        if (part.kind === "tool_call" || part.kind === "tool_result")
-          return null;
+        if (tools.has(part)) {
+          const tool = tools.get(part);
+          return tool ? <ToolCall key={index} tool={tool} /> : null;
+        }
         if (part.kind === "assistant")
           return (
             <section
@@ -69,26 +73,6 @@ export const SavedEntry = memo(function SavedEntry({
           </details>
         );
       })}
-      {!!tools.length && (
-        <details className={styles.activity}>
-          <summary>
-            Tool activity ·{" "}
-            {tools.filter((tool) => tool.kind === "tool_call").length} calls
-          </summary>
-          {tools.map((tool, index) => (
-            <details key={`${tool.tool_call_id}:${index}`}>
-              <summary>
-                {tool.tool_name || "Tool"} ·{" "}
-                {tool.kind === "tool_call" ? "Arguments" : "Result"}
-              </summary>
-              <pre className={styles.code}>
-                {tool.text ?? JSON.stringify(tool.value, null, 2)}
-                {tool.value_omitted ? "\nContent omitted by the server." : ""}
-              </pre>
-            </details>
-          ))}
-        </details>
-      )}
     </article>
   );
 });
@@ -101,12 +85,9 @@ export function LiveOutput({
   gap: boolean;
   threadId?: string;
 }) {
-  const tools = blocks.filter((block) => block.kind === "tool");
   const diagnostics = blocks.filter((block) => block.diagnostic);
   const items: (DisplayBlock | DisplayBlock[])[] = [];
-  for (const block of blocks.filter(
-    (block) => block.kind !== "tool" && !block.diagnostic,
-  )) {
+  for (const block of blocks.filter((block) => !block.diagnostic)) {
     if (block.kind === "user" || block.kind === "media") {
       const previous = items.at(-1);
       const turn = (id: string) =>
@@ -128,6 +109,16 @@ export function LiveOutput({
             threadId={threadId}
             parts={block}
             renderText={(text) => <MessageText text={text} />}
+          />
+        ) : block.kind === "tool" ? (
+          <ToolCall
+            key={block.id}
+            tool={{
+              ...block,
+              name: block.name || "Tool",
+              input: block.text || undefined,
+              inputComplete: block.done,
+            }}
           />
         ) : block.kind === "task" ? (
           <div key={block.id} className={styles.activity}>
@@ -152,27 +143,6 @@ export function LiveOutput({
             {block.result && <MessageText text={block.result} />}
           </details>
         ),
-      )}
-      {!!tools.length && (
-        <details className={styles.activity}>
-          <summary>Tool activity · {tools.length} calls</summary>
-          {tools.map((tool) => (
-            <details key={tool.id}>
-              <summary>
-                {tool.name || "Tool"} ·{" "}
-                {tool.result !== undefined
-                  ? "Result received"
-                  : tool.done
-                    ? "Arguments complete"
-                    : "Running"}
-              </summary>
-              <pre className={styles.code}>{tool.text}</pre>
-              {tool.result !== undefined && (
-                <pre className={styles.code}>{tool.result}</pre>
-              )}
-            </details>
-          ))}
-        </details>
       )}
       {!!diagnostics.length && (
         <details className={styles.activity}>

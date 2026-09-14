@@ -39,6 +39,7 @@
     "@xterm/xterm": "^6.0.0",
     "a13n-ui": "workspace:*",
     "codemirror": "^6.0.2",
+    "diff": "^8.0.4",
     "openapi-fetch": "^0.17.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

@@ -32,6 +32,7 @@ import styles from "./native.module.css";
 import { TerminalPanel } from "./terminal";
 import { useThread } from "../conversations/queries";
 import { nativeLink, pageLink } from "../shell/page-links";
+import { OpenHostFile } from "../conversations/tool-call";
 
 export function NativeWorkspace({
   children,
@@ -413,7 +414,20 @@ export function NativeWorkspace({
             onPointerDown={() => setFocusedArea("page")}
             className={`${styles.page} a13n-scrollbar ${!threadId ? styles.documentPage : ""}`}
           >
-            {children}
+            <OpenHostFile
+              value={
+                status.data?.features?.host_files && !projectLoading
+                  ? (target) => {
+                      setPane("files");
+                      if (window.matchMedia("(max-width: 999px)").matches)
+                        setTerminalOpen(false);
+                      void open(target);
+                    }
+                  : undefined
+              }
+            >
+              {children}
+            </OpenHostFile>
           </div>
         </div>
         {isWorkspace && pane && (

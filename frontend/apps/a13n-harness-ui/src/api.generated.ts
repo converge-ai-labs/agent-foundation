@@ -3489,6 +3489,8 @@ export interface components {
             tool_name?: string | null;
             /** Tool Call Id */
             tool_call_id?: string | null;
+            /** Outcome */
+            outcome?: ("success" | "failed" | "denied" | "interrupted") | null;
             value?: components["schemas"]["JsonValue"] | null;
             /**
              * Value Omitted
