@@ -30,6 +30,7 @@ export function useThread(threadId: string) {
   const { client } = useTransport();
   return useQuery({
     queryKey: ["thread", threadId, "detail"],
+    enabled: !!threadId,
     queryFn: ({ signal }) =>
       result(
         client.GET("/api/threads/{thread_id}", {

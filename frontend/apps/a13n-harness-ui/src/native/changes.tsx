@@ -8,9 +8,8 @@ import { Button } from "a13n-ui";
 import { result, type Schema } from "../transport/client";
 import { useStatus, useTransport } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
-import { SourceEditor } from "../configuration/editor";
-import { CaptureContext } from "./capture";
-import { gitPath, type LineRange } from "./buffer";
+import { PatchEditor } from "./patch-editor";
+import { gitPath } from "./buffer";
 import styles from "./native.module.css";
 
 type Page = { offset: number; expected_revision?: string };
@@ -252,7 +251,6 @@ export function DiffView({
   openFile: (path: string) => void;
 }) {
   const { client } = useTransport();
-  const [range, setRange] = useState<LineRange>();
   const diff = useQuery({
     queryKey: ["native", "diff", selection],
     queryFn: ({ signal }) =>
@@ -283,39 +281,18 @@ export function DiffView({
       {diff.isFetching && <p role="status">Reading comparison…</p>}
       {value && (
         <>
-          <p>
-            {value.comparison === "staged"
-              ? "HEAD → index"
-              : value.comparison === "unstaged"
-                ? "Index → worktree"
-                : "New-file comparison"}{" "}
-            · {value.repository.root}
-          </p>
           {value.original_path && (
             <p>
               Rename: {value.original_path} → {value.path}
             </p>
           )}
           {value.presentation === "text" && value.text != null ? (
-            <>
-              <div className={styles.editor}>
-                <SourceEditor
-                  value={value.text}
-                  language="plain"
-                  fill
-                  readOnly
-                  label="Git patch (line numbers include headers)"
-                  onSelection={setRange}
-                />
-              </div>
-              <CaptureContext
-                key={value.revision}
-                source={{ diff: value }}
-                threadId={threadId}
-                selection={range}
-                disabled={diff.isFetching || !!diff.error}
-              />
-            </>
+            <PatchEditor
+              key={value.revision}
+              value={value}
+              threadId={threadId}
+              disabled={diff.isFetching || !!diff.error}
+            />
           ) : (
             <p>
               {value.presentation === "binary"
@@ -325,6 +302,7 @@ export function DiffView({
           )}
           <details className={styles.metadata}>
             <summary>Reviewed comparison identity</summary>
+            <p>Repository: {value.repository.root}</p>
             <p>
               HEAD: {value.repository.head_oid ?? "Empty tree (unborn HEAD)"}
             </p>

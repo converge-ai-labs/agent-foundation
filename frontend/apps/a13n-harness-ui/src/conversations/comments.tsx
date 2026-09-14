@@ -1,5 +1,6 @@
 import {
   createContext,
+  useEffect,
   useContext,
   useRef,
   useState,
@@ -10,8 +11,18 @@ import {
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
-import { Button, ModalFrame } from "a13n-ui";
-import { ChatCircle } from "@phosphor-icons/react";
+import {
+  Button,
+  ModalFrame,
+  Popover,
+  PopoverPopup,
+  PopoverTitle,
+  Menu,
+  MenuTrigger,
+  MenuPopup,
+  MenuItem,
+} from "a13n-ui";
+import { ChatCircle, DotsThree, X } from "@phosphor-icons/react";
 import { ApiError, result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import type { Profile } from "../shell/presence";
@@ -40,10 +51,16 @@ const targetKey = (target: Target) =>
       : [target.location.execution_id, target.location.activity ?? null],
   ]);
 const DiscussionContext = createContext<{
-  begin: (target: Target, text: string, selection?: Selection) => void;
-  browse: (target?: Target) => void;
+  begin: (
+    target: Target,
+    text: string,
+    selection?: Selection,
+    anchor?: HTMLElement,
+  ) => void;
+  browse: (target?: Target, anchor?: HTMLElement) => void;
   inspect: (target: Target) => void;
   comments: Schema<"OutputComment">[];
+  open: boolean;
 } | null>(null);
 
 export function CommentListButton() {
@@ -68,7 +85,25 @@ export function SavedOutput({
   const container = useRef<HTMLDivElement>(null);
   const [selection, setSelection] = useState<Selection>();
   const [ambiguous, setAmbiguous] = useState(false);
-  const read = () => {
+  const [originalShown, setOriginalShown] = useState(false);
+  const [selectionTop, setSelectionTop] = useState(0);
+  const [selectionLeft, setSelectionLeft] = useState(0);
+  useEffect(() => {
+    if (!discussion?.open) setSelection(undefined);
+    const outside = (event: PointerEvent) => {
+      if (
+        !discussion?.open &&
+        event.target instanceof Node &&
+        !container.current?.contains(event.target)
+      )
+        setSelection(undefined);
+    };
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, [discussion?.open]);
+  const read = (event: { target: EventTarget }) => {
+    if (event.target instanceof Element && event.target.closest("button"))
+      return;
     if (truncated) return;
     const current = window.getSelection();
     if (
@@ -77,37 +112,149 @@ export function SavedOutput({
       !container.current.contains(current.anchorNode)
     )
       return;
-    setSelection(selectedSource(container.current, text, current));
-    setAmbiguous(
-      !current.isCollapsed && !selectedSource(container.current, text, current),
-    );
+    const next = selectedSource(container.current, text, current);
+    // Pointer activation of the selection action must not erase its frozen quote.
+    if (current.isCollapsed) {
+      setSelection(undefined);
+      return;
+    }
+    setSelection(next);
+    setAmbiguous(!next);
+    const range = current.rangeCount ? current.getRangeAt(0) : undefined;
+    if (range && typeof range.getBoundingClientRect === "function") {
+      setSelectionLeft(
+        Math.max(
+          0,
+          Math.min(
+            container.current.clientWidth - 240,
+            range.getBoundingClientRect().left -
+              container.current.getBoundingClientRect().left,
+          ),
+        ),
+      );
+      setSelectionTop(
+        Math.max(
+          0,
+          range.getBoundingClientRect().bottom -
+            container.current.getBoundingClientRect().top +
+            6,
+        ),
+      );
+    }
   };
   const matches = target
     ? (discussion?.comments.filter(
         (comment) => targetKey(comment.target) === targetKey(target),
       ) ?? [])
     : [];
+  const highlight = (element: HTMLElement, keyboard = false) => {
+    if (!keyboard && window.getSelection()?.isCollapsed === false) return false;
+    const mark = element.closest<HTMLElement>("[data-comment-ids]");
+    if (!mark || !target) return false;
+    discussion?.browse(target, mark);
+    return true;
+  };
   return (
-    <div ref={container} onMouseUp={read} onKeyUp={read} onTouchEnd={read}>
-      <MessageText text={text} selectable={!!target && !truncated} />
-      <details className={styles.rawSource}>
-        <summary>{truncated ? "Displayed excerpt" : "Original text"}</summary>
-        <pre
-          className={styles.code}
-          data-source-start={truncated ? undefined : "0"}
-          data-source-end={text.length}
-        >
-          {text}
-        </pre>
-      </details>
+    <div
+      ref={container}
+      className={styles.savedOutput}
+      onMouseUp={read}
+      onKeyUp={read}
+      onTouchEnd={read}
+      onClick={(event) => {
+        if (highlight(event.target as HTMLElement)) event.preventDefault();
+      }}
+      onKeyDown={(event) => {
+        if (
+          (event.key === "Enter" || event.key === " ") &&
+          (event.target as HTMLElement).matches("[data-comment-ids]")
+        ) {
+          event.preventDefault();
+          highlight(event.target as HTMLElement, true);
+        }
+      }}
+    >
+      <MessageText
+        text={text}
+        selectable={!!target && !truncated}
+        highlights={
+          truncated
+            ? []
+            : matches.flatMap((comment) =>
+                comment.selection
+                  ? [{ id: comment.comment_id, selection: comment.selection }]
+                  : [],
+              )
+        }
+      />
+      {(originalShown || !discussion) && (
+        <details className={styles.rawSource} open>
+          <summary>{truncated ? "Displayed excerpt" : "Original text"}</summary>
+          <pre
+            className={styles.code}
+            data-source-start={truncated ? undefined : "0"}
+            data-source-end={text.length}
+          >
+            {text}
+          </pre>
+        </details>
+      )}
       {discussion && target && (
-        <div className={styles.commentActions}>
-          {truncated && (
-            <>
-              <small>
-                This output is truncated. Select from the original source, not
-                this excerpt.
-              </small>
+        <>
+          {selection && (
+            <div
+              className={styles.selectionAction}
+              style={{ top: selectionTop, left: selectionLeft }}
+            >
+              <Button
+                variant="outline"
+                size="sm"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={(event) =>
+                  discussion.begin(target, text, selection, event.currentTarget)
+                }
+              >
+                <ChatCircle />
+                Comment on selection
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Dismiss selection"
+                onClick={() => {
+                  setSelection(undefined);
+                  window.getSelection()?.removeAllRanges();
+                }}
+              >
+                <X />
+              </Button>
+            </div>
+          )}
+          <div className={styles.outputTools}>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Comment"
+              title="Comment on this output"
+              onClick={(event) =>
+                discussion.begin(target, text, undefined, event.currentTarget)
+              }
+            >
+              <ChatCircle />
+            </Button>
+            {!!matches.length && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={(event) =>
+                  discussion.browse(target, event.currentTarget)
+                }
+              >
+                {matches.length} loaded{" "}
+                {matches.length === 1 ? "comment" : "comments"}
+              </Button>
+            )}
+            {truncated && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -115,67 +262,36 @@ export function SavedOutput({
               >
                 View complete original
               </Button>
-            </>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => discussion.begin(target, text)}
-          >
-            Comment
-          </Button>
-          {selection && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => discussion.begin(target, text, selection)}
-            >
-              Comment on selection
-            </Button>
-          )}
-          {!!matches.length && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => discussion.browse(target)}
-            >
-              {matches.length} loaded{" "}
-              {matches.length === 1 ? "comment" : "comments"}
-            </Button>
-          )}
+            )}
+            <Menu>
+              <MenuTrigger
+                render={<Button variant="ghost" size="icon" />}
+                aria-label="Output actions"
+              >
+                <DotsThree />
+              </MenuTrigger>
+              <MenuPopup align="start">
+                <MenuItem onClick={() => setOriginalShown(!originalShown)}>
+                  {originalShown ? "Hide original text" : "Show original text"}
+                </MenuItem>
+              </MenuPopup>
+            </Menu>
+          </div>
           {ambiguous && (
-            <small>
-              This selection cannot map exactly to the source. Select in
-              Original text, or comment on the whole block.
+            <small className={styles.selectionHint}>
+              This selection includes transformed text. Open Original text to
+              select its exact source, or comment on the whole output.
             </small>
           )}
-        </div>
+        </>
       )}
     </div>
   );
 }
 
-export function Discussion({
-  threadId,
-  profile,
-  children,
-}: {
-  threadId: string;
-  profile: Profile;
-  children: ReactNode;
-}) {
+function useOutputComments(threadId: string, filter?: Target) {
   const transport = useTransport();
-  const queries = useQueryClient();
-  const drafts = useContext(CommentDrafts);
-  const composer = useDraft(threadId);
-  const [, refresh] = useState(0);
-  const update = () => refresh((value) => value + 1);
-  const [open, setOpen] = useState(false);
-  const [filter, setFilter] = useState<Target>();
-  const [original, setOriginal] = useState<Target>();
-  const [message, setMessage] = useState("");
-  const draft = drafts.get(threadId);
-  const comments = useInfiniteQuery({
+  return useInfiniteQuery({
     queryKey: ["comments", threadId, filter ? targetKey(filter) : "all"],
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
@@ -194,6 +310,41 @@ export function Discussion({
       ),
     getNextPageParam: (page) => page.next_cursor ?? undefined,
   });
+}
+
+export function Discussion({
+  threadId,
+  profile,
+  children,
+  listOpen = false,
+  closeList,
+}: {
+  threadId: string;
+  profile: Profile;
+  children: ReactNode;
+  listOpen?: boolean;
+  closeList?: () => void;
+}) {
+  const transport = useTransport();
+  const queries = useQueryClient();
+  const drafts = useContext(CommentDrafts);
+  const composer = useDraft(threadId);
+  const [, refresh] = useState(0);
+  const update = () => refresh((value) => value + 1);
+  const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState<Target>();
+  const [original, setOriginal] = useState<Target>();
+  const [message, setMessage] = useState("");
+  const draft = drafts.get(threadId);
+  const allComments = useOutputComments(threadId);
+  const comments = useOutputComments(threadId, filter);
+  const [anchor, setAnchor] = useState<HTMLElement>();
+  useEffect(() => {
+    if (listOpen) {
+      setFilter(undefined);
+      setAnchor(undefined);
+    }
+  }, [listOpen]);
   const rows = comments.data?.pages.flatMap((page) => page.comments) ?? [];
   const publish = async (current: CommentDraft) => {
     if (current.status === "pending" || current.status === "published") return;
@@ -261,7 +412,12 @@ export function Discussion({
       );
     },
   });
-  const begin = (target: Target, text: string, selection?: Selection) => {
+  const begin = (
+    target: Target,
+    text: string,
+    selection?: Selection,
+    element?: HTMLElement,
+  ) => {
     if (
       draft &&
       draft.status !== "published" &&
@@ -286,221 +442,268 @@ export function Discussion({
       update();
     }
     setOriginal(undefined);
+    const retained =
+      draft &&
+      draft.status !== "published" &&
+      (draft.publication.body || draft.status !== "editing");
+    setFilter(retained ? draft.publication.target : target);
+    setAnchor(
+      retained && targetKey(draft.publication.target) !== targetKey(target)
+        ? undefined
+        : element,
+    );
     setOpen(true);
   };
+  const panel = (
+    <div className={styles.form}>
+      {message && <p role="status">{message}</p>}
+      {draft?.status === "published" && (
+        <section className={styles.commentDraft}>
+          <h3>Comment published</h3>
+          <p>
+            Saved with attribution to {draft.publication.author.display_name}.
+            Publishing did not send model input.
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              drafts.delete(threadId);
+              update();
+            }}
+          >
+            Done
+          </Button>
+        </section>
+      )}
+      {draft && draft.status !== "published" && (
+        <section className={styles.commentDraft}>
+          <h3>Private comment draft</h3>
+          {!anchor && (
+            <small>
+              Root {threadId} · output{" "}
+              {draft.publication.target.source_id.slice(0, 12)}
+            </small>
+          )}
+          <details>
+            <summary>
+              {draft.publication.selection
+                ? "Exact selected quote"
+                : "Output preview · comment applies to the whole block"}
+            </summary>
+            <pre className={styles.code}>
+              {draft.publication.selection?.quote ?? draft.text}
+            </pre>
+          </details>
+          <fieldset
+            disabled={draft.status !== "editing"}
+            className={styles.form}
+          >
+            <TextField
+              label="Author label (required)"
+              value={draft.publication.author.display_name}
+              onChange={(value) => {
+                draft.publication = {
+                  ...draft.publication,
+                  author: { display_name: value },
+                };
+                update();
+              }}
+            />
+            <label className={styles.form}>
+              Comment
+              <textarea
+                rows={4}
+                value={draft.publication.body}
+                onChange={(event) => {
+                  draft.publication = {
+                    ...draft.publication,
+                    body: event.target.value,
+                  };
+                  update();
+                }}
+              />
+            </label>
+          </fieldset>
+          <ErrorNotice error={draft.error} />
+          <div className={styles.commentActions}>
+            {draft.status === "editing" && (
+              <Button
+                disabled={
+                  !draft.publication.body.trim() ||
+                  [...draft.publication.body].length > 16384 ||
+                  !draft.publication.author.display_name.trim() ||
+                  [...draft.publication.author.display_name].length > 80
+                }
+                onClick={() => void publish(draft)}
+              >
+                Post comment
+              </Button>
+            )}
+            {draft.status === "pending" && <p role="status">Posting…</p>}
+            {draft.status === "unknown" && (
+              <>
+                <p>
+                  We could not confirm whether your comment was posted. Check
+                  this comment again without creating a duplicate.
+                </p>
+                <Button onClick={() => void publish(draft)}>
+                  Check comment status
+                </Button>
+              </>
+            )}
+            {draft.status === "editing" && (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  if (
+                    !draft.publication.body ||
+                    window.confirm("Discard this private comment draft?")
+                  ) {
+                    drafts.delete(threadId);
+                    update();
+                  }
+                }}
+              >
+                Discard draft
+              </Button>
+            )}
+          </div>
+        </section>
+      )}
+      {(!anchor || !draft || draft.status === "published" || !!rows.length) && (
+        <div className={styles.commentActions}>
+          {!anchor && (
+            <h3>{filter ? "Comments on this output" : "All saved comments"}</h3>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void comments.refetch()}
+          >
+            Refresh comments
+          </Button>
+          {filter && !anchor && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setFilter(undefined)}
+            >
+              Show all
+            </Button>
+          )}
+        </div>
+      )}
+      <ErrorNotice error={comments.error || capture.error} />
+      {comments.isPending && <p>Loading comments…</p>}
+      {comments.isSuccess && !rows.length && (!anchor || !draft) && (
+        <p>No comments on this selection yet.</p>
+      )}
+      {rows.map((comment) => (
+        <article key={comment.comment_id} className={styles.commentCard}>
+          <header>
+            <strong>{comment.author.display_name}</strong>
+            <time dateTime={comment.created_at}>
+              {new Date(comment.created_at).toLocaleString("en-US")}
+            </time>
+          </header>
+          {comment.selection && (
+            <blockquote>{comment.selection.quote}</blockquote>
+          )}
+          <MessageText text={comment.body} />
+          <small>
+            {comment.target.location.kind === "child_text"
+              ? "Child output"
+              : "Root output"}{" "}
+            · {comment.target.source_id.slice(0, 12)}
+          </small>
+          <div className={styles.commentActions}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setOriginal(comment.target)}
+            >
+              View original output
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setFilter(comment.target)}
+            >
+              Filter this output
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={capture.isPending || !!composer.replacement}
+              onClick={() => capture.mutate(comment.comment_id)}
+            >
+              Add feedback to prompt
+            </Button>
+          </div>
+        </article>
+      ))}
+      {comments.hasNextPage && (
+        <Button
+          variant="outline"
+          loading={comments.isFetchingNextPage}
+          onClick={() => void comments.fetchNextPage()}
+        >
+          Load more comments
+        </Button>
+      )}
+    </div>
+  );
   return (
     <DiscussionContext
       value={{
         begin,
-        browse: (target) => {
+        browse: (target, element) => {
           setFilter(target);
+          setAnchor(element);
           setOpen(true);
         },
-        comments: rows,
+        comments:
+          allComments.data?.pages.flatMap((page) => page.comments) ?? [],
         inspect: setOriginal,
+        open: open || listOpen,
       }}
     >
       {children}
+      <Popover open={open && !!anchor && !listOpen} onOpenChange={setOpen}>
+        <PopoverPopup
+          anchor={anchor}
+          side="right"
+          align="start"
+          sideOffset={12}
+          className={styles.inlineDiscussion}
+          finalFocus={() => (anchor?.isConnected ? anchor : false)}
+        >
+          <div className={styles.inlineHeading}>
+            <PopoverTitle>Comments</PopoverTitle>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Close comments"
+              onClick={() => setOpen(false)}
+            >
+              <X />
+            </Button>
+          </div>
+          {panel}
+        </PopoverPopup>
+      </Popover>
       <ModalFrame
-        open={open}
-        onOpenChange={setOpen}
+        open={(open && !anchor) || listOpen}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) closeList?.();
+        }}
         title="Saved output discussion"
         description="Comments are saved human feedback. They enter model input only when explicitly added and sent."
         closeLabel="Close"
       >
-        <div className={styles.form}>
-          {message && <p role="status">{message}</p>}
-          {draft?.status === "published" && (
-            <section className={styles.commentDraft}>
-              <h3>Comment published</h3>
-              <p>
-                Saved with attribution to{" "}
-                {draft.publication.author.display_name}. Publishing did not send
-                model input.
-              </p>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  drafts.delete(threadId);
-                  update();
-                }}
-              >
-                Done
-              </Button>
-            </section>
-          )}
-          {draft && draft.status !== "published" && (
-            <section className={styles.commentDraft}>
-              <h3>Private comment draft</h3>
-              <small>
-                Root {threadId} · output{" "}
-                {draft.publication.target.source_id.slice(0, 12)}
-              </small>
-              <details>
-                <summary>
-                  {draft.publication.selection
-                    ? "Exact selected quote"
-                    : "Output preview · comment applies to the whole block"}
-                </summary>
-                <pre className={styles.code}>
-                  {draft.publication.selection?.quote ?? draft.text}
-                </pre>
-              </details>
-              <fieldset
-                disabled={draft.status !== "editing"}
-                className={styles.form}
-              >
-                <TextField
-                  label="Author label (required)"
-                  value={draft.publication.author.display_name}
-                  onChange={(value) => {
-                    draft.publication = {
-                      ...draft.publication,
-                      author: { display_name: value },
-                    };
-                    update();
-                  }}
-                />
-                <label className={styles.form}>
-                  Comment
-                  <textarea
-                    rows={4}
-                    value={draft.publication.body}
-                    onChange={(event) => {
-                      draft.publication = {
-                        ...draft.publication,
-                        body: event.target.value,
-                      };
-                      update();
-                    }}
-                  />
-                </label>
-              </fieldset>
-              <ErrorNotice error={draft.error} />
-              <div className={styles.commentActions}>
-                {draft.status === "editing" && (
-                  <Button
-                    disabled={
-                      !draft.publication.body.trim() ||
-                      [...draft.publication.body].length > 16384 ||
-                      !draft.publication.author.display_name.trim() ||
-                      [...draft.publication.author.display_name].length > 80
-                    }
-                    onClick={() => void publish(draft)}
-                  >
-                    Post comment
-                  </Button>
-                )}
-                {draft.status === "pending" && <p role="status">Posting…</p>}
-                {draft.status === "unknown" && (
-                  <>
-                    <p>
-                      We could not confirm whether your comment was posted.
-                      Check this comment again without creating a duplicate.
-                    </p>
-                    <Button onClick={() => void publish(draft)}>
-                      Check comment status
-                    </Button>
-                  </>
-                )}
-                {draft.status === "editing" && (
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      if (
-                        !draft.publication.body ||
-                        window.confirm("Discard this private comment draft?")
-                      ) {
-                        drafts.delete(threadId);
-                        update();
-                      }
-                    }}
-                  >
-                    Discard draft
-                  </Button>
-                )}
-              </div>
-            </section>
-          )}
-          <div className={styles.commentActions}>
-            <h3>{filter ? "Comments on this output" : "All saved comments"}</h3>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => void comments.refetch()}
-            >
-              Refresh comments
-            </Button>
-            {filter && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setFilter(undefined)}
-              >
-                Show all
-              </Button>
-            )}
-          </div>
-          <ErrorNotice error={comments.error || capture.error} />
-          {comments.isPending && <p>Loading comments…</p>}
-          {comments.isSuccess && !rows.length && (
-            <p>No comments on this selection yet.</p>
-          )}
-          {rows.map((comment) => (
-            <article key={comment.comment_id} className={styles.commentCard}>
-              <header>
-                <strong>{comment.author.display_name}</strong>
-                <time dateTime={comment.created_at}>
-                  {new Date(comment.created_at).toLocaleString("en-US")}
-                </time>
-              </header>
-              {comment.selection && (
-                <blockquote>{comment.selection.quote}</blockquote>
-              )}
-              <MessageText text={comment.body} />
-              <small>
-                {comment.target.location.kind === "child_text"
-                  ? "Child output"
-                  : "Root output"}{" "}
-                · {comment.target.source_id.slice(0, 12)}
-              </small>
-              <div className={styles.commentActions}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setOriginal(comment.target)}
-                >
-                  View original output
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setFilter(comment.target)}
-                >
-                  Filter this output
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={capture.isPending || !!composer.replacement}
-                  onClick={() => capture.mutate(comment.comment_id)}
-                >
-                  Add feedback to prompt
-                </Button>
-              </div>
-            </article>
-          ))}
-          {comments.hasNextPage && (
-            <Button
-              variant="outline"
-              loading={comments.isFetchingNextPage}
-              onClick={() => void comments.fetchNextPage()}
-            >
-              Load more comments
-            </Button>
-          )}
-        </div>
+        {panel}
       </ModalFrame>
       <ModalFrame
         open={!!original}

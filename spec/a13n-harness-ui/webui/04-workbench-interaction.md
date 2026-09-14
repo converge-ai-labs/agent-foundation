@@ -16,7 +16,7 @@ The workbench uses the shared frontend design system with English interface text
 4. Add Project collects a name and server directory, with additional roots under an expandable control. It displays that paths belong to the server/container. Without native sharing, path entry still works through validated Project configuration and does not enable a file-browsing API.
 5. New conversation uses the selected Project's effective creation defaults. Agent and Environment choices are visible before first submission; incomplete configuration links directly to the blocking setting.
 
-The left sidebar groups root conversations under Projects. Each Project offers New conversation and Project settings. Conversation rows show title, activity, and attention-needed state. Running, waiting for a decision, and failed states remain distinguishable without opening every Thread. Rename/archive actions are secondary; archive honors the App's active-operation restriction.
+The left sidebar groups root conversations under Projects. Each Project offers New conversation and Project settings. Conversation rows show title, activity, and attention-needed state. Running, waiting for a decision, and failed states remain distinguishable without opening every Thread. Each conversation row's secondary menu provides Rename, Share, Comments, and Details. These actions belong to that Thread, not to its Project's settings. Archive remains in conversation details and honors the App's active-operation restriction.
 
 Selecting a different conversation is personal navigation. The browser retains each Thread's editing context without cancelling execution or causing collaborators to switch views. An update in another Thread marks its row rather than stealing focus.
 
@@ -30,19 +30,19 @@ Same-page presence is an awareness indicator, not a blanket Edit permission or a
 
 ## Default Layout
 
-| Region       | Default interaction                                                                      |
-| ------------ | ---------------------------------------------------------------------------------------- |
-| Sidebar      | Projects and conversations, Overview, and one Settings entry; a drawer on narrow screens |
-| Main area    | Chat or the selected file/diff; Chat's composer remains with its conversation            |
-| Explorer     | Files or Changes on the left, closed until opened                                        |
-| Bottom panel | Resizable Host Terminal, closed until explicitly opened                                  |
-| Header       | Instance identity, connection status, participants, theme, and Log out                   |
+| Region       | Default interaction                                                                                                       |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| Sidebar      | Projects and conversations, Overview, Settings, and footer participant/theme/session controls; a drawer on narrow screens |
+| Main area    | Chat remains the primary reading area with its shared composer                                                            |
+| Right drawer | Files or Changes explorer and selected file/diff editor, closed until opened; file tabs stay inside the drawer            |
+| Bottom panel | Resizable Host Terminal, closed until explicitly opened                                                                   |
+| Header       | One compact conversation title with consistent Files, Changes, and Terminal icon toggles at the right                     |
 
-The application frame stays within the viewport. Conversation history, code, explorer contents, and Settings content scroll within their own available space rather than growing the document. Files and Changes share the left explorer; selecting a file or comparison opens it in the central work area. Open-file tabs and Chat switch the central view without changing the selected Thread or replacing its shared draft. The terminal is independently resizable/collapsible. Closing a panel closes the view, not its server-side terminal session or Agent Run.
+The application frame stays within the viewport. Conversation history, code, explorer contents, and Settings content scroll within their own available space rather than growing the document. Files and Changes share the right drawer; selecting a file or comparison opens its editor inside that drawer without replacing desktop Chat. Back returns to the explorer, and file tabs retain previously opened views. The drawer can be widened explicitly and closed without discarding private buffers; closing it returns focus to Chat. The header does not stack instance status, a global file-tab row, and a second conversation title. The terminal is independently resizable/collapsible. Closing a panel closes the view, not its server-side terminal session or Agent Run.
 
 Settings uses a dedicated content layout. It does not display Chat/Files/Changes/Terminal controls or native panes. Entering Settings detaches the selected terminal view without closing its session and retains private file/configuration drafts. Returning to the workbench lets the user reopen existing tabs and explicitly reconnect to terminal output.
 
-On narrow screens, these areas become switchable views rather than compressed simultaneous columns. Returning to Chat preserves the unsent draft and personal scroll. Desktop and narrow layouts expose the same operation outcomes and warnings.
+On narrow screens, the right drawer or terminal temporarily takes the available work area rather than compressing simultaneous columns. Chat remains mounted, and closing the panel reveals it. Returning to Chat preserves the unsent draft and personal scroll. Desktop and narrow layouts expose the same operation outcomes and warnings.
 
 ## Conversation and Shared Composer
 
@@ -62,9 +62,9 @@ Share conversation copies a same-instance link without a long-lived API key. Oth
 
 ## Comments on Saved AI Output
 
-A saved assistant text block offers Comment; a supported text selection offers Comment on selection. The comment editor shows the exact target or selected quote beside a private draft. Streaming or otherwise unsaved output does not offer successful publication: the UI explains that the output must first be saved, and never treats completion of token delivery as checkpoint success.
+A saved assistant text block offers Comment; a supported text selection offers Comment on selection. Selection exposes a contextual action beside the text, opening a nearby private editor rather than requiring the Thread-wide discussion dialog. Supported saved selection ranges are highlighted in the original rendered text; pointer and keyboard activation opens their discussion. Overlapping highlights preserve each exact source range. Closing a discussion preserves an unpublished or uncertain draft. Original text remains available from the output's secondary actions for transformed or otherwise unrepresentable selections. Streaming or otherwise unsaved output does not offer successful publication: the UI explains that the output must first be saved, and never treats completion of token delivery as checkpoint success.
 
-A Thread comment list shows published comments, author labels, creation times, and original output references. Inline markers are attached only to an established saved target. A comment whose source is not in the current history view remains in that list with an explicit original-output view, rather than being moved to a similar-looking response. The comment list and referenced-output view remain useful after later Runs and compaction. Opening an old referenced output never selects that checkpoint for continuation.
+The sidebar's Thread menu opens its complete paginated comment list, showing published comments, author labels, creation times, and original output references. Inline counts describe loaded comments, not an unqueried total; target-specific browsing does not replace the all-output marker overview. Inline markers are attached only to an established saved target. A comment whose source is not in the current history view remains in that list with an explicit original-output view, rather than being moved to a similar-looking response. The comment list and referenced-output view remain useful after later Runs and compaction. Opening an old referenced output never selects that checkpoint for continuation.
 
 Post comment acknowledges a committed comment, distinct from the shared composer's Synchronized state. Publication failure or a stale target preserves the local comment text. A lost acknowledgement offers reconciliation of the same publication identity, not a second post. Newly published comments update the discussion without replacing the transcript, stealing focus, or clearing another input. Reload and reconnect refetch saved comments independently of presence and draft rejoin.
 
@@ -92,7 +92,7 @@ Forms and advanced source editing share the resource validation boundary. Source
 
 When native sharing is enabled, Files opens at the Project roots. Quick file selection, path breadcrumbs, and line selection support reading code. Clicking a file reads it; editing and saving are explicit. Unsaved and externally changed content are visible in the editor. Switching or closing a file view retains its private buffer; it does not save or discard it. Reloading or leaving the browser warns about unsaved file content. Explicitly choosing the inspected disk version discards local text, not Git changes.
 
-Changes groups staged, unstaged, and untracked content by repository. Selecting an entry opens the appropriate comparison, with a clear baseline and a route to the current file. Binary files and conflicts receive explicit presentation rather than misleading text diffs. Git-unavailable state retains ordinary Files and explains why Changes cannot be shown.
+Changes groups staged, unstaged, and untracked content by repository. Selecting an entry opens a unified comparison in the right drawer, with a clear baseline and a route to the current file. Text uses monospace code, separate old/new file gutters, and distinct light/dark additions, deletions, and hunk context. The reviewed patch remains complete: headers and no-newline notices stay readable, while unknown/combined metadata receives no invented file numbers. Selection and capture retain the original inclusive patch-line coordinates, not the displayed file gutters; a replacement diff revision clears the previous selection. Binary files and conflicts receive explicit presentation rather than misleading text diffs. Git-unavailable state retains ordinary Files and explains why Changes cannot be shown.
 
 Add to prompt on a code selection or diff inserts a visible context item into the shared composer of the selected Thread. Participants can inspect and remove it before submission. It identifies the server/repository/path and captured content, and does not imply access to that path from a remote Agent Environment. Merely opening a file does not send it to the model.
 

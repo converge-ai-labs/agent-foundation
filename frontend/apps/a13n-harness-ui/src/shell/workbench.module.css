@@ -75,41 +75,12 @@
   display: block;
   padding-top: 4px;
 }
-.statusDot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 100%;
-  background: var(--a13n-accent);
-  margin-right: 7px;
-}
 .workspace {
   flex: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
-}
-.topbar {
-  min-height: 52px;
-  flex-shrink: 0;
-  padding: 8px 20px;
-  border-bottom: 1px solid var(--a13n-border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  background: var(--a13n-canvas);
-}
-.instanceLabel {
-  font-weight: 500;
-  font-size: 12px;
-}
-.connectionState {
-  font-size: 11px;
-  color: var(--a13n-secondary);
-  padding-left: 12px;
-  border-left: 1px solid var(--a13n-border);
 }
 .main {
   flex: 1;
@@ -456,14 +427,6 @@ a.resourceRow:hover {
   .workspace {
     margin-left: 0;
     width: 100%;
-  }
-  .topbar {
-    padding: 8px 12px;
-    gap: 8px;
-  }
-  .instanceLabel,
-  .connectionState {
-    display: none;
   }
   .mobileMenu {
     display: inline-flex;

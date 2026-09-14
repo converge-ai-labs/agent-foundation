@@ -1,0 +1,273 @@
+"""Listener exit is observable and does not wait for infinite browser streams."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import shlex
+import signal
+import socket
+import subprocess
+import sys
+import time
+from contextlib import ExitStack, asynccontextmanager
+from pathlib import Path
+
+import httpx
+import psutil
+import pytest
+import uvicorn
+from a13n_harness_ui.webui import run
+from a13n_harness_ui.webui_lifecycle import EventStreamResponse, RequestLog, WebUIServer
+from anyio import Event, sleep
+from starlette.routing import Route
+from websockets.sync.client import connect
+
+from .test_app import _write_configuration
+
+
+@pytest.mark.anyio
+async def test_stopping_stream_sends_final_body_and_releases_generator() -> None:
+    stopping, entered, closed = Event(), Event(), Event()
+    messages = []
+
+    async def events():
+        try:
+            entered.set()
+            yield "data: ready\n\n"
+            await sleep(60)
+        finally:
+            closed.set()
+
+    async def send(message):
+        messages.append(message)
+
+    response = EventStreamResponse(events(), stopping=stopping, media_type="text/event-stream", headers={})
+    task = asyncio.create_task(response.stream_response(send))
+    await entered.wait()
+    stopping.set()
+    await asyncio.wait_for(task, 1)
+    assert closed.is_set()
+    assert messages[-1] == {"type": "http.response.body", "body": b"", "more_body": False}
+    assert len([message for message in messages if message["type"] == "http.response.start"]) == 1
+
+
+@pytest.mark.anyio
+async def test_request_logs_use_route_template_not_private_inputs(caplog: pytest.LogCaptureFixture) -> None:
+    async def endpoint(request):
+        pass
+
+    async def app(scope, receive, send):
+        scope["route"] = Route("/api/threads/{thread_id}", endpoint)
+        await send({"type": "http.response.start", "status": 404, "headers": []})
+        await send({"type": "http.response.body", "body": b"private response"})
+
+    async def receive():
+        return {"type": "http.request", "body": b"private request"}
+
+    async def send(message):
+        pass
+
+    with caplog.at_level(logging.INFO, logger="a13n_harness_ui.webui"):
+        await RequestLog(app)(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/api/threads/private-thread",
+                "query_string": b"api_key=private-secret&path=/private/folder",
+            },
+            receive,
+            send,
+        )
+    assert "GET /api/threads/{thread_id} → 404" in caplog.text
+    assert "private" not in caplog.text
+
+
+@pytest.mark.anyio
+async def test_slow_cleanup_remains_observable_without_abandoning_it(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    stopping = Event()
+    cleaned = False
+
+    async def cleanup(self, sockets=None):
+        nonlocal cleaned
+        assert stopping.is_set()
+        await sleep(2.1)
+        cleaned = True
+
+    monkeypatch.setattr(uvicorn.Server, "shutdown", cleanup)
+    server = WebUIServer(uvicorn.Config("unused:app", log_config=None), stopping=stopping)
+    with caplog.at_level(logging.INFO, logger="a13n_harness_ui.webui"):
+        await server.shutdown()
+    assert cleaned
+    assert "Still stopping WebUI" in caplog.text
+    assert "WebUI stopped." in caplog.text
+
+
+@pytest.mark.anyio
+async def test_failed_startup_is_not_reported_as_success(caplog: pytest.LogCaptureFixture) -> None:
+    @asynccontextmanager
+    async def broken_app():
+        raise RuntimeError("Fixture startup failure")
+        yield  # pragma: no cover
+
+    with caplog.at_level(logging.INFO, logger="a13n_harness_ui.webui"):
+        with pytest.raises(SystemExit) as failure:
+            await run(broken_app, port=0, api_key="test-key")
+    assert failure.value.code == 3
+    assert "WebUI ready" not in caplog.text
+
+
+def test_stop_request_is_visible_even_during_startup(caplog: pytest.LogCaptureFixture) -> None:
+    server = WebUIServer(uvicorn.Config("unused:app", log_config=None), stopping=Event())
+    with caplog.at_level(logging.INFO, logger="a13n_harness_ui.webui"):
+        server.handle_exit(signal.SIGINT, None)
+    assert server.should_exit
+    assert "Stop requested. Waiting for WebUI startup or cleanup" in caplog.text
+
+
+_SERVER = """
+import asyncio
+import sys
+from pathlib import Path
+from a13n_logging import configure_logging, LogFormat
+from a13n_harness_ui.app import open_harness_ui_app
+from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+from a13n_harness_ui.webui import run
+from pydantic_ai.models.function import FunctionModel
+
+root = Path(sys.argv[1])
+async def stream(messages, info):
+    try:
+        yield 'Working'
+        (root / 'run-started').touch()
+        await asyncio.sleep(3600)
+    finally:
+        (root / 'run-stopped').touch()
+async def resolve(self, context, model_id):
+    return FunctionModel(stream_function=stream)
+HarnessUiModelResolver.__call__ = resolve
+configure_logging(logger_names=('a13n_harness_ui', 'uvicorn'), log_format=LogFormat.json)
+settings = HarnessUiSettings(storage=StorageSettings(data_root=root / 'data'), pricing_auto_update=False, shutdown_timeout_seconds=1)
+try:
+    asyncio.run(run(
+        lambda: open_harness_ui_app(settings, configuration_path=root / 'a13n-harness-ui.yaml', host_mode='webui', share_computer=True, instrumentation=None),
+        port=int(sys.argv[2]), api_key='lifecycle-test-key',
+    ))
+except KeyboardInterrupt:
+    pass
+"""
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX signals and native PTY")
+@pytest.mark.parametrize("stop_signal", [signal.SIGINT, signal.SIGTERM])
+def test_signal_closes_live_browser_streams_and_owned_run_and_pty(tmp_path: Path, stop_signal: signal.Signals) -> None:
+    _write_configuration(tmp_path)
+    # No personal shell startup files, provider traffic or browser dependency.
+    env = {**os.environ, "HOME": str(tmp_path), "SHELL": "/bin/sh", "ENV": "/dev/null", "BASH_ENV": "/dev/null"}
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    process = subprocess.Popen(
+        [sys.executable, "-u", "-c", _SERVER, str(tmp_path), str(port)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        env=env,
+    )
+    terminal_pid = None
+    output = ""
+    try:
+        with (
+            httpx.Client(
+                base_url=f"http://127.0.0.1:{port}",
+                headers={"Authorization": "Bearer lifecycle-test-key"},
+                trust_env=False,
+                timeout=5,
+            ) as api,
+            ExitStack() as clients,
+        ):
+            deadline = time.monotonic() + 15
+            while True:
+                assert process.poll() is None, process.communicate()[0]
+                try:
+                    if api.get("/readyz").status_code == 200:
+                        break
+                except httpx.ConnectError:
+                    pass
+                assert time.monotonic() < deadline, "Listener never became ready"
+                time.sleep(0.02)
+            created = api.post("/api/threads", json={})
+            assert created.status_code == 200, created.text
+            thread = created.json()["thread_id"]
+            submitted = api.post(f"/api/threads/{thread}/submit", json={"prompt": "Keep working until shutdown"})
+            assert submitted.status_code == 200, submitted.text
+            terminal = api.post("/api/host/terminals", json={"cwd": str(tmp_path)}).json()
+            assert "terminal_id" in terminal, terminal
+            for path in ("/api/events", f"/api/threads/{thread}/events"):
+                response = clients.enter_context(api.stream("GET", path))
+                assert response.status_code == 200
+                lines = response.iter_lines()
+                assert next(lines)
+            ws = clients.enter_context(
+                connect(f"ws://127.0.0.1:{port}/api/host/terminals/{terminal['terminal_id']}/connect", proxy=None)
+            )
+            ws.send(json.dumps({"api_key": "lifecycle-test-key"}))
+            initial = json.loads(ws.recv())
+            assert initial["kind"] == "terminal"
+            ws.send(json.dumps({"kind": "control", "control_epoch": 0}))
+            while True:
+                controlled = json.loads(ws.recv(timeout=5))
+                if controlled.get("terminal", {}).get("controller") == initial["participant_id"]:
+                    break
+            ws.send(
+                json.dumps(
+                    {
+                        "kind": "input",
+                        "control_epoch": controlled["terminal"]["control_epoch"],
+                        "text": f"echo $$ > {shlex.quote(str(tmp_path / 'shell-pid'))}\n",
+                    }
+                )
+            )
+            deadline = time.monotonic() + 5
+            while not (tmp_path / "shell-pid").exists():
+                assert time.monotonic() < deadline, "PTY did not accept input"
+                time.sleep(0.02)
+            terminal_pid = int((tmp_path / "shell-pid").read_text())
+            assert psutil.pid_exists(terminal_pid)
+            deadline = time.monotonic() + 5
+            while not (tmp_path / "run-started").exists():
+                assert time.monotonic() < deadline, "Run did not start"
+                time.sleep(0.02)
+            started = time.monotonic()
+            process.send_signal(stop_signal)
+            output, _ = process.communicate(timeout=8)
+            elapsed = time.monotonic() - started
+            assert elapsed < 3, output
+        assert (tmp_path / "run-stopped").exists(), output
+        assert not psutil.pid_exists(terminal_pid), output
+        for message in (
+            "Starting WebUI",
+            "WebUI ready",
+            "Stop requested.",
+            "Stopping WebUI",
+            "WebUI stopped",
+        ):
+            assert message in output
+        assert "GET /api/events" in output
+        assert "POST /api/threads/{thread_id}/submit" in output
+        assert "timeout graceful shutdown exceeded" not in output
+        assert "Traceback" not in output
+        assert "lifecycle-test-key" not in output
+        assert str(tmp_path) not in output
+        assert process.returncode in (0, -stop_signal), output
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.communicate(timeout=5)
+        if terminal_pid and psutil.pid_exists(terminal_pid):
+            os.killpg(terminal_pid, signal.SIGKILL)
