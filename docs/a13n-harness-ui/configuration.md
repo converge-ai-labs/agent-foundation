@@ -93,7 +93,22 @@ security:
     model: null
 subagents:
   include: []
+webui:
+  sidekick: null
 ```
+
+### WebUI Sidekick
+
+In **Settings → General → Sidekick**, select **Enabled**, optionally choose an Agent and a Model override, then **Save changes**. This sets preferences for independent work without changing your default conversation Agent:
+
+```yaml
+webui:
+  sidekick:
+    agent: null              # Inherit the calling Agent
+    model: model-worker      # Override its Model for the requested Run
+```
+
+Use existing resource IDs. Set `agent: agent-worker` to select a different Agent; either choice can use a Model override. Omit/null `model` to use the selected Agent's Model. An empty `sidekick: {}` enables instructions with inherited selections. Overrides use the normal per-Run mechanism, not an Agent resource edit or a sticky Model change to later turns. Choose **Disabled** or set `sidekick: null` to turn off the extra instructions. Saving does not start any work. New WebUI Runs receive the preference; active Runs keep their captured instructions. Terminal Runs and delegated children are unaffected. Generic Thread, Project, Agent and Model discovery tools remain available in WebUI whether Sidekick is enabled or not. See [Thread collaboration](webui.md#agent-collaboration-and-sidekick) for behavior and delivery limits.
 
 ### Shell review shortcut
 

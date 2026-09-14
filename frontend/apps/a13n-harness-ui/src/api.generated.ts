@@ -1273,6 +1273,23 @@ export interface components {
              */
             capability_warnings?: string[];
         };
+        /**
+         * AppliedEditView
+         * @description Observed edit content, or an explicit omission when retention bounds were reached.
+         */
+        AppliedEditView: {
+            /** File Path */
+            file_path: string;
+            /** Before */
+            before?: string | null;
+            /** After */
+            after?: string | null;
+            /**
+             * Omitted
+             * @default false
+             */
+            omitted?: boolean;
+        };
         /** ApprovalRequestView */
         ApprovalRequestView: {
             /** Request Id */
@@ -1336,6 +1353,7 @@ export interface components {
             project_id: string | null;
             /** Project Roots */
             project_roots: string[];
+            webui_sidekick?: components["schemas"]["SidekickConfiguration"] | null;
             agent: components["schemas"]["CapturedAgentSelection"];
             /** Capability Ids */
             capability_ids: string[];
@@ -2986,6 +3004,16 @@ export interface components {
             diagnostic?: string | null;
         };
         /**
+         * SidekickConfiguration
+         * @description Instruction-guided collaboration; omitted Agent inherits the calling Agent.
+         */
+        SidekickConfiguration: {
+            agent?: components["schemas"]["ResourceId"] | null;
+            model?: components["schemas"]["ResourceId"] | null;
+        } & {
+            [key: string]: components["schemas"]["JsonValue"];
+        };
+        /**
          * StoreKind
          * @enum {string}
          */
@@ -3496,6 +3524,9 @@ export interface components {
             tool_call_id?: string | null;
             /** Outcome */
             outcome?: ("success" | "failed" | "denied" | "interrupted") | null;
+            /** Provider */
+            provider?: string | null;
+            applied_edit?: components["schemas"]["AppliedEditView"] | null;
             value?: components["schemas"]["JsonValue"] | null;
             /**
              * Value Omitted

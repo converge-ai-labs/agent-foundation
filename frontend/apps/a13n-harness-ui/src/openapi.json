@@ -4152,6 +4152,50 @@
         "title": "AppStatus",
         "description": "Detached application health and accepted-source projection."
       },
+      "AppliedEditView": {
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "title": "File Path"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 65536
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 65536
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "omitted": {
+            "type": "boolean",
+            "title": "Omitted",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "file_path"
+        ],
+        "title": "AppliedEditView",
+        "description": "Observed edit content, or an explicit omission when retention bounds were reached."
+      },
       "ApprovalRequestView": {
         "properties": {
           "request_id": {
@@ -4294,6 +4338,16 @@
             },
             "type": "array",
             "title": "Project Roots"
+          },
+          "webui_sidekick": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SidekickConfiguration"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "agent": {
             "$ref": "#/components/schemas/CapturedAgentSelection"
@@ -8707,6 +8761,36 @@
         ],
         "title": "SetupStatus"
       },
+      "SidekickConfiguration": {
+        "properties": {
+          "agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue"
+        },
+        "type": "object",
+        "title": "SidekickConfiguration",
+        "description": "Instruction-guided collaboration; omitted Agent inherits the calling Agent."
+      },
       "StoreKind": {
         "type": "string",
         "enum": [
@@ -10264,6 +10348,27 @@
               }
             ],
             "title": "Outcome"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "applied_edit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AppliedEditView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "value": {
             "anyOf": [

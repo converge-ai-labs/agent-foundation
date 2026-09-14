@@ -2,7 +2,12 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 import { ToolCall, OpenHostFile, editPatch } from "./tool-call";
-import { describeTool, hostLookupPath, savedTools } from "./tool-presentation";
+import {
+  describeTool,
+  hostLookupPath,
+  savedTools,
+  savedToolGroups,
+} from "./tool-presentation";
 import { LiveOutput, SavedEntry } from "./transcript";
 import type { Schema } from "../transport/client";
 afterEach(cleanup);
@@ -54,7 +59,11 @@ it("pairs loaded calls with results once, retaining page-edge results and repeat
   render(
     <>
       {entries.map((entry) => (
-        <SavedEntry key={entry.position} entry={entry} toolViews={tools} />
+        <SavedEntry
+          key={entry.position}
+          entry={entry}
+          toolGroups={savedToolGroups(entries)}
+        />
       ))}
     </>,
   );
@@ -131,9 +140,7 @@ it("labels historical replacement as input and offers explicit host lookup outsi
   fireEvent.click(link);
   expect(open).toHaveBeenCalledWith("/tmp/a");
   expect(screen.queryByText("Requested replacement")).toBeNull();
-  fireEvent.click(
-    screen.getByRole("button", { name: /Edit.*Result received/ }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: /Edit/ }));
   expect(screen.getByText("Requested replacement")).toBeTruthy();
   expect(screen.queryByText("Applied edit")).toBeNull();
   for (const path of [
@@ -176,7 +183,7 @@ it("renders tool calls inline and exposes bounded shell output with raw fallback
   expect(html.indexOf('data-tool-id="two"')).toBeLessThan(
     html.indexOf("After"),
   );
-  fireEvent.click(screen.getByRole("button", { name: /Run.*Result received/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Ran 1 command/ }));
   expect(screen.getByText("hello")).toBeTruthy();
   expect(screen.getByText("warning")).toBeTruthy();
   expect(screen.getByText(/Partial process output/)).toBeTruthy();
