@@ -4133,6 +4133,11 @@ export interface components {
             expected_version: number;
             patch: components["schemas"]["ThreadMetadataPatch"];
         };
+        /** InputAttachmentReference */
+        InputAttachmentReference: {
+            /** Attachment Id */
+            attachment_id: string;
+        };
         /** PromptRequest */
         PromptRequest: {
             /**
@@ -4145,16 +4150,23 @@ export interface components {
              * @default []
              */
             attachment_ids?: string[];
+            /** Parts */
+            parts?: (string | components["schemas"]["InputAttachmentReference"])[] | null;
         };
         /** RootSteerRequest */
         RootSteerRequest: {
-            /** Prompt */
-            prompt: string;
+            /**
+             * Prompt
+             * @default
+             */
+            prompt?: string;
             /**
              * Attachment Ids
              * @default []
              */
             attachment_ids?: string[];
+            /** Parts */
+            parts?: (string | components["schemas"]["InputAttachmentReference"])[] | null;
         };
     };
     responses: never;

@@ -33,7 +33,13 @@ it("renders saved attachment metadata once while preserving exact model-visible 
     ],
   } as Schema<"TranscriptEntry">;
   render(
-    <TransportContext value={{ fetch: vi.fn() } as unknown as Transport}>
+    <TransportContext
+      value={
+        {
+          fetch: vi.fn().mockRejectedValue(new Error("Preview unavailable")),
+        } as unknown as Transport
+      }
+    >
       <SavedEntry entry={entry} threadId="thread-one" />
     </TransportContext>,
   );
@@ -43,7 +49,13 @@ it("renders saved attachment metadata once while preserving exact model-visible 
 });
 it("groups live media with its input turn, not a later instruction reusing the same attachment", () => {
   render(
-    <TransportContext value={{ fetch: vi.fn() } as unknown as Transport}>
+    <TransportContext
+      value={
+        {
+          fetch: vi.fn().mockRejectedValue(new Error("Preview unavailable")),
+        } as unknown as Transport
+      }
+    >
       <LiveOutput
         threadId="one"
         gap={false}

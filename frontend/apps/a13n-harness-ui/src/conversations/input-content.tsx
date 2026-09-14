@@ -4,6 +4,7 @@ import type { Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
 import styles from "./conversation.module.css";
+import { AttachmentThumbnail } from "./attachment-thumbnail";
 
 export type InputPart = {
   kind: string;
@@ -28,19 +29,19 @@ export function inputAttachment(metadata: InputPart["metadata"]) {
 function Attachment({
   threadId,
   attachment,
+  related,
 }: {
   threadId: string;
   attachment: Schema<"ThreadAttachment">;
+  related: InputPart[];
 }) {
   const transport = useTransport();
   const [url, setUrl] = useState("");
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
+  const download = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => download.current?.abort(),
+    [transport, threadId, attachment.attachment_id],
+  );
   const [error, setError] = useState<unknown>();
   const [loading, setLoading] = useState(false);
   useEffect(
@@ -50,52 +51,74 @@ function Attachment({
     [url],
   );
   return (
-    <div className={styles.attachmentCard}>
-      <strong>
-        {attachment.source && "comment_id" in attachment.source
-          ? "Comment reference · "
-          : ""}
-        {attachment.name}
-      </strong>
-      <small>
-        {attachment.media_type} · {attachment.size.toLocaleString()} bytes
-      </small>
-      {attachment.source && (
-        <details>
-          <summary>Captured source and revision</summary>
-          <pre className={styles.code}>
-            {JSON.stringify(attachment.source, null, 2)}
-          </pre>
+    <details className={styles.inputAttachment}>
+      <summary>
+        <AttachmentThumbnail threadId={threadId} attachment={attachment} />
+        <strong>
+          {attachment.source && "comment_id" in attachment.source
+            ? "Comment reference · "
+            : ""}
+          {attachment.name}
+        </strong>
+      </summary>
+      <div className={styles.inputAttachmentDetails}>
+        <small>
+          {attachment.media_type} · {attachment.size.toLocaleString()} bytes
+        </small>
+        {attachment.source && (
+          <details>
+            <summary>Captured source and revision</summary>
+            <pre className={styles.code}>
+              {JSON.stringify(attachment.source, null, 2)}
+            </pre>
+          </details>
+        )}
+        {url ? (
+          <a href={url} download={attachment.name}>
+            Download original bytes
+          </a>
+        ) : (
+          <Button
+            variant="ghost"
+            loading={loading}
+            onClick={() => {
+              setLoading(true);
+              setError(undefined);
+              download.current?.abort();
+              const controller = new AbortController();
+              download.current = controller;
+              void transport
+                .fetch(
+                  `/api/threads/${encodeURIComponent(threadId)}/attachments/${encodeURIComponent(attachment.attachment_id)}`,
+                  { signal: controller.signal },
+                )
+                .then((response) => response.blob())
+                .then((blob) => {
+                  if (!controller.signal.aborted)
+                    setUrl(URL.createObjectURL(blob));
+                })
+                .catch((failure) => {
+                  if (!controller.signal.aborted) setError(failure);
+                })
+                .finally(() => {
+                  if (!controller.signal.aborted) setLoading(false);
+                });
+            }}
+          >
+            Prepare download
+          </Button>
+        )}
+        <details className={styles.rawSource}>
+          <summary>Model-visible attachment content</summary>
+          {related.map((item, offset) => (
+            <pre key={offset} className={styles.code}>
+              {item.text || JSON.stringify(item.value, null, 2)}
+            </pre>
+          ))}
         </details>
-      )}
-      {url ? (
-        <a href={url} download={attachment.name}>
-          Download original bytes
-        </a>
-      ) : (
-        <Button
-          variant="ghost"
-          loading={loading}
-          onClick={() => {
-            setLoading(true);
-            setError(undefined);
-            void transport
-              .fetch(
-                `/api/threads/${encodeURIComponent(threadId)}/attachments/${encodeURIComponent(attachment.attachment_id)}`,
-              )
-              .then((response) => response.blob())
-              .then((blob) => {
-                if (mounted.current) setUrl(URL.createObjectURL(blob));
-              })
-              .catch(setError)
-              .finally(() => setLoading(false));
-          }}
-        >
-          Prepare download
-        </Button>
-      )}
-      <ErrorNotice error={error} />
-    </div>
+        <ErrorNotice error={error} />
+      </div>
+    </details>
   );
 }
 function Media({ part }: { part: InputPart }) {
@@ -137,6 +160,17 @@ function Media({ part }: { part: InputPart }) {
     </div>
   );
 }
+function composerIdentity(part: InputPart) {
+  const ui = part.metadata?.harness_ui;
+  const composer = object(ui) ? ui.composer : undefined;
+  return typeof part.metadata?.source_id === "string" &&
+    object(composer) &&
+    typeof composer.index === "number" &&
+    Number.isInteger(composer.index) &&
+    composer.index >= 0
+    ? `${part.metadata.source_id}:${composer.index}`
+    : undefined;
+}
 export function InputContent({
   parts,
   threadId,
@@ -154,27 +188,29 @@ export function InputContent({
       {visible.map((part, index) => {
         const attachment = inputAttachment(part.metadata);
         if (attachment && threadId) {
-          if (seen.has(attachment.attachment_id)) return null;
-          seen.add(attachment.attachment_id);
+          const identity = composerIdentity(part) ?? attachment.attachment_id;
+          if (seen.has(identity)) return null;
+          seen.add(identity);
           const related = visible.filter(
             (item) =>
-              inputAttachment(item.metadata)?.attachment_id ===
-              attachment.attachment_id,
+              (composerIdentity(item) ??
+                inputAttachment(item.metadata)?.attachment_id) === identity,
           );
           return (
-            <section key={index}>
-              <Attachment threadId={threadId} attachment={attachment} />
-              <details className={styles.rawSource}>
-                <summary>Model-visible attachment content</summary>
-                {related.map((item, offset) => (
-                  <pre key={offset} className={styles.code}>
-                    {item.text || JSON.stringify(item.value, null, 2)}
-                  </pre>
-                ))}
-              </details>
-            </section>
+            <Attachment
+              key={`${threadId}:${identity}`}
+              threadId={threadId}
+              attachment={attachment}
+              related={related}
+            />
           );
         }
+        if (composerIdentity(part) && part.kind !== "media")
+          return (
+            <span key={index} className={styles.inputText}>
+              {part.text || ""}
+            </span>
+          );
         return part.kind === "media" ? (
           <Media key={index} part={part} />
         ) : (

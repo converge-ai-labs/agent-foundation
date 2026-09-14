@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import re
 from collections.abc import Awaitable, Callable
 from typing import Literal
 from uuid import uuid4
@@ -15,6 +16,7 @@ from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.surfaces import SurfaceModel
 
 MAX_DRAFT_BYTES = 512 * 1024
+_INLINE_ATTACHMENT = re.compile(r"\ufffc(inline-[0-9a-f-]{36})\ufffc")
 
 
 class DraftPresence(SurfaceModel):
@@ -58,12 +60,19 @@ def composer_values(document: Doc) -> tuple[str, tuple[str, ...]]:
     if len(prompt) > 256 * 1024 or "\x00" in prompt:
         raise ValueError("Composer text exceeds its limit or contains NUL.")
     values = attachments.to_py()
-    if len(values) > 8 or any(
+    if any(
         not isinstance(key, str) or not 1 <= len(key) <= 100 or not isinstance(value, str) or not 1 <= len(value) <= 100
         for key, value in values.items()
     ):
         raise ValueError("A composer supports up to eight Thread attachment references.")
-    return prompt, tuple(values[key] for key in sorted(values))
+    # Inline registry entries survive text deletion for native undo/redo. Only
+    # live tokens select input; dormant entries remain under the full CRDT cap.
+    # Older clients' unpositioned selections retain their trailing order.
+    keys = [match[1] for match in _INLINE_ATTACHMENT.finditer(prompt)]
+    keys.extend(key for key in sorted(values) if not key.startswith("inline-"))
+    if len(keys) > 8:
+        raise ValueError("A composer supports up to eight Thread attachment references.")
+    return prompt, tuple(values[key] for key in keys if key in values and values[key] not in {"pending", "failed"})
 
 
 class SharedDraft:

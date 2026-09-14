@@ -36,6 +36,7 @@ import { useDraft } from "./composer";
 import { MessageText } from "./message-text";
 import { selectedSource } from "./comment-selection";
 import styles from "./conversation.module.css";
+import { attachmentSelections } from "./inline-attachments";
 
 type Target = Schema<"SavedOutputTarget">;
 type Selection = Schema<"CommentSelection">;
@@ -384,7 +385,7 @@ export function Discussion({
   };
   const capture = useMutation({
     mutationFn: async (commentId: string) => {
-      if (composer.doc.getMap("attachments").size >= 8)
+      if (attachmentSelections(composer.doc).length >= 8)
         throw new Error(
           "Remove an attachment before adding feedback (limit: eight).",
         );
@@ -401,7 +402,7 @@ export function Discussion({
         throw new Error(
           "The shared draft changed during capture. Rejoin and add feedback explicitly.",
         );
-      if (composer.doc.getMap("attachments").size >= 8)
+      if (attachmentSelections(composer.doc).length >= 8)
         throw new Error(
           "The shared selection now has eight attachments. Remove one and add feedback again.",
         );
@@ -409,9 +410,7 @@ export function Discussion({
         ["thread", threadId, "attachment", attachment.attachment_id],
         attachment,
       );
-      composer.doc
-        .getMap("attachments")
-        .set(crypto.randomUUID(), attachment.attachment_id);
+      composer.addAttachment(attachment.attachment_id);
       setMessage(
         "Feedback added to the shared composer. Inspect its complete captured text before Send or Send as instruction.",
       );

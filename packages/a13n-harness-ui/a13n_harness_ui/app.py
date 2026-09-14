@@ -216,6 +216,7 @@ from a13n_harness_ui.thread_files import (
     MAX_ATTACHMENTS,
     MAX_INPUT_BYTES,
     AttachmentUpload,
+    ComposerAttachmentReference,
     ComposerInput,
     ThreadAttachment,
     ThreadFiles,
@@ -1409,16 +1410,22 @@ class HarnessUiApp:
         self, thread_id: str, prompt: RunInputValue | ComposerInput, attachment_ids: tuple[str, ...]
     ) -> RunInputValue:
         uploads = prompt.attachments if isinstance(prompt, ComposerInput) else ()
-        if len(uploads) + len(attachment_ids) > MAX_ATTACHMENTS:
+        references = prompt.attachment_ids if isinstance(prompt, ComposerInput) else ()
+        if len(uploads) + len(references) + len(attachment_ids) > MAX_ATTACHMENTS:
             raise ValueError("An input supports up to eight attachments.")
+        resolved = [await self._thread_files.read(thread_id, item) for item in references]
         attachments = [await self._thread_files.read(thread_id, item) for item in attachment_ids]
-        if sum(len(item.data) for item in uploads) + sum(item.size for item, _ in attachments) > MAX_INPUT_BYTES:
+        if (
+            sum(len(item.data) for item in uploads) + sum(item.size for item, _ in (*resolved, *attachments))
+            > MAX_INPUT_BYTES
+        ):
             raise ValueError("An input supports up to 20 MiB of attachments.")
         parts: list[UserContent] = []
         if isinstance(prompt, ComposerInput):
-            if not prompt.text.strip() and not uploads and not attachments:
+            if not prompt.text.strip() and not uploads and not resolved and not attachments:
                 raise ValueError("A root message must not be blank.")
             source_id = prompt.source_id or f"input-{uuid4().hex}"
+            selected = iter(resolved)
             for index, part in enumerate(prompt.parts):
                 if isinstance(part, str):
                     if part:
@@ -1427,6 +1434,13 @@ class HarnessUiApp:
                                 part, metadata={"source_id": source_id, "harness_ui": {"composer": {"index": index}}}
                             )
                         )
+                elif isinstance(part, ComposerAttachmentReference):
+                    item, data = next(selected)
+                    parts.extend(
+                        await self._attachment_input(
+                            thread_id, item, data, source_id=source_id, index=index, label=part.label
+                        )
+                    )
                 else:
                     item = await self._thread_files.stage(thread_id, part.upload)
                     parts.extend(
@@ -1458,7 +1472,7 @@ class HarnessUiApp:
         metadata: dict[str, Any] = {"harness_ui": namespace}
         if source_id is not None:
             metadata["source_id"] = source_id
-            namespace["composer"] = {"index": index, "label": label}
+            namespace["composer"] = {"index": index, "label": label or item.name}
         if isinstance(item.source, CommentContextSource):
             captured_text = context_text(item.source, data)
             if captured_text is None:
@@ -1615,7 +1629,7 @@ class HarnessUiApp:
         self,
         *,
         receipt_id: str,
-        message: str,
+        message: str | ComposerInput,
         skill_references: tuple[SkillReference, ...] = (),
         attachment_ids: tuple[str, ...] = (),
     ) -> RootControlResult:
@@ -1625,9 +1639,17 @@ class HarnessUiApp:
                 skill_references,
                 thread_id=operation.receipt.thread_id,
             )
-            if len(attachment_ids) > MAX_ATTACHMENTS:
+            references = message.attachment_ids if isinstance(message, ComposerInput) else ()
+            uploads = message.attachments if isinstance(message, ComposerInput) else ()
+            if len(attachment_ids) + len(references) + len(uploads) > MAX_ATTACHMENTS:
                 raise HarnessUiError("An input supports up to eight attachments.", code="input_invalid")
-            for identity in attachment_ids:
+            for upload in uploads:
+                if upload.source is None or context_text(upload.source, upload.data) is None:
+                    raise HarnessUiError(
+                        "Steering supports only captured UTF-8 text context up to 64 KiB; keep the draft for ordinary submission.",
+                        code="steer_context_unsupported",
+                    )
+            for identity in (*references, *attachment_ids):
                 try:
                     item, data = await self._thread_files.read(operation.receipt.thread_id, identity)
                 except ValueError as exc:
@@ -1642,7 +1664,7 @@ class HarnessUiApp:
             # text-only steering boundary. All attachments were validated above.
             prepared = (
                 await self._prepare_input(operation.receipt.thread_id, message, attachment_ids)
-                if attachment_ids
+                if attachment_ids or isinstance(message, ComposerInput)
                 else message
             )
             return await self._root_runs.steer(receipt_id=receipt_id, message=prepared)

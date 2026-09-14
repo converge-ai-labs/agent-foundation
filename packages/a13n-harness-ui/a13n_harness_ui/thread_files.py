@@ -70,10 +70,18 @@ class ComposerAttachment:
 
 
 @dataclass(frozen=True, slots=True)
+class ComposerAttachmentReference:
+    """An ordered reference to bytes already staged in this Thread."""
+
+    attachment_id: str
+    label: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ComposerInput:
     """Ordered authored content; editor tokens never cross this boundary."""
 
-    parts: tuple[str | ComposerAttachment, ...]
+    parts: tuple[str | ComposerAttachment | ComposerAttachmentReference, ...]
     source_id: str | None = None
 
     @property
@@ -85,9 +93,17 @@ class ComposerInput:
         return tuple(part.upload for part in self.parts if isinstance(part, ComposerAttachment))
 
     @property
+    def attachment_ids(self) -> tuple[str, ...]:
+        return tuple(part.attachment_id for part in self.parts if isinstance(part, ComposerAttachmentReference))
+
+    @property
     def display_text(self) -> str:
         return "".join(
-            part if isinstance(part, str) else f"[{composer_attachment_label(part.label, part.upload.name)}]"
+            part
+            if isinstance(part, str)
+            else f"[{composer_attachment_label(part.label, part.upload.name)}]"
+            if isinstance(part, ComposerAttachment)
+            else f"[{part.label or 'attachment'}]"
             for part in self.parts
         )
 

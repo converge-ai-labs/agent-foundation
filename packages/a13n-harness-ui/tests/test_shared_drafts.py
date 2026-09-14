@@ -94,3 +94,32 @@ async def test_malformed_updates_do_not_mutate_shared_state(bad: bytes) -> None:
             valid,
         )
     assert composer_values(draft.document) == ("", ())
+
+
+async def test_inline_registry_selects_live_order_and_bounds_pending_tokens() -> None:
+    draft = SharedDraft()
+    participant = draft.attach()
+    author = composer_document()
+    registry = author.get("attachments", type=Map[str])
+    keys = [f"inline-{index:036x}" for index in range(12)]
+    for index, key in enumerate(keys):
+        registry[key] = f"attachment-{index}"
+    registry[keys[1]] = "pending"
+    author.get("text", type=Text).insert(0, f"before \ufffc{keys[2]}\ufffc middle \ufffc{keys[1]}\ufffc after")
+    selected = []
+
+    async def validate(ids: tuple[str, ...]) -> None:
+        selected.append(ids)
+
+    await draft.command(participant, sync(draft, author), validate)
+    assert selected[-1] == ("attachment-2",)
+    registry[keys[1]] = "attachment-1"
+    await draft.command(participant, sync(draft, author), validate)
+    assert selected[-1] == ("attachment-2", "attachment-1")
+    with author.transaction():
+        del author.get("text", type=Text)[:]
+        author.get("text", type=Text).insert(0, "".join(f"\ufffc{key}\ufffc" for key in keys[:9]))
+    before = draft.document.get_update()
+    with pytest.raises(ValueError, match="eight"):
+        await draft.command(participant, sync(draft, author), validate)
+    assert draft.document.get_update() == before
