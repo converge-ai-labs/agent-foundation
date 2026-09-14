@@ -193,68 +193,6 @@ async def test_discovery_follows_pages_deduplicates_and_does_not_truncate() -> N
 
 
 @pytest.mark.anyio
-async def test_failed_metadata_falls_back_but_invalid_binding_does_not() -> None:
-    from a13n_service.models.service_common import ModelError
-
-    async def handler(request: httpx2.Request) -> httpx2.Response:
-        return httpx2.Response(503)
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
-        operations = NativeProviderOperations(
-            provider_resolver=_ProviderResolver(
-                RuntimeProvider("openrouter", {}, "https://openrouter.ai/api/v1", "secret")
-            ),
-            registry=built_in_provider_registry(),
-            http_client=client,
-        )
-        result = await operations.describe(
-            provider_id="p",
-            organization_id="o",
-            workspace_id="w",
-            provider_type="openrouter",
-            upstream_model="unlisted",
-            model_api=None,
-        )
-        assert result.suggested_model_api == "openrouter.chat_completions"
-        assert result.suggested_settings == {}
-        with pytest.raises(ModelError):
-            await operations.describe(
-                provider_id="p",
-                organization_id="o",
-                workspace_id="w",
-                provider_type="openrouter",
-                upstream_model="unlisted",
-                model_api="anthropic.messages",
-            )
-        with pytest.raises(ProviderOperationError):
-            await operations.discover(provider_id="p", organization_id="o", workspace_id="w")
-
-
-@pytest.mark.anyio
-async def test_programming_errors_are_not_reported_as_missing_metadata():
-    async def handler(request):
-        raise TypeError("broken adapter")
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
-        operations = NativeProviderOperations(
-            provider_resolver=_ProviderResolver(
-                RuntimeProvider("openrouter", {}, "https://openrouter.ai/api/v1", "secret")
-            ),
-            registry=built_in_provider_registry(),
-            http_client=client,
-        )
-        with pytest.raises(TypeError, match="broken adapter"):
-            await operations.describe(
-                provider_id="p",
-                organization_id="o",
-                workspace_id="w",
-                provider_type="openrouter",
-                upstream_model="model",
-                model_api=None,
-            )
-
-
-@pytest.mark.anyio
 @pytest.mark.parametrize(("provider_type", "cursor_key"), [("anthropic", "after_id"), ("openai", "after")])
 async def test_adapter_owns_upstream_paging(provider_type, cursor_key):
     requests = []
@@ -276,7 +214,7 @@ async def test_adapter_owns_upstream_paging(provider_type, cursor_key):
         )
         result = await operations.discover(provider_id="p", organization_id="o", workspace_id="w")
     assert [item.upstream_model for item in result.items] == ["a", "b", "z"]
-    assert set(result.model_dump()) == {"items", "settings_schemas"}
+    assert set(result.model_dump()) == {"items"}
     assert len(requests) == 2
 
 
@@ -300,7 +238,7 @@ async def test_discovery_rejects_oversized_output_instead_of_returning_partial_c
 
 
 @pytest.mark.anyio
-async def test_description_and_probe_stop_before_unneeded_pages():
+async def test_probe_stops_after_first_page():
     calls = []
 
     async def handler(request):
@@ -317,17 +255,7 @@ async def test_description_and_probe_stop_before_unneeded_pages():
             http_client=client,
         )
         await ops.test(provider_id="p", organization_id="o", workspace_id="w")
-        result = await ops.describe(
-            provider_id="p",
-            organization_id="o",
-            workspace_id="w",
-            provider_type="openai",
-            upstream_model="target",
-            model_api=None,
-        )
-    assert result.display_name == "Target"
-    assert len(calls) == 2
-    assert "temperature" in result.settings_schema["properties"]
+    assert len(calls) == 1
 
 
 @pytest.mark.anyio
@@ -344,7 +272,6 @@ async def test_catalog_deduplicates_schemas_and_fits_ten_thousand_models():
         )
         result = await ops.discover(provider_id="p", organization_id="o", workspace_id="w")
     assert len(result.items) == 10000
-    assert set(result.settings_schemas) == {"openai.responses", "openai.chat_completions"}
     assert all("settings_schema" not in item.model_dump() for item in result.items)
     assert len(result.model_dump_json().encode()) < 6 * 1024 * 1024
 

@@ -13,6 +13,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CreateModelRequest {
+    #[serde(rename = "declarations", skip_serializing_if = "Option::is_none")]
+    pub declarations: Option<Box<models::ModelDeclarations>>,
+
     #[serde(
         rename = "description",
         default,
@@ -52,6 +55,7 @@ impl CreateModelRequest {
         upstream_model: String,
     ) -> CreateModelRequest {
         CreateModelRequest {
+            declarations: None,
             description: None,
             enabled: None,
             key,

@@ -25,7 +25,7 @@ from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.temporal import assume_utc
 
 from .credentials import ProviderSecrets
-from .domain import Model, ModelProvider
+from .domain import Model, ModelDeclarations, ModelProvider
 
 
 class ModelProviderRecord(ResourceCredential[str | None], Base):
@@ -144,6 +144,7 @@ class ModelRecord(Base):
     upstream_model: Mapped[str] = mapped_column(String(256))
     model_api: Mapped[str] = mapped_column(String(96))
     settings: Mapped[dict[str, JsonValue]] = mapped_column(JSON)
+    declarations: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
     enabled: Mapped[bool] = mapped_column(Boolean)
     created_by_type: Mapped[str] = mapped_column(String(32))
     created_by_id: Mapped[str] = mapped_column(String(72))
@@ -164,6 +165,7 @@ class ModelRecord(Base):
             upstream_model=self.upstream_model,
             model_api=self.model_api,
             settings=self.settings,
+            declarations=ModelDeclarations.model_validate(self.declarations),
             enabled=self.enabled,
             created_by=_principal(self.created_by_type, self.created_by_id),
             updated_by=_principal(self.updated_by_type, self.updated_by_id),

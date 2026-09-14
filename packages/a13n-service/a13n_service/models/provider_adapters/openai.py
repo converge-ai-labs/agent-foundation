@@ -102,4 +102,5 @@ INTEGRATION = ProviderIntegration(
     endpoint="https://api.openai.com/v1",
     credential_validator=_validate_credential,
     model_discovery=openai_style_discovery(_request),
+    model_profile=OpenAIProvider.model_profile,
 )

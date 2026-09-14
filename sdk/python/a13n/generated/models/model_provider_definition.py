@@ -8,6 +8,7 @@ from attrs import define as _attrs_define
 if TYPE_CHECKING:
     from ..models.model_provider_definition_configuration_schema import ModelProviderDefinitionConfigurationSchema
     from ..models.model_provider_definition_credential_schema import ModelProviderDefinitionCredentialSchema
+    from ..models.model_provider_definition_settings_schemas import ModelProviderDefinitionSettingsSchemas
 
 
 T = TypeVar("T", bound="ModelProviderDefinition")
@@ -21,6 +22,7 @@ class ModelProviderDefinition:
         credential_schema (ModelProviderDefinitionCredentialSchema):
         default_model_api (str):
         display_name (str):
+        settings_schemas (ModelProviderDefinitionSettingsSchemas):
         supported_model_apis (list[str]):
         supports_model_discovery (bool):
         type_ (str):
@@ -30,6 +32,7 @@ class ModelProviderDefinition:
     credential_schema: ModelProviderDefinitionCredentialSchema
     default_model_api: str
     display_name: str
+    settings_schemas: ModelProviderDefinitionSettingsSchemas
     supported_model_apis: list[str]
     supports_model_discovery: bool
     type_: str
@@ -42,6 +45,8 @@ class ModelProviderDefinition:
         default_model_api = self.default_model_api
 
         display_name = self.display_name
+
+        settings_schemas = self.settings_schemas.to_dict()
 
         supported_model_apis = self.supported_model_apis
 
@@ -57,6 +62,7 @@ class ModelProviderDefinition:
                 "credential_schema": credential_schema,
                 "default_model_api": default_model_api,
                 "display_name": display_name,
+                "settings_schemas": settings_schemas,
                 "supported_model_apis": supported_model_apis,
                 "supports_model_discovery": supports_model_discovery,
                 "type": type_,
@@ -73,6 +79,9 @@ class ModelProviderDefinition:
         from ..models.model_provider_definition_credential_schema import (
             ModelProviderDefinitionCredentialSchema,
         )
+        from ..models.model_provider_definition_settings_schemas import (
+            ModelProviderDefinitionSettingsSchemas,
+        )
 
         d = dict(src_dict)
         configuration_schema = ModelProviderDefinitionConfigurationSchema.from_dict(d.pop("configuration_schema"))
@@ -82,6 +91,8 @@ class ModelProviderDefinition:
         default_model_api = d.pop("default_model_api")
 
         display_name = d.pop("display_name")
+
+        settings_schemas = ModelProviderDefinitionSettingsSchemas.from_dict(d.pop("settings_schemas"))
 
         supported_model_apis = cast(list[str], d.pop("supported_model_apis"))
 
@@ -94,6 +105,7 @@ class ModelProviderDefinition:
             credential_schema=credential_schema,
             default_model_api=default_model_api,
             display_name=display_name,
+            settings_schemas=settings_schemas,
             supported_model_apis=supported_model_apis,
             supports_model_discovery=supports_model_discovery,
             type_=type_,

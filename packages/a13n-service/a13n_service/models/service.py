@@ -102,6 +102,7 @@ class ModelService:
                     upstream_model=request.upstream_model,
                     model_api=request.model_api,
                     settings=request.settings,
+                    declarations=request.declarations.model_dump(mode="json"),
                     enabled=request.enabled,
                     created_by_type=actor.principal.principal_type.value,
                     created_by_id=actor.principal.principal_id,
@@ -280,6 +281,9 @@ class ModelService:
                 record.upstream_model = request.upstream_model
             record.model_api = model_api
             record.settings = settings
+            if "declarations" in request.model_fields_set:
+                assert request.declarations is not None
+                record.declarations = request.declarations.model_dump(mode="json")
             if "enabled" in request.model_fields_set:
                 assert request.enabled is not None
                 record.enabled = request.enabled

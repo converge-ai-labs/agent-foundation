@@ -19,7 +19,7 @@ pub struct ModelOverride {
         with = "::serde_with::rust::double_option",
         skip_serializing_if = "Option::is_none"
     )]
-    pub characteristics: Option<Option<Box<models::HarnessModelCharacteristics>>>,
+    pub characteristics: Option<Option<Box<models::AgentModelCharacteristics>>>,
 
     #[serde(
         rename = "model_key",

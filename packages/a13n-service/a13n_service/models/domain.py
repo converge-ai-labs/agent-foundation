@@ -6,6 +6,7 @@ import unicodedata
 from datetime import datetime
 from typing import Annotated, Literal
 
+from a13n_harness import ModelCapability
 from pydantic import (
     AfterValidator,
     BaseModel,
@@ -14,8 +15,10 @@ from pydantic import (
     JsonValue,
     SecretStr,
     StringConstraints,
+    field_validator,
     model_validator,
 )
+from pydantic_ai.settings import ThinkingEffort
 
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import ObjectId, new_object_id
@@ -52,7 +55,7 @@ def new_model_id() -> str:
 
 
 class ModelProfile(BaseModel):
-    """Read-only Provider capability information returned by discovery and description."""
+    """Read-only Provider capability information returned by discovery."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -77,6 +80,23 @@ class ModelLimits(BaseModel):
 
     context_window_tokens: int | None = Field(default=None, gt=0)
     max_output_tokens: int | None = Field(default=None, gt=0)
+
+
+class ModelDeclarations(BaseModel):
+    """Harness-facing facts and authoring choices declared for one saved Model."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    thinking_efforts: tuple[ThinkingEffort, ...] = ()
+    capabilities: frozenset[ModelCapability] = Field(default_factory=frozenset)
+    context_window: int | None = Field(default=None, gt=0)
+
+    @field_validator("thinking_efforts")
+    @classmethod
+    def validate_unique_efforts(cls, value: tuple[ThinkingEffort, ...]) -> tuple[ThinkingEffort, ...]:
+        if len(value) != len(set(value)):
+            raise ValueError("thinking efforts must be unique")
+        return value
 
 
 class CreateModelProviderRequest(BaseModel):
@@ -144,6 +164,7 @@ class CreateModelRequest(BaseModel):
     upstream_model: UpstreamModel
     model_api: ModelApi
     settings: dict[str, JsonValue] = Field(default_factory=dict)
+    declarations: ModelDeclarations = Field(default_factory=ModelDeclarations)
     enabled: bool = True
 
 
@@ -155,6 +176,7 @@ class UpdateModelRequest(BaseModel):
     upstream_model: UpstreamModel | None = None
     model_api: ModelApi | None = None
     settings: dict[str, JsonValue] | None = None
+    declarations: ModelDeclarations | None = None
     enabled: bool | None = None
 
     @model_validator(mode="after")
@@ -180,6 +202,7 @@ class Model(BaseModel):
     upstream_model: str
     model_api: ModelApi
     settings: dict[str, JsonValue] = Field(default_factory=dict)
+    declarations: ModelDeclarations = Field(default_factory=ModelDeclarations)
     enabled: bool
     created_by: PrincipalRef
     updated_by: PrincipalRef
@@ -260,12 +283,7 @@ class ModelCandidate(BaseModel):
     parameter_support: dict[str, Literal["supported", "unsupported", "unknown"]] = Field(default_factory=dict)
 
 
-class ModelDescription(ModelCandidate):
-    settings_schema: dict[str, object]
-
-
 class ModelDiscovery(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     items: tuple[ModelCandidate, ...]
-    settings_schemas: dict[str, dict[str, object]]

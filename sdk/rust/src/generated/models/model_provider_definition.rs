@@ -25,6 +25,10 @@ pub struct ModelProviderDefinition {
     #[serde(rename = "display_name")]
     pub display_name: String,
 
+    #[serde(rename = "settings_schemas")]
+    pub settings_schemas:
+        std::collections::HashMap<String, std::collections::HashMap<String, serde_json::Value>>,
+
     #[serde(rename = "supported_model_apis")]
     pub supported_model_apis: Vec<String>,
 
@@ -41,6 +45,10 @@ impl ModelProviderDefinition {
         credential_schema: std::collections::HashMap<String, serde_json::Value>,
         default_model_api: String,
         display_name: String,
+        settings_schemas: std::collections::HashMap<
+            String,
+            std::collections::HashMap<String, serde_json::Value>,
+        >,
         supported_model_apis: Vec<String>,
         supports_model_discovery: bool,
         r#type: String,
@@ -50,6 +58,7 @@ impl ModelProviderDefinition {
             credential_schema,
             default_model_api,
             display_name,
+            settings_schemas,
             supported_model_apis,
             supports_model_discovery,
             r#type,

@@ -72,4 +72,5 @@ INTEGRATION = ProviderIntegration(
             display_name_fields=("display_name", "name"),
         ),
     ),
+    model_profile=AnthropicProvider.model_profile,
 )

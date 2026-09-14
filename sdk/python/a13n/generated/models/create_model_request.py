@@ -9,6 +9,7 @@ from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.create_model_request_settings import CreateModelRequestSettings
+    from ..models.model_declarations import ModelDeclarations
 
 
 T = TypeVar("T", bound="CreateModelRequest")
@@ -23,6 +24,8 @@ class CreateModelRequest:
         name (str):
         provider_id (str):
         upstream_model (str):
+        declarations (ModelDeclarations | Unset): Harness-facing facts and authoring choices declared for one saved
+            Model.
         description (None | str | Unset):
         enabled (bool | Unset):
         settings (CreateModelRequestSettings | Unset):
@@ -33,6 +36,7 @@ class CreateModelRequest:
     name: str
     provider_id: str
     upstream_model: str
+    declarations: ModelDeclarations | Unset = UNSET
     description: str | Unset | None = UNSET
     enabled: bool | Unset = UNSET
     settings: CreateModelRequestSettings | Unset = UNSET
@@ -47,6 +51,10 @@ class CreateModelRequest:
         provider_id = self.provider_id
 
         upstream_model = self.upstream_model
+
+        declarations: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.declarations, Unset):
+            declarations = self.declarations.to_dict()
 
         description: str | Unset | None
         if isinstance(self.description, Unset):
@@ -71,6 +79,8 @@ class CreateModelRequest:
                 "upstream_model": upstream_model,
             }
         )
+        if declarations is not UNSET:
+            field_dict["declarations"] = declarations
         if description is not UNSET:
             field_dict["description"] = description
         if enabled is not UNSET:
@@ -83,6 +93,7 @@ class CreateModelRequest:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         from ..models.create_model_request_settings import CreateModelRequestSettings
+        from ..models.model_declarations import ModelDeclarations
 
         d = dict(src_dict)
         key = d.pop("key")
@@ -94,6 +105,13 @@ class CreateModelRequest:
         provider_id = d.pop("provider_id")
 
         upstream_model = d.pop("upstream_model")
+
+        _declarations = d.pop("declarations", UNSET)
+        declarations: ModelDeclarations | Unset
+        if isinstance(_declarations, Unset):
+            declarations = UNSET
+        else:
+            declarations = ModelDeclarations.from_dict(_declarations)
 
         def _parse_description(data: object) -> str | Unset | None:
             if data is None:
@@ -119,6 +137,7 @@ class CreateModelRequest:
             name=name,
             provider_id=provider_id,
             upstream_model=upstream_model,
+            declarations=declarations,
             description=description,
             enabled=enabled,
             settings=settings,

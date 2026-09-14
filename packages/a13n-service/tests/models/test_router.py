@@ -151,6 +151,9 @@ async def test_provider_type_and_multiple_provider_http_lifecycle(api_client: ht
 
     assert definitions.status_code == 200
     assert {item["type"] for item in definitions.json()["items"]} >= {"openai", "openrouter", "ollama"}
+    openai = next(item for item in definitions.json()["items"] if item["type"] == "openai")
+    assert set(openai["settings_schemas"]) == {"openai.responses", "openai.chat_completions"}
+    assert "temperature" in openai["settings_schemas"]["openai.responses"]["properties"]
     assert first["type"] == second["type"] == "openai"
     assert first["id"] != second["id"]
     assert first["credential_configured"] and "credential" not in first
@@ -234,7 +237,7 @@ async def test_missing_authenticator_returns_401(
 
 
 @pytest.mark.anyio
-async def test_description_accepts_manual_ids_and_rejects_foreign_provider_apis(api_client):
+async def test_manual_model_ids_do_not_require_discovery(api_client):
     created = await api_client.post(
         f"/api/v1/workspaces/{WORKSPACE_ID}/model-providers",
         json={
@@ -247,18 +250,26 @@ async def test_description_accepts_manual_ids_and_rejects_foreign_provider_apis(
     assert created.status_code == 201
     provider_id = created.json()["id"]
     url = f"/api/v1/workspaces/{WORKSPACE_ID}/model-providers/{provider_id}"
-    described = await api_client.post(f"{url}/describe-model", json={"upstream_model": "new/unlisted-deployment"})
-    assert described.status_code == 200
-    assert described.json()["suggested_model_api"] == "bedrock.converse"
-    assert "bedrock_guardrail_config" in described.json()["settings_schema"]["properties"]
-    rejected = await api_client.post(
-        f"{url}/describe-model", json={"upstream_model": "new", "model_api": "anthropic.messages"}
-    )
-    assert rejected.status_code == 400
     unsupported = await api_client.post(f"{url}/discover-models", json={})
     assert unsupported.status_code == 409
     assert "model_discovery_unsupported" in unsupported.text
-    assert (await api_client.get(f"/api/v1/workspaces/{WORKSPACE_ID}/models")).json()["items"] == []
+    created = await api_client.post(
+        f"/api/v1/workspaces/{WORKSPACE_ID}/models",
+        json={
+            "key": "manual",
+            "provider_id": provider_id,
+            "name": "Manual",
+            "upstream_model": "new/unlisted-deployment",
+            "model_api": "bedrock.converse",
+            "declarations": {"context_window": 200000},
+        },
+    )
+    assert created.status_code == 201
+    assert created.json()["declarations"] == {
+        "thinking_efforts": [],
+        "capabilities": [],
+        "context_window": 200000,
+    }
 
 
 @pytest.mark.anyio
@@ -293,6 +304,11 @@ async def test_model_capabilities_are_readonly_discovery_information(api_client)
     assert created.status_code == 201
     assert {"profile", "limits"}.isdisjoint(created.json())
     assert created.json()["settings"] == {"max_tokens": 8000}
+    assert created.json()["declarations"] == {
+        "thinking_efforts": [],
+        "capabilities": [],
+        "context_window": None,
+    }
     for field in ("profile", "limits"):
         rejected = await api_client.patch(
             f"{url}/{created.json()['id']}", json={field: {}}, headers={"If-Match": created.headers["etag"]}

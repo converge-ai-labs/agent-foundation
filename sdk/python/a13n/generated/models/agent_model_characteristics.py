@@ -5,36 +5,26 @@ from typing import Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 
-from ..models.model_capability import ModelCapability
 from ..types import UNSET, Unset
 
-T = TypeVar("T", bound="HarnessModelCharacteristics")
+T = TypeVar("T", bound="AgentModelCharacteristics")
 
 
 @_attrs_define(repr=False)
-class HarnessModelCharacteristics:
-    """Resolved Harness characteristics of the active Agent model.
+class AgentModelCharacteristics:
+    """Agent-owned context policy layered over Model declarations.
 
     Attributes:
-        capabilities (list[ModelCapability] | Unset):
         compact_threshold (float | Unset):
         context_window (int | None | Unset):
         proactive_context_management_threshold (float | None | Unset):
     """
 
-    capabilities: list[ModelCapability] | Unset = UNSET
     compact_threshold: float | Unset = UNSET
     context_window: int | Unset | None = UNSET
     proactive_context_management_threshold: float | Unset | None = UNSET
 
     def to_dict(self) -> dict[str, Any]:
-        capabilities: list[str] | Unset = UNSET
-        if not isinstance(self.capabilities, Unset):
-            capabilities = []
-            for capabilities_item_data in self.capabilities:
-                capabilities_item = capabilities_item_data.value
-                capabilities.append(capabilities_item)
-
         compact_threshold = self.compact_threshold
 
         context_window: int | Unset | None
@@ -52,8 +42,6 @@ class HarnessModelCharacteristics:
         field_dict: dict[str, Any] = {}
 
         field_dict.update({})
-        if capabilities is not UNSET:
-            field_dict["capabilities"] = capabilities
         if compact_threshold is not UNSET:
             field_dict["compact_threshold"] = compact_threshold
         if context_window is not UNSET:
@@ -66,15 +54,6 @@ class HarnessModelCharacteristics:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         d = dict(src_dict)
-        _capabilities = d.pop("capabilities", UNSET)
-        capabilities: list[ModelCapability] | Unset = UNSET
-        if _capabilities is not UNSET:
-            capabilities = []
-            for capabilities_item_data in _capabilities:
-                capabilities_item = ModelCapability(capabilities_item_data)
-
-                capabilities.append(capabilities_item)
-
         compact_threshold = d.pop("compact_threshold", UNSET)
 
         def _parse_context_window(data: object) -> int | Unset | None:
@@ -97,11 +76,10 @@ class HarnessModelCharacteristics:
             d.pop("proactive_context_management_threshold", UNSET)
         )
 
-        harness_model_characteristics = cls(
-            capabilities=capabilities,
+        agent_model_characteristics = cls(
             compact_threshold=compact_threshold,
             context_window=context_window,
             proactive_context_management_threshold=proactive_context_management_threshold,
         )
 
-        return harness_model_characteristics
+        return agent_model_characteristics

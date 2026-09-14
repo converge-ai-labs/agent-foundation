@@ -136,9 +136,6 @@ async def test_native_workspace_role_cannot_mutate_shared_configuration(model_la
             # Shared writes through a Workspace route conceal the Organization owner.
             assert changed.status_code == 404
             assert (await user.get(path)).json() == before.json()
-        assert (
-            await user.post(provider_path + "/describe-model", json={"upstream_model": "manual-model"})
-        ).status_code == 200
         for path in [provider_path + "/test", provider_path + "/discover-models", model_path + "/test"]:
             result = await user.post(path, json={})
             assert result.status_code == (404 if role == "viewer" else 200)

@@ -23,10 +23,14 @@ from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.requests import LiveProviderModel
 from a13n_service.models.service_common import ModelError
+from a13n_service.models.settings import effective_settings
 from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from pydantic_ai.messages import ModelRequest, UserPromptPart
 from pydantic_ai.models import ModelRequestParameters
+from pydantic_ai.models.bedrock import BedrockConverseModel
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.profiles import ModelProfile
+from pydantic_ai.providers.bedrock import BedrockProvider
 from pydantic_ai.tools import ToolDefinition
 
 from .conftest import ORG_ID, WORKSPACE_ID, actor, protector
@@ -95,7 +99,7 @@ async def _live_model(client, *, provider_type="openai", harness_thread_id=None)
         snapshot=_snapshot().model_copy(
             update={
                 "model_api": f"{provider_type}.chat_completions",
-                "upstream_model": "openai/gpt-4.1-mini" if provider_type == "openrouter" else "example-model",
+                "upstream_model": "unknown-vendor/new-model" if provider_type == "openrouter" else "example-model",
             }
         ),
         organization_id=ORG_ID,
@@ -387,3 +391,106 @@ async def test_openrouter_accepts_only_exact_harness_correlation_defaults(stream
         with pytest.raises(ModelError):
             await _request(unbound, streaming=streaming, settings=settings)
         assert len(sent) == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_openrouter_unknown_vendor_prefix_preserves_explicit_thinking(streaming):
+    sent = []
+
+    def handler(request):
+        sent.append(json.loads(request.content))
+        return _reply(streaming)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        model = await _live_model(client, provider_type="openrouter")
+        await _request(model, streaming=streaming, settings={"thinking": "high"})
+    assert sent[0]["reasoning"] == {"effort": "high", "enabled": True}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("profile", "thinking", "code"),
+    [
+        (ModelProfile(supports_thinking=False), "high", "model_thinking_unsupported"),
+        (
+            ModelProfile(supports_thinking=True, thinking_always_enabled=True),
+            False,
+            "model_thinking_always_enabled",
+        ),
+    ],
+)
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_explicit_unified_thinking_is_not_silently_dropped(profile, thinking, code, streaming, monkeypatch):
+    native = TestModel(profile=profile)
+    close = AsyncMock(return_value=None)
+    monkeypatch.setattr(TestModel, "__aexit__", close)
+    resolver = Mock(spec=LiveProviderResolver)
+    resolver.resolve = AsyncMock(return_value=Mock())
+    factory = Mock(spec=NativeModelFactory)
+    factory.build.return_value = native
+    model = LiveProviderModel(
+        initial=native,
+        snapshot=_snapshot(),
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
+        provider_resolver=resolver,
+        model_factory=factory,
+    )
+    with pytest.raises(ModelResolutionError) as invalid:
+        await _request(model, streaming=streaming, settings={"thinking": thinking})
+    close.assert_awaited_once()
+    assert invalid.value.code == code
+    resolver.resolve.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_always_enabled_fresh_profile_accepts_positive_unified_thinking():
+    initial = TestModel(profile=ModelProfile(supports_thinking=False))
+    fresh = TestModel(profile=ModelProfile(supports_thinking=False, thinking_always_enabled=True))
+    resolver = Mock(spec=LiveProviderResolver)
+    resolver.resolve = AsyncMock(return_value=Mock())
+    factory = Mock(spec=NativeModelFactory)
+    factory.build.return_value = fresh
+    model = LiveProviderModel(
+        initial=initial,
+        snapshot=_snapshot(),
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
+        provider_resolver=resolver,
+        model_factory=factory,
+    )
+    await _request(model, settings={"thinking": "high"})
+    resolver.resolve.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_bedrock_effective_thinking_reaches_native_effort_request_fields():
+    client = Mock()
+    client.meta.events.register_first = Mock()
+    captured = {}
+
+    class CapturedRequest(Exception):
+        pass
+
+    def converse(**params):
+        captured.update(params)
+        raise CapturedRequest
+
+    client.converse = converse
+    native = BedrockConverseModel(
+        "anthropic.claude-sonnet-4-6",
+        provider=BedrockProvider(bedrock_client=client),
+    )
+    settings = effective_settings(
+        "bedrock.converse",
+        {"bedrock_additional_model_requests_fields": {"output_config": {}, "unrelated": "preserved"}},
+        {"thinking": "high"},
+    )
+    with pytest.raises(CapturedRequest):
+        await _request(native, settings=settings)
+    assert captured["additionalModelRequestFields"] == {
+        "thinking": {"type": "adaptive"},
+        "output_config": {"effort": "high"},
+        "unrelated": "preserved",
+    }

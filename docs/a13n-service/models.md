@@ -6,7 +6,7 @@ Models and Model Providers can belong to an Organization or a Workspace. Organiz
 
 Continue selecting models with a bare `model_key`. A key cannot be duplicated between an Organization and any of its Workspaces, or within one scope. Separate Workspaces may reuse a key. Conflicting creates return `409 model_key_conflict`, including concurrent creates.
 
-Use the public HTTP API on a control-plane or all-in-one a13n Service. The examples below use placeholders for Workspace and resource IDs. Authenticate each request with a Service credential authorized for that Workspace; Provider credentials belong in the write-only `credential` and `extra_headers` fields. Workspace Viewer can read configuration and request model descriptions. Workspace Builder or Admin can create, edit, discover, and test Models.
+Use the public HTTP API on a control-plane or all-in-one a13n Service. The examples below use placeholders for Workspace and resource IDs. Authenticate each request with a Service credential authorized for that Workspace; Provider credentials belong in the write-only `credential` and `extra_headers` fields. Workspace Viewer can read configuration. Workspace Builder or Admin can create, edit, discover, and test Models.
 
 ## Create a Provider
 
@@ -17,7 +17,7 @@ GET /api/v1/model-provider-types
 Authorization: Bearer <foundation-token>
 ```
 
-Each definition includes `configuration_schema`, `credential_schema`, `supported_model_apis`, `default_model_api`, and `supports_model_discovery`. Choose a registered type and follow its schemas. For example, OpenRouter uses an empty configuration object and a separate API key:
+Each definition includes `configuration_schema`, `credential_schema`, `supported_model_apis`, `default_model_api`, `supports_model_discovery`, and a `settings_schemas` map keyed by calling API. Choose a registered type and follow its schemas. For example, OpenRouter uses an empty configuration object and a separate API key:
 
 ```http
 POST /api/v1/workspaces/<workspace-id>/model-providers
@@ -69,26 +69,11 @@ POST /api/v1/workspaces/<workspace-id>/model-providers/<provider-id>/discover-mo
 Authorization: Bearer <foundation-token>
 ```
 
-The response contains one complete `items` array, ordered by upstream ID and deduplicated, plus a `settings_schemas` map keyed by calling API. Each item contains suggested configuration and metadata without repeating the schema. Use `settings_schemas[item.suggested_model_api]` to render its parameters; the map also includes the Provider's other supported APIs. Search and paginate these results in your client; repeat the request to refresh. Discovery accepts no `limit` or `cursor`, and returns no `next_cursor`.
+The response contains one complete `items` array, ordered by upstream ID and deduplicated. Each item contains suggested configuration and advisory metadata without embedding a schema. Use the selected Provider type's `settings_schemas[item.suggested_model_api]` to render its parameters. Search and paginate these results in your client; repeat the request to refresh. Discovery accepts no `limit` or `cursor`, and returns no `next_cursor`.
 
 Discovery creates no Models. A successful empty list, an upstream failure, and `model_discovery_unsupported` are different outcomes. The service follows upstream pages internally, with limits of 100 pages, 4 MiB per upstream response, 10,000 unique models, and 32 MiB of discovery output. Exceeding a bound returns an error, never a silently truncated catalog.
 
-You can also describe any upstream ID directly, including a deployment or a newly released model absent from discovery:
-
-```http
-POST /api/v1/workspaces/<workspace-id>/model-providers/<provider-id>/describe-model
-Authorization: Bearer <foundation-token>
-Content-Type: application/json
-
-{
-  "upstream_model": "vendor/model-id",
-  "model_api": "openrouter.chat_completions"
-}
-```
-
-Omit `model_api` to use the suggested binding, or supply one of the Provider's allowed APIs. Each description includes `suggested_model_api`, `suggested_settings`, `profile`, `limits`, `settings_schema`, and `parameter_support`. Remote metadata failures still allow a local schema with unknown capability information. Description performs no inference and does not prove that the upstream ID or credential works.
-
-Descriptions are suggestions. They never update saved Models or become a list of permitted upstream IDs. Manual creation works without discovery or description.
+Discovery is optional authoring assistance, not a permitted-model list. You can manually create any upstream ID, including a deployment or a newly released model absent from discovery. Choose one of the Provider type's supported APIs and its corresponding static settings schema. A Model test, rather than catalog metadata, checks whether the saved ID and credential work.
 
 ## Save and test a Model
 
@@ -105,13 +90,18 @@ Content-Type: application/json
   "name": "Primary Model",
   "upstream_model": "vendor/model-id",
   "model_api": "openrouter.chat_completions",
-  "settings": {"temperature": 0.3, "max_tokens": 1024}
+  "settings": {"temperature": 0.3, "max_tokens": 1024},
+  "declarations": {
+    "thinking_efforts": ["low", "medium", "high"],
+    "capabilities": ["image_understanding"],
+    "context_window": 128000
+  }
 }
 ```
 
-Replace `vendor/model-id` with the exact invocation ID accepted by your endpoint. `settings` defaults to `{}`. To restrict OpenRouter's downstream providers for this same model, set native `openrouter_provider` settings, for example `{"only": ["<downstream-provider-id>"]}`. Use identifiers accepted by OpenRouter; Service does not select a different model or calling API as a fallback.
+Replace `vendor/model-id` with the exact invocation ID accepted by your endpoint. `settings` defaults to `{}`. `declarations` defaults to empty effort choices, empty capabilities, and a null context window. Declare only authoring choices and characteristics you intend the Model to expose; catalog metadata never silently populates them. To restrict OpenRouter's downstream providers for this same model, set native `openrouter_provider` settings, for example `{"only": ["<downstream-provider-id>"]}`. Use identifiers accepted by OpenRouter; Service does not select a different model or calling API as a fallback.
 
-`profile` and `limits` appear only in discovery and description results as read-only Provider information. They are not Model create or update fields. For example, a discovered output limit of 32,000 describes upstream capacity; set `settings.max_tokens` to 8,000 to request a smaller output budget.
+`profile` and `limits` appear only in discovery results as read-only Provider information. They do not become saved declarations. For example, a discovered output limit of 32,000 describes upstream capacity; set `settings.max_tokens` to 8,000 to request a smaller output budget.
 
 Test the saved configuration:
 
@@ -140,11 +130,11 @@ Content-Type: application/json
 {"settings": {}}
 ```
 
-Omitting `settings` preserves existing defaults. Changing the upstream ID or API validates the resulting configuration and never silently removes incompatible settings. Refreshing a description also leaves saved values unchanged. Disable a Model or Provider with `{"enabled": false}`; disabling a Provider blocks every dependent Model at the next outbound request.
+Omitting `settings` or `declarations` preserves that existing field. Changing the upstream ID or API validates the resulting configuration and never silently removes incompatible settings. Disable a Model or Provider with `{"enabled": false}`; disabling a Provider blocks every dependent Model at the next outbound request.
 
 ## Parameters and overrides
 
-The returned JSON Schema describes the serializable native parameters for the selected API, including provider-specific settings. Missing parameter help text does not prevent configuration or execution. Unknown top-level keys, invalid value shapes, and explicitly supplied protected fields for model identity, credentials, endpoints, messages, tool declarations, or output schemas are rejected. `parameter_support` is advisory: unknown support permits manual configuration, and local validation does not guarantee upstream acceptance.
+The Provider type's JSON Schema describes the serializable native parameters for the selected API, including provider-specific settings. Missing parameter help text does not prevent configuration or execution. Unknown top-level keys, invalid value shapes, and explicitly supplied protected fields for model identity, credentials, endpoints, messages, tool declarations, or output schemas are rejected. A discovery candidate's `parameter_support` is advisory: unknown support permits manual configuration, and local validation does not guarantee upstream acceptance.
 
 Use `extra_body` only when the schema exposes it. Bedrock Converse uses `bedrock_additional_model_requests_fields`; Google Generate Content has no arbitrary-body field in this binding. These fields allow arbitrary upstream extensions. You are responsible for whether those extensions work, including their precedence when they overlap native settings; Service does not guess vendor-specific types or reject those overlaps. It protects only the calling API's explicit request-control paths and Provider-owned connection fields. For example, `extra_body.tool_choice` cannot override Harness tool control, and Responses protects `text.format` while permitting `text.verbosity`. Unrelated nested data with the same field names remains allowed. Settings are limited to 64 KiB of UTF-8 JSON and 16 container levels, including after merging. Parameter errors include a safe field path without echoing the submitted value.
 
@@ -158,6 +148,8 @@ In Agent configuration, the `model` field selects the Workspace key and optional
 
 This is a fragment of Agent configuration; the other required Agent fields still apply. There is no separate `model_api` selection on the Agent or Run. At Run acceptance, the service merges Model defaults, Agent settings, and Run overrides in that order. Each later top-level key replaces the earlier value completely, including objects such as `openrouter_provider`.
 
+Unified `thinking`, native reasoning settings, and relevant reasoning fields inside an escape-hatch body are alternatives for the same semantic choice. A later layer that supplies one removes conflicting alternatives inherited from earlier layers while preserving unrelated settings and nested extension data. Supplying contradictory alternatives within one layer is rejected with a safe field path. The native model integration still owns effort translation and request construction.
+
 For Model defaults `{"temperature": 0.3, "max_tokens": 1024}` and Agent settings `{"temperature": 0.2}`:
 
 | Run `config_override.model`          | Effective settings                         |
@@ -168,6 +160,8 @@ For Model defaults `{"temperature": 0.3, "max_tokens": 1024}` and Agent settings
 | `{"settings": {"temperature": 0.5}}` | `{"temperature": 0.5, "max_tokens": 1024}` |
 
 Selecting another Model key uses its defaults and revalidates the inherited Agent settings. Accepted Runs retain their API, upstream ID, and merged settings across replacement attempts. Later Model edits affect new Runs. Provider credentials and connection configuration are resolved afresh for each outbound request, including within an existing Run.
+
+Model declarations also compose at acceptance. The Model supplies media capabilities and its base context window; Agent configuration may override context-window and context-management thresholds but cannot invent media support. The same composition applies to the primary Model, reviewer Model, and every nested Agent. Accepted Runs retain the resulting complete Harness characteristics even if the Model is edited later.
 
 ## Request retries
 

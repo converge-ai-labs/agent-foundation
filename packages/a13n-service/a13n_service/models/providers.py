@@ -9,19 +9,12 @@ from pydantic import BaseModel, ConfigDict
 
 from a13n_service.application_errors import ErrorCategory
 
-from .domain import ModelApi, UpstreamModel
 from .model_apis import BUILT_IN_MODEL_APIS
 from .provider_adapters.base import ProviderIntegration
 from .provider_adapters.registry import BUILT_IN_PROVIDER_INTEGRATIONS
 from .provider_adapters.types import CredentialFormat, ValidatedProviderConfiguration
 from .service_common import ModelError
-
-
-class DescribeModelRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    upstream_model: UpstreamModel
-    model_api: ModelApi | None = None
+from .settings import settings_schema
 
 
 class ModelProviderDefinition(BaseModel):
@@ -33,6 +26,7 @@ class ModelProviderDefinition(BaseModel):
     credential_schema: dict[str, object]
     supported_model_apis: tuple[str, ...]
     default_model_api: str
+    settings_schemas: dict[str, dict[str, object]]
     supports_model_discovery: bool
 
 
@@ -127,5 +121,6 @@ def _definition(integration: ProviderIntegration) -> ModelProviderDefinition:
         credential_schema=credential_schema,
         supported_model_apis=integration.supported_model_apis,
         default_model_api=integration.supported_model_apis[0],
+        settings_schemas={model_api: settings_schema(model_api) for model_api in integration.supported_model_apis},
         supports_model_discovery=integration.model_discovery is not None,
     )

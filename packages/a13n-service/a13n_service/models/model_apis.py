@@ -50,6 +50,16 @@ _RESPONSES_FIELDS = (
     "conversation",
 )
 _ANTHROPIC_FIELDS = ("model", "messages", "system", "tools", "tool_choice", "stream", "container", "output_format")
+_OPENAI_RESPONSES_REASONING_ALTERNATIVES = (
+    (("thinking",),),
+    (("openai_reasoning_effort",),),
+    (("extra_body", "reasoning"),),
+)
+_OPENAI_CHAT_REASONING_ALTERNATIVES = (
+    (("thinking",),),
+    (("openai_reasoning_effort",),),
+    (("extra_body", "reasoning_effort"),),
+)
 
 
 def _paths(*fields: str) -> tuple[tuple[str, ...], ...]:
@@ -63,6 +73,7 @@ class ModelApiBinding:
     settings_type: Any
     protected_body_paths: tuple[tuple[str, ...], ...]
     supports_extra_body: bool = True
+    reasoning_alternatives: tuple[tuple[tuple[str, ...], ...], ...] = ()
 
     def build(self, upstream_model: str, provider: NativeProvider) -> BuiltModel:
         return self.model_type(upstream_model, provider=provider)
@@ -84,39 +95,86 @@ BUILT_IN_MODEL_APIS = _index(
             OpenAIResponsesModel,
             OpenAIResponsesModelSettings,
             (*_paths(*_RESPONSES_FIELDS), ("text", "format")),
+            reasoning_alternatives=_OPENAI_RESPONSES_REASONING_ALTERNATIVES,
         ),
-        ModelApiBinding("openai.chat_completions", OpenAIChatModel, OpenAIChatModelSettings, _paths(*_CHAT_FIELDS)),
+        ModelApiBinding(
+            "openai.chat_completions",
+            OpenAIChatModel,
+            OpenAIChatModelSettings,
+            _paths(*_CHAT_FIELDS),
+            reasoning_alternatives=_OPENAI_CHAT_REASONING_ALTERNATIVES,
+        ),
         ModelApiBinding(
             "anthropic.messages",
             AnthropicModel,
             AnthropicModelSettings,
             (*_paths(*_ANTHROPIC_FIELDS), ("output_config", "format")),
+            reasoning_alternatives=(
+                (("thinking",),),
+                (("anthropic_thinking",), ("anthropic_effort",)),
+                (("extra_body", "thinking"), ("extra_body", "output_config")),
+            ),
         ),
-        ModelApiBinding("google.generate_content", GoogleModel, GoogleModelSettings, (), supports_extra_body=False),
+        ModelApiBinding(
+            "google.generate_content",
+            GoogleModel,
+            GoogleModelSettings,
+            (),
+            supports_extra_body=False,
+            reasoning_alternatives=(
+                (("thinking",),),
+                (("google_thinking_config",),),
+            ),
+        ),
         ModelApiBinding(
             "bedrock.converse",
             BedrockConverseModel,
             BedrockModelSettings,
             _paths(*_ANTHROPIC_FIELDS, "modelId", "toolConfig", "outputConfig", "inferenceConfig"),
             supports_extra_body=False,
+            reasoning_alternatives=(
+                (("thinking",),),
+                (
+                    ("bedrock_additional_model_requests_fields", "thinking"),
+                    ("bedrock_additional_model_requests_fields", "output_config"),
+                ),
+                (("bedrock_additional_model_requests_fields", "reasoning_effort"),),
+                (("bedrock_additional_model_requests_fields", "reasoning_config"),),
+            ),
         ),
         ModelApiBinding(
             "bedrock_mantle.responses",
             BedrockMantleResponsesModel,
             OpenAIResponsesModelSettings,
             (*_paths(*_RESPONSES_FIELDS), ("text", "format")),
+            reasoning_alternatives=_OPENAI_RESPONSES_REASONING_ALTERNATIVES,
         ),
         ModelApiBinding(
-            "bedrock_mantle.chat_completions", BedrockMantleChatModel, OpenAIChatModelSettings, _paths(*_CHAT_FIELDS)
+            "bedrock_mantle.chat_completions",
+            BedrockMantleChatModel,
+            OpenAIChatModelSettings,
+            _paths(*_CHAT_FIELDS),
+            reasoning_alternatives=_OPENAI_CHAT_REASONING_ALTERNATIVES,
         ),
         ModelApiBinding(
             "openrouter.chat_completions",
             OpenRouterModel,
             OpenRouterModelSettings,
             _paths(*_CHAT_FIELDS, "models", "preset", "transforms"),
+            reasoning_alternatives=(
+                (("thinking",),),
+                (("openrouter_reasoning",),),
+                (("openai_reasoning_effort",),),
+                (("extra_body", "reasoning"),),
+                (("extra_body", "reasoning_effort"),),
+            ),
         ),
         ModelApiBinding(
-            "ollama.chat_completions", OllamaModel, OpenAIChatModelSettings, _paths(*_CHAT_FIELDS, "format")
+            "ollama.chat_completions",
+            OllamaModel,
+            OpenAIChatModelSettings,
+            _paths(*_CHAT_FIELDS, "format"),
+            reasoning_alternatives=_OPENAI_CHAT_REASONING_ALTERNATIVES,
         ),
     )
 )

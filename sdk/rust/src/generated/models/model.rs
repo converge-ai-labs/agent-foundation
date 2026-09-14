@@ -19,6 +19,9 @@ pub struct Model {
     #[serde(rename = "created_by")]
     pub created_by: Box<models::PrincipalRef>,
 
+    #[serde(rename = "declarations", skip_serializing_if = "Option::is_none")]
+    pub declarations: Option<Box<models::ModelDeclarations>>,
+
     #[serde(rename = "description", deserialize_with = "Option::deserialize")]
     pub description: Option<String>,
 
@@ -79,6 +82,7 @@ impl Model {
         Model {
             created_at,
             created_by: Box::new(created_by),
+            declarations: None,
             description,
             enabled,
             id,

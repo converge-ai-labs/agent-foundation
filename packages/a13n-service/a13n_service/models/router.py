@@ -19,7 +19,6 @@ from .domain import (
     Model,
     ModelCollection,
     ModelConnectionTestResult,
-    ModelDescription,
     ModelDiscovery,
     ModelProvider,
     ModelProviderCollection,
@@ -28,10 +27,7 @@ from .domain import (
     UpdateModelRequest,
 )
 from .provider_service import ModelProviderService
-from .providers import (
-    DescribeModelRequest,
-    ModelProviderDefinitionCollection,
-)
+from .providers import ModelProviderDefinitionCollection
 from .service import ModelService
 from .service_common import ModelError
 
@@ -155,15 +151,6 @@ async def discover_provider_models(
         actor=actor,
         workspace_id=workspace_id,
         provider_id=provider_id,
-    )
-
-
-@router.post("/workspaces/{workspace}/model-providers/{provider_id}/describe-model", response_model=ModelDescription)
-async def describe_provider_model(
-    request: Request, actor: Actor, workspace_id: WorkspaceId, provider_id: str, body: DescribeModelRequest
-) -> ModelDescription:
-    return await _provider_service(request).describe_model(
-        actor=actor, workspace_id=workspace_id, provider_id=provider_id, request=body
     )
 
 
@@ -352,18 +339,6 @@ async def organization_discover_provider_models(
         actor=actor,
         workspace_id=None,
         provider_id=provider_id,
-    )
-
-
-@router.post(
-    "/organizations/{organization}/model-providers/{provider_id}/describe-model", response_model=ModelDescription
-)
-async def organization_describe_provider_model(
-    request: Request, actor: Actor, organization_id: OrganizationId, provider_id: str, body: DescribeModelRequest
-) -> ModelDescription:
-    require_organization_boundary(actor, organization_id)
-    return await _provider_service(request).describe_model(
-        actor=actor, workspace_id=None, provider_id=provider_id, request=body
     )
 
 

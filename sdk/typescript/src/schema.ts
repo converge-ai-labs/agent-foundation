@@ -1281,23 +1281,6 @@ export interface paths {
     patch: operations["patch_organizations_organization_model_providers_provider_id"];
     trace?: never;
   };
-  "/api/v1/organizations/{organization}/model-providers/{provider_id}/describe-model": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Organization Describe Provider Model */
-    post: operations["post_organizations_organization_model_providers_provider_id_describe_model"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/api/v1/organizations/{organization}/model-providers/{provider_id}/discover-models": {
     parameters: {
       query?: never;
@@ -2837,23 +2820,6 @@ export interface paths {
     patch: operations["patch_workspaces_workspace_model_providers_provider_id"];
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace}/model-providers/{provider_id}/describe-model": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Describe Provider Model */
-    post: operations["post_workspaces_workspace_model_providers_provider_id_describe_model"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/api/v1/workspaces/{workspace}/model-providers/{provider_id}/discover-models": {
     parameters: {
       query?: never;
@@ -3650,13 +3616,31 @@ export interface components {
     };
     /** AgentModel */
     AgentModel: {
-      characteristics?: components["schemas"]["HarnessModelCharacteristics"];
+      characteristics?: components["schemas"]["AgentModelCharacteristics"];
       /** Model Key */
       model_key: string;
       /** Settings */
       settings?: {
         [key: string]: components["schemas"]["JsonValue"];
       };
+    };
+    /**
+     * AgentModelCharacteristics
+     * @description Agent-owned context policy layered over Model declarations.
+     */
+    AgentModelCharacteristics: {
+      /**
+       * Compact Threshold
+       * @default 0.9
+       */
+      compact_threshold?: number;
+      /** Context Window */
+      context_window?: number | null;
+      /**
+       * Proactive Context Management Threshold
+       * @default 0.65
+       */
+      proactive_context_management_threshold?: number | null;
     };
     /**
      * AgentReviewer
@@ -4741,6 +4725,7 @@ export interface components {
     };
     /** CreateModelRequest */
     CreateModelRequest: {
+      declarations?: components["schemas"]["ModelDeclarations"];
       /** Description */
       description?: string | null;
       /**
@@ -4952,13 +4937,6 @@ export interface components {
     DeleteQueuedSubmissionRequest: {
       /** Expected Version */
       expected_version: number;
-    };
-    /** DescribeModelRequest */
-    DescribeModelRequest: {
-      /** Model Api */
-      model_api?: string | null;
-      /** Upstream Model */
-      upstream_model: string;
     };
     /**
      * DeveloperMessage
@@ -5395,26 +5373,6 @@ export interface components {
     HTTPValidationError: {
       /** Detail */
       detail?: components["schemas"]["ValidationError"][];
-    };
-    /**
-     * HarnessModelCharacteristics
-     * @description Resolved Harness characteristics of the active Agent model.
-     */
-    HarnessModelCharacteristics: {
-      /** Capabilities */
-      capabilities?: components["schemas"]["ModelCapability"][];
-      /**
-       * Compact Threshold
-       * @default 0.9
-       */
-      compact_threshold?: number;
-      /** Context Window */
-      context_window?: number | null;
-      /**
-       * Proactive Context Management Threshold
-       * @default 0.65
-       */
-      proactive_context_management_threshold?: number | null;
     };
     /** HookSubscription */
     HookSubscription: {
@@ -6041,6 +5999,7 @@ export interface components {
        */
       created_at: string;
       created_by: components["schemas"]["PrincipalRef"];
+      declarations?: components["schemas"]["ModelDeclarations"];
       /** Description */
       description: string | null;
       /** Enabled */
@@ -6122,39 +6081,25 @@ export interface components {
       /** Success */
       success: boolean;
     };
-    /** ModelDescription */
-    ModelDescription: {
-      /** Display Name */
-      display_name?: string | null;
-      limits?: components["schemas"]["ModelLimits"];
-      /** Parameter Support */
-      parameter_support?: {
-        [key: string]: "supported" | "unsupported" | "unknown";
-      };
-      profile?: components["schemas"]["ModelProfile"];
-      /** Settings Schema */
-      settings_schema: {
-        [key: string]: unknown;
-      };
-      /** Suggested Model Api */
-      suggested_model_api: string;
-      /** Suggested Settings */
-      suggested_settings?: {
-        [key: string]: components["schemas"]["JsonValue"];
-      };
-      /** Upstream Model */
-      upstream_model: string;
+    /**
+     * ModelDeclarations
+     * @description Harness-facing facts and authoring choices declared for one saved Model.
+     */
+    ModelDeclarations: {
+      /** Capabilities */
+      capabilities?: components["schemas"]["ModelCapability"][];
+      /** Context Window */
+      context_window?: number | null;
+      /**
+       * Thinking Efforts
+       * @default []
+       */
+      thinking_efforts?: ("minimal" | "low" | "medium" | "high" | "xhigh")[];
     };
     /** ModelDiscovery */
     ModelDiscovery: {
       /** Items */
       items: components["schemas"]["ModelCandidate"][];
-      /** Settings Schemas */
-      settings_schemas: {
-        [key: string]: {
-          [key: string]: unknown;
-        };
-      };
     };
     /** ModelIdentity */
     ModelIdentity: {
@@ -6173,7 +6118,7 @@ export interface components {
     /** ModelOverride */
     ModelOverride: {
       characteristics?:
-        components["schemas"]["HarnessModelCharacteristics"] | null;
+        components["schemas"]["AgentModelCharacteristics"] | null;
       /** Model Key */
       model_key?: string | null;
       /** Settings */
@@ -6183,7 +6128,7 @@ export interface components {
     };
     /**
      * ModelProfile
-     * @description Read-only Provider capability information returned by discovery and description.
+     * @description Read-only Provider capability information returned by discovery.
      */
     ModelProfile: {
       /** Input Modalities */
@@ -6262,6 +6207,12 @@ export interface components {
       default_model_api: string;
       /** Display Name */
       display_name: string;
+      /** Settings Schemas */
+      settings_schemas: {
+        [key: string]: {
+          [key: string]: unknown;
+        };
+      };
       /** Supported Model Apis */
       supported_model_apis: string[];
       /** Supports Model Discovery */
@@ -6834,7 +6785,7 @@ export interface components {
     };
     /** ResolvedAgentModel */
     ResolvedAgentModel: {
-      characteristics: components["schemas"]["HarnessModelCharacteristics"];
+      characteristics: components["schemas"]["AgentModelCharacteristics"];
       /** Model Id */
       model_id: string;
       /** Model Key */
@@ -8377,6 +8328,7 @@ export interface components {
     };
     /** UpdateModelRequest */
     UpdateModelRequest: {
+      declarations?: components["schemas"]["ModelDeclarations"] | null;
       /** Description */
       description?: string | null;
       /** Enabled */
@@ -13217,55 +13169,6 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ModelProvider"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  post_organizations_organization_model_providers_provider_id_describe_model: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider_id: string;
-        organization: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["DescribeModelRequest"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ModelDescription"];
         };
       };
       /** @description Invalid request. */
@@ -19444,55 +19347,6 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ModelProvider"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  post_workspaces_workspace_model_providers_provider_id_describe_model: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider_id: string;
-        workspace: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["DescribeModelRequest"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ModelDescription"];
         };
       };
       /** @description Invalid request. */

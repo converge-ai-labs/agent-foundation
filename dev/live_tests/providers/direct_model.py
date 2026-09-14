@@ -44,12 +44,9 @@ async def check_provider_discovery_and_model_test(configured, *, require_catalog
     assert ids and len(ids) == len(set(ids))
     if require_catalog_entry:
         assert model["upstream_model"] in ids
-    description = await journey.post(
-        provider_path + "/describe-model",
-        {"upstream_model": model["upstream_model"], "model_api": model["model_api"]},
-        expected=200,
-    )
-    assert description["settings_schema"] and description["suggested_model_api"] == model["model_api"]
+    definitions = await journey.live.collection("/api/v1/model-provider-types")
+    definition = next(item for item in definitions if item["type"] == before["type"])
+    assert definition["settings_schemas"][model["model_api"]]
     result = await journey.post(journey.base + "/models/" + model["id"] + "/test", {}, expected=200)
     assert result["success"] and result["code"] == "connection_succeeded", (result["code"], result["elapsed_ms"])
     assert await journey.live.request("GET", provider_path) == before

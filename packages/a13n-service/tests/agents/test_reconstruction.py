@@ -27,6 +27,7 @@ from a13n_service.agents.domain import (
     ResolvedRevisionContent,
     ResolvedSubagentEdge,
 )
+from a13n_service.agents.model_characteristics import compose_model_characteristics
 from a13n_service.agents.reconstruction import (
     AgentDefinitionReconstructionContext,
     AgentDefinitionReconstructionError,
@@ -34,7 +35,7 @@ from a13n_service.agents.reconstruction import (
 )
 from a13n_service.digests import digest_request
 from a13n_service.iam import PrincipalRef
-from a13n_service.models.domain import ModelExecutionSnapshot
+from a13n_service.models.domain import ModelDeclarations, ModelExecutionSnapshot
 from pydantic import JsonValue, RootModel, TypeAdapter, ValidationError
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.usage import UsageLimits
@@ -110,7 +111,7 @@ def _effective_model(config: AgentConfig) -> EffectiveAgentModel:
             model_api="openai.responses",
         ),
         settings=config.model.settings,
-        characteristics=config.model.characteristics,
+        characteristics=compose_model_characteristics(ModelDeclarations(), config.model.characteristics),
     )
 
 
@@ -323,7 +324,9 @@ def test_reconstructs_root_model_client_tools_output_and_fresh_capabilities() ->
     assert definition.agent.system_prompt == "Always verify the order."
     assert definition.agent.model_settings == {"temperature": 0.2}
     assert definition.agent.retries == {"tools": 2, "output": 1}
-    assert definition.agent.model_characteristics == config.model.characteristics
+    assert definition.agent.model_characteristics == compose_model_characteristics(
+        ModelDeclarations(), config.model.characteristics
+    )
     assert definition.agent.name == "Support"
     assert contexts[0].is_root is True
     assert contexts[0].agent_revision_id == ROOT_REVISION_ID

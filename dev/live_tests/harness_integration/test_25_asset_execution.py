@@ -15,6 +15,10 @@ PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4
 @pytest.mark.parametrize("kind", ["file", "image"])
 async def test_uploaded_asset_reaches_harness_with_identical_bytes(management, kind):
     journey, live = management, management.live
+    await journey.patch(
+        journey.base + "/models/" + live.config["model_id"],
+        {"declarations": {"capabilities": ["image_understanding"], "context_window": 32768}},
+    )
     data = PNG if kind == "image" else b"LIVE_ASSET_BYTES_7f84af\n"
     media_type = "image/png" if kind == "image" else "text/plain"
     asset = await upload(
@@ -38,9 +42,7 @@ async def test_uploaded_asset_reaches_harness_with_identical_bytes(management, k
         case,
         input=input_value,
         environment={"environment_id": environment["id"]},
-        config_override={
-            "model": {"characteristics": {"context_window": 32768, "capabilities": ["image_understanding"]}}
-        },
+        config_override={"model": {"characteristics": {"context_window": 32768}}},
     )
     result = await live.finish(receipt["run_id"])
     if kind == "image":
@@ -70,7 +72,6 @@ async def test_uploaded_asset_reaches_harness_with_identical_bytes(management, k
         later,
         input=input_value,
         environment={"environment_id": environment["id"]},
-        config_override={"model": {"characteristics": {"capabilities": ["image_understanding"]}}},
     )
     deleted = await live.http.delete(f"/api/v1/assets/{asset['id']}")
     assert deleted.status_code == 204

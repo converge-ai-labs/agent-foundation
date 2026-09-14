@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from a13n_harness import ModelCapability
 from a13n_service.agents.application import AgentManagement
 from a13n_service.agents.domain import (
     AgentRunOverride,
@@ -46,6 +47,7 @@ def test_scalar_and_list_overrides_replace_and_clear() -> None:
 
     assert merged.model.model_key == base.model.model_key
     assert merged.model.settings == base.model.settings
+    assert merged.model_settings_override == {}
     assert merged.model.characteristics.context_window == 32000
     assert merged.instructions == ""
     assert merged.plugins == ()
@@ -55,6 +57,17 @@ def test_scalar_and_list_overrides_replace_and_clear() -> None:
     assert merged.retries is not None
     assert merged.retries.tools == 0
     assert merged.retries.output == 1
+
+
+def test_model_settings_preserve_agent_and_run_layers_until_model_resolution() -> None:
+    base = agent_config()
+    override = AgentRunOverride.model_validate({"model": {"settings": {"thinking": "high"}}})
+
+    merged = merge_agent_run_override(base, override)
+
+    assert merged.model.settings == base.model.settings
+    assert merged.model_settings_override == {"thinking": "high"}
+    assert "model_settings_override" not in merged.model_dump(mode="json")
 
 
 def test_client_tool_override_narrows_optional_protocol_surface() -> None:
@@ -223,6 +236,8 @@ async def test_current_invocation_freezes_complete_effective_config(
     assert frozen.effective_config.resolved_model.execution.model_id == created.revision.resolved_model.model_id
     assert frozen.effective_config.resolved_model.execution.model_key == created.revision.resolved_model.model_key
     assert frozen.effective_config.resolved_model.settings == created.revision.resolved_model.settings
+    assert frozen.effective_config.resolved_model.characteristics.context_window == 128000
+    assert frozen.effective_config.resolved_model.characteristics.capabilities == {ModelCapability.IMAGE_UNDERSTANDING}
 
 
 @pytest.mark.anyio
@@ -241,6 +256,7 @@ async def test_run_acceptance_uses_latest_model_without_revising_agent(
         model = await session.get(ModelRecord, MODEL_ID)
         assert model is not None
         model.upstream_model = "gpt-new"
+        model.declarations = {"capabilities": ["audio_understanding"], "context_window": 192000}
 
     prepared = await agent_invocation_resolver.preparation.prepare(actor=actor(), agent_id=created.agent.id)
     async with transaction(agent_sessions) as session:
@@ -248,6 +264,14 @@ async def test_run_acceptance_uses_latest_model_without_revising_agent(
 
     assert frozen.agent_revision_id == created.revision.id
     assert frozen.effective_config.resolved_model.execution.upstream_model == "gpt-new"
+    assert frozen.effective_config.resolved_model.characteristics.capabilities == {ModelCapability.AUDIO_UNDERSTANDING}
+    # The Agent's explicit window remains higher precedence than the updated Model declaration.
+    assert frozen.effective_config.resolved_model.characteristics.context_window == 128000
+    async with transaction(agent_sessions) as session:
+        model = await session.get(ModelRecord, MODEL_ID)
+        assert model is not None
+        model.declarations = {"capabilities": ["video_understanding"], "context_window": 64000}
+    assert frozen.effective_config.resolved_model.characteristics.capabilities == {ModelCapability.AUDIO_UNDERSTANDING}
 
 
 @pytest.mark.anyio
@@ -417,6 +441,38 @@ async def test_invalid_run_settings_preserve_the_parameter_error(
     assert "secret" not in str(invalid.value.details)
 
 
+@pytest.mark.anyio
+async def test_run_reasoning_choice_replaces_agent_reasoning_choice(
+    agent_management: AgentManagement,
+    agent_invocation_resolver: AgentInvocationResolver,
+    agent_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    payload = agent_config().model_dump(mode="python")
+    payload["model"]["settings"] = {
+        "openai_reasoning_effort": "low",
+        "temperature": 0.2,
+    }
+    created = await agent_management.commands.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="reasoning-layer-create",
+        request=CreateAgentRequest(
+            name="Reasoning Layers",
+            config=agent_config().__class__.model_validate(payload),
+        ),
+    )
+
+    prepared = await agent_invocation_resolver.preparation.prepare(
+        actor=actor(),
+        agent_id=created.agent.id,
+        config_override=AgentRunOverride.model_validate({"model": {"settings": {"thinking": "high"}}}),
+    )
+    async with transaction(agent_sessions) as session:
+        frozen = await agent_invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
+
+    assert frozen.effective_config.resolved_model.settings == {"thinking": "high", "temperature": 0.2}
+
+
 @pytest.mark.parametrize("field", ["account_tools", "native_tool_contexts"])
 def test_native_authority_cannot_be_supplied_through_agent_config_or_override(field):
     from a13n_service.agents.domain import AgentConfig, AgentRevision, EffectiveAgentConfig
@@ -474,6 +530,9 @@ async def test_parent_acceptance_freezes_child_model_defaults_and_detects_child_
     assert accepted_child.agent_id == child.agent.id
     assert accepted_child.revision_content_digest == child.revision.content_digest
     assert accepted_child.effective_config.resolved_model.settings == {"temperature": 0.2, "max_tokens": 321}
+    assert accepted_child.effective_config.resolved_model.characteristics.capabilities == {
+        ModelCapability.IMAGE_UNDERSTANDING
+    }
     async with transaction(agent_sessions) as session:
         record = await session.get(AgentRecord, child.agent.id)
         assert record is not None
@@ -561,6 +620,8 @@ async def test_permissions_and_managed_reviewer_survive_acceptance_and_reconstru
     assert effective.resolved_reviewer_model is not None
     assert effective.resolved_reviewer_model.execution.model_id == MODEL_ID
     assert effective.resolved_reviewer_model.settings["temperature"] == 0.1
+    assert effective.resolved_reviewer_model.characteristics.context_window == 256000
+    assert effective.resolved_reviewer_model.characteristics.capabilities == {ModelCapability.IMAGE_UNDERSTANDING}
     # Capture is sufficient; reconstruction does not reread the Model resource.
     definition = AgentReconstructor(plugin_catalog=HarnessPluginFactoryCatalog(())).reconstruct(
         agent_id=created.agent.id,

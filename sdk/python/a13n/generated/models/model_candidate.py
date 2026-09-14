@@ -26,7 +26,7 @@ class ModelCandidate:
         display_name (None | str | Unset):
         limits (ModelLimits | Unset):
         parameter_support (ModelCandidateParameterSupport | Unset):
-        profile (ModelProfile | Unset): Read-only Provider capability information returned by discovery and description.
+        profile (ModelProfile | Unset): Read-only Provider capability information returned by discovery.
         suggested_settings (ModelCandidateSuggestedSettings | Unset):
     """
 

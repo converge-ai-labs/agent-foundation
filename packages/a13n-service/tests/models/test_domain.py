@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import pytest
-from a13n_service.models.domain import CreateModelRequest, ModelExecutionSnapshot, new_model_provider_id
+from a13n_service.models.domain import (
+    CreateModelRequest,
+    ModelDeclarations,
+    ModelExecutionSnapshot,
+    new_model_provider_id,
+)
 from pydantic import ValidationError
 
 
@@ -29,3 +34,16 @@ def test_execution_snapshot_contains_only_request_selection_fields() -> None:
 
     assert fields == {"schema_version", "model_id", "model_key", "upstream_model", "model_api"}
     assert new_model_provider_id().startswith("mprov_")
+
+
+def test_model_declarations_have_one_consistent_typed_default_shape() -> None:
+    declarations = ModelDeclarations()
+    assert declarations.model_dump(mode="json") == {
+        "thinking_efforts": [],
+        "capabilities": [],
+        "context_window": None,
+    }
+    with pytest.raises(ValidationError, match="thinking efforts must be unique"):
+        ModelDeclarations(thinking_efforts=("high", "high"))
+    with pytest.raises(ValidationError):
+        ModelDeclarations(context_window=0)

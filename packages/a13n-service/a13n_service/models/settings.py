@@ -6,6 +6,7 @@ import ast
 import inspect
 import json
 import textwrap
+from copy import deepcopy
 from functools import lru_cache
 from typing import Any, get_type_hints
 
@@ -175,9 +176,61 @@ def validate_settings(model_api: str, settings: JsonObject) -> JsonObject:
         raise _invalid(list(error.absolute_path), "invalid_type_or_value")
     for field in _ESCAPE_FIELDS & settings.keys():
         _validate_body_paths(model_api, field, settings[field])
+    _reasoning_choice(model_api, settings)
     return settings
 
 
-def effective_settings(model_api: str, defaults: JsonObject, overrides: JsonObject) -> JsonObject:
-    validate_settings(model_api, overrides)
-    return validate_settings(model_api, {**defaults, **overrides})
+def effective_settings(model_api: str, defaults: JsonObject, *override_layers: JsonObject) -> JsonObject:
+    effective = validate_settings(model_api, defaults)
+    for overrides in override_layers:
+        validate_settings(model_api, overrides)
+        inherited = effective
+        if _reasoning_choice(model_api, overrides) is not None:
+            inherited = _without_reasoning_settings(model_api, effective)
+        effective = validate_settings(model_api, {**inherited, **overrides})
+    return effective
+
+
+def _reasoning_choice(model_api: str, settings: JsonObject) -> int | None:
+    selected: list[tuple[int, tuple[str, ...]]] = []
+    for index, paths in enumerate(BUILT_IN_MODEL_APIS[model_api].reasoning_alternatives):
+        path = next((path for path in paths if _has_path(settings, path)), None)
+        if path is not None:
+            selected.append((index, path))
+    if len(selected) > 1:
+        raise _invalid(list(selected[1][1]), "conflicting_reasoning_settings")
+    return selected[0][0] if selected else None
+
+
+def _has_path(settings: JsonObject, path: tuple[str, ...]) -> bool:
+    value: JsonValue = settings
+    for part in path:
+        if not isinstance(value, dict) or part not in value:
+            return False
+        value = value[part]
+    return True
+
+
+def _without_reasoning_settings(model_api: str, settings: JsonObject) -> JsonObject:
+    result = deepcopy(settings)
+    paths = (path for alternative in BUILT_IN_MODEL_APIS[model_api].reasoning_alternatives for path in alternative)
+    for path in paths:
+        _delete_path(result, path)
+    return result
+
+
+def _delete_path(settings: JsonObject, path: tuple[str, ...]) -> None:
+    parents: list[tuple[JsonObject, str]] = []
+    current = settings
+    for part in path[:-1]:
+        value = current.get(part)
+        if not isinstance(value, dict):
+            return
+        parents.append((current, part))
+        current = value
+    current.pop(path[-1], None)
+    for parent, part in reversed(parents):
+        child = parent.get(part)
+        if child != {}:
+            break
+        del parent[part]
