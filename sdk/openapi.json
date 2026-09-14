@@ -14516,7 +14516,7 @@
             "$ref": "#/components/schemas/ToolPermissionMode"
           },
           {
-            "const": "auto",
+            "const": "inherit",
             "type": "string"
           }
         ],
@@ -14524,11 +14524,11 @@
       },
       "ToolPermissions": {
         "additionalProperties": false,
-        "description": "Portable configuration. Auto resolves a tool default, never an execution decision.",
+        "description": "Portable configuration. Inherit resolves a tool default, never an execution decision.",
         "properties": {
           "default": {
             "$ref": "#/components/schemas/ToolPermissionSetting",
-            "default": "auto"
+            "default": "inherit"
           },
           "rules": {
             "additionalProperties": {

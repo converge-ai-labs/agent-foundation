@@ -11,7 +11,7 @@
 use crate::generated::models;
 use serde::{Deserialize, Serialize};
 
-/// ToolPermissions : Portable configuration. Auto resolves a tool default, never an execution decision.
+/// ToolPermissions : Portable configuration. Inherit resolves a tool default, never an execution decision.
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ToolPermissions {
     #[serde(rename = "default", skip_serializing_if = "Option::is_none")]
@@ -22,7 +22,7 @@ pub struct ToolPermissions {
 }
 
 impl ToolPermissions {
-    /// Portable configuration. Auto resolves a tool default, never an execution decision.
+    /// Portable configuration. Inherit resolves a tool default, never an execution decision.
     pub fn new() -> ToolPermissions {
         ToolPermissions {
             default: None,

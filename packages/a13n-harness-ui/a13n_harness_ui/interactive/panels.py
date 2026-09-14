@@ -53,8 +53,6 @@ def capability_panel(
         result = payload.get("result")
         assessment = result.get("assessment") if isinstance(result, dict) else None
         decision = payload.get("decision")
-        if decision is None and isinstance(assessment, dict):
-            decision = assessment.get("decision")  # Retained pre-risk-only events.
         if decision == "allow":
             return None
         reason = assessment.get("reason") if isinstance(assessment, dict) else "AI review could not complete."
@@ -63,22 +61,6 @@ def capability_panel(
             f"{reason}\nTool: {payload.get('tool_id')} · Request: {payload.get('tool_call_id')}",
             "warning",
         )
-    if name == "a13n.harness.invocation":
-        payload = event.get("payload")
-        if (
-            isinstance(payload, dict)
-            and payload.get("phase") == "denied"
-            and payload.get("reason_code") == "shell_review_timeout"
-        ):
-            timeout = payload.get("timeout_seconds")
-            duration = f" after {timeout:g}s" if isinstance(timeout, int | float) else ""
-            return CapabilityPanel(
-                "Shell review · timed out",
-                f"AI review timed out{duration}. Automatically denied; command was not executed.\n"
-                f"Tool: {payload.get('tool_name', 'shell')} · Request: {payload.get('tool_call_id', 'unavailable')}",
-                "warning",
-            )
-        return None
     if name == "a13n.filesystem.edit_applied":
         before, after, path = event.get("before"), event.get("after"), event.get("file_path")
         if not isinstance(before, str) or not isinstance(after, str) or not isinstance(path, str):

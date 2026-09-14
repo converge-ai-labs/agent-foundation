@@ -518,7 +518,7 @@ def test_permission_and_reviewer_overrides_inherit_replace_and_clear() -> None:
     replaced = merge_agent_run_override(
         base, AgentRunOverride.model_validate({"permissions": {"rules": {"web.search": "review"}}})
     )
-    assert replaced.permissions.default == "auto" and replaced.permissions.rules == {"web.search": "review"}
+    assert replaced.permissions.default == "inherit" and replaced.permissions.rules == {"web.search": "review"}
 
 
 @pytest.mark.anyio
@@ -527,7 +527,7 @@ async def test_permissions_and_managed_reviewer_survive_acceptance_and_reconstru
     agent_invocation_resolver: AgentInvocationResolver,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    from a13n_harness.capabilities import SubagentCapability, ToolReviewCapability
+    from a13n_harness.capabilities import SubagentCapability
     from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
     from a13n_harness.tools import ToolPermissionsCapability
     from a13n_service.agents.domain import AgentConfig, EffectiveAgentConfig, PreparedAgentPlugins
@@ -570,7 +570,9 @@ async def test_permissions_and_managed_reviewer_survive_acceptance_and_reconstru
         prepared_plugins=PreparedAgentPlugins(plugins=()),
     )
     assert any(isinstance(capability, ToolPermissionsCapability) for capability in definition.capabilities)
-    review = next(capability for capability in definition.capabilities if isinstance(capability, ToolReviewCapability))
+    review = next(
+        capability for capability in definition.capabilities if isinstance(capability, ToolPermissionsCapability)
+    )
     assert review.policy.risk_threshold == "extra_high"
     assert review.policy.on_flagged == "approval_required"
     assert review.policy.rules["environment.shell_exec"].risk_threshold == "high"

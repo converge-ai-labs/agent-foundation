@@ -22,8 +22,8 @@ pub enum ToolPermissionSetting {
     Ask,
     #[serde(rename = "review")]
     Review,
-    #[serde(rename = "auto")]
-    Auto,
+    #[serde(rename = "inherit")]
+    Inherit,
 }
 
 impl std::fmt::Display for ToolPermissionSetting {
@@ -33,7 +33,7 @@ impl std::fmt::Display for ToolPermissionSetting {
             Self::Deny => write!(f, "deny"),
             Self::Ask => write!(f, "ask"),
             Self::Review => write!(f, "review"),
-            Self::Auto => write!(f, "auto"),
+            Self::Inherit => write!(f, "inherit"),
         }
     }
 }

@@ -313,6 +313,10 @@ it("submits only additional instructions and consumes setup preview before an un
     ).toBe(false),
   );
   expect(writes[0].instructions).toBe("");
+  expect(writes[0].shell_review).toBe(true);
+  expect(
+    screen.getByText(/Existing root settings stay unchanged/),
+  ).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Save setup" }));
   await screen.findByText("Connection lost");
   expect(

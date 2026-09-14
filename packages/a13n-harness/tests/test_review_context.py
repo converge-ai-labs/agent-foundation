@@ -19,7 +19,6 @@ from a13n_harness._review_context import (
 from a13n_harness.capabilities import (
     AgentToolReviewer,
     ToolReviewAssessment,
-    ToolReviewCapability,
     ToolReviewConfig,
     ToolReviewError,
     ToolReviewPolicy,
@@ -63,13 +62,14 @@ def _model(name="execute", arguments=None):
     return FunctionModel(stream_function=stream)
 
 
-def _agent(reviewer, execute, *, policy=None, permissions=None):
+_REVIEW_PERMISSIONS = ToolPermissions(default="review")
+
+
+def _agent(reviewer, execute, *, policy=None, permissions=_REVIEW_PERMISSIONS):
     capabilities = [
         Capability(toolsets=[FunctionToolset([execute], id="business")]),
-        ToolReviewCapability(reviewer=reviewer, policy=policy),
+        ToolPermissionsCapability(permissions, reviewer=reviewer, policy=policy),
     ]
-    if permissions is not None:
-        capabilities.append(ToolPermissionsCapability(permissions))
     return HarnessBuilder().build(AgentSpec(), model=_model(), output_type=str, capabilities=tuple(capabilities))
 
 
@@ -78,7 +78,7 @@ def _history(state):
 
 
 @pytest.mark.parametrize("risk", list(ToolRiskLevel))
-async def test_default_reviews_every_local_tool_and_only_denies_extra_high(risk):
+async def test_opted_in_review_only_denies_extra_high_by_default(risk):
     reviewer = Reviewer(risk=risk)
     executed = []
 
@@ -88,7 +88,7 @@ async def test_default_reviews_every_local_tool_and_only_denies_extra_high(risk)
 
     result = await _agent(reviewer, execute).run("Inspect this", bindings=RunBindings.embedded())
     assert result.status == "completed"
-    assert len(reviewer.requests) == 1  # No ToolPermissionsCapability or shell marker required.
+    assert len(reviewer.requests) == 1  # Explicit review permission, no shell marker required.
     assert bool(executed) is (risk != ToolRiskLevel.EXTRA_HIGH)
     records = _history(result.state).records
     assert records[0].risk == risk
@@ -98,6 +98,26 @@ async def test_default_reviews_every_local_tool_and_only_denies_extra_high(risk)
     assert len(actions) == (0 if risk == ToolRiskLevel.EXTRA_HIGH else 1)
     if actions:
         assert actions[0].outcome == "tool_returned"
+
+
+@pytest.mark.parametrize("permissions", [None, ToolPermissions(), ToolPermissions(default="inherit")])
+async def test_reviewer_and_risk_rules_do_not_opt_tools_into_review(permissions):
+    reviewer = Reviewer(risk=ToolRiskLevel.EXTRA_HIGH)
+    executed = []
+
+    def execute() -> str:
+        executed.append(True)
+        return "ok"
+
+    result = await _agent(
+        reviewer,
+        execute,
+        permissions=permissions,
+        policy=ToolReviewPolicy(rules={"*": ToolReviewRule(risk_threshold="low")}),
+    ).run("Go", bindings=RunBindings.embedded())
+    assert result.status == "completed"
+    assert executed == [True]
+    assert not reviewer.requests
 
 
 def test_review_policy_uses_one_best_match_and_inherits_global_fields():
@@ -333,7 +353,11 @@ async def test_approval_denial_is_observed_without_reviewer_replay_or_execution(
 
     capabilities = [
         Capability(toolsets=[FunctionToolset([Tool(execute, requires_approval=native)], id="business")]),
-        ToolReviewCapability(reviewer=reviewer, policy=ToolReviewPolicy(on_flagged="approval_required")),
+        ToolPermissionsCapability(
+            ToolPermissions(default="review"),
+            reviewer=reviewer,
+            policy=ToolReviewPolicy(on_flagged="approval_required"),
+        ),
     ]
     if inline:
         capabilities.append(HandleDeferredToolCalls(deny))
@@ -370,7 +394,10 @@ async def test_nested_proxy_and_codeact_targets_share_review_and_compact_traject
         return value * 2
 
     reviewer = Reviewer()
-    capabilities = [_group(double), ToolReviewCapability(reviewer=reviewer)]
+    capabilities = [
+        _group(double),
+        ToolPermissionsCapability(ToolPermissions(default="review"), reviewer=reviewer),
+    ]
     if codeact:
         capabilities.append(CodeActCapability())
         call = ("run_code", {"code": "await call_proxy_tool(group='crm', tool='double', arguments={'value': 3})"})

@@ -7957,13 +7957,14 @@ export interface components {
      */
     ToolPermissionMode: "allow" | "deny" | "ask" | "review";
     /** ToolPermissionSetting */
-    ToolPermissionSetting: components["schemas"]["ToolPermissionMode"] | "auto";
+    ToolPermissionSetting:
+      components["schemas"]["ToolPermissionMode"] | "inherit";
     /**
      * ToolPermissions
-     * @description Portable configuration. Auto resolves a tool default, never an execution decision.
+     * @description Portable configuration. Inherit resolves a tool default, never an execution decision.
      */
     ToolPermissions: {
-      /** @default auto */
+      /** @default inherit */
       default?: components["schemas"]["ToolPermissionSetting"];
       /** Rules */
       rules?: {

@@ -2064,6 +2064,20 @@ class HarnessUiApp:
             )
 
 
+def _raise_startup_model_error(error: HarnessUiError | None) -> None:
+    if error is None or error.code not in {"configuration_model_missing", "capability_model_missing"}:
+        return
+    get_logger(__name__).error(
+        "Startup aborted: %s [code=%s, path=%s, field=%s, model_id=%s]",
+        error,
+        error.code,
+        error.details.get("path"),
+        error.details.get("field"),
+        error.details.get("model_id"),
+    )
+    raise error
+
+
 @asynccontextmanager
 async def open_harness_ui_app(
     settings: HarnessUiSettings,
@@ -2115,6 +2129,7 @@ async def open_harness_ui_app(
                     candidate_error = None
                 except HarnessUiError as exc:
                     candidate_error = exc
+            _raise_startup_model_error(candidate_error)
             current_digest = await store.configurations.current_digest()
             if candidate is not None:
                 try:
@@ -2123,6 +2138,7 @@ async def open_harness_ui_app(
                         expected_current_digest=current_digest,
                     )
                 except HarnessUiError as exc:
+                    _raise_startup_model_error(exc)
                     if current_digest is None:
                         raise
                     candidate_error = exc

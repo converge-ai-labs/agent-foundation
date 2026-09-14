@@ -33,10 +33,9 @@ def _validate_capability_id(
 
 def first_party_declarative_capability_types() -> tuple[type[AbstractCapability[AgentContext]], ...]:
     """Return Harness-owned Capability types accepted from AgentSpec."""
-    from a13n_harness.capabilities.tool_review import ToolReviewCapability
     from a13n_harness.tools.permissions import ToolPermissionsCapability
 
-    return (ToolReviewCapability, ToolPermissionsCapability)
+    return (ToolPermissionsCapability,)
 
 
 def _reserved_harness_capability_contract() -> tuple[
@@ -53,7 +52,6 @@ def _reserved_harness_capability_contract() -> tuple[
         ToolProxyCapability,
         _ToolProxySurfaceCapability,
     )
-    from a13n_harness.capabilities.tool_review import TOOL_REVIEW_CAPABILITY_ID, ToolReviewCapability
     from a13n_harness.environment.dynamic import (
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
         DynamicEnvironmentCapability,
@@ -87,7 +85,6 @@ def _reserved_harness_capability_contract() -> tuple[
     )
 
     capability_types = (
-        ToolReviewCapability,
         ToolPermissionsCapability,
         ToolExecutionBoundaryCapability,
         MessageIntegrityFilterCapability,
@@ -106,7 +103,6 @@ def _reserved_harness_capability_contract() -> tuple[
     names = frozenset(
         {
             *(capability_type.__name__ for capability_type in capability_types),
-            TOOL_REVIEW_CAPABILITY_ID,
             TOOL_PERMISSIONS_CAPABILITY_ID,
             TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID,
             MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID,

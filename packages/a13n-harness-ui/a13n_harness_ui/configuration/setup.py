@@ -187,19 +187,6 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
             {"capability": "handoff", "configuration": {}},
             {"capability": "runtime_context", "configuration": {}},
         ]
-        if shell_review:
-            reviewer = "model-codex-review" if "codex" in providers else "model-grok-shell-review"
-            capabilities.append(
-                {
-                    "capability": "ToolReviewCapability",
-                    "configuration": {
-                        "model": reviewer,
-                        "risk_threshold": "extra_high",
-                        "on_flagged": "approval_required",
-                        "on_error": "allow",
-                    },
-                }
-            )
         resources[f"agents/{provider}.yaml"] = {
             "schema_version": "1",
             "kind": "agent",
@@ -364,7 +351,15 @@ async def preview_setup(
     selected_model = existing.get(selection.existing_model_id) if selection.existing_model_id is not None else None
     if selection.existing_model_id is not None and (selected_model is None or selected_model[1].get("kind") != "model"):
         raise ConfigurationError("The selected Model is unavailable.", code="setup_model_invalid")
-    templates = _templates(selection, existing_model=selected_model[1] if selected_model is not None else None)
+    root = _parse_yaml_mapping(path, baseline.get(path.name, _EMPTY_ROOT), code="settings_invalid")
+    security = root.get("security", {})
+    if not isinstance(security, dict):
+        raise ConfigurationError("Configuration security must be a mapping.", code="settings_invalid")
+    seed_review = selection.new_model_id is None and "shell_review" not in security
+    templates = _templates(
+        selection if seed_review else selection.model_copy(update={"shell_review": False}),
+        existing_model=selected_model[1] if selected_model is not None else None,
+    )
     connection_model: str | None = None
     if selection.new_agent_id is not None:
         connection_model = "model-" + selection.new_agent_id if selection.existing_model_id is None else None
@@ -454,7 +449,26 @@ async def preview_setup(
                 if resource["id"] == (selection.new_agent_id or selection.default_agent):
                     resource["model"] = connection_model
                     files[name] = yaml.safe_dump(resource, sort_keys=False, allow_unicode=True)
-    root = _parse_yaml_mapping(path, baseline.get(path.name, _EMPTY_ROOT), code="settings_invalid")
+    if seed_review:
+        reviewer_model = next(
+            (
+                yaml.safe_load(text)["id"]
+                for name, text in templates.items()
+                if name in {"models/codex-review.yaml", "models/grok-shell-review.yaml"}
+            ),
+            selection.existing_model_id or connection_model,
+        )
+        root["security"] = {
+            **security,
+            "shell_review": {
+                "enable": selection.shell_review and reviewer_model is not None,
+                "risk_threshold": "extra_high",
+                "on_flagged": "approval_required",
+                "on_error": "allow",
+                **({"model": reviewer_model} if reviewer_model is not None and selection.shell_review else {}),
+            },
+        }
+        files[path.name] = yaml.safe_dump(root, sort_keys=False, allow_unicode=True)
     if not selection.is_addition:
         tools = root.setdefault("tools", {})
         if isinstance(tools, dict):

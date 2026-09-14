@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
-from dataclasses import dataclass
 from enum import StrEnum
 from functools import cache
 from html import escape
@@ -13,23 +11,19 @@ from typing import Literal, Protocol, cast, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 from pydantic_ai import Agent, RunContext, ToolOutput
-from pydantic_ai.capabilities import AbstractCapability
-from pydantic_ai.models import Model, ModelResolutionContext
+from pydantic_ai.models import Model
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RunUsage, UsageLimits
 
 from a13n_harness._review_context import ReviewEvidence, render_review_input
+from a13n_harness._tool_selectors import match_selector, validate_selector
 from a13n_harness.capabilities._review import drain_review_events as _drain_review_events
 from a13n_harness.capabilities._review import provider_usage_receipts as _provider_usage_receipts
 from a13n_harness.context import AgentContext
-from a13n_harness.errors import DefinitionError
 from a13n_harness.models.structured_output import StructuredOutputAutoToolChoiceModel
 from a13n_harness.observation import _auxiliary_agent_capabilities
-from a13n_harness.tools.permissions import match_selector, validate_selector
 from a13n_harness.tools.policy import InvocationDecisionKind
 from a13n_harness.usage import ProviderUsage
-
-TOOL_REVIEW_CAPABILITY_ID = "a13n.tool-review"
 
 
 class ToolReviewRequest(BaseModel):
@@ -234,109 +228,3 @@ class AgentToolReviewer:
         except Exception as exc:
             raise ToolReviewError("tool_review_failed", usage=_provider_usage_receipts(self._model, usage)) from exc
         return ToolReviewResult(assessment=result.output, usage=_provider_usage_receipts(self._model, result.usage))
-
-
-@dataclass(init=False)
-class ToolReviewCapability(AbstractCapability[AgentContext]):
-    """Definition-selected reviewer with optional per-selector implementation overrides."""
-
-    id = TOOL_REVIEW_CAPABILITY_ID
-
-    def __init__(
-        self,
-        config: ToolReviewConfig | None = None,
-        *,
-        reviewer: ToolReviewer | None = None,
-        reviewers: Mapping[str, ToolReviewer] | None = None,
-        policy: ToolReviewPolicy | None = None,
-    ) -> None:
-        self.config = config.model_copy(deep=True) if config is not None else None
-        if config is not None and policy is not None:
-            raise ValueError("Configure review policy through config or policy, not both")
-        self.policy = (policy or config or ToolReviewPolicy()).model_copy(deep=True)
-        self._reviewer = reviewer
-        self._reviewers = dict(reviewers or {})
-        for selector, implementation in self._reviewers.items():
-            validate_selector(selector)
-            if not isinstance(implementation, ToolReviewer):
-                raise TypeError("reviewers must implement ToolReviewer")
-        if reviewer is not None and not isinstance(reviewer, ToolReviewer):
-            raise TypeError("reviewer must implement ToolReviewer")
-        self._context: AgentContext | None = None
-
-    @classmethod
-    def from_spec(
-        cls,
-        model: str,
-        *,
-        instruction: str | None = None,
-        shell_instruction: str | None = None,
-        model_settings: dict[str, JsonValue] | None = None,
-        timeout_seconds: float = 120,
-        on_error: Literal["deny", "approval_required", "allow"] = "approval_required",
-        risk_threshold: ToolRiskLevel = ToolRiskLevel.EXTRA_HIGH,
-        on_flagged: Literal["deny", "approval_required"] = "deny",
-        rules: dict[str, ToolReviewRule] | None = None,
-    ) -> ToolReviewCapability:
-        return cls(
-            ToolReviewConfig(
-                model=model,
-                instruction=instruction,
-                shell_instruction=shell_instruction,
-                model_settings=model_settings,
-                timeout_seconds=timeout_seconds,
-                on_error=on_error,
-                risk_threshold=risk_threshold,
-                on_flagged=on_flagged,
-                rules=rules or {},
-            )
-        )
-
-    async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
-        existing = ctx.deps._run_capability(TOOL_REVIEW_CAPABILITY_ID)
-        if existing is not None:
-            if not isinstance(existing, ToolReviewCapability):
-                raise DefinitionError("Incompatible tool reviewer.", code="capability_type_mismatch")
-            return existing
-        replacement = ToolReviewCapability(
-            self.config,
-            reviewer=self._reviewer,
-            reviewers=self._reviewers,
-            policy=self.policy if self.config is None else None,
-        )
-        replacement._context = ctx.deps
-        if replacement._reviewer is None and self.config is not None:
-            if ctx.agent is None:
-                raise DefinitionError("Review model resolution is unavailable.", code="model_resolution_failed")
-            model = await ctx.deps._model_inference(
-                ModelResolutionContext(agent=ctx.agent, deps=ctx.deps), self.config.model
-            )
-            replacement._reviewer = AgentToolReviewer(model, self.config)
-        ctx.deps._record_run_capability(TOOL_REVIEW_CAPABILITY_ID, replacement)
-        return replacement
-
-    def decision_for(self, tool_id: str, assessment: ToolReviewAssessment) -> InvocationDecisionKind:
-        return self.policy.decision_for(tool_id, assessment.risk)
-
-    def has_reviewer(self, tool_id: str) -> bool:
-        return match_selector(self._reviewers, tool_id) is not None or self._reviewer is not None
-
-    async def review(self, request: ToolReviewRequest, *, context: AgentContext) -> ToolReviewResult | None:
-        if self._context is not context:
-            raise DefinitionError("Tool review is not bound to this run.", code="capability_scope_invalid")
-        reviewer = match_selector(self._reviewers, request.tool_id) or self._reviewer
-        if reviewer is None:
-            return None
-        if isinstance(reviewer, AgentToolReviewer):
-            return ToolReviewResult.model_validate(await reviewer.review(request, context=context))
-        try:
-            async with asyncio.timeout(self.config.timeout_seconds if self.config is not None else 120):
-                return ToolReviewResult.model_validate(await reviewer.review(request, context=context))
-        except asyncio.CancelledError:
-            raise
-        except TimeoutError as exc:
-            raise ToolReviewError("tool_review_timeout") from exc
-        except ToolReviewError:
-            raise
-        except Exception as exc:
-            raise ToolReviewError("tool_review_failed") from exc

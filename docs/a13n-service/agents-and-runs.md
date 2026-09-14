@@ -64,7 +64,7 @@ Add optional `permissions` and `reviewer` objects to the Agent `config` when loc
 }
 ```
 
-Use actual stable tool IDs from the prepared surface, not display-name guesses. `auto` defaults all local tools to review; `allow` continues, `deny` blocks, `ask` requests human approval, and `review` consults the reviewer. Without a matching reviewer, review adds no restriction. These settings never widen Service IAM or Environment authority. See the [Harness permission guide](../a13n-harness/managed-tools.md#select-tool-permissions) for selectors, custom instructions, and distinct approval sources.
+Use actual stable tool IDs from the prepared surface, not display-name guesses. `inherit` uses the tool's declared default, which is `allow` unless explicitly overridden by trusted tool code. A reviewer or risk rule alone does not enable review; `allow` continues, `deny` blocks, `ask` requests human approval, and `review` consults the reviewer. Without a matching reviewer, review adds no restriction. These settings never widen Service IAM or Environment authority. See the [Harness permission guide](../a13n-harness/managed-tools.md#select-tool-permissions) for selectors, custom instructions, and distinct approval sources.
 
 Run acceptance freezes reviewer Model execution settings alongside the main Model. Later Model edits do not change an accepted Run; credentials still resolve through current managed authentication. In `config_override`, omission inherits either field, null clears it, and an object replaces it entirely. A reviewer approval may be followed by a separate tool-policy approval through the normal waiting/feedback flow.
 

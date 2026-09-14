@@ -100,7 +100,6 @@ from a13n_harness.capabilities.tool_proxy import (
     _ToolProxyGroupCapability,
     _ToolProxySurfaceCapability,
 )
-from a13n_harness.capabilities.tool_review import TOOL_REVIEW_CAPABILITY_ID, ToolReviewCapability
 from a13n_harness.capabilities.web import (
     WEB_CAPABILITY_ID,
     WEB_RUN_CAPABILITY_ID,
@@ -2822,7 +2821,7 @@ def _first_party_spec_reserved_ids(spec: AgentSpec) -> frozenset[str]:
     """Authorize reserved definition IDs selected by exact first-party wire names."""
     names = [capability.name for capability in spec.capabilities]
     selected: set[str] = set()
-    for capability_type in (ToolReviewCapability, ToolPermissionsCapability):
+    for capability_type in (ToolPermissionsCapability,):
         name = capability_type.get_serialization_name()
         if name is None:
             raise AssertionError(f"{capability_type.__name__} must be serializable")
@@ -2914,7 +2913,6 @@ def _validate_built_capability_tree(
         CODEACT_CAPABILITY_ID,
         TOOL_PROXY_CAPABILITY_ID,
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
-        TOOL_REVIEW_CAPABILITY_ID,
         TOOL_PERMISSIONS_CAPABILITY_ID,
         FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID,
         RUNTIME_CONTEXT_CAPABILITY_ID,
@@ -3062,7 +3060,6 @@ def _validate_built_capability_tree(
                 CodeActCapability,
                 _ToolProxySurfaceCapability,
                 DynamicEnvironmentCapability,
-                ToolReviewCapability,
                 ToolPermissionsCapability,
                 RuntimeContextCapability,
                 WorkspaceOutlineCapability,
@@ -3258,7 +3255,6 @@ def _validate_capability_source(
         CODEACT_CAPABILITY_ID,
         TOOL_PROXY_CAPABILITY_ID,
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
-        TOOL_REVIEW_CAPABILITY_ID,
         TOOL_PERMISSIONS_CAPABILITY_ID,
         FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID,
         RUNTIME_CONTEXT_CAPABILITY_ID,
@@ -3298,7 +3294,6 @@ def _validate_capability_source(
                         CodeActCapability,
                         _ToolProxySurfaceCapability,
                         DynamicEnvironmentCapability,
-                        ToolReviewCapability,
                         ToolPermissionsCapability,
                         RuntimeContextCapability,
                         WorkspaceOutlineCapability,

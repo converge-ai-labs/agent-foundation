@@ -99,7 +99,7 @@ _QUESTIONS = (
     ),
     Question(
         "review",
-        "Review tool calls; extra-high risk requires approval, review timeouts deny",
+        "Initialize shell review for all Agents (existing root settings stay unchanged)",
         "yes",
         ("yes", "no"),
     ),
@@ -126,7 +126,6 @@ class SetupWizard:
     add_model: bool = False
     model_choices: tuple[Choice, ...] = ()
     model_resources: dict[str, ModelResource] = field(default_factory=dict)
-    subscription_models: frozenset[str] = frozenset()
     suggested_name: str = ""
     existing_agent_ids: frozenset[str] = frozenset()
     context_window_hint: int | None = None
@@ -286,12 +285,13 @@ class SetupWizard:
                         hint += "\nService tier: " + (
                             "Fast (priority)." if self.values.get("fast", "on") == "on" else "Standard (default)."
                         )
-                    if not self.add_model:
-                        hint += (
-                            " · Tool review threshold: extra high."
-                            if self.values.get("review", "yes") == "yes"
-                            else " · Tool review disabled."
-                        )
+                if not self.add_model:
+                    hint += (
+                        "\nShell review shortcut: extra-high risk requires approval; uses a Model request."
+                        if self.values.get("review", "yes") == "yes"
+                        else "\nShell review shortcut: off; explicit Agent policies remain active."
+                    )
+                    hint += " Existing root security.shell_review settings stay unchanged."
                 if self.existing_model_id is None:
                     provider = self.values["provider"]
                     route_provider = (
@@ -577,11 +577,6 @@ class SetupWizard:
             return False
         if (key == "context" and provider not in {"codex", "api"}) or (key == "thinking" and provider != "codex"):
             return False
-        if key == "review" and (
-            provider == "api"
-            or (self.existing_model_id is not None and self.existing_model_id not in self.subscription_models)
-        ):
-            return False
         return True
 
     def selection(self, directory: str) -> dict[str, object]:
@@ -592,9 +587,7 @@ class SetupWizard:
             "environment_profile": "environment-native"
             if self.values.get("environment", self.default_environment) == "full-control"
             else "environment-sandbox",
-            "shell_review": not self.add_model
-            and (provider in {"codex", "grok"} or self.existing_model_id in self.subscription_models)
-            and self.values.get("review", "yes") == "yes",
+            "shell_review": not self.add_model and self.values.get("review", "yes") == "yes",
             "connect_default": True,
             "include_default_subagents": self.values.get("subagents", "all") == "all",
             "instructions": self.values.get("instructions", ""),

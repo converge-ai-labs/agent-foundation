@@ -231,6 +231,7 @@ def test_setup_access_selection_and_back_preserve_no_secret_defaults() -> None:
     wizard.accept("all")
     wizard.accept("")
     wizard.accept("")  # Tool recommendations.
+    wizard.accept("yes")  # Root shell-review shortcut, including API connections.
     wizard.accept("Keep replies concise")
     wizard.accept("1")
     assert wizard.question is None
@@ -549,7 +550,10 @@ def _shell_approval(**changes) -> DecisionInteraction:
         request_id="shell-call",
         tool_name="shell_exec",
         arguments={"command": "rm report.txt", "cwd": "/workspace", "environment": {"TOKEN": "hidden-value"}},
-        metadata={"a13n.harness.shell-review": {"status": "flagged", "risk": "high", "reason": "Deletes a report"}},
+        metadata={
+            "a13n.harness.tool-approval": {"tool_id": "environment.shell_exec"},
+            "a13n.harness.tool-review": {"risk": "high", "reason": "Deletes a report"},
+        },
     ).model_copy(update=changes)
     return DecisionInteraction(DecisionBatchView(continuation_id="b" * 64, requests=(request,)))
 
@@ -577,7 +581,10 @@ def test_approval_panel_puts_reason_before_command_and_keeps_explicit_choices() 
 @pytest.mark.parametrize(
     "metadata",
     [
-        {"a13n.harness.shell-review": {"status": "error"}},
+        {
+            "a13n.harness.tool-approval": {"tool_id": "environment.shell_exec"},
+            "reason": "Tool review could not complete.",
+        },
         {"policy": "Operator confirmation required"},
     ],
 )
@@ -587,7 +594,7 @@ def test_approval_panel_handles_missing_assessment_and_generic_metadata(metadata
     if "policy" in metadata:
         assert "Operator confirmation required" in text
     else:
-        assert "The reviewer failed; no risk assessment or reason is available" in text
+        assert "Tool review could not complete." in text
 
 
 def test_approval_panel_discloses_bounded_and_source_omissions() -> None:
@@ -605,11 +612,11 @@ def test_approval_panel_renders_untrusted_reason_as_literal_terminal_safe_text(w
 
     interaction = _shell_approval(
         metadata={
-            "a13n.harness.shell-review": {
-                "status": "flagged",
+            "a13n.harness.tool-approval": {"tool_id": "environment.shell_exec"},
+            "a13n.harness.tool-review": {
                 "risk": "high",
                 "reason": "[red]reason[/red]\x1b[2J",
-            }
+            },
         }
     )
     renderer = StreamRenderer(Status())
@@ -652,7 +659,8 @@ def test_approval_panel_uses_styled_sections_and_code_not_a_metadata_dump(theme_
     from rich.text import Text
 
     metadata = {
-        "a13n.harness.shell-review": {"status": "flagged", "risk": "high", "reason": "Deletes a report"},
+        "a13n.harness.tool-approval": {"tool_id": "environment.shell_exec"},
+        "a13n.harness.tool-review": {"risk": "high", "reason": "Deletes a report"},
         "a13n.harness.invocation-policy": {"decision": "allow", "metadata": {"token": "details-only"}},
     }
     interaction = _shell_approval(metadata=metadata)

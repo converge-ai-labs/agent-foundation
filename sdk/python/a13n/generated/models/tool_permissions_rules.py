@@ -13,7 +13,7 @@ T = TypeVar("T", bound="ToolPermissionsRules")
 
 @_attrs_define(repr=False)
 class ToolPermissionsRules:
-    additional_properties: dict[str, Literal["auto"] | ToolPermissionMode] = _attrs_field(init=False, factory=dict)
+    additional_properties: dict[str, Literal["inherit"] | ToolPermissionMode] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
 
@@ -34,7 +34,7 @@ class ToolPermissionsRules:
         additional_properties = {}
         for prop_name, prop_dict in d.items():
 
-            def _parse_additional_property(data: object) -> Literal["auto"] | ToolPermissionMode:
+            def _parse_additional_property(data: object) -> Literal["inherit"] | ToolPermissionMode:
                 try:
                     if not isinstance(data, str):
                         raise TypeError()
@@ -43,10 +43,10 @@ class ToolPermissionsRules:
                     return componentsschemas_tool_permission_setting_type_0
                 except (TypeError, ValueError, AttributeError, KeyError):
                     pass
-                componentsschemas_tool_permission_setting_type_1 = cast(Literal["auto"], data)
-                if componentsschemas_tool_permission_setting_type_1 != "auto":
+                componentsschemas_tool_permission_setting_type_1 = cast(Literal["inherit"], data)
+                if componentsschemas_tool_permission_setting_type_1 != "inherit":
                     raise ValueError(
-                        f"/components/schemas/ToolPermissionSetting_type_1 must match const 'auto', got '{componentsschemas_tool_permission_setting_type_1}'"
+                        f"/components/schemas/ToolPermissionSetting_type_1 must match const 'inherit', got '{componentsschemas_tool_permission_setting_type_1}'"
                     )
                 return componentsschemas_tool_permission_setting_type_1
 
@@ -61,10 +61,10 @@ class ToolPermissionsRules:
     def additional_keys(self) -> list[str]:
         return list(self.additional_properties.keys())
 
-    def __getitem__(self, key: str) -> Literal["auto"] | ToolPermissionMode:
+    def __getitem__(self, key: str) -> Literal["inherit"] | ToolPermissionMode:
         return self.additional_properties[key]
 
-    def __setitem__(self, key: str, value: Literal["auto"] | ToolPermissionMode) -> None:
+    def __setitem__(self, key: str, value: Literal["inherit"] | ToolPermissionMode) -> None:
         self.additional_properties[key] = value
 
     def __delitem__(self, key: str) -> None:

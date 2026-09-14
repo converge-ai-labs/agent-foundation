@@ -17,18 +17,18 @@ T = TypeVar("T", bound="ToolPermissions")
 
 @_attrs_define(repr=False)
 class ToolPermissions:
-    """Portable configuration. Auto resolves a tool default, never an execution decision.
+    """Portable configuration. Inherit resolves a tool default, never an execution decision.
 
     Attributes:
-        default (Literal['auto'] | ToolPermissionMode | Unset):
+        default (Literal['inherit'] | ToolPermissionMode | Unset):
         rules (ToolPermissionsRules | Unset):
     """
 
-    default: Literal["auto"] | ToolPermissionMode | Unset = UNSET
+    default: Literal["inherit"] | ToolPermissionMode | Unset = UNSET
     rules: ToolPermissionsRules | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
-        default: Literal["auto"] | str | Unset
+        default: Literal["inherit"] | str | Unset
         if isinstance(self.default, Unset):
             default = UNSET
         elif isinstance(self.default, ToolPermissionMode):
@@ -56,7 +56,7 @@ class ToolPermissions:
 
         d = dict(src_dict)
 
-        def _parse_default(data: object) -> Literal["auto"] | ToolPermissionMode | Unset:
+        def _parse_default(data: object) -> Literal["inherit"] | ToolPermissionMode | Unset:
             if isinstance(data, Unset):
                 return data
             try:
@@ -67,10 +67,10 @@ class ToolPermissions:
                 return componentsschemas_tool_permission_setting_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
-            componentsschemas_tool_permission_setting_type_1 = cast(Literal["auto"], data)
-            if componentsschemas_tool_permission_setting_type_1 != "auto":
+            componentsschemas_tool_permission_setting_type_1 = cast(Literal["inherit"], data)
+            if componentsschemas_tool_permission_setting_type_1 != "inherit":
                 raise ValueError(
-                    f"/components/schemas/ToolPermissionSetting_type_1 must match const 'auto', got '{componentsschemas_tool_permission_setting_type_1}'"
+                    f"/components/schemas/ToolPermissionSetting_type_1 must match const 'inherit', got '{componentsschemas_tool_permission_setting_type_1}'"
                 )
             return componentsschemas_tool_permission_setting_type_1
 

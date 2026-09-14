@@ -370,22 +370,22 @@ func (e BinaryContentType) Valid() bool {
 
 // Defines values for BinaryContentDelivery.
 const (
-	BinaryContentDeliveryAuto            BinaryContentDelivery = "auto"
-	BinaryContentDeliveryEnvironmentPath BinaryContentDelivery = "environment_path"
-	BinaryContentDeliveryModelContent    BinaryContentDelivery = "model_content"
-	BinaryContentDeliveryModelUrl        BinaryContentDelivery = "model_url"
+	Auto            BinaryContentDelivery = "auto"
+	EnvironmentPath BinaryContentDelivery = "environment_path"
+	ModelContent    BinaryContentDelivery = "model_content"
+	ModelUrl        BinaryContentDelivery = "model_url"
 )
 
 // Valid indicates whether the value is a known member of the BinaryContentDelivery enum.
 func (e BinaryContentDelivery) Valid() bool {
 	switch e {
-	case BinaryContentDeliveryAuto:
+	case Auto:
 		return true
-	case BinaryContentDeliveryEnvironmentPath:
+	case EnvironmentPath:
 		return true
-	case BinaryContentDeliveryModelContent:
+	case ModelContent:
 		return true
-	case BinaryContentDeliveryModelUrl:
+	case ModelUrl:
 		return true
 	default:
 		return false
@@ -2425,13 +2425,13 @@ func (e ToolPermissionMode) Valid() bool {
 
 // Defines values for ToolPermissionSetting1.
 const (
-	ToolPermissionSetting1Auto ToolPermissionSetting1 = "auto"
+	Inherit ToolPermissionSetting1 = "inherit"
 )
 
 // Valid indicates whether the value is a known member of the ToolPermissionSetting1 enum.
 func (e ToolPermissionSetting1) Valid() bool {
 	switch e {
-	case ToolPermissionSetting1Auto:
+	case Inherit:
 		return true
 	default:
 		return false
@@ -5855,7 +5855,7 @@ type ToolPermissionSetting struct {
 // ToolPermissionSetting1 defines model for ToolPermissionSetting.1.
 type ToolPermissionSetting1 string
 
-// ToolPermissions Portable configuration. Auto resolves a tool default, never an execution decision.
+// ToolPermissions Portable configuration. Inherit resolves a tool default, never an execution decision.
 type ToolPermissions struct {
 	Default *ToolPermissionSetting            `json:"default,omitempty"`
 	Rules   *map[string]ToolPermissionSetting `json:"rules,omitempty"`

@@ -23,8 +23,6 @@ from a13n_harness._review_context import (
     select_review_history,
 )
 from a13n_harness.capabilities.tool_review import (
-    TOOL_REVIEW_CAPABILITY_ID,
-    ToolReviewCapability,
     ToolReviewError,
     ToolReviewRequest,
     ToolReviewResultPayload,
@@ -123,9 +121,9 @@ async def check_permission(
             },
         )
     if mode == "review":
-        capability = ctx.capabilities.get(TOOL_REVIEW_CAPABILITY_ID)
+        capability = ctx.capabilities.get(TOOL_PERMISSIONS_CAPABILITY_ID)
         if capability is not None:
-            if not isinstance(capability, ToolReviewCapability):
+            if not isinstance(capability, ToolPermissionsCapability):
                 raise DefinitionError("Incompatible tool reviewer.", code="capability_type_mismatch")
             if capability.has_reviewer(identity.tool_id):
                 await _review(ctx, tool_def, arguments, approval, binding, capability)
@@ -140,7 +138,7 @@ async def _review(
     arguments: dict[str, JsonValue],
     approval: ToolApprovalContext,
     binding: str,
-    capability: ToolReviewCapability,
+    capability: ToolPermissionsCapability,
 ) -> None:
     review_metadata: dict[str, JsonValue] = {}
     try:

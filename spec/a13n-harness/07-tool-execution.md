@@ -18,7 +18,7 @@ The function-tool wrapper is an Agent invocation boundary, not Python isolation.
 | Optional Harness tool metadata and effective-surface resolution    | Harness                                                          |
 | Managed invocation wrapper and final tool-surface recording        | Harness                                                          |
 | Agent policy and credential decisions for managed tools            | Harness default plus optional fresh `InvocationPolicyCapability` |
-| Optional tool risk assessment                                      | Definition-selected `ToolReviewCapability`                       |
+| Optional tool risk assessment                                      | Optional review in `ToolPermissionsCapability`                   |
 | Remote operation and side-effect evidence                          | Tool provider                                                    |
 | Grant signing and authenticated transport                          | Host security or provider adapter                                |
 | Direct I/O by trusted Python plugins                               | Plugin process trust boundary                                    |
@@ -187,7 +187,7 @@ Every locally executable function or unapproved tool has one trusted `ToolIdenti
 
 Managed tools retain `HarnessToolMetadata.tool_id`. Other tools use `tool/<source-id>/<original-name>` or `mcp/<source-id>/<original-name>`, with each source/name segment percent-encoded. MCP sources require an explicit stable source ID; ordinary sources without an ID use `native`. Native prefix/rename wrappers preserve identity. Hosts apply `ToolIdentityToolset` before custom presentation wrappers that cannot preserve original identity themselves. Explicit identity metadata is trusted code, not model input; duplicate effective identities fail preparation rather than selecting an arbitrary tool.
 
-`ToolPermissionsCapability` selects a frozen `ToolPermissions(default="auto", rules={})`. Rules match exact IDs first, then the longest namespace prefix ending in `.*` or `/*`, then `*`, then `default`. `auto` resolves the tool's declared default; it is not an execution decision. All locally executable tools default to `review`; external and provider-native tools retain separate boundaries and default to `allow`. Effective modes are:
+`ToolPermissionsCapability` selects a frozen `ToolPermissions(default="inherit", rules={})`. Rules match exact IDs first, then the longest namespace prefix ending in `.*` or `/*`, then `*`, then `default`. `inherit` resolves the tool's declared default; it is not an execution decision. All tools default to `allow`, without review; external and provider-native tools retain separate authority boundaries. A trusted explicit tool default or permission rule can opt a locally executable tool into `review`. Installing a reviewer or defining risk rules alone never enables review. Effective modes are:
 
 | Mode     | Behavior                                                                                 |
 | -------- | ---------------------------------------------------------------------------------------- |
@@ -198,7 +198,7 @@ Managed tools retain `HarnessToolMetadata.tool_id`. Other tools use `tool/<sourc
 
 The order is native structural validation and conversion, permission/review, tool-owned argument validation, managed resource resolution and current invocation policy where present, credentials/grants, then dispatch. A front permission denial incurs no review cost. An invocation-policy denial may occur after review because that policy needs resolved resources. No mode or reviewer outcome bypasses current tool, Host, Environment, or Provider authority.
 
-`ToolReviewCapability` is the single review Capability for all local tools. It supports a default `ToolReviewer`, selector-specific reviewer implementations with the same specificity rules, or model-backed `ToolReviewConfig`. Shell commands share the risk model, policy, history, and execution gate; only input rendering and relevant review criteria specialize shell behavior. The conceptual review values are:
+`ToolPermissionsCapability` owns permission selection and optional review for all local tools in one definition-selected Capability. There is no independent reviewer Capability registration or lookup. Its `review` configuration accepts `ToolReviewConfig`; code-first construction also supports a default `ToolReviewer`, selector-specific reviewer implementations with the same specificity rules, and `ToolReviewPolicy` for custom reviewers. The same Capability binds reviewers to each Run, resolves the auxiliary Model, and executes bounded review. Shell commands share the risk model, policy, history, and execution gate; only input rendering and relevant review criteria specialize shell behavior. The conceptual review values are:
 
 ```python
 class ToolReviewRequest:
@@ -257,8 +257,6 @@ History does not grant permission, lower a risk threshold, automatically reuse a
 The built-in `AgentToolReviewer` owns one native Pydantic Agent, one common packaged system prompt, and one structured `submit_tool_review` output. The prompt supplies baseline risk criteria, historical-evidence boundaries, and shell-specific criteria. Dependencies contain only the projected `ToolReviewRequest`. It has no business tools and permits only one bounded model request. Plain text, including JSON text, is not an assessment. Configured `instruction` remains a separate escaped `<custom-instruction>` block; `shell_instruction` overrides it for the shell profile. The selected logical Model uses the current Host's normal resolver and authentication path.
 
 Invalid output and non-timeout failures follow `on_error` (`approval_required` by default, or `deny` or explicit `allow`). The review deadline defaults to and is capped at 120 seconds, including custom reviewers. Reviewer timeout always denies before dispatch regardless of `on_error` or earlier approval. Cancellation propagates. `ToolReviewError` can retain proven usage without exposing raw provider errors. Human interaction timeout belongs to the Host, not the reviewer or tool profile. [Events and Usage](12-events-observability-and-usage.md#tool-review-results) owns risk/result and independent effective-decision observations and accounting.
-
-There is no core `ShellReviewCapability`, shell-specific request/assessment/result family, or shell metadata marker. Hosts may translate legacy configuration names into `ToolReviewCapability`; this introduces no second Harness review API or authorization path.
 
 Pydantic output tools remain part of output validation, not general side-effect dispatch, and provider-native server-side tools remain model/provider configuration. A deployment that needs Harness invocation policy for a provider-native operation exposes a metadata-aware function-tool adapter instead of pretending the function wrapper intercepts provider-internal execution.
 

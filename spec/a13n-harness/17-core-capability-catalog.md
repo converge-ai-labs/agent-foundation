@@ -36,7 +36,7 @@ Model self-healing remains optional. `SelfHealingModelCapability` installs the `
 
 ## Optional Capability Roles
 
-`ToolPermissionsCapability` selects stable-ID rules before custom validation for all locally executable tools. `ToolReviewCapability` supplies model-backed or code-first risk reviewers at that gate, with shell-specific input rendering but no separate shell Capability. Neither grants Host authority. [Tool permissions and review](07-tool-execution.md#tool-permissions-and-review) owns modes, identity, ordering, and approval provenance.
+`ToolPermissionsCapability` selects stable-ID rules before custom validation for all locally executable tools. The same Capability owns optional model-backed or code-first risk review at that gate, with shell-specific input rendering but no separate review Capability. It does not grant Host authority. [Tool permissions and review](07-tool-execution.md#tool-permissions-and-review) owns modes, identity, ordering, and approval provenance.
 
 `ToolProxyCapability(groups=...)` optionally presents grouped local tools through one dynamic search/call pair. Each passive `ToolProxyGroup` supplies a Toolset or Capability source and a description; native composition preserves source Agent/run binding. This presentation composes with CodeAct but owns no independent executor; [Grouped ToolProxy Discovery](07-tool-execution.md#grouped-toolproxy-discovery) owns its contract.
 

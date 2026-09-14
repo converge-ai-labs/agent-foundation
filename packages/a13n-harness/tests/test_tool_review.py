@@ -22,7 +22,6 @@ from a13n_harness import (
 from a13n_harness.capabilities import (
     AgentToolReviewer,
     ToolReviewAssessment,
-    ToolReviewCapability,
     ToolReviewConfig,
     ToolReviewer,
     ToolReviewError,
@@ -36,6 +35,8 @@ from a13n_harness.tools import (
     InvocationPolicyCapability,
     InvocationPolicyDecision,
     ToolOutputPolicy,
+    ToolPermissions,
+    ToolPermissionsCapability,
 )
 from a13n_harness.usage import (
     ProviderUsage,
@@ -164,8 +165,9 @@ def _build(
         ),
         capabilities=(
             Capability(tools=[HarnessTool(shell_exec, harness_metadata=_metadata())], id="shell-tools"),
-            ToolReviewCapability(
-                ToolReviewConfig(
+            ToolPermissionsCapability(
+                ToolPermissions(rules={"environment.shell_exec": "review"}),
+                review=ToolReviewConfig(
                     model="logical:review-model",
                     risk_threshold=risk_threshold,
                     on_flagged=on_flagged,
@@ -181,16 +183,18 @@ def _build(
 def test_agent_spec_registers_shell_review_without_global_registry_mutation() -> None:
     schema = AgentSpec.model_json_schema_with_capabilities()
     variants = schema["properties"]["capabilities"]["items"]["anyOf"]
-    assert {"$ref": "#/$defs/spec_ToolReviewCapability"} in variants
+    assert {"$ref": "#/$defs/spec_ToolPermissionsCapability"} in variants
 
     spec = AgentSpec(
         capabilities=[
             {
-                "name": "ToolReviewCapability",
+                "name": "ToolPermissionsCapability",
                 "arguments": {
-                    "model": "logical:review-model",
-                    "risk_threshold": "extra_high",
-                    "on_flagged": "deny",
+                    "review": {
+                        "model": "logical:review-model",
+                        "risk_threshold": "extra_high",
+                        "on_flagged": "deny",
+                    }
                 },
             }
         ]
@@ -198,7 +202,7 @@ def test_agent_spec_registers_shell_review_without_global_registry_mutation() ->
     executable = HarnessBuilder().build(spec, output_type=str, model=FunctionModel(lambda messages, info: "done"))
     leaves: list[Any] = []
     executable._agent.root_capability.apply(leaves.append)
-    capability = next(item for item in leaves if isinstance(item, ToolReviewCapability))
+    capability = next(item for item in leaves if isinstance(item, ToolPermissionsCapability))
 
     assert capability.config.model == "logical:review-model"
     assert capability.config.timeout_seconds == 120.0
@@ -209,8 +213,8 @@ def test_agent_spec_registers_shell_review_without_global_registry_mutation() ->
 def test_agent_spec_rejects_duplicate_shell_review_and_run_source_injection() -> None:
     duplicate = AgentSpec(
         capabilities=[
-            {"name": "ToolReviewCapability", "arguments": {"model": "logical:one"}},
-            {"name": "ToolReviewCapability", "arguments": {"model": "logical:two"}},
+            {"name": "ToolPermissionsCapability", "arguments": {"review": {"model": "logical:one"}}},
+            {"name": "ToolPermissionsCapability", "arguments": {"review": {"model": "logical:two"}}},
         ]
     )
     with pytest.raises(DefinitionError) as duplicate_error:
@@ -226,7 +230,7 @@ def test_agent_spec_rejects_duplicate_shell_review_and_run_source_injection() ->
         executable.stream(
             "go",
             bindings=RunBindings.embedded(
-                capabilities=(ToolReviewCapability(ToolReviewConfig(model="logical:review")),)
+                capabilities=(ToolPermissionsCapability(review=ToolReviewConfig(model="logical:review")),)
             ),
         )
     assert source_error.value.code == "capability_scope_invalid"
@@ -271,7 +275,10 @@ async def test_shell_review_model_uses_builder_gateway_provider_factory(
         model=_tool_model({"command": "printf safe"}),
         capabilities=(
             Capability(tools=[HarnessTool(shell_exec, harness_metadata=_metadata())], id="shell-tools"),
-            ToolReviewCapability(ToolReviewConfig(model="company@openai:gpt-5.6-luna")),
+            ToolPermissionsCapability(
+                ToolPermissions(rules={"environment.shell_exec": "review"}),
+                review=ToolReviewConfig(model="company@openai:gpt-5.6-luna"),
+            ),
         ),
     )
     result = await executable.run(
@@ -651,7 +658,7 @@ def test_plugin_cannot_contribute_reserved_shell_review_capability() -> None:
             return "shell-review-injector"
 
         def get_capabilities(self):
-            return (ToolReviewCapability(ToolReviewConfig(model="logical:review")),)
+            return (ToolPermissionsCapability(review=ToolReviewConfig(model="logical:review")),)
 
     with pytest.raises(DefinitionError) as error:
         HarnessBuilder().build(

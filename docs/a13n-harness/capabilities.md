@@ -28,7 +28,7 @@ Capability presence does not itself authorize external work. Tools that cross a 
 
 `AgentSpec.capabilities` is the declarative feature-selection surface. It can select native Pydantic AI Capability types, the closed set of Harness types supported for declarative reconstruction, and exact custom types authorized by the current Host. It does not select Harness middleware plugins, Environment run extensions, Providers, credentials, policies, or live clients.
 
-For example, `ToolReviewCapability` is a Harness-owned declarative type and can be selected directly as shown in [Shell Command Review](#shell-command-review). Most first-party Harness features are composed as concrete definition or run instances because they accept typed collaborators or code-first configuration that does not belong in portable data.
+For example, `ToolPermissionsCapability` is a Harness-owned declarative type and can be selected directly as shown in [Shell Command Review](#shell-command-review). Most first-party Harness features are composed as concrete definition or run instances because they accept typed collaborators or code-first configuration that does not belong in portable data.
 
 ### Authorize a custom declarative type
 
@@ -101,7 +101,7 @@ The [integration package example](https://github.com/converge-ai-labs/agent-foun
 | `WorkspaceOutlineCapability`   | Bounded metadata-only file outline from the current Environment                             | Environment file facet                                         |
 | `FileContextCapability`        | Run-frozen `AGENTS.md` and explicit file contents                                           | Environment file facet                                         |
 | `DynamicEnvironmentCapability` | File and shell Toolset composition, current mount context, and mount-change notices         | Environment mount; managed calls also need current policy      |
-| `ToolReviewCapability`         | Optional risk review for local tools, with shell input specialization                       | Fresh invocation policy still authorizes every managed call    |
+| `ToolPermissionsCapability`    | Stable-ID permissions and optional risk review, with shell input specialization             | Fresh invocation policy still authorizes every managed call    |
 | `SkillsCapability`             | Explicit Skill discovery, selection, instructions, and paths                                | Entered Environment and optional `SkillSelectionRunCapability` |
 | `WorkingStateCapability`       | Task and note tools plus model-context projection                                           | Optional `TaskStateRunCapability` in provider mode             |
 | `Mem0Capability`               | One bounded automatic recall plus optional search, list, and explicit-add tools             | Borrowed `AsyncMemoryClient`, or `MEM0_API_KEY` per run        |
@@ -173,11 +173,11 @@ See [Context and memory](context-and-memory.md#mem0-long-term-memory) for config
 
 ## Tool permissions and general review
 
-Use `ToolPermissionsCapability` for stable-ID `allow`, `deny`, `ask`, and `review` rules, and `ToolReviewCapability` for a model-backed or custom reviewer. Both are also available as declarative `AgentSpec` types. [Tool permissions](managed-tools.md#select-tool-permissions) covers configuration, custom instructions, reviewer implementations, approval provenance, result events, and usage. Ordinary Pydantic tools and local MCP targets use the same gate without requiring managed metadata.
+Use one `ToolPermissionsCapability` for stable-ID `allow`, `deny`, `ask`, and `review` rules together with an optional model-backed or custom reviewer. It is also available as a declarative `AgentSpec` type; `inherit` resolves the tool's declared default. [Tool permissions](managed-tools.md#select-tool-permissions) covers configuration, custom instructions, reviewer implementations, approval provenance, result events, and usage. Ordinary Pydantic tools and local MCP targets use the same gate without requiring managed metadata.
 
 ## Shell Command Review
 
-Shell review is a specialization of `ToolReviewCapability`, not a second Capability. To review only shell launches, select their permission mode explicitly:
+Shell review is an optional function of `ToolPermissionsCapability`, not a separate Capability. To review only shell launches, select their permission mode explicitly:
 
 ```python
 from a13n_harness import AgentSpec
@@ -187,28 +187,23 @@ agent_spec = AgentSpec(
         {
             "name": "ToolPermissionsCapability",
             "arguments": {
-                "default": "allow",
+                "default": "inherit",
                 "rules": {"environment.shell_exec": "review"},
-            },
-        },
-        {
-            "name": "ToolReviewCapability",
-            "arguments": {
-                "model": "gateway@openai-responses:gpt-5.4-mini",
-                "risk_threshold": "extra_high",
-                "on_flagged": "deny",
-                "timeout_seconds": 20,
+                "review": {
+                    "model": "gateway@openai-responses:gpt-5.4-mini",
+                    "risk_threshold": "extra_high",
+                    "on_flagged": "deny",
+                    "timeout_seconds": 20,
+                },
             },
         },
     ]
 )
 ```
 
-Without the explicit permission restriction, all locally executable tools default to review. The single reviewer Agent and common prompt assess risk and reason; runtime policy chooses the action. Shell inputs separate the command from working directory, timing, Environment alias, and environment variable names (never values). Other tools retain their structured schema and arguments. Compact previous reviews and action observations provide context, never authorization or automatic risk reduction.
+Without an explicit review permission or trusted tool default, all tools default to `allow` without review. Installing a reviewer or defining its risk rules alone does not activate it. The single reviewer Agent and common prompt assess risk and reason; runtime policy chooses the action. Shell inputs separate the command from working directory, timing, Environment alias, and environment variable names (never values). Other tools retain their structured schema and arguments. Compact previous reviews and action observations provide context, never authorization or automatic risk reduction.
 
 The Harness defaults to `extra_high` triggering `deny`; configure `on_flagged: approval_required` to ask instead. Non-timeout failures follow `on_error` (default `approval_required`, or `deny` or explicit `allow`). A reviewer timeout always denies before dispatch, regardless of error policy or an earlier approval. Hosts separately own human interaction timeouts. See [reviewer configuration](managed-tools.md#configure-or-replace-the-reviewer) for per-tool rules and custom reviewers.
-
-The core `ShellReviewCapability` and shell-specific review types have been removed. Use `ToolReviewCapability`, `ToolReviewer`, and the shared risk types. Only Harness UI accepts the old configuration name as an alias; it translates legacy `on_error: skip` to `allow`. Legacy `on_flagged: skip` is not a shared policy action: use permission `allow` to skip review intentionally.
 
 ## Working State
 

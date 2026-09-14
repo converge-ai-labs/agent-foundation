@@ -134,7 +134,7 @@ CodeAct is enabled by default, providing the Harness's restricted Python `run_co
 
 ### Approvals and questions
 
-New subscription starter Agents with review enabled use `ToolReviewCapability`, a global `extra_high` threshold, `on_flagged: approval_required`, and `on_error: allow`. Non-timeout reviewer failures alone do not open approval; other tool-policy requirements still apply. Existing configuration files are not rewritten.
+Setup initializes the root `security.shell_review` shortcut for shell launches with an `extra_high` threshold and approval on flagged calls. It applies across Agents, including API-key connections. Non-timeout reviewer failures alone do not open approval; other tool-policy requirements still apply. Existing root settings and Agent files are preserved. Disabling the shortcut leaves explicit Agent policies untouched. See [shell review configuration](configuration-recipes.md#configure-tool-review).
 
 Approval offers **1. Approve once**, **2. Deny**, and **3. Deny with reason**. Choose by number or arrow keys and Enter. The third option opens a text editor; Enter submits the reason, Alt+Enter adds a line, and Esc or `/cancel` returns to choices. Nothing is preselected, and ordinary free text cannot approve. Shell review displays risk and reason before the highlighted command; generic tools retain ordinary presentation. `/review request-id` inspects retained details.
 
