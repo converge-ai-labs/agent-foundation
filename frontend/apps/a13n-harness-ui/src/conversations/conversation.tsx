@@ -22,7 +22,7 @@ import { Discussion } from "./comments";
 import { useHistory, useThread } from "./queries";
 import { FocusDisplay, showFocusedOutput, watchThread } from "./stream";
 import { LiveOutput, SavedEntry } from "./transcript";
-import { savedTools } from "./tool-presentation";
+import { savedToolGroups } from "./tool-presentation";
 import styles from "./conversation.module.css";
 
 export function ConversationPage(props: {
@@ -122,7 +122,7 @@ function Conversation({
         .flatMap((page) => page.entries) ?? [],
     [history.data],
   );
-  const toolViews = useMemo(() => savedTools(entries), [entries]);
+  const toolGroups = useMemo(() => savedToolGroups(entries), [entries]);
   const continuation = history.data?.pages[0]?.continuation_id;
   const operation = detail.data?.thread.root_activity;
   const [lastReceipt, setLastReceipt] = useState<string | null>(null);
@@ -343,7 +343,7 @@ function Conversation({
               <SavedEntry
                 key={`${continuation}:${entry.position}`}
                 entry={entry}
-                toolViews={toolViews}
+                toolGroups={toolGroups}
                 threadId={threadId}
               />
             ))}

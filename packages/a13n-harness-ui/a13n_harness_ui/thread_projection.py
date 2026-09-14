@@ -16,6 +16,8 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    NativeToolCallPart,
+    NativeToolReturnPart,
     RetryPromptPart,
     SystemPromptPart,
     TextPart,
@@ -53,6 +55,7 @@ from a13n_harness_ui.surfaces import (
     TranscriptPage,
     TranscriptPart,
 )
+from a13n_harness_ui.tool_evidence import applied_edit
 
 _MAX_CURSOR_BYTES = 3072
 _MAX_TEXT = 64 * 1024
@@ -462,6 +465,7 @@ def _request_parts(part: object) -> tuple[TranscriptPart, ...]:
                 tool_name=part.tool_name,
                 tool_call_id=part.tool_call_id,
                 outcome=part.outcome,
+                applied_edit=applied_edit(part),
                 value=value,
                 value_omitted=omitted,
             ),
@@ -486,10 +490,22 @@ def _response_part(part: object) -> TranscriptPart:
         )
     if isinstance(part, ThinkingPart):
         return TranscriptPart(kind="thinking", text=_bounded_text(part.content))
-    if isinstance(part, ToolCallPart):
+    if isinstance(part, NativeToolReturnPart):
+        value, omitted = _bounded_json(part.content)
+        return TranscriptPart(
+            kind="tool_result",
+            tool_name=part.tool_name,
+            tool_call_id=part.tool_call_id,
+            provider=part.provider_name or "provider",
+            outcome=part.outcome,
+            value=value,
+            value_omitted=omitted,
+        )
+    if isinstance(part, (ToolCallPart, NativeToolCallPart)):
         value, omitted = _bounded_json(part.args)
         return TranscriptPart(
             kind="tool_call",
+            provider=(part.provider_name or "provider") if isinstance(part, NativeToolCallPart) else None,
             tool_name=part.tool_name,
             tool_call_id=part.tool_call_id,
             value=value,

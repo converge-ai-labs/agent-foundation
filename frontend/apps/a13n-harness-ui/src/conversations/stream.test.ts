@@ -493,3 +493,67 @@ it("folds native applied edits and failed results by exact ID without guessing p
     [...display.blocks.values()].filter((block) => block.diagnostic),
   ).toHaveLength(0);
 });
+
+it("folds provider-native search snapshots once, retaining final arguments and separate local call identity", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "cursor-ready" }));
+  let sequence = 101;
+  const emit = (event_type: string, payload: Record<string, unknown>) =>
+    display.accept(
+      focusFrame({
+        kind: "event",
+        resume_cursor: `cursor-${sequence}`,
+        event: {
+          sequence: sequence++,
+          epoch: "epoch-one",
+          run_kind: "root",
+          thread_id: "thread-one",
+          root_thread_id: "thread-one",
+          run_id: "run-one",
+          event_type,
+          payload,
+        },
+      }),
+    );
+  const part = {
+    part_kind: "builtin-tool-call",
+    tool_name: "web_search",
+    tool_call_id: "same",
+    provider_name: "openai",
+    args: null,
+  };
+  const native = (name: string, value: Record<string, unknown>) =>
+    emit("CUSTOM", {
+      name: `a13n.pydantic_ai.${name}`,
+      value: { event: { index: 0, part: value } },
+    });
+  native("part_start", part);
+  expect([...display.blocks.values()][0].result).toBeUndefined();
+  native("part_end", {
+    ...part,
+    args: { type: "search", query: "final query" },
+  });
+  expect([...display.blocks.values()][0].text).toContain("final query");
+  expect([...display.blocks.values()][0].result).toBeUndefined();
+  const returned = {
+    ...part,
+    part_kind: "builtin-tool-return",
+    content: { status: "completed", sources: [] },
+    outcome: "success",
+  };
+  native("part_start", returned);
+  native("part_end", returned);
+  emit("TOOL_CALL_START", {
+    tool_call_id: "same",
+    tool_call_name: "web_search",
+  });
+  expect(display.blocks.size).toBe(2);
+  const provider = [...display.blocks.values()].find((block) => block.provider);
+  expect(provider?.outcome).toBe("success");
+  expect(provider?.text).toContain("final query");
+  expect(provider?.result).toContain("completed");
+  expect([...display.blocks.values()].every((block) => !block.diagnostic)).toBe(
+    true,
+  );
+});

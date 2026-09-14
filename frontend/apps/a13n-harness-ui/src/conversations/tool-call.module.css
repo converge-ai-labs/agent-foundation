@@ -1,10 +1,14 @@
 .tool {
   min-width: 0;
-  margin: 0.4rem 0;
+  margin: 0.25rem 0;
   font-size: 0.8125rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.25rem;
 }
 .tool [data-slot="disclosure-surface"] {
-  background: color-mix(in srgb, var(--muted) 40%, transparent);
+  background: color-mix(in srgb, var(--muted) 25%, transparent);
 }
 .title {
   display: flex;
@@ -27,7 +31,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--font-mono);
   font-size: 0.75rem;
   color: var(--muted-foreground);
 }
@@ -39,7 +42,7 @@
   color: var(--destructive);
 }
 .fileLink {
-  margin: 0.2rem 0 0 1.7rem;
+  margin: 0;
   color: var(--muted-foreground);
   font-size: 0.6875rem;
   height: 1.5rem;
@@ -143,4 +146,102 @@
   .title {
     gap: 0.35rem;
   }
+  .tool {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .actions {
+    justify-content: flex-start;
+    padding-left: 1.75rem;
+  }
+}
+
+.group {
+  display: block;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  min-height: 2.25rem;
+}
+.threadLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  max-width: 15rem;
+  overflow-wrap: anywhere;
+  color: var(--foreground);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.threadLink svg,
+.resources svg {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex-shrink: 0;
+}
+.operations {
+  display: grid;
+  gap: 1.25rem;
+}
+.operation {
+  min-width: 0;
+}
+.operation + .operation {
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+.operation > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.operation > header > span:not(.operationName) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+.operationName {
+  font-weight: 500;
+}
+.resources {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.5rem;
+  max-height: 20rem;
+  overflow: auto;
+}
+.resources li {
+  display: grid;
+  gap: 0.15rem;
+  overflow-wrap: anywhere;
+}
+.resources a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.selection {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  margin: 0;
+  font-size: 0.75rem;
+}
+.selection dt {
+  color: var(--muted-foreground);
+}
+.selection dd {
+  margin: 0;
+  overflow-wrap: anywhere;
 }

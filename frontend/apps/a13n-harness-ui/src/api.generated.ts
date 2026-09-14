@@ -1273,6 +1273,23 @@ export interface components {
              */
             capability_warnings?: string[];
         };
+        /**
+         * AppliedEditView
+         * @description Observed edit content, or an explicit omission when retention bounds were reached.
+         */
+        AppliedEditView: {
+            /** File Path */
+            file_path: string;
+            /** Before */
+            before?: string | null;
+            /** After */
+            after?: string | null;
+            /**
+             * Omitted
+             * @default false
+             */
+            omitted?: boolean;
+        };
         /** ApprovalRequestView */
         ApprovalRequestView: {
             /** Request Id */
@@ -3502,6 +3519,9 @@ export interface components {
             tool_call_id?: string | null;
             /** Outcome */
             outcome?: ("success" | "failed" | "denied" | "interrupted") | null;
+            /** Provider */
+            provider?: string | null;
+            applied_edit?: components["schemas"]["AppliedEditView"] | null;
             value?: components["schemas"]["JsonValue"] | null;
             /**
              * Value Omitted

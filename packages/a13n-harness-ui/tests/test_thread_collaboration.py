@@ -181,6 +181,9 @@ async def test_real_model_tools_discover_delegate_cross_project_and_report_to_id
 
         async def model(messages, info):
             instructions.append(info.instructions or "")
+            assert f"Your current Thread: {thread_id}" in (info.instructions or "")
+            expected_project = "project-main" if thread_id == origin_id else "project-other"
+            assert f"Your captured Project: {expected_project}" in (info.instructions or "")
             step = steps.get(thread_id, 0)
             steps[thread_id] = step + 1
             for message in messages:
@@ -210,6 +213,10 @@ async def test_real_model_tools_discover_delegate_cross_project_and_report_to_id
                     yield "Integrated worker findings"
             elif step == 0:
                 assert origin_id in str(messages)
+                assert "Requesting Project: project-main" in str(messages)
+                assert f"send_thread_message(thread_id={origin_id!r}" in str(messages)
+                assert "For clarification, decisions or blockers" in str(messages)
+                assert "When finished" in str(messages)
                 await origin_idle.wait()
                 yield {
                     0: DeltaToolCall(
@@ -309,6 +316,9 @@ async def test_sidekick_agent_inheritance_and_model_override_use_normal_run_comp
         assert original.agent.model_id == "model-primary"
         assert original.webui_sidekick.agent == sidekick.get("agent")
         assert original.webui_sidekick.model == sidekick.get("model")
+        assert f"Your current Thread: {source.thread_id}" in instructions[0]
+        assert "Your captured Project: project-main" in instructions[0]
+        assert "Answer its questions through that same tool" in instructions[0]
         assert f"agent_id={expected_agent!r}" in instructions[0]
         if "model" in sidekick:
             assert f"model_id={sidekick['model']!r}" in instructions[0]
@@ -354,3 +364,113 @@ async def test_terminal_does_not_receive_sidekick_instructions(tmp_path: Path, m
         assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
     assert "Sidekick is enabled" not in (seen[0].instructions or "")
     assert "list_agents" not in {tool.name for tool in seen[0].function_tools}
+
+
+async def test_worker_can_ask_requester_receive_answer_and_report_results(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = configuration(tmp_path)
+    requester_id = ""
+    worker_id = ""
+    worker_idle, requester_idle = Event(), Event()
+    steps: dict[str, int] = {}
+    returned: dict[str, dict] = {}
+
+    async def resolve(self, context, model_id):
+        thread_id = context.deps.thread_id
+
+        async def model(messages, info):
+            nonlocal worker_id
+            step = steps.get(thread_id, 0)
+            steps[thread_id] = step + 1
+            for message in messages:
+                for part in message.parts:
+                    if isinstance(part, ToolReturnPart):
+                        returned[part.tool_call_id] = part.content
+            if thread_id == requester_id:
+                if step == 0:
+                    assert "Which format should I use?" in str(messages)
+                    await worker_idle.wait()
+                    target, text, call = worker_id, "Use Markdown.", "answer"
+                else:
+                    yield "Integrated report" if step == 2 else "Answer sent"
+                    return
+            else:
+                worker_id = thread_id
+                if step == 0:
+                    assert "Requesting Project: project-main" in str(messages)
+                    assert f"send_thread_message(thread_id={requester_id!r}" in str(messages)
+                    target, text, call = requester_id, "Which format should I use?", "question"
+                elif step == 2:
+                    assert "Use Markdown." in str(messages)
+                    await requester_idle.wait()
+                    target, text, call = requester_id, "Finished the Markdown report; validation passed.", "report"
+                else:
+                    yield "Message sent"
+                    return
+            yield {
+                0: DeltaToolCall(
+                    name="send_thread_message",
+                    json_args=json.dumps({"thread_id": target, "message": text}),
+                    tool_call_id=call,
+                )
+            }
+
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    settings = _settings(tmp_path / "data").model_copy(update={"pricing_auto_update": False})
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui", instrumentation=None) as app:
+        requester_id = (await app.create_thread()).thread_id
+        with fail_after(15):
+            worker = await controller(app).create_thread(
+                source_thread_id=requester_id, prompt="Prepare a report", title=None, agent_id=None
+            )
+            assert (
+                await app.wait_root_operation(worker["receipt"]["receipt_id"])
+            ).status is RootOperationStatus.completed
+            worker_idle.set()
+            assert (
+                await app.wait_root_operation(returned["question"]["receipt"]["receipt_id"])
+            ).status is RootOperationStatus.completed
+            requester_idle.set()
+            assert (
+                await app.wait_root_operation(returned["answer"]["receipt"]["receipt_id"])
+            ).status is RootOperationStatus.completed
+            assert (
+                await app.wait_root_operation(returned["report"]["receipt"]["receipt_id"])
+            ).status is RootOperationStatus.completed
+        assert all(result["ok"] for result in returned.values())
+        requester_history = (await app.get_thread_transcript(thread_id=requester_id)).model_dump_json()
+        worker_history = (await app.get_thread_transcript(thread_id=worker_id)).model_dump_json()
+        assert "Which format should I use?" in requester_history and "Integrated report" in requester_history
+        assert "Use Markdown." in worker_history and "validation passed" in worker_history
+
+
+@pytest.mark.parametrize("project_id", [None, "project-captured"])
+async def test_requester_identity_uses_run_capture_not_future_thread_selections(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, project_id: str | None
+) -> None:
+    root = configuration(tmp_path)
+    captured = SimpleNamespace(project_id=project_id, project_roots=("/captured/root",), webui_sidekick=None)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root) as app:
+        source = await app.create_thread()
+        prompts = []
+
+        async def submit(**kwargs):
+            prompts.append(kwargs["prompt"])
+            raise ThreadError("Admission rejected", code="test_rejected")
+
+        monkeypatch.setattr(app._root_runs, "submit_prompt", submit)
+        capability = ThreadCollaborationCapability(
+            controller=controller(app), source_thread_id=source.thread_id, composition=captured
+        )
+        context = SimpleNamespace(deps=SimpleNamespace(thread_id=source.thread_id))
+        instructions = capability.get_instructions()
+        assert f"Your current Thread: {source.thread_id}" in instructions
+        assert f"Your captured Project: {project_id or 'No Project'}" in instructions
+        assert "/captured/root" in instructions
+        result = await capability.create_thread(context, prompt="Independent work")
+        assert result["ok"] is False and result["thread_id"] != source.thread_id
+        assert f"Requesting Project: {project_id or 'No Project'}" in prompts[0]
+        assert "Requesting Project: project-main" not in prompts[0]

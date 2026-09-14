@@ -1,5 +1,6 @@
 import { createContext, memo, useContext, useMemo, useState } from "react";
 import { Button, DisclosureSection } from "a13n-ui";
+import { Link } from "react-router";
 import {
   ArrowSquareOut,
   Check,
@@ -10,10 +11,14 @@ import {
   MagnifyingGlass,
   Code,
   Wrench,
+  Globe,
+  Chats,
 } from "@phosphor-icons/react";
 import { structuredPatch } from "diff";
 import {
   describeTool,
+  activityKind,
+  activitySummary,
   hostLookupPath,
   parsed,
   record,
@@ -159,9 +164,18 @@ function ToolDetails({ tool }: { tool: ToolView }) {
           {info.errorText}
         </p>
       )}
+      {tool.provider && <small>Provider-run tool · {tool.provider}</small>}
+      <CollaborationDetails tool={tool} />
+      {tool.editOmitted && (
+        <p role="status">
+          Applied edit content was not retained because the saved preview limit
+          was reached. Current Host content is not a historical diff.
+        </p>
+      )}
       {tool.edit && <EditDiff edit={tool.edit} />}
       {!tool.edit &&
         info.kind === "edit" &&
+        !tool.editOmitted &&
         replacements.some(
           (edit) =>
             typeof edit.old_string === "string" &&
@@ -277,19 +291,170 @@ function ToolDetails({ tool }: { tool: ToolView }) {
     </div>
   );
 }
-export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
+const toolIcons = {
+  file: FileText,
+  edit: PencilSimple,
+  shell: TerminalWindow,
+  search: MagnifyingGlass,
+  web: Globe,
+  thread: Chats,
+  code: Code,
+  tool: Wrench,
+};
+
+function ToolActions({ tool }: { tool: ToolView }) {
   const info = describeTool(tool);
   const openFile = useContext(OpenHostFile);
   const path = hostLookupPath(info.path);
+  if (!info.threadId && !(openFile && path)) return null;
+  return (
+    <div className={styles.actions}>
+      {info.threadId && (
+        <Link
+          className={styles.threadLink}
+          to={`/threads/${encodeURIComponent(info.threadId)}`}
+          title={info.threadId}
+        >
+          <ArrowSquareOut aria-hidden="true" />
+          {info.threadTitle || "Open conversation"}
+        </Link>
+      )}
+      {openFile && path && (
+        <Button
+          className={styles.fileLink}
+          size="sm"
+          variant="ghost"
+          title="Look up this exact path on the WebUI server/container, not the Agent Environment. Opens current Host content or your existing private buffer."
+          onClick={() => openFile(path)}
+        >
+          <ArrowSquareOut />
+          Open on host
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function CollaborationDetails({ tool }: { tool: ToolView }) {
+  const info = describeTool(tool);
+  const { args, result } = info;
+  const resources = ["threads", "projects", "agents", "models"].find(
+    (key) => tool.name === `list_${key}` && Array.isArray(result[key]),
+  );
+  const project =
+    tool.name === "get_project" && record(result.project)
+      ? result.project
+      : undefined;
+  const selection = [
+    ["Project", args.project_id === null ? "No project" : args.project_id],
+    ["Agent", args.agent_id],
+    ["Model override", args.model_id],
+  ].filter(([, value]) => typeof value === "string");
+  return (
+    <>
+      {info.kind === "thread" && (
+        <>
+          {selection.length > 0 && (
+            <dl className={styles.selection}>
+              {selection.map(([label, value]) => (
+                <div key={String(label)}>
+                  <dt>{String(label)}</dt>
+                  <dd>{String(value)}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          {typeof args.prompt === "string" && (
+            <CodeContent title="Task" value={args.prompt} />
+          )}
+          {typeof args.message === "string" && (
+            <CodeContent title="Message" value={args.message} />
+          )}
+          {[
+            "create_thread",
+            "run_thread",
+            "send_thread_message",
+            "steer_thread",
+          ].includes(tool.name) && (
+            <small>
+              Acceptance is not completion or saved delivery. Open the
+              conversation to inspect progress; do not blindly retry an
+              uncertain operation.
+            </small>
+          )}
+        </>
+      )}
+      {resources && (
+        <section aria-label={`Discovered ${resources}`}>
+          <h4>
+            {typeof result.total === "number"
+              ? `${result.total} ${resources} found`
+              : `Available ${resources}`}
+          </h4>
+          <ul className={styles.resources}>
+            {(result[resources] as unknown[])
+              .filter(record)
+              .map((resource, index) => {
+                const id =
+                  typeof resource.thread_id === "string"
+                    ? resource.thread_id
+                    : typeof resource.id === "string"
+                      ? resource.id
+                      : "";
+                const name =
+                  typeof resource.title === "string"
+                    ? resource.title
+                    : typeof resource.name === "string"
+                      ? resource.name
+                      : id;
+                return (
+                  <li key={id || index}>
+                    {resources === "threads" && id ? (
+                      <Link to={`/threads/${encodeURIComponent(id)}`}>
+                        {name || id}
+                        <ArrowSquareOut aria-hidden="true" />
+                      </Link>
+                    ) : resources === "projects" && id ? (
+                      <Link to={`/projects/${encodeURIComponent(id)}`}>
+                        {name || id}
+                      </Link>
+                    ) : (
+                      <span>{name || id}</span>
+                    )}
+                    <small>
+                      {[
+                        id !== name ? id : "",
+                        resource.model_id,
+                        resource.route,
+                      ]
+                        .filter((value) => typeof value === "string" && value)
+                        .join(" · ")}
+                    </small>
+                  </li>
+                );
+              })}
+          </ul>
+          {typeof result.next_cursor === "string" && (
+            <small>More results available; this is a loaded page.</small>
+          )}
+        </section>
+      )}
+      {project && (
+        <section>
+          <h4>{typeof project.name === "string" ? project.name : "Project"}</h4>
+          {Array.isArray(project.roots) && (
+            <CodeContent title="Project roots" value={project.roots} />
+          )}
+        </section>
+      )}
+    </>
+  );
+}
+
+export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
+  const info = describeTool(tool);
   const [expanded, setExpanded] = useState(false);
-  const Icon = {
-    file: FileText,
-    edit: PencilSimple,
-    shell: TerminalWindow,
-    search: MagnifyingGlass,
-    code: Code,
-    tool: Wrench,
-  }[info.kind];
+  const Icon = toolIcons[info.kind];
   return (
     <section className={styles.tool} data-tool-id={tool.id}>
       <DisclosureSection
@@ -304,24 +469,94 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
         }
         summary={
           <span className={info.failed ? styles.error : styles.phase}>
-            {info.phase}
+            {info.phase === "Result received" ? "" : info.phase}
           </span>
         }
       >
         {expanded && <ToolDetails tool={tool} />}
       </DisclosureSection>
-      {openFile && path && (
-        <Button
-          className={styles.fileLink}
-          size="sm"
-          variant="ghost"
-          title="Look up this exact path on the WebUI server/container, not the Agent Environment. Opens current Host content or your existing private buffer."
-          onClick={() => openFile(path)}
-        >
-          <ArrowSquareOut />
-          Open on host
-        </Button>
-      )}
+      <ToolActions tool={tool} />
+    </section>
+  );
+});
+
+/** One quiet disclosure for adjacent activity; expanding shows details without a second per-call accordion. */
+export const ToolActivity = memo(function ToolActivity({
+  tools,
+}: {
+  tools: ToolView[];
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const kind = activityKind(tools[0]);
+  if (!kind)
+    return (
+      <>
+        {tools.map((tool) => (
+          <ToolCall key={tool.id} tool={tool} />
+        ))}
+      </>
+    );
+  const info = activitySummary(tools);
+  const Icon = {
+    explore: MagnifyingGlass,
+    shell: TerminalWindow,
+    web: Globe,
+    edit: PencilSimple,
+  }[kind];
+  return (
+    <section
+      className={`${styles.tool} ${styles.group}`}
+      data-activity={kind}
+      data-tool-id={tools[0].id}
+    >
+      <DisclosureSection
+        open={expanded}
+        onOpenChange={setExpanded}
+        title={
+          <span className={styles.title}>
+            <Icon aria-hidden="true" />
+            <strong>{info.title}</strong>
+          </span>
+        }
+        summary={
+          info.status ? (
+            <span className={info.issue ? styles.error : styles.phase}>
+              {info.status}
+            </span>
+          ) : undefined
+        }
+      >
+        {expanded && (
+          <div className={styles.operations}>
+            {tools.map((tool) => {
+              const detail = describeTool(tool);
+              return (
+                <section
+                  key={tool.id}
+                  className={styles.operation}
+                  data-operation-id={tool.id}
+                >
+                  <header>
+                    <span className={styles.operationName}>{detail.label}</span>
+                    {detail.summary && (
+                      <span title={detail.summary}>{detail.summary}</span>
+                    )}
+                    {detail.phase !== "Result received" && (
+                      <small
+                        className={detail.failed ? styles.error : styles.phase}
+                      >
+                        {detail.phase}
+                      </small>
+                    )}
+                  </header>
+                  <ToolActions tool={tool} />
+                  <ToolDetails tool={tool} />
+                </section>
+              );
+            })}
+          </div>
+        )}
+      </DisclosureSection>
     </section>
   );
 });

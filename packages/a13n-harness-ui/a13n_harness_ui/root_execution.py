@@ -71,6 +71,7 @@ from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
 from a13n_harness_ui.surfaces import ApprovalDecision, ExternalToolResult, RunModelOverrides, ThreadDeferredResponse
 from a13n_harness_ui.thread_files import ThreadFiles
 from a13n_harness_ui.thread_service import ThreadService
+from a13n_harness_ui.tool_evidence import ToolEvidenceCollector
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,6 +252,7 @@ class RootRunExecutor:
                 deferred_resume=deferred_resume,
             )
             excerpts = ExcerptCollector(thread.excerpt, run_id=stream.run_id)
+            tool_evidence = ToolEvidenceCollector(run_id=stream.run_id)
             if on_stream is not None:
                 await on_stream(stream, input_files)
             observer = HarnessAguiObserver()
@@ -264,6 +266,7 @@ class RootRunExecutor:
                     async for item in stream:
                         record_skill_event(item)
                         excerpts.observe(item)
+                        tool_evidence.observe(item)
                         await self._store.usage.observe(thread_id=thread.thread_id, item=item)
                         try:
                             await self._publish_live(

@@ -121,6 +121,7 @@ class ThreadToolController:
         agent_id: str | None,
         project_id: str | None = "current",
         model_id: str | None = None,
+        source_composition: ResolvedRunComposition | None = None,
     ) -> dict[str, Any]:
         model_overrides = RunModelOverrides(model_id=model_id) if model_id is not None else None
         source = await self._projections.detail(source_thread_id)
@@ -141,10 +142,17 @@ class ThreadToolController:
                 agent_id=agent_id,
             )
         created = await self._create_thread(defaults=defaults, title=title)
+        requester_project = (
+            source_composition.project_id if source_composition is not None else configuration.project_id
+        )
         prompt = (
-            f"Task from Thread {source_thread_id}. This is an independent root Thread, not a subagent.\n"
-            f"Report findings, blockers and final results to {source_thread_id} with send_thread_message. "
-            "Do not send acknowledgements back and forth or delegate the same task back to its requester.\n\n"
+            f"Task from Thread {source_thread_id}. Requesting Project: {requester_project or 'No Project'}.\n"
+            "This is an independent root Thread, not a delegated child. "
+            f"For clarification, decisions or blockers, use send_thread_message(thread_id={source_thread_id!r}, "
+            "message=...) to ask the requester. The requester can reply with the same tool targeting your Thread. "
+            "When finished, use that tool to report your findings, changes, validation and remaining issues to the requester. "
+            "Sending a message does not wait for an answer; do not invent a reply. "
+            "Do not send acknowledgement-only replies or delegate the same task back to its requester.\n\n"
             f"{prompt}"
         )
         try:
@@ -203,13 +211,22 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
             raise ValueError("source_thread_id must not be blank")
 
     def get_instructions(self) -> str:
-        instructions = (
-            "Use get_thread() to inspect your own Thread and its Project; current_run describes the captured "
+        identity = f"Your current Thread: {self.source_thread_id}. "
+        if self.composition is not None:
+            identity += (
+                f"Your captured Project: {self.composition.project_id or 'No Project'}. "
+                f"Project roots: {list(self.composition.project_roots)!r}. "
+                "These are this Run's captured selections; no discovery call is needed to identify yourself.\n"
+            )
+        instructions = identity + (
+            "Use get_thread() to inspect saved history and status; current_run describes the captured "
             "configuration, while thread.configuration describes next-Run selections. "
             "list_projects, list_agents and list_models discover accepted resources, not proven model connectivity. "
             "Cross-Thread work creates independent root conversations, not delegated child executions. "
             "create_thread and run_thread return admission receipts, not completed work. Inspect progress with get_thread. "
-            "send_thread_message reports to another root: it steers an active operation or starts an idle Thread. "
+            "Use send_thread_message(thread_id=..., message=...) to ask another root a question, reply to it, "
+            "or report results: it steers an active operation or starts an idle Thread. Incoming tasks and messages "
+            "identify the source Thread; target that ID to answer. Sending does not wait for a reply. "
             "A positive result means acceptance only, not processing or saved delivery. A rejected or uncertain send "
             "must be reconciled, not blindly retried. Do not create acknowledgement loops or delegate a task back to its requester."
         )
@@ -221,7 +238,9 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
                 f"{model_selection}, prompt=...). An omitted Sidekick Agent inherits your current Agent; its Model "
                 "override applies only to the requested Run. Give a bounded task and necessary context; inspect "
                 "results before integrating them. Other configured Agents and Models remain selectable. "
-                "If you are already executing another Thread's task, complete it and report to the requester "
+                "The created task identifies your Thread and Project and tells the worker how to ask you questions "
+                "and report back through send_thread_message. Answer its questions through that same tool. "
+                "If you are already executing another Thread's task, ask for clarification as needed, complete it and report to the requester "
                 "rather than creating another Sidekick for the same task. Do not create work merely because enabled."
             )
         return instructions
@@ -365,6 +384,7 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
                 agent_id=agent_id,
                 project_id=project_id,
                 model_id=model_id,
+                source_composition=self.composition,
             )
         except (HarnessUiError, ValueError) as exc:
             return _failure(exc, "thread_create_failed")
