@@ -28,7 +28,20 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.threadRow {
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+}
+.threadRow:has(.selected) {
+  background: var(--a13n-elevated);
+}
+.threadRow > button {
+  flex-shrink: 0;
+}
 .threadLink {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -88,24 +101,14 @@
   min-height: 0;
   height: 100%;
 }
-.header {
+.activityBar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--a13n-border);
-}
-.header h1 {
-  font-size: 18px;
-  font-weight: 500;
-  margin: 0 0 4px;
-  overflow-wrap: anywhere;
-}
-.header small {
+  font-size: 12px;
   color: var(--a13n-secondary);
 }
-.headerActions,
 .toolbar {
   display: flex;
   gap: 6px;
@@ -469,10 +472,6 @@
   padding-top: 16px;
   border-top: 1px solid var(--a13n-border);
 }
-.header small {
-  display: block;
-  line-height: 1.6;
-}
 
 .commentActions {
   display: flex;
@@ -515,4 +514,90 @@
   background: var(--background);
   padding: 0.75rem;
   resize: vertical;
+}
+
+.savedOutput {
+  position: relative;
+}
+.outputTools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--a13n-secondary);
+  margin-top: 8px;
+}
+.selectionAction {
+  position: absolute;
+  width: max-content;
+  max-width: 100%;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  background: var(--a13n-elevated);
+  border: 1px solid var(--a13n-border);
+  border-radius: 8px;
+  padding: 3px;
+  box-shadow: 0 4px 16px #0000000a;
+}
+.selectionHint {
+  display: block;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.markdown [data-comment-ids] {
+  color: inherit;
+  background: light-dark(#fff1b8, #594822);
+  border-bottom: 2px solid light-dark(#d4af42, #bd9740);
+  cursor: pointer;
+  box-decoration-break: clone;
+}
+.markdown [data-comment-ids]:hover,
+.markdown [data-comment-ids]:focus-visible {
+  background: light-dark(#ffe28a, #79602a);
+  outline: 1px solid var(--a13n-secondary);
+  outline-offset: 2px;
+}
+.inlineDiscussion {
+  width: min(360px, calc(100vw - 24px));
+  max-height: min(620px, calc(100dvh - 32px));
+  font-size: 13px;
+}
+.inlineHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.inlineHeading h2 {
+  font-size: 14px;
+  font-weight: 500;
+}
+.inlineDiscussion .commentCard,
+.inlineDiscussion .commentDraft {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+.inlineDiscussion .form h3 {
+  font-size: 13px;
+  font-weight: 500;
+}
+.inlineDiscussion .form > section + section,
+.inlineDiscussion .commentCard + .commentCard {
+  border-top: 1px solid var(--a13n-border);
+  padding-top: 12px;
+}
+
+.savedOutput {
+  color-scheme: light;
+}
+:global(.dark) .savedOutput {
+  color-scheme: dark;
+}
+
+.markdown p,
+.markdown li {
+  font-size: 14px;
+  line-height: 1.75;
 }

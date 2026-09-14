@@ -19,6 +19,7 @@ from a13n_harness.environment import EnvironmentRunExtensionFactory
 from a13n_harness.input import RunInputValue
 from a13n_harness.model_auth import GrokCredentials
 from a13n_harness.plugin_factories import HarnessPluginFactory
+from a13n_logging import get_logger
 from anyio import CancelScope, Event, Lock, create_task_group, move_on_after, sleep, to_thread
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai import BinaryContent, prices
@@ -2007,6 +2008,7 @@ class HarnessUiApp:
             )
 
     async def _stop(self) -> None:
+        get_logger(__name__).debug("Stopping App: finishing admitted operations…")
         async with self._operation_lock:
             if self._state is not AppState.ready:
                 return
@@ -2023,6 +2025,7 @@ class HarnessUiApp:
         async with self._operation_lock:
             scopes = tuple(self._operation_scopes)
             idle = self._operations_idle
+        get_logger(__name__).debug("Cancelling %d unfinished App operation(s)…", len(scopes))
         for scope in scopes:
             scope.cancel()
         with move_on_after(self._settings.shutdown_timeout_seconds):
@@ -2035,13 +2038,17 @@ class HarnessUiApp:
         self._shared_drafts.clear()
         try:
             try:
+                get_logger(__name__).debug("Closing native terminal sessions…")
                 await self._host_terminal.close()
             finally:
+                get_logger(__name__).debug("Stopping active root Runs…")
                 await self._root_runs.close(timeout_seconds=self._settings.shutdown_timeout_seconds)
         finally:
             try:
+                get_logger(__name__).debug("Stopping child Runs…")
                 await self._subagent_operator.close(timeout_seconds=self._settings.shutdown_timeout_seconds)
             finally:
+                get_logger(__name__).debug("Closing live subscriptions…")
                 with CancelScope(shield=True):
                     try:
                         await self._live_hub.close()

@@ -28,8 +28,19 @@ vi.mock("./file-view", () => ({
   FileView: ({ path }: { path: string }) => <p>Editor {path}</p>,
 }));
 vi.mock("./changes", () => ({
-  DiffView: ({ selection }: { selection: { path: string } }) => (
-    <p>Patch {selection.path}</p>
+  DiffView: ({
+    selection,
+    openFile,
+  }: {
+    selection: { path: string };
+    openFile: (path: string) => void;
+  }) => (
+    <div>
+      <p>Patch {selection.path}</p>
+      <button onClick={() => openFile("/native/deleted.txt")}>
+        Open diff file
+      </button>
+    </div>
   ),
   Changes: ({
     path,
@@ -97,7 +108,9 @@ function setup(
                 }
               : url === "/api/projects"
                 ? []
-                : { kind: "file" },
+                : url === "/api/threads/{thread_id}"
+                  ? { thread: { title: "Current conversation" } }
+                  : { kind: "file" },
         },
   );
   const transport = { client: { GET: get } } as unknown as Transport;
@@ -112,6 +125,15 @@ function setup(
         <NativeWorkspace onFocus={focus} unauthorized={vi.fn()}>
           <p data-testid="chat">Chat remains mounted {location.pathname}</p>
         </NativeWorkspace>
+        <button
+          onClick={() =>
+            navigate(
+              "/threads/current?native=changes&native_path=%2Fother-repository",
+            )
+          }
+        >
+          Open peer repository
+        </button>
         <button onClick={() => navigate("/threads/other")}>
           Another conversation
         </button>
@@ -151,15 +173,16 @@ it("native deep links, file tabs and diff selection update personal focus withou
   const { focus } = setup(
     "/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt",
   );
-  await screen.findByText("Selected /native/first.txt");
+  await screen.findByText("Editor /native/first.txt");
   await waitFor(() =>
     expect(focus).toHaveBeenLastCalledWith({
       kind: "file",
       path: "/native/first.txt",
     }),
   );
+  fireEvent.click(screen.getByRole("button", { name: "Back to explorer" }));
   fireEvent.click(screen.getByRole("button", { name: "Open second file" }));
-  await screen.findByText("Selected /native/second.txt");
+  await screen.findByText("Editor /native/second.txt");
   await waitFor(() =>
     expect(focus).toHaveBeenLastCalledWith({
       kind: "file",
@@ -167,8 +190,8 @@ it("native deep links, file tabs and diff selection update personal focus withou
     }),
   );
   fireEvent.click(screen.getByRole("button", { name: "first.txt" }));
-  await screen.findByText("Selected /native/first.txt");
-  fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+  await screen.findByText("Editor /native/first.txt");
+  fireEvent.click(screen.getByRole("button", { name: "Close file explorer" }));
   await waitFor(() => expect(focus).toHaveBeenLastCalledWith(null));
   fireEvent.click(screen.getByRole("button", { name: "Changes" }));
   fireEvent.click(screen.getByRole("button", { name: "Select staged diff" }));
@@ -190,7 +213,9 @@ it("a native deep link cannot bypass disabled sharing or trigger metadata reques
     "/?native=files&native_path=%2Fnative%2Ffirst.txt",
     false,
   );
-  await screen.findByText("Native sharing disabled by this server");
+  await waitFor(() =>
+    expect(get.mock.calls.some(([path]) => path === "/api/status")).toBe(true),
+  );
   expect(get.mock.calls.some(([path]) => path.startsWith("/api/host"))).toBe(
     false,
   );
@@ -213,7 +238,7 @@ it("a peer diff supersedes a pending file read rather than mixing repository ide
     ).toBe(true),
   );
   fireEvent.click(screen.getByRole("button", { name: "Open peer diff" }));
-  await screen.findByText("Repository /other-repository · Diff reviewed.txt");
+  await screen.findByText("Patch reviewed.txt");
   finish({ data: { kind: "directory" } });
   await waitFor(() =>
     expect(focus).toHaveBeenLastCalledWith({
@@ -223,9 +248,7 @@ it("a peer diff supersedes a pending file read rather than mixing repository ide
       comparison: "staged",
     }),
   );
-  expect(
-    screen.getByText("Repository /other-repository · Diff reviewed.txt"),
-  ).toBeTruthy();
+  expect(screen.getByText("Patch reviewed.txt")).toBeTruthy();
   expect(screen.queryByText("Opening path…")).toBeNull();
 });
 it("toolbar collapse and confirmed process removal clear terminal page presence", async () => {
@@ -257,7 +280,7 @@ it("narrow peer navigation reveals the requested native or configuration view, n
   vi.stubGlobal("matchMedia", () => ({ matches: true }));
   fireEvent.click(screen.getByRole("button", { name: "Open peer diff" }));
   await screen.findByText("Patch reviewed.txt");
-  expect(screen.queryByLabelText("File explorer")).toBeNull();
+  expect(screen.getByLabelText("File explorer")).toBeTruthy();
   expect(
     screen
       .getByRole("button", { name: "Terminal" })
@@ -295,24 +318,18 @@ it("Settings supersedes a pending file open and returning to Chat cannot be stol
   expect(screen.getByTestId("chat").parentElement?.hidden).toBe(false);
 });
 
-it("retains open file tabs through Settings and closing the explorer focuses the visible editor", async () => {
+it("retains open file tabs through Settings and closing the drawer returns focus to Chat", async () => {
   const { focus } = setup(
     "/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt",
   );
   await screen.findByText("Editor /native/first.txt");
   fireEvent.click(screen.getByRole("button", { name: "Close file explorer" }));
-  await waitFor(() =>
-    expect(focus).toHaveBeenLastCalledWith({
-      kind: "file",
-      path: "/native/first.txt",
-    }),
-  );
-  expect(document.activeElement?.textContent).toContain(
-    "Editor /native/first.txt",
-  );
+  await waitFor(() => expect(focus).toHaveBeenLastCalledWith(null));
+  expect(document.activeElement?.textContent).toContain("Chat remains mounted");
   fireEvent.click(screen.getByRole("button", { name: "Open peer resource" }));
   expect(screen.queryByLabelText("Open files")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Another conversation" }));
+  fireEvent.click(screen.getByRole("button", { name: "Files" }));
   fireEvent.click(await screen.findByRole("button", { name: "first.txt" }));
   await screen.findByText("Editor /native/first.txt");
 });
@@ -321,7 +338,7 @@ it("mobile Chat and conversation navigation reveal the conversation instead of l
   setup("/threads/current?terminal=terminal-current");
   await screen.findByRole("button", { name: "Terminal" });
   vi.stubGlobal("matchMedia", () => ({ matches: true }));
-  fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+  fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
   expect(
     screen
       .getByRole("button", { name: "Terminal" })
@@ -354,7 +371,9 @@ it.each(["Chat", "diff"])(
       ).toBe(true),
     );
     if (target === "Chat")
-      fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Close file explorer" }),
+      );
     else {
       fireEvent.click(screen.getByRole("button", { name: "Changes" }));
       fireEvent.click(
@@ -380,3 +399,51 @@ it.each(["Chat", "diff"])(
     else expect(screen.getByText("Patch second.txt")).toBeTruthy();
   },
 );
+
+it.each(["file", "diff"])(
+  "a repository-only peer link replaces a prior %s editor with its actual Changes explorer",
+  async (view) => {
+    const { focus } = setup(
+      view === "file"
+        ? "/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt"
+        : "/threads/current?native=changes&native_path=%2Fnative&diff_path=first.txt&comparison=staged",
+    );
+    await screen.findByText(
+      view === "file" ? "Editor /native/first.txt" : "Patch first.txt",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open peer repository" }),
+    );
+    await screen.findByText("Repository /other-repository · Diff");
+    expect(screen.queryByText("Editor /native/first.txt")).toBeNull();
+    expect(screen.queryByText("Patch first.txt")).toBeNull();
+    await waitFor(() =>
+      expect(focus).toHaveBeenLastCalledWith({
+        kind: "changes",
+        repository_root: "/other-repository",
+      }),
+    );
+  },
+);
+it("shows pending and failed file opens beside the retained diff instead of hiding feedback in the explorer", async () => {
+  const { get } = setup(
+    "/threads/current?native=changes&native_path=%2Fnative&diff_path=deleted.txt&comparison=staged",
+  );
+  await screen.findByText("Patch deleted.txt");
+  let reject!: (error: Error) => void;
+  const pending = new Promise<{ data: { kind: string } }>((_resolve, fail) => {
+    reject = fail;
+  });
+  get.mockImplementationOnce(() => pending);
+  fireEvent.click(screen.getByRole("button", { name: "Open diff file" }));
+  await screen.findByText("Opening path…");
+  reject(new Error("The file was deleted"));
+  await screen.findByText("The file was deleted");
+  expect(screen.getByText("Patch deleted.txt")).toBeTruthy();
+  expect(
+    screen
+      .getByRole("button", { name: "Changes" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
+  expect(screen.queryByText("Opening path…")).toBeNull();
+});

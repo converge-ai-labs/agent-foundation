@@ -123,7 +123,7 @@ export function Workbench({
   }, [client, restoreTarget, location.pathname, navigate]);
   useEffect(() => {
     setMenu(false);
-  }, [location.pathname]);
+  }, [location.pathname, location.search]);
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
     writePreference("theme", theme);
@@ -155,6 +155,32 @@ export function Workbench({
           </NavLink>
         ))}
       </nav>
+      <div className={styles.sidebarFooter}>
+        <div className={styles.actions}>
+          <Button variant="ghost" onClick={() => setPeopleOpen(true)}>
+            <Users />
+            <span>{live.presence?.participants.length ?? 0} online</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={
+              theme === "dark"
+                ? "Switch to light theme"
+                : "Switch to dark theme"
+            }
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          >
+            {theme === "dark" ? <Sun /> : <Moon />}
+          </Button>
+          <Button variant="ghost" onClick={forget}>
+            Log out
+          </Button>
+        </div>
+        <small>
+          {live.summary} · Version <span>{status.version}</span>
+        </small>
+      </div>
     </>
   );
   return (
@@ -169,13 +195,6 @@ export function Workbench({
             <span>Harness UI</span>
           </Link>
           {navigation}
-          <div className={styles.sidebarFooter}>
-            <span className={styles.statusDot} />
-            {status.app?.state ?? "Connected"}
-            <small>
-              Version <span>{status.version}</span>
-            </small>
-          </div>
         </aside>
         <SheetPopup
           side="left"
@@ -186,45 +205,6 @@ export function Workbench({
           {navigation}
         </SheetPopup>
         <div className={styles.workspace}>
-          <header className={styles.topbar}>
-            <div className={styles.actions}>
-              <SheetTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={styles.mobileMenu}
-                  />
-                }
-                aria-label="Open navigation"
-              >
-                <List />
-              </SheetTrigger>
-              <span className={styles.instanceLabel}>Local instance</span>
-              <span className={styles.connectionState}>{live.summary}</span>
-            </div>
-            <div className={styles.actions}>
-              <Button variant="ghost" onClick={() => setPeopleOpen(true)}>
-                <Users />
-                <span>{live.presence?.participants.length ?? 0} online</span>
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={
-                  theme === "dark"
-                    ? "Switch to light theme"
-                    : "Switch to dark theme"
-                }
-                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              >
-                {theme === "dark" ? <Sun /> : <Moon />}
-              </Button>
-              <Button variant="ghost" onClick={forget}>
-                Log out
-              </Button>
-            </div>
-          </header>
           <main id="main-content" className={styles.main}>
             {status.access === "dangerous_bypass" && (
               <div className={styles.notice}>
@@ -247,6 +227,20 @@ export function Workbench({
               retry={() => void statusQuery.refetch()}
             />
             <NativeWorkspace
+              navigation={
+                <SheetTrigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={styles.mobileMenu}
+                    />
+                  }
+                  aria-label="Open navigation"
+                >
+                  <List />
+                </SheetTrigger>
+              }
               onFocus={setNativeFocus}
               unauthorized={unauthorized}
             >
@@ -349,6 +343,29 @@ export function Workbench({
               ]}
             />
             <p>Presence: {live.presenceState}</p>
+            <details>
+              <summary>Instance information</summary>
+              <p>
+                Version {status.version} · {status.app?.state ?? "Connected"}
+              </p>
+              <p>
+                {status.features?.host_files
+                  ? "Native computer sharing is enabled on the server."
+                  : "Native sharing is disabled by this server. Start without --no-share-computer to enable it."}
+              </p>
+              {status.features?.host_files && !status.features?.host_git && (
+                <p>
+                  Git is unavailable on this server. Files remains available.
+                </p>
+              )}
+              {status.features?.host_files &&
+                !status.features?.host_terminal && (
+                  <p>
+                    Native PTY is unavailable on this server; it requires POSIX
+                    support.
+                  </p>
+                )}
+            </details>
             {live.presence?.participants.map((participant) => (
               <div
                 className={styles.resourceRow}

@@ -265,7 +265,11 @@ it("sharing off keeps the page usable and never attempts native reads", async ()
     </NativeWorkspace>,
     { wrapper: f.Wrapper },
   );
-  await screen.findByText("Native sharing disabled by this server");
+  await waitFor(() =>
+    expect(f.get.mock.calls.some(([path]) => path === "/api/status")).toBe(
+      true,
+    ),
+  );
   expect(screen.queryByRole("button", { name: "Files" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Changes" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Terminal" })).toBeNull();

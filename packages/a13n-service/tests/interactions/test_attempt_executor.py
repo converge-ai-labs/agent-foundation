@@ -67,6 +67,10 @@ class _Execution(AttemptExecutionService):
     lose_heartbeat: bool = False
     reject_preparation: bool = False
 
+    async def ingest_usage(self, authority, *, harness_run_id, records):
+        assert harness_run_id
+        assert all(record.record_id for record in records)
+
     async def validate(self, context: AttemptContext) -> AttemptMutationReceipt:
         self.trace.append("attempt:validate")
         return _receipt(context)

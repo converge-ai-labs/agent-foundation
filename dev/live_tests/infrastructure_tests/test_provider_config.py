@@ -71,7 +71,7 @@ def test_explicit_missing_file_is_an_error(tmp_path, monkeypatch):
         load_provider_settings()
 
 
-@pytest.mark.parametrize("provider", ["openrouter", "openai"])
+@pytest.mark.parametrize("provider", ["openrouter", "openai", "zhipu"])
 def test_enabled_model_and_connector_sections(tmp_path, provider):
     path = tmp_path / "settings.toml"
     endpoint = 'base_url="https://models.example/v1"' if provider == "openai" else ""
@@ -302,3 +302,41 @@ async def test_provider_cleanup_precedes_lab_teardown_after_failure(monkeypatch,
         async with real_providers.configured_provider_lab(section, None):
             raise RuntimeError("test failed")
     assert events == ["remote cleanup", "lab removed"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("provider", ["openai", "zhipu"])
+async def test_official_provider_gate_does_not_start_lab(monkeypatch, provider):
+    from ..providers import test_openai_direct, test_zhipu_direct
+
+    module = {"openai": test_openai_direct, "zhipu": test_zhipu_direct}[provider]
+    variable = provider.upper() + "_API_KEY"
+
+    def unexpected_lab(*args, **kwargs):
+        raise AssertionError("Disabled official-provider test started a lab")
+
+    monkeypatch.setenv(variable, "private-sentinel")
+    monkeypatch.setattr(module, "configured_provider_lab", unexpected_lab)
+    request = SimpleNamespace(config=SimpleNamespace(getoption=lambda option: False), param="openai.responses")
+    fixture = getattr(module, "official_" + provider).__wrapped__(request)
+    with pytest.raises(pytest.skip.Exception):
+        await anext(fixture)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("provider", ["openai", "zhipu"])
+async def test_enabled_official_provider_requires_credential_before_lab(monkeypatch, provider):
+    from ..providers import test_openai_direct, test_zhipu_direct
+
+    module = {"openai": test_openai_direct, "zhipu": test_zhipu_direct}[provider]
+    variable = provider.upper() + "_API_KEY"
+
+    def unexpected_lab(*args, **kwargs):
+        raise AssertionError("Missing credential started a paid-provider lab")
+
+    monkeypatch.delenv(variable, raising=False)
+    monkeypatch.setattr(module, "configured_provider_lab", unexpected_lab)
+    request = SimpleNamespace(config=SimpleNamespace(getoption=lambda option: True), param="openai.responses")
+    fixture = getattr(module, "official_" + provider).__wrapped__(request)
+    with pytest.raises(pytest.fail.Exception, match=variable + " is required"):
+        await anext(fixture)

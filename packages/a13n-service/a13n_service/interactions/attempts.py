@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
+import rfc8785
 from a13n_harness import SafeFailure
+from a13n_harness.usage import ModelUsageRecord, UsageRecord
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import load_only
@@ -22,7 +25,7 @@ from .domain import RunAttemptStatus, RunAttemptYieldReason, RunStatus, RunUsage
 from .failure import finalize_failed_run
 from .inbox_persistence import lock_inbox_related_runs
 from .lifecycle import LifecycleWriter
-from .models import RunAttemptRecord, RunRecord, ThreadRecord
+from .models import RunAttemptRecord, RunRecord, RunUsageRecord, ThreadRecord
 from .objects import RunStateStore, StoredRunState
 from .state import RunCheckpoint
 
@@ -265,6 +268,102 @@ class AttemptExecutionService:
         """Durably cross the model-request boundary before provider I/O begins."""
 
         return await self.add_usage(authority, RunUsage(model_requests=1))
+
+    async def ingest_usage(
+        self,
+        authority: AttemptContext,
+        *,
+        harness_run_id: str,
+        records: Sequence[UsageRecord],
+    ) -> None:
+        """Persist receipts once, including late evidence under its original owner.
+
+        Already incurred tokens must survive budget exhaustion. Only a current,
+        running Attempt updates operational counters; late evidence cannot rewrite
+        a sealed Run or its published lifecycle event.
+        """
+        if not records:
+            return
+        now = assume_utc(self._clock())
+        async with transaction(self._sessions) as session:
+            # Preserve the lifecycle lock order, including on the late-evidence path.
+            thread = await session.scalar(
+                select(ThreadRecord)
+                .where(
+                    ThreadRecord.organization_id == authority.organization_id,
+                    ThreadRecord.id == authority.thread_id,
+                )
+                .with_for_update()
+            )
+            run = await session.scalar(
+                select(RunRecord)
+                .where(
+                    RunRecord.organization_id == authority.organization_id,
+                    RunRecord.id == authority.run_id,
+                )
+                .with_for_update()
+            )
+            attempt = await session.scalar(
+                select(RunAttemptRecord)
+                .where(
+                    RunAttemptRecord.organization_id == authority.organization_id,
+                    RunAttemptRecord.run_id == authority.run_id,
+                    RunAttemptRecord.id == authority.run_attempt_id,
+                )
+                .with_for_update()
+            )
+            if (
+                thread is None
+                or run is None
+                or attempt is None
+                or run.thread_id != authority.thread_id
+                or attempt.attempt_number != authority.attempt_number
+                or attempt.worker_id != authority.worker_id
+                or attempt.worker_build_id != authority.worker_build_id
+                or attempt.harness_run_id != harness_run_id
+                or not hmac.compare_digest(attempt.lease_token_digest, _token_digest(authority.lease_token))
+            ):
+                raise AttemptAuthorityError("Usage receipt does not match its originating Attempt")
+            delta = RunUsage()
+            for record in records:
+                content = record.model_dump(mode="json")
+                digest = hashlib.sha256(rfc8785.dumps(content)).hexdigest()
+                existing = await session.get(RunUsageRecord, (authority.organization_id, record.record_id))
+                if existing is not None:
+                    if existing.run_attempt_id != attempt.id or existing.content_digest != digest:
+                        raise AttemptMutationError("Conflicting immutable usage receipt")
+                    continue
+                session.add(
+                    RunUsageRecord(
+                        organization_id=authority.organization_id,
+                        record_id=record.record_id,
+                        run_id=run.id,
+                        run_attempt_id=attempt.id,
+                        harness_run_id=record.run_id,
+                        content_digest=digest,
+                        record_json=content,
+                        ingested_at=now,
+                    )
+                )
+                # Flush so duplicate IDs within this delivery use the same durable check.
+                await session.flush()
+                if isinstance(record, ModelUsageRecord):
+                    delta = delta.plus(
+                        RunUsage(
+                            input_tokens=record.request_usage.input_tokens,
+                            output_tokens=record.request_usage.output_tokens,
+                        )
+                    )
+            if (
+                attempt.status == RunAttemptStatus.running.value
+                and run.current_run_attempt_id == attempt.id
+                and thread.current_run_id == run.id
+                and assume_utc(attempt.lease_expires_at) > now
+                and (delta.input_tokens or delta.output_tokens)
+            ):
+                attempt.usage_json = attempt.to_resource().usage.plus(delta).model_dump(mode="json")
+                attempt.updated_at = now
+                attempt.version += 1
 
     async def publish_checkpoint(
         self,

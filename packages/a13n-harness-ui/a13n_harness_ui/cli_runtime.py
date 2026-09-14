@@ -42,7 +42,7 @@ async def _run(request: CliRequest) -> int:
     configure_logging(
         level=settings.log_level,
         log_format=LogFormat(settings.log_format),
-        logger_names=("a13n_harness_ui",),
+        logger_names=("a13n_harness_ui", "uvicorn") if request.command == "webui" else ("a13n_harness_ui",),
     )
     if request.command == "plugin":
         return await _run_content_plugins(request, settings.storage.data_root)

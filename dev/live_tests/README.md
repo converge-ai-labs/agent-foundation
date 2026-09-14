@@ -26,15 +26,15 @@ Tests are grouped by their primary feature, independently of their execution opt
 | `run_recovery/`         | Worker ownership, persistence, budgets, dependency failures and drain            |       9 |             657 |
 | `harness_integration/`  | Service configuration and resources reaching real Harness execution              |      13 |              34 |
 | `skills/`               | Skill authority, publication, retention, lifecycle and materialization           |       6 |              61 |
-| `model/`                | Frozen Model settings and current Provider settings between requests             |       1 |               3 |
+| `model/`                | Management, IAM, native protocols, settings, recovery and optional Console       |       7 |              46 |
 | `protocol/`             | Native and Hosted streams, reconnect and recovery projection                     |       3 |              13 |
 | `iam/`                  | Workspace isolation, current authority and revocation                            |       3 |              10 |
-| `providers/`            | Optional real search, model, environment and Connector accounts                  |       1 |              14 |
+| `providers/`            | Optional real search, model, environment and Connector accounts                  |       4 |              30 |
 | `observability/`        | Cross-layer evidence and telemetry failure isolation                             |       1 |               2 |
 | `performance/`          | Concurrent PG/S3 calls and bounded Service operations                            |       2 |               2 |
-| `infrastructure_tests/` | Offline tests of fixtures, configuration, parsers and cleanup                    |      19 |             305 |
+| `infrastructure_tests/` | Offline tests of fixtures, configuration, parsers and cleanup                    |      19 |             310 |
 
-Counts are a collection snapshot: 105 modules and 1,685 parameterized cases, including inherited lifecycle cases and cases skipped unless explicitly enabled. A category does not enable infrastructure: the existing `--live*` fixture gates still apply. Mixed modules remain intact: `test_26_output_and_client_tools.py` and `test_32_multiworker_resources.py` live under `harness_integration/`, while `providers/test_31_real_providers.py` retains its real-account matrix.
+Counts are a collection snapshot: 114 modules and 1,749 parameterized cases, including inherited lifecycle cases and cases skipped unless explicitly enabled. A category does not enable infrastructure: the existing `--live*` fixture gates still apply. Mixed modules remain intact: `test_26_output_and_client_tools.py` and `test_32_multiworker_resources.py` live under `harness_integration/`, while `providers/test_31_real_providers.py` retains its real-account matrix.
 
 Subpackages inherit the root `conftest.py`. Feature-owned helpers live beside their tests; shared lab infrastructure lives in `infrastructure/`. The isolated launcher recursively selects the same first-round filenames and keeps their filename order.
 
@@ -46,6 +46,77 @@ uv run --locked python -m pytest dev/live_tests/control --live-round-two
 # A focused management category:
 uv run --locked python -m pytest dev/live_tests/model --live-management
 ```
+
+## Model Management end-to-end coverage
+
+The model suite uses real Control and Worker processes, Native HTTP APIs, migrated PostgreSQL, Redis and S3-compatible storage. An owned loopback upstream records actual SDK requests and supplies independently authored Chat Completions, Responses, Anthropic Messages and Gemini GenerateContent wire responses. This deterministic suite checks Service integration and native SDK serialization; it does not establish compatibility with every cloud account or model. Only selected credential/header hashes are recorded, never their values.
+
+| Cases | File                                   | Assertions                                                                                                                                                                                                                                                                  |
+| ----: | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|    11 | `model/test_management.py`             | Provider probe; paginated, sorted and deduplicated discovery; description without inference; Model test and streaming Run; failed/empty catalog with manual IDs; safe upstream rejection; concurrent ETag updates and duplicate keys; immutable identity; disable/re-enable |
+|    14 | `model/test_parameters.py`             | Model → Agent → Run precedence; empty/null overrides; shallow nested replacement; clearing defaults; changing model key; invalid/protected parameters; incompatible API and retained Agent settings; bearer/custom-header/no-auth; credential and header rotation/removal   |
+|     4 | `model/test_authorization.py`          | Native IAM Viewer/Builder permissions; shared Organization resources visible and executable in two Workspaces; concealed foreign scopes and shared writes; Organization/Workspace key race                                                                                  |
+|     8 | `model/test_protocols.py`              | Four native non-streamed Model tests and streamed Runs; Chat Completions/Responses deferred tool round trips with a result generated after the call; structured output                                                                                                      |
+|     3 | `model/test_recovery.py`               | Accepted, replacement-Worker and explicit-Retry snapshots retain API/upstream/settings while reading current Provider connection/credential; subsequent fresh Runs use edits                                                                                                |
+|     3 | `model/test_23_model_updates.py`       | Existing acceptance snapshot, same-Run connection rotation and next-request Provider disable                                                                                                                                                                                |
+|     3 | `model/test_console.py`                | Optional Chromium through Vite and Native IAM: connect Provider, catalog/manual entry, parameters, saved connection test, dirty-state test inhibition, edit/reload, then real Worker execution; available, failed and empty catalogs                                        |
+|     1 | `providers/test_model_capabilities.py` | Configured real Provider probe/discovery/description, Model test, actual LLM client-tool call and schema-validated output containing the subsequently supplied random proof                                                                                                 |
+
+Additional existing coverage lives in `harness_integration/test_32_multiworker_resources.py` (two Model cases) and `run_recovery/test_09_failures.py` plus `test_42_run_dependency_faults.py` (12 Model cases): authentication/timeout failures, 429/503 bounded recovery or exhaustion, and truncated/malformed/timed-out streams. Stream recovery distinguishes native transport retries, Harness ModelAttempts and durable RunAttempts.
+
+```sh
+# Docker is required; no cloud credentials or browser required (43 cases).
+make live-test-models
+# Existing multi-worker and fault regressions:
+uv run --locked python -m pytest dev/live_tests/harness_integration/test_32_multiworker_resources.py --live-management -k model -n 0
+uv run --locked python -m pytest dev/live_tests/run_recovery/test_09_failures.py dev/live_tests/run_recovery/test_42_run_dependency_faults.py --live-round-two -k model -n 0
+# Install optional Chromium once; the browser target builds the TypeScript SDK.
+uv run --locked --with playwright==1.58.0 python -m playwright install chromium
+make live-test-model-console
+# Only real-model checks; may consume credits, requires the private TOML below.
+make live-test-providers LIVE_TEST_ARGS='-k "configured_model or real_model_management" -n 0'
+```
+
+Browser journeys bootstrap only an administrator session, then use real browser cookies, CSRF and resource APIs; they do not mock browser HTTP responses. They exercise Model Management, not the login/password UI. Failures retain an accessibility snapshot and process logs in the owned private lab. The browser opt-in remains separate from the default management and offline gates; Playwright is supplied only to that invocation, outside production dependencies.
+
+Real Model smoke tests cap each response at 128 output tokens; the tool/structured-output journey allows 384 and disables parallel tool calls to keep one client handoff. Real configured Model tests require discovery and tool/structured-output support; use the smoke selection alone for a compatible endpoint that intentionally lacks those capabilities. OpenRouter GPT/Gemini/Claude smoke cases are separate from native Google/Anthropic endpoint tests: no direct cloud calls to those providers are implied.
+
+If an explicitly configured local proxy resolves `openrouter.ai` to a non-global address, the disposable lab can narrowly permit that hostname with `LIVE_TEST_MODEL_PRIVATE_ENDPOINT_DOMAINS='["openrouter.ai"]'` before the real-provider command. This existing test-only option does not change production endpoint policy or TLS verification. Do not set it when normal public DNS works.
+
+### Official OpenAI direct tests
+
+`providers/test_openai_direct.py` adds ten independently reported cases: five each for `openai.chat_completions` and `openai.responses`. It creates the `openai` Provider with empty configuration, selecting the official `https://api.openai.com/v1` endpoint. No OpenRouter configuration or credential is read by this suite.
+
+Each API runs Provider probe/discovery/description and non-streamed Model test; streamed Run events with positive token usage and text-only continuation; a real deferred client-tool call followed by schema-validated output and continuation through the retained tool history; invalid credential failure and repair; and missing upstream model failure and repair. Failed Runs remain immutable after configuration repair and a fresh successful Run. Only owned disposable Provider/Model records are modified; tests never revoke the user's official key or create cloud resources.
+
+```sh
+# OPENAI_API_KEY must be set in the explicitly loaded .env or process environment.
+make live-test-openai
+# Select one native API or one behavior:
+make live-test-openai LIVE_TEST_ARGS='-k responses'
+make live-test-openai LIVE_TEST_ARGS='-k rejection'
+# Optional model selection; must support both native APIs, tools, temperature and structured output.
+LIVE_TEST_OPENAI_MODEL=gpt-4.1-nano make live-test-openai
+```
+
+The default model is `gpt-4.1-nano`, with a 60-second request timeout and at most 384 output tokens per request. The separate `--live-openai` opt-in is mandatory even when `OPENAI_API_KEY` is present; enabling it without a key fails before lab startup. `make live-test-providers` leaves these cases skipped. The normal offline gate reads no OpenAI credential and makes no cloud calls. This suite can consume API credits; model-list access alone does not establish inference quota.
+
+For a local proxy with non-global DNS answers, use the existing narrow test override `LIVE_TEST_MODEL_PRIVATE_ENDPOINT_DOMAINS='["api.openai.com"]'` with the command. It keeps the official hostname and TLS verification; it does not redirect requests through OpenRouter or modify production policy.
+
+### Official Zhipu direct tests
+
+`providers/test_zhipu_direct.py` runs five cases against the built-in `zhipu` Provider with empty configuration, selecting `https://open.bigmodel.cn/api/paas/v4`. The default is `glm-4.7-flash`, which BigModel lists as free. It never reads the OpenRouter TOML or automatically falls back to another model. BigModel may omit Flash from its catalog; discovery remains checked while the free model uses the manual-ID path. It reads `ZHIPU_API_KEY` only after the separate `--live-zhipu` opt-in; missing credentials fail before infrastructure starts.
+
+```sh
+# Set ZHIPU_API_KEY in the explicitly loaded private .env or process environment.
+make live-test-zhipu
+# Only after verifying an active GLM-4.5-Air trial package in the BigModel console:
+LIVE_TEST_ZHIPU_MODEL=glm-4.5-air make live-test-zhipu
+```
+
+Shared assertions in `providers/direct_model.py` cover discovery/description and Model test, streamed usage and continuation, deferred client-tool feedback with structured output and retained history, invalid credential recovery, and missing model recovery. The fixture disables thinking with the provider's native `extra_body` parameter and caps each request at 384 output tokens with a 60-second timeout. `glm-4.5-air` is the only allowed override and consumes trial quota or paid usage if no quota remains; verify the account before opting in. Free Flash access can still have account and rate limits; a collected case is not evidence of a successful cloud call. These tests do not verify OpenAI Responses.
+
+If a configured local proxy returns non-global DNS addresses, narrowly allow only `open.bigmodel.cn` using the existing `LIVE_TEST_MODEL_PRIVATE_ENDPOINT_DOMAINS` lab option. Official hostname and TLS verification remain intact.
 
 ## Manual correctness suites
 
@@ -133,7 +204,7 @@ make live-test-ci suite=functional LIVE_TEST_ARGS='-k skill --junitxml=var/skill
 
 This selection includes the original ZIP execution journey, the HTTP management journeys, and `skills/`. Each Skill module owns a disposable lab; cases create independent Skill, Agent and Environment resources. The tests use real HTTP, PostgreSQL, object storage and separate Worker processes. Skill barriers pause only after transaction-free preparation, before entering a deletion operation, or after complete file publication; they never mutate database lifecycle records. The Worker cases use direct-local Environments with both `on_run` and `on_use` preparation.
 
-The suite checks ordinary turns against updated heads, Retry and waiting successors against exact locks, current deletion state, same-key recreation, deletion races and post-deletion idempotent replay, both commit orders of deletion versus Run acceptance/Agent revision publication/unarchive, disabled-Agent references, shared partial preparation, Worker crash recovery after Skill deletion, and rejection of corrupt files, completion metadata or unexpected entries before model invocation. A scripted model selects file tools and returns their observed results. The authority cases use native sessions and real Workspace roles, check uploader ownership and cross-Workspace isolation, and revoke grants after transaction-free preparation. Publication cases exercise pinned and unpinned selections before submission, after invocation preparation, after initial-state publication, and after acceptance. They also cover continued, forked, and queued Run state refresh, deletion and same-key recreation during retries, Agent revision drift, and bounded repeated publication. Skill-only labs install their own barriers without the legacy completion-time queue handoff hooks.
+The suite checks ordinary turns against updated heads, Retry and waiting successors against exact locks, current deletion state, same-key recreation, deletion races and post-deletion idempotent replay, both commit orders of deletion versus Run acceptance/Agent revision publication/unarchive, disabled-Agent references, shared partial preparation, Worker crash recovery after Skill deletion, and rejection of corrupt files, completion metadata or unexpected entries before model invocation. A scripted model selects file tools and returns their observed results. The authority cases use native sessions and real Workspace roles, check uploader ownership and cross-Workspace isolation, and revoke grants after transaction-free preparation. Publication cases exercise pinned and unpinned selections before submission, after invocation preparation, after initial-state publication, and after acceptance. They also cover continued, forked, and queued Run state refresh, deletion and same-key recreation during retries, Agent revision drift, and bounded repeated publication. Skill-only labs install their own barriers without legacy queue handoff or Environment lifecycle barriers; Worker identity and claim routing remain available for shared-materialization cases.
 
 Retention cases run the production receipt sweeper and object collector in an owned subprocess with an explicit clock and zero minimum object age. They do not forge lifecycle records or wait 24 hours; this tests expiry/ownership and fencing, not periodic scheduling or the default object-age threshold. They cover expired uploads, another live upload sharing the package, published Revisions, accepted Runs after deletion, and both orders of collection versus republication. Test-only Worker observations retain exception types and stack locations without exception messages.
 
@@ -183,7 +254,7 @@ If a trusted local proxy resolves a configured model hostname to a private or re
 | `environment.template`  | Optional E2B template ID or alias                                        | `base` when E2B is enabled                                                                                         |
 | `connector.provider`    | `composio`                                                               | No additional external Connector test; case 27 keeps its local TLS Composio fixture and local MCP server           |
 | `connector.api_key`     | Composio project API key; required with `provider`                       | Existing connectivity fixtures use a generated lab-only credential                                                 |
-| `model.provider`        | `openrouter` or `openai`                                                 | No additional external Model test; existing cases keep their scripted local model                                  |
+| `model.provider`        | `openrouter`, `openai` or `zhipu`                                        | No additional external Model test; existing cases keep their scripted local model                                  |
 | `model.api_key`         | Model provider API key; required with `provider`                         | Existing scripted model uses a generated lab-only credential                                                       |
 | `model.model`           | Upstream model ID supporting Chat Completions; required for `configured` | Fixed OpenRouter matrix cases ignore this field and use their own model IDs                                        |
 | `model.base_url`        | Required HTTPS API base URL for `openai`                                 | Leave blank for `openrouter`, which uses the service's built-in endpoint                                           |
@@ -250,7 +321,7 @@ INFO logs report the Provider/Run IDs, probe timestamp, result counts and applie
 
 ### Other Providers
 
-The Environment journey executes a real Shell write and file read in E2B, using the scripted model to control tool selection. The Connector journey performs real authentication and catalog discovery. An API key alone does not authorize a user's OAuth accounts: this journey creates no account connection and executes no business tools unless the separate Slack OAuth journey is explicitly enabled below. The Model journey sends `Hello` through a real Run and requires successful completion with nonempty text; it does not assert exact wording or a fixed attempt count. Each request has a 128-token output limit. In addition to `model.model`, an OpenRouter configuration runs three separately reported cases:
+The Environment journey executes a real Shell write and file read in E2B, using the scripted model to control tool selection. The Connector journey performs real authentication and catalog discovery. An API key alone does not authorize a user's OAuth accounts: this journey creates no account connection and executes no business tools unless the separate Slack OAuth journey is explicitly enabled below. The Model journey sends `Hello` through a real Run and requires successful completion with nonempty text; it does not assert exact wording or a fixed attempt count. Each smoke request has a 128-token output limit; the separate tool/structured-output journey uses 384. In addition to `model.model`, an OpenRouter configuration runs three separately reported cases:
 
 | Pytest case ID      | Upstream model                 |
 | ------------------- | ------------------------------ |
@@ -258,7 +329,7 @@ The Environment journey executes a real Shell write and file read in E2B, using 
 | `openrouter-gemini` | `google/gemini-2.5-flash-lite` |
 | `openrouter-claude` | `anthropic/claude-haiku-4.5`   |
 
-These cases reuse the configured OpenRouter credential, each in its own lab, without changing the local TOML. They ignore `model.model` and apply their fixed model IDs before configuration validation, so that field can be omitted or left blank when selecting only the matrix. Provider, credential and endpoint validation still applies. The `configured` case still requires `model.model`; select only the fixed cases with `LIVE_TEST_ARGS='-k "configured_model and openrouter"'` when it is absent. They skip for `openai`; the configured model case continues to cover that provider. Logs identify the upstream model, Run ID and output length without printing credentials or model output. External usage can consume credits.
+These cases reuse the configured OpenRouter credential, each in its own lab, without changing the local TOML. They ignore `model.model` and apply their fixed model IDs before configuration validation, so that field can be omitted or left blank when selecting only the matrix. Provider, credential and endpoint validation still applies. The `configured` case still requires `model.model`; select only the fixed cases with `LIVE_TEST_ARGS='-k "configured_model and openrouter"'` when it is absent. They skip for `openai` and `zhipu`; the configured model case continues to cover those providers. Logs identify the upstream model, Run ID and output length without printing credentials or model output. External usage can consume credits.
 
 On success, failure, partial provisioning or normal cancellation, cleanup interrupts owned Runs and deletes owned remote Environments while the Worker is still running. Cleanup failures fail the test and identify the Environment ID. E2B sandboxes also have a five-minute timeout as a bound if the test process is forcibly killed. The lab then removes its containers and database, deleting all Provider rows, encrypted keys, templates, models and Agents created there. It never deletes or rotates existing account credentials or touches an existing installation's data. The local TOML remains available for later runs; ignored private process logs and test evidence remain under `.state/management/<random-id>/`.
 

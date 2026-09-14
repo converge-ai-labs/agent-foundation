@@ -61,7 +61,7 @@ it("maps repeated rendered text through exact source positions and Unicode code 
     ),
   ).toEqual({ start: 1, end: 2, quote: "😀" });
 });
-it("rejects decoded or cross-Markdown approximations and supports exact raw-source fallback", () => {
+it("maps cross-Markdown source spans but rejects decoded approximations and supports raw-source fallback", () => {
   const source = "Left **bold** &amp; right";
   const { container } = render(
     <>
@@ -77,7 +77,7 @@ it("rejects decoded or cross-Markdown approximations and supports exact raw-sour
       source,
       select(left.firstChild!, 0, strong.firstChild!, 4),
     ),
-  ).toBeUndefined();
+  ).toEqual({ start: 0, end: 11, quote: "Left **bold" });
   const decoded = container.querySelector("p")!.lastChild!;
   expect(
     selectedSource(container, source, select(decoded, 1, decoded, 2)),
@@ -306,4 +306,94 @@ it("never anchors a server-truncated transcript excerpt", () => {
   );
   expect(screen.getByText("Displayed excerpt")).toBeTruthy();
   expect(container.querySelector("[data-source-start]")).toBeNull();
+});
+
+it("splits overlapping verified highlights at exact Unicode source offsets without relocating stale quotes", () => {
+  const source = "A😀 **same** then **same**";
+  const start = [...source.slice(0, source.lastIndexOf("same"))].length;
+  const { container } = render(
+    <MessageText
+      text={source}
+      selectable
+      highlights={[
+        { id: "second", selection: { start, end: start + 4, quote: "same" } },
+        {
+          id: "overlap",
+          selection: { start: start + 2, end: start + 4, quote: "me" },
+        },
+        { id: "stale", selection: { start: 0, end: 4, quote: "same" } },
+      ]}
+    />,
+  );
+  const marks = container.querySelectorAll<HTMLElement>("[data-comment-ids]");
+  expect([...marks].map((mark) => mark.textContent).join("")).toBe("same");
+  expect(marks[0].dataset.commentIds).toBe("second");
+  expect(marks[1].dataset.commentIds).toBe("second overlap");
+  expect(
+    container.querySelector("strong")?.querySelector("[data-comment-ids]"),
+  ).toBeNull();
+  expect(
+    selectedSource(
+      container,
+      source,
+      select(marks[0].firstChild!, 0, marks[1].firstChild!, 2),
+    ),
+  ).toEqual({ start, end: start + 4, quote: "same" });
+});
+it("opens a text selection's private editor inline and publishes only after explicit confirmation", async () => {
+  const POST = vi.fn(async (_path, { body }) => ({
+    data: {
+      ...body,
+      root_thread_id: "thread-one",
+      created_at: "2026-09-14T00:00:00Z",
+    },
+  }));
+  const { container, drafts } = setup(POST);
+  const source = container.querySelector("[data-source-start]")!;
+  select(source.firstChild!, 6, source.firstChild!, 11);
+  fireEvent.mouseUp(source);
+  fireEvent.click(screen.getByRole("button", { name: "Comment on selection" }));
+  await screen.findByLabelText("Comment", { selector: "textarea" });
+  expect(
+    screen.queryByRole("dialog", { name: "Saved output discussion" }),
+  ).toBeNull();
+  expect(drafts.get("thread-one")!.publication.selection).toEqual({
+    start: 6,
+    end: 11,
+    quote: "saved",
+  });
+  expect(POST).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText("Comment", { selector: "textarea" }), {
+    target: { value: "Inline private feedback" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Post comment" }));
+  await screen.findByRole("heading", { name: "Comment published" });
+  expect(POST.mock.calls[0][1].body.selection).toEqual({
+    start: 6,
+    end: 11,
+    quote: "saved",
+  });
+});
+it("activates a saved text highlight from the keyboard without creating or sending feedback", async () => {
+  const POST = vi.fn();
+  setup(POST, [
+    {
+      comment_id: "comment-highlight",
+      target,
+      author: { display_name: "Reader" },
+      body: "A nearby discussion",
+      selection: { start: 6, end: 11, quote: "saved" },
+      root_thread_id: "thread-one",
+      created_at: "2026-09-14T00:00:00Z",
+    },
+  ]);
+  const mark = await screen.findByRole("button", {
+    name: "Read comments on highlighted text",
+  });
+  fireEvent.keyDown(mark, { key: "Enter" });
+  await screen.findByText("A nearby discussion");
+  expect(
+    screen.queryByLabelText("Comment", { selector: "textarea" }),
+  ).toBeNull();
+  expect(POST).not.toHaveBeenCalled();
 });

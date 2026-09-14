@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { basicSetup, EditorView } from "codemirror";
-import { Annotation, EditorState } from "@codemirror/state";
+import { Annotation, EditorState, type Extension } from "@codemirror/state";
 import { yaml } from "@codemirror/lang-yaml";
 
 const externalValue = Annotation.define<boolean>();
@@ -13,6 +13,8 @@ export function SourceEditor({
   language = "yaml",
   onSelection,
   fill = false,
+  extensions,
+  wrap = true,
 }: {
   value: string;
   onChange?: (value: string) => void;
@@ -20,6 +22,8 @@ export function SourceEditor({
   readOnly?: boolean;
   language?: "yaml" | "plain";
   fill?: boolean;
+  extensions?: Extension;
+  wrap?: boolean;
   onSelection?: (
     range: { start_line: number; end_line: number } | undefined,
   ) => void;
@@ -40,7 +44,7 @@ export function SourceEditor({
       extensions: [
         basicSetup,
         ...(language === "yaml" ? [yaml()] : []),
-        EditorView.lineWrapping,
+        ...(wrap ? [EditorView.lineWrapping] : []),
         EditorView.editable.of(!readOnly),
         EditorState.readOnly.of(readOnly),
         EditorView.contentAttributes.of({ "aria-label": label }),
@@ -97,6 +101,7 @@ export function SourceEditor({
             overflow: "auto",
           },
         }),
+        extensions ?? [],
       ],
     });
     editor.current = view;
@@ -106,7 +111,7 @@ export function SourceEditor({
     };
     // External values are synchronized below without replacing editor state on typing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [label, readOnly, language, fill]);
+  }, [label, readOnly, language, fill, extensions, wrap]);
   useEffect(() => {
     const view = editor.current;
     if (view && !view.state.toText(value).eq(view.state.doc))

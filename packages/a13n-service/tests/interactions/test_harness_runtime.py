@@ -77,6 +77,11 @@ class _RuntimeCoordinator:
     environment: Environment | None = None
     driver: HarnessDriver | None = field(default=None, init=False)
 
+    usage_batches: list[tuple] = field(default_factory=list)
+
+    async def ingest_usage(self, harness_run_id, records):
+        self.usage_batches.append((harness_run_id, tuple(records)))
+
     @property
     def terminal_observation_allowed(self) -> bool:
         return not self.planned_handoff
@@ -305,6 +310,8 @@ async def test_runtime_wires_factory_environment_model_and_fresh_bindings(
     assert "runtime-workspace" not in str(projector.environment_events)
     assert str(tmp_path / "workspace") not in str(projector.environment_events)
     assert usage.requests == 1
+    assert coordinator.usage_batches
+    assert coordinator.usage_batches[-1][1] == result.usage_records
     assert not environment.is_entered
     assert trace.index("input-factory") < trace.index("coordinator:attach")
     assert trace.index("coordinator:attach") < trace.index("model-resolver") < trace.index("model")

@@ -16,6 +16,7 @@ from a13n_harness import (
     SafeFailure,
 )
 from a13n_harness.errors import RunError
+from a13n_harness.usage import UsageRecord
 from a13n_logging import get_logger
 from anyio import sleep_forever
 from pydantic_ai.capabilities import NodeResult
@@ -503,6 +504,12 @@ class RunAttemptControl:
 
         async with self._gate.lock:
             self._gate.delivery_gate = _DeliveryGate.closed
+
+    async def ingest_usage(self, harness_run_id: str, records: Sequence[UsageRecord]) -> None:
+        for offset in range(0, len(records), 100):
+            await self._execution.ingest_usage(
+                self._context, harness_run_id=harness_run_id, records=records[offset : offset + 100]
+            )
 
     async def finalize(
         self,

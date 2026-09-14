@@ -8,7 +8,7 @@ import hmac
 import ipaddress
 import os
 import secrets
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -16,7 +16,7 @@ from urllib.parse import quote, urlsplit
 
 import click
 import uvicorn
-from anyio import create_task_group, fail_after, move_on_after
+from anyio import Event, create_task_group, fail_after, move_on_after
 from fastapi import FastAPI, Query, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
@@ -116,6 +116,7 @@ from a13n_harness_ui.surfaces import (
     TranscriptPage,
 )
 from a13n_harness_ui.thread_files import MAX_ATTACHMENT_BYTES, AttachmentUpload, ThreadAttachment
+from a13n_harness_ui.webui_lifecycle import EventStreamResponse, RequestLog, WebUIServer
 
 API_VERSION = "1"
 _MAX_BODY = 1024 * 1024
@@ -340,12 +341,18 @@ def _frame(model: BaseModel) -> str:
 
 
 def create_webui(
-    app_factory: AppFactory, *, api_key: str | None, host: str = "127.0.0.1", static_root: Path = _STATIC
+    app_factory: AppFactory,
+    *,
+    api_key: str | None,
+    host: str = "127.0.0.1",
+    static_root: Path = _STATIC,
+    stopping: Event | None = None,
 ) -> FastAPI:
     """Build the adapter; only its ASGI lifespan opens and owns the App."""
     if api_key == "":
         raise ValueError("API key cannot be empty")
     owner: HarnessUiApp | None = None
+    stopping = stopping if stopping is not None else Event()
 
     @asynccontextmanager
     async def lifespan(_server: FastAPI) -> AsyncIterator[None]:
@@ -369,6 +376,7 @@ def create_webui(
     # Wildcard binds accept IP literals, never arbitrary DNS names.
     hosts = frozenset({host, "localhost", "127.0.0.1", "::1"})
     server.add_middleware(AccessBoundary, api_key=api_key, allowed_hosts=hosts)
+    server.add_middleware(RequestLog)
 
     @server.middleware("http")
     async def response_headers(request: Request, call_next: Any) -> Any:
@@ -1185,7 +1193,7 @@ def create_webui(
         # generator task so cancellation closes delivery, never the root Run.
         await app().get_thread(thread_id)
 
-        async def events() -> AsyncIterator[str]:
+        async def events() -> AsyncGenerator[str]:
             try:
                 if after is not None:
                     parsed = _parse_cursor(after, "focus", thread_id)
@@ -1229,13 +1237,16 @@ def create_webui(
             except HarnessUiError as exc:
                 yield _frame(ResetFrame(reason=exc.code))
 
-        return StreamingResponse(
-            events(), media_type="text/event-stream", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"}
+        return EventStreamResponse(
+            events(),
+            stopping=stopping,
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
         )
 
     @server.get("/api/events", response_model=SummaryOpenFrame | SummaryEventFrame | ResetFrame)
     async def summary(after: Annotated[str | None, Query(max_length=1024)] = None) -> StreamingResponse:
-        async def events() -> AsyncIterator[str]:
+        async def events() -> AsyncGenerator[str]:
             try:
                 parsed = None if after is None else _parse_cursor(after, "summary", None)
                 cursor = None if parsed is None else SummaryCursor(epoch=parsed.epoch, sequence=parsed.sequence)
@@ -1255,8 +1266,11 @@ def create_webui(
             except HarnessUiError as exc:
                 yield _frame(ResetFrame(reason=exc.code))
 
-        return StreamingResponse(
-            events(), media_type="text/event-stream", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"}
+        return EventStreamResponse(
+            events(),
+            stopping=stopping,
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
         )
 
     @server.get("/api/openapi.json", include_in_schema=False)
@@ -1393,16 +1407,19 @@ async def run(
             "WARNING: non-loopback plain HTTP grants shared instance access on a trusted network, not tenant isolation. Use external TLS when needed.",
             err=True,
         )
-    server = create_webui(app_factory, api_key=selected_key, host=host)
-    await uvicorn.Server(
+    stopping = Event()
+    server = create_webui(app_factory, api_key=selected_key, host=host, stopping=stopping)
+    await WebUIServer(
         uvicorn.Config(
             server,
             host=host,
             port=port,
             access_log=False,
+            log_config=None,
             log_level="warning",
             timeout_graceful_shutdown=3,
             ws="websockets-sansio",
             ws_max_size=1024 * 1024,
-        )
+        ),
+        stopping=stopping,
     ).serve()
