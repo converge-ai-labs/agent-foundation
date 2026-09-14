@@ -142,6 +142,7 @@ class RunCommands:
                     id=session_id,
                     organization_id=prepared_input.invocation.organization_id,
                     workspace_id=workspace_id,
+                    labels=request.session_labels,
                     created_at=now,
                     updated_at=now,
                 )
@@ -151,6 +152,12 @@ class RunCommands:
                     workspace_id=workspace_id,
                     session_id=session_id,
                 )
+                if "session_labels" in request.model_fields_set:
+                    raise InteractionCommandError(
+                        "creation_labels_not_allowed",
+                        "Session labels can only be supplied when creating a Session.",
+                        category=ErrorCategory.invalid_request,
+                    )
 
             thread_id = new_thread_id()
             now = self._clock()
@@ -208,6 +215,8 @@ class RunCommands:
                     environment=requested_environment(environment, default=EnvironmentDefault.agent),
                     final_validator=validate_final,
                     transaction_hook=partial(evidence.commit, now=self._clock()),
+                    thread_label_overrides=request.thread_labels,
+                    run_label_overrides=request.labels,
                 )
             except RunAcceptanceError as error:
                 return await evidence.reconcile(error)
@@ -332,6 +341,7 @@ class RunCommands:
                 )
 
             return await self._acceptance.advance_thread(
+                label_overrides=request.labels,
                 run=run,
                 state=state,
                 expected_thread_version=request.expected_thread_version,
@@ -464,6 +474,7 @@ class RunCommands:
                 )
 
             return await self._acceptance.advance_thread(
+                label_overrides=request.labels,
                 run=run,
                 state=state,
                 expected_thread_version=request.expected_thread_version,
@@ -634,6 +645,8 @@ class RunCommands:
                     ),
                     final_validator=validate_final,
                     transaction_hook=partial(evidence.commit, now=self._clock()),
+                    thread_label_overrides=request.thread_labels,
+                    run_label_overrides=request.labels,
                 )
             except RunAcceptanceError as error:
                 return await evidence.reconcile(error)

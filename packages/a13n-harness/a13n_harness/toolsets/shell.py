@@ -444,7 +444,6 @@ class ShellToolset:
                     if self._resource_resolver is not None
                     else self._resources.resolver(resources)
                 ),
-                shell_review=tool_id == "environment.shell_exec",
             ),
         )
 

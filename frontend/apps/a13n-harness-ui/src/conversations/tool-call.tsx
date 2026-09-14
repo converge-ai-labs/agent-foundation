@@ -1,0 +1,562 @@
+import { createContext, memo, useContext, useMemo, useState } from "react";
+import { Button, DisclosureSection } from "a13n-ui";
+import { Link } from "react-router";
+import {
+  ArrowSquareOut,
+  Check,
+  Copy,
+  FileText,
+  PencilSimple,
+  TerminalWindow,
+  MagnifyingGlass,
+  Code,
+  Wrench,
+  Globe,
+  Chats,
+} from "@phosphor-icons/react";
+import { structuredPatch } from "diff";
+import {
+  describeTool,
+  activityKind,
+  activitySummary,
+  hostLookupPath,
+  parsed,
+  record,
+  sourceText,
+  type AppliedEdit,
+  type ToolView,
+} from "./tool-presentation";
+import styles from "./tool-call.module.css";
+
+// Human lookup on the WebUI Host, not an Environment-to-Host path mapping.
+export const OpenHostFile = createContext<((path: string) => void) | undefined>(
+  undefined,
+);
+
+function CodeContent({ title, value }: { title: string; value: unknown }) {
+  const content = sourceText(value);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState(false);
+  return (
+    <section className={styles.content} aria-label={title}>
+      <header>
+        <span>{title}</span>
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label={`Copy ${title.toLowerCase()}`}
+          onClick={() => {
+            void navigator.clipboard.writeText(content).then(
+              () => {
+                setCopied(true);
+                setError(false);
+              },
+              () => setError(true),
+            );
+          }}
+        >
+          {copied ? <Check /> : <Copy />}
+        </Button>
+      </header>
+      {error && (
+        <small role="status">Copy unavailable. Select the text to copy.</small>
+      )}
+      <pre>{content}</pre>
+    </section>
+  );
+}
+
+export function editPatch(edit: AppliedEdit) {
+  if (
+    [edit.before, edit.after].some(
+      (value) => value.length > 512 * 1024 || value.split("\n").length > 10001,
+    )
+  )
+    return;
+  return structuredPatch(
+    edit.file_path,
+    edit.file_path,
+    edit.before,
+    edit.after,
+    undefined,
+    undefined,
+    { context: 3, maxEditLength: 2000, timeout: 100 },
+  );
+}
+const EditDiff = memo(function EditDiff({ edit }: { edit: AppliedEdit }) {
+  const patch = useMemo(() => editPatch(edit), [edit]);
+  const [full, setFull] = useState(false);
+  const lines = patch?.hunks.flatMap((hunk) => [
+    `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`,
+    ...hunk.lines,
+  ]);
+  const added = patch?.hunks.reduce(
+    (n, hunk) => n + hunk.lines.filter((line) => line.startsWith("+")).length,
+    0,
+  );
+  const removed = patch?.hunks.reduce(
+    (n, hunk) => n + hunk.lines.filter((line) => line.startsWith("-")).length,
+    0,
+  );
+  return (
+    <section className={styles.diff} aria-label="Applied edit">
+      <header>
+        <span>Applied edit</span>
+        {patch && (
+          <span>
+            <span className={styles.addCount}>+{added}</span>{" "}
+            <span className={styles.removeCount}>−{removed}</span>
+          </span>
+        )}
+      </header>
+      <small>Observed before/after content, not the current file.</small>
+      {!lines ? (
+        <p>
+          Diff preview unavailable for this large change. Inspect the recorded
+          content below.
+        </p>
+      ) : !lines.length ? (
+        <p>No content change.</p>
+      ) : (
+        <pre>
+          {(full ? lines : lines.slice(0, 100)).map((line, i) => (
+            <span
+              key={i}
+              className={
+                line.startsWith("+")
+                  ? styles.add
+                  : line.startsWith("-")
+                    ? styles.remove
+                    : line.startsWith("@@")
+                      ? styles.hunk
+                      : styles.context
+              }
+            >
+              {line || " "}
+            </span>
+          ))}
+        </pre>
+      )}
+      {lines && lines.length > 100 && (
+        <Button size="sm" variant="ghost" onClick={() => setFull(!full)}>
+          {full ? "Show fewer lines" : `Show all ${lines.length} lines`}
+        </Button>
+      )}
+      <DisclosureSection title="Recorded content">
+        <CodeContent title="Before" value={edit.before} />
+        <CodeContent title="After" value={edit.after} />
+      </DisclosureSection>
+    </section>
+  );
+});
+
+function ToolDetails({ tool }: { tool: ToolView }) {
+  const info = describeTool(tool);
+  const [raw, setRaw] = useState(false);
+  const replacements =
+    tool.name === "multi_edit" && Array.isArray(info.args.edits)
+      ? info.args.edits.filter(record)
+      : [info.args];
+  return (
+    <div className={styles.details}>
+      {info.errorText && (
+        <p role="status" className={styles.error}>
+          {info.errorText}
+        </p>
+      )}
+      {tool.provider && <small>Provider-run tool · {tool.provider}</small>}
+      <CollaborationDetails tool={tool} />
+      {tool.editOmitted && (
+        <p role="status">
+          Applied edit content was not retained because the saved preview limit
+          was reached. Current Host content is not a historical diff.
+        </p>
+      )}
+      {tool.edit && <EditDiff edit={tool.edit} />}
+      {!tool.edit &&
+        info.kind === "edit" &&
+        !tool.editOmitted &&
+        replacements.some(
+          (edit) =>
+            typeof edit.old_string === "string" &&
+            typeof edit.new_string === "string",
+        ) && (
+          <section>
+            <h4>Requested replacement</h4>
+            <small>
+              Tool input only; an applied diff was not recorded in this view.
+            </small>
+            {replacements.map((edit, i) => (
+              <div key={i}>
+                {typeof edit.old_string === "string" && (
+                  <CodeContent title="Find" value={edit.old_string} />
+                )}
+                {typeof edit.new_string === "string" && (
+                  <CodeContent title="Replace with" value={edit.new_string} />
+                )}
+              </div>
+            ))}
+          </section>
+        )}
+      {info.kind === "shell" && (
+        <>
+          {typeof info.args.command === "string" && (
+            <CodeContent title="Command" value={info.args.command} />
+          )}
+          {record(info.result.status) && (
+            <small>
+              Process: {sourceText(info.result.status.phase)}
+              {typeof info.result.status.exit_code === "number"
+                ? ` · Exit ${info.result.status.exit_code}`
+                : ""}
+            </small>
+          )}
+          {["stdout", "stderr"].map((name) =>
+            record(info.result[name]) &&
+            typeof info.result[name].text === "string" &&
+            info.result[name].text ? (
+              <CodeContent
+                key={name}
+                title={name}
+                value={info.result[name].text}
+              />
+            ) : null,
+          )}
+          {info.outputIncomplete && (
+            <p role="status">
+              Partial process output. Earlier or omitted bytes are not shown.
+            </p>
+          )}
+        </>
+      )}
+      {tool.name === "view" && typeof info.result.content === "string" && (
+        <CodeContent title="Read content" value={info.result.content} />
+      )}
+      {tool.name === "write" && typeof info.args.content === "string" && (
+        <CodeContent
+          title={
+            info.args.mode === "a" ? "Requested append" : "Requested content"
+          }
+          value={info.args.content}
+        />
+      )}
+      {tool.name === "run_code" && typeof info.args.code === "string" && (
+        <CodeContent title="Code" value={info.args.code} />
+      )}
+      <DisclosureSection title="Arguments & result">
+        <div className={styles.format}>
+          <Button
+            size="sm"
+            variant={raw ? "ghost" : "secondary"}
+            aria-pressed={!raw}
+            onClick={() => setRaw(false)}
+          >
+            Formatted
+          </Button>
+          <Button
+            size="sm"
+            variant={raw ? "secondary" : "ghost"}
+            aria-pressed={raw}
+            onClick={() => setRaw(true)}
+          >
+            Raw
+          </Button>
+        </div>
+        {tool.inputOmitted ? (
+          <p>Arguments omitted by the server.</p>
+        ) : (
+          tool.input !== undefined && (
+            <CodeContent
+              title="Arguments"
+              value={raw ? tool.input : parsed(tool.input)}
+            />
+          )
+        )}
+        {tool.resultOmitted ? (
+          <p>Result omitted by the server.</p>
+        ) : (
+          tool.result !== undefined && (
+            <CodeContent
+              title="Result"
+              value={raw ? tool.result : parsed(tool.result)}
+            />
+          )
+        )}
+        {tool.result === undefined && !tool.resultOmitted && (
+          <small>
+            {info.phase}. This does not establish whether side effects occurred.
+          </small>
+        )}
+      </DisclosureSection>
+    </div>
+  );
+}
+const toolIcons = {
+  file: FileText,
+  edit: PencilSimple,
+  shell: TerminalWindow,
+  search: MagnifyingGlass,
+  web: Globe,
+  thread: Chats,
+  code: Code,
+  tool: Wrench,
+};
+
+function ToolActions({ tool }: { tool: ToolView }) {
+  const info = describeTool(tool);
+  const openFile = useContext(OpenHostFile);
+  const path = hostLookupPath(info.path);
+  if (!info.threadId && !(openFile && path)) return null;
+  return (
+    <div className={styles.actions}>
+      {info.threadId && (
+        <Link
+          className={styles.threadLink}
+          to={`/threads/${encodeURIComponent(info.threadId)}`}
+          title={info.threadId}
+        >
+          <ArrowSquareOut aria-hidden="true" />
+          {info.threadTitle || "Open conversation"}
+        </Link>
+      )}
+      {openFile && path && (
+        <Button
+          className={styles.fileLink}
+          size="sm"
+          variant="ghost"
+          title="Look up this exact path on the WebUI server/container, not the Agent Environment. Opens current Host content or your existing private buffer."
+          onClick={() => openFile(path)}
+        >
+          <ArrowSquareOut />
+          Open on host
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function CollaborationDetails({ tool }: { tool: ToolView }) {
+  const info = describeTool(tool);
+  const { args, result } = info;
+  const resources = ["threads", "projects", "agents", "models"].find(
+    (key) => tool.name === `list_${key}` && Array.isArray(result[key]),
+  );
+  const project =
+    tool.name === "get_project" && record(result.project)
+      ? result.project
+      : undefined;
+  const selection = [
+    ["Project", args.project_id === null ? "No project" : args.project_id],
+    ["Agent", args.agent_id],
+    ["Model override", args.model_id],
+  ].filter(([, value]) => typeof value === "string");
+  return (
+    <>
+      {info.kind === "thread" && (
+        <>
+          {selection.length > 0 && (
+            <dl className={styles.selection}>
+              {selection.map(([label, value]) => (
+                <div key={String(label)}>
+                  <dt>{String(label)}</dt>
+                  <dd>{String(value)}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          {typeof args.prompt === "string" && (
+            <CodeContent title="Task" value={args.prompt} />
+          )}
+          {typeof args.message === "string" && (
+            <CodeContent title="Message" value={args.message} />
+          )}
+          {[
+            "create_thread",
+            "run_thread",
+            "send_thread_message",
+            "steer_thread",
+          ].includes(tool.name) && (
+            <small>
+              Acceptance is not completion or saved delivery. Open the
+              conversation to inspect progress; do not blindly retry an
+              uncertain operation.
+            </small>
+          )}
+        </>
+      )}
+      {resources && (
+        <section aria-label={`Discovered ${resources}`}>
+          <h4>
+            {typeof result.total === "number"
+              ? `${result.total} ${resources} found`
+              : `Available ${resources}`}
+          </h4>
+          <ul className={styles.resources}>
+            {(result[resources] as unknown[])
+              .filter(record)
+              .map((resource, index) => {
+                const id =
+                  typeof resource.thread_id === "string"
+                    ? resource.thread_id
+                    : typeof resource.id === "string"
+                      ? resource.id
+                      : "";
+                const name =
+                  typeof resource.title === "string"
+                    ? resource.title
+                    : typeof resource.name === "string"
+                      ? resource.name
+                      : id;
+                return (
+                  <li key={id || index}>
+                    {resources === "threads" && id ? (
+                      <Link to={`/threads/${encodeURIComponent(id)}`}>
+                        {name || id}
+                        <ArrowSquareOut aria-hidden="true" />
+                      </Link>
+                    ) : resources === "projects" && id ? (
+                      <Link to={`/projects/${encodeURIComponent(id)}`}>
+                        {name || id}
+                      </Link>
+                    ) : (
+                      <span>{name || id}</span>
+                    )}
+                    <small>
+                      {[
+                        id !== name ? id : "",
+                        resource.model_id,
+                        resource.route,
+                      ]
+                        .filter((value) => typeof value === "string" && value)
+                        .join(" · ")}
+                    </small>
+                  </li>
+                );
+              })}
+          </ul>
+          {typeof result.next_cursor === "string" && (
+            <small>More results available; this is a loaded page.</small>
+          )}
+        </section>
+      )}
+      {project && (
+        <section>
+          <h4>{typeof project.name === "string" ? project.name : "Project"}</h4>
+          {Array.isArray(project.roots) && (
+            <CodeContent title="Project roots" value={project.roots} />
+          )}
+        </section>
+      )}
+    </>
+  );
+}
+
+export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
+  const info = describeTool(tool);
+  const [expanded, setExpanded] = useState(false);
+  const Icon = toolIcons[info.kind];
+  return (
+    <section className={styles.tool} data-tool-id={tool.id}>
+      <DisclosureSection
+        open={expanded}
+        onOpenChange={setExpanded}
+        title={
+          <span className={styles.title}>
+            <Icon aria-hidden="true" />
+            <strong>{info.label}</strong>
+            {info.summary && <span title={info.summary}>{info.summary}</span>}
+          </span>
+        }
+        summary={
+          <span className={info.failed ? styles.error : styles.phase}>
+            {info.phase === "Result received" ? "" : info.phase}
+          </span>
+        }
+      >
+        {expanded && <ToolDetails tool={tool} />}
+      </DisclosureSection>
+      <ToolActions tool={tool} />
+    </section>
+  );
+});
+
+/** One quiet disclosure for adjacent activity; expanding shows details without a second per-call accordion. */
+export const ToolActivity = memo(function ToolActivity({
+  tools,
+}: {
+  tools: ToolView[];
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const kind = activityKind(tools[0]);
+  if (!kind)
+    return (
+      <>
+        {tools.map((tool) => (
+          <ToolCall key={tool.id} tool={tool} />
+        ))}
+      </>
+    );
+  const info = activitySummary(tools);
+  const Icon = {
+    explore: MagnifyingGlass,
+    shell: TerminalWindow,
+    web: Globe,
+    edit: PencilSimple,
+  }[kind];
+  return (
+    <section
+      className={`${styles.tool} ${styles.group}`}
+      data-activity={kind}
+      data-tool-id={tools[0].id}
+    >
+      <DisclosureSection
+        open={expanded}
+        onOpenChange={setExpanded}
+        title={
+          <span className={styles.title}>
+            <Icon aria-hidden="true" />
+            <strong>{info.title}</strong>
+          </span>
+        }
+        summary={
+          info.status ? (
+            <span className={info.issue ? styles.error : styles.phase}>
+              {info.status}
+            </span>
+          ) : undefined
+        }
+      >
+        {expanded && (
+          <div className={styles.operations}>
+            {tools.map((tool) => {
+              const detail = describeTool(tool);
+              return (
+                <section
+                  key={tool.id}
+                  className={styles.operation}
+                  data-operation-id={tool.id}
+                >
+                  <header>
+                    <span className={styles.operationName}>{detail.label}</span>
+                    {detail.summary && (
+                      <span title={detail.summary}>{detail.summary}</span>
+                    )}
+                    {detail.phase !== "Result received" && (
+                      <small
+                        className={detail.failed ? styles.error : styles.phase}
+                      >
+                        {detail.phase}
+                      </small>
+                    )}
+                  </header>
+                  <ToolActions tool={tool} />
+                  <ToolDetails tool={tool} />
+                </section>
+              );
+            })}
+          </div>
+        )}
+      </DisclosureSection>
+    </section>
+  );
+});

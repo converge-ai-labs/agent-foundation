@@ -13,6 +13,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CreateManagedEnvironmentRequest {
+    #[serde(rename = "labels", skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Value>,
+
     #[serde(
         rename = "name",
         default,
@@ -36,6 +39,7 @@ pub struct CreateManagedEnvironmentRequest {
 impl CreateManagedEnvironmentRequest {
     pub fn new(template_id: String) -> CreateManagedEnvironmentRequest {
         CreateManagedEnvironmentRequest {
+            labels: None,
             name: None,
             template_id,
             version: None,

@@ -140,3 +140,43 @@ def test_port_check_allows_immediate_restart_after_closed_connection(tmp_path, m
     monkeypatch.setattr(commands.socket, "socket", OwnedModelPortSocket)
     environment = local_environment(tmp_path, service={"port": port})
     commands.check_ports(environment)
+
+
+@pytest.mark.parametrize("action", ["setup", "reset"])
+def test_logfire_local_commands_skip_langfuse_and_keep_selected_export(tmp_path, monkeypatch, action):
+    environment = local_environment(
+        tmp_path,
+        observability={
+            "query": {
+                "provider": "logfire",
+                "logfire_base_url": "https://logfire-us.pydantic.dev",
+                "logfire_read_token": "test-read-token",
+                "logfire_history_from": "2026-09-14T00:00:00Z",
+            }
+        },
+    )
+    monkeypatch.setattr(commands, "load_settings", lambda path: environment.settings)
+    monkeypatch.setattr(commands, "Environment", lambda settings: environment)
+    monkeypatch.setattr(sys, "argv", ["dev.service", action, *(["seeded"] if action == "reset" else [])])
+    monkeypatch.setenv("LOGFIRE_TOKEN", "test-write-token")
+    monkeypatch.delenv("LOGFIRE_BASE_URL", raising=False)
+    monkeypatch.delenv("A13N_DEV_TRACE_BACKEND", raising=False)
+    monkeypatch.setattr(Langfuse, "compose", lambda *args: pytest.fail("must not operate Langfuse"))
+    monkeypatch.setattr(Langfuse, "warn_about_legacy_stack", lambda *args: pytest.fail("must not inspect Langfuse"))
+    monkeypatch.setattr(Langfuse, "check_credentials", lambda *args: pytest.fail("must not contact Langfuse"))
+    events = []
+    monkeypatch.setattr(commands, "ensure_docker", lambda: events.append("docker"))
+    monkeypatch.setattr(Environment, "compose", lambda self, *args: events.append(args))
+    monkeypatch.setattr(
+        commands, "DatabaseMigrator", lambda *args: SimpleNamespace(upgrade=lambda: events.append("migrate"))
+    )
+
+    def reset(selected, state):
+        assert selected is environment
+        assert commands.os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] == "https://logfire-us.pydantic.dev"
+        assert commands.os.environ["OTEL_EXPORTER_OTLP_HEADERS"] == "Authorization=test-write-token"
+        events.append(("reset", state))
+
+    monkeypatch.setattr(commands, "reset", reset)
+    commands.main()
+    assert events == (["docker", ("up", "-d", "--wait"), "migrate"] if action == "setup" else [("reset", "seeded")])

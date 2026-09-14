@@ -6,11 +6,12 @@ import {
   File,
   Link as LinkIcon,
   DotsThree,
+  CaretRight,
 } from "@phosphor-icons/react";
 import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice, TextField } from "../shell/ui";
-import { basename, joinPath, gitPath, FileBuffers } from "./buffer";
+import { basename, joinPath, gitPath, FileBuffers, withinRoot } from "./buffer";
 import { useGitStatus } from "./changes";
 import styles from "./native.module.css";
 
@@ -23,8 +24,10 @@ export function Files({
   path,
   open,
   refresh,
+  roots,
 }: {
   directory: string;
+  roots?: string[];
   path: string;
   open: (path: string) => void;
   refresh: () => void;
@@ -55,7 +58,9 @@ export function Files({
   const entries = listing.data?.pages.flatMap((page) => page.entries) ?? [];
   const repo = git.status.data?.pages[0]?.repository;
   const dirty = [...buffers.entries()].filter(
-    ([, buffer]) => buffer.dirty || buffer.uncertain || buffer.saving,
+    ([path, buffer]) =>
+      (!roots || roots.some((root) => withinRoot(path, root))) &&
+      (buffer.dirty || buffer.uncertain || buffer.saving),
   );
   return (
     <div className={styles.stack}>
@@ -178,6 +183,9 @@ export function Files({
                           ? `${entry.size.toLocaleString()} B`
                           : entry.kind}
                     </small>
+                    {entry.kind === "directory" && (
+                      <CaretRight size={14} aria-hidden="true" />
+                    )}
                   </button>
                   <details className={styles.entryActions}>
                     <summary aria-label={`Actions for ${basename(entry.path)}`}>

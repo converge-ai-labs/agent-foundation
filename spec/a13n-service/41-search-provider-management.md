@@ -86,9 +86,13 @@ class SearchSelection:
     provider_id: SearchProviderId
     max_results: int = 5
     include_domains: tuple[str, ...] = ()
+    allow_domains: tuple[str, ...] = ()
+    deny_domains: tuple[str, ...] = ()
 ```
 
 `max_results` is between 1 and 10 and is both the default and ceiling for one tool call. `include_domains` contains at most 20 distinct DNS hostnames, normalized to lowercase ASCII IDNA without a trailing dot, each at most 253 bytes. URLs, ports, IP literals, paths, and wildcard syntax are invalid. An empty tuple imposes no domain filter. A nonempty tuple admits only results whose URL hostname equals a listed domain or its subdomain at a DNS-label boundary. The adapter enforces this after parsing results, whether or not it also passes a provider-native domain hint. It preserves provider order and may return fewer results, including zero; it does not issue extra requests to fill the count. This is a result filter, not an outbound-network authorization grant or a guarantee of exhaustive coverage.
+
+`allow_domains` and `deny_domains` use the shared [Harness domain restrictions](../a13n-harness/09-context-and-memory.md#media-documents-and-web-resources): exact hosts or explicit `*.` subdomains, deny precedence, and at most 256 entries per list. Service applies them to returned search results and to first-party Web fetch/download/scrape destinations, checking every redirect before DNS or network I/O while retaining address pinning and current transport authorization. The existing `include_domains` filter remains independent and all selected filters apply; it does not gain wildcard syntax or change into an outbound grant. Empty new fields are omitted from durable JSON so existing selection digests remain valid. Neither setting restricts arbitrary shell, plugin, or remote MCP egress.
 
 The Agent authoring operation validates the complete selection, current ownership, enabled state, required credential presence, and supported Provider type without decrypting or making an external request. It stores only the stable reference and normalized parameters. Changing the reference or parameters publishes an Agent Revision. Creating, renaming, disabling, or rotating a Provider never rewrites a referencing Revision.
 

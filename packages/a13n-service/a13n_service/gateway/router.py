@@ -10,11 +10,12 @@ from typing import Annotated, Literal, cast
 
 import anyio
 from ag_ui.core import RunAgentInput
-from fastapi import APIRouter, Depends, Header, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Header, Query, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from a13n_service.application_errors import ApplicationError, ErrorCategory
+from a13n_service.gateway.labels import InteractionLabels
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.iam.http.resource_dependencies import WorkspaceId
 from a13n_service.ids import new_object_id
@@ -40,6 +41,7 @@ from a13n_service.interactions.control_domain import (
 )
 from a13n_service.interactions.input import AgentInput
 from a13n_service.interactions.submissions import DeleteQueuedSubmissionRequest, QueuedSubmissionService
+from a13n_service.labels import LabelFilterValues, LabelsBody, parse_label_filters
 from a13n_service.process.runtime import ProcessRuntime
 from a13n_service.request_runtime import get_control_runtime
 
@@ -72,6 +74,7 @@ NOTIFICATION_SUBPROTOCOL = "a13n.service.notifications.v1"
 
 router = APIRouter(tags=["protocol-gateway"])
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
+IfMatch = Annotated[str, Header(alias="If-Match", min_length=1, max_length=256)]
 
 
 class SessionListQuery(SessionFilters):
@@ -137,6 +140,15 @@ def _queries(request: Request) -> NativeInteractionQueries:
             category=ErrorCategory.unavailable,
         )
     return control.gateway.queries
+
+
+def _labels(request: Request) -> InteractionLabels:
+    control = get_control_runtime(request)
+    if control is None:
+        raise ApplicationError(
+            "gateway_unavailable", "The Protocol Gateway is unavailable.", category=ErrorCategory.unavailable
+        )
+    return control.gateway.labels
 
 
 def _commands(request: Request) -> InteractionCommands:
@@ -507,6 +519,52 @@ async def get_thread(request: Request, actor: Actor, thread_id: str) -> ThreadRe
     return await _queries(request).get_thread(actor=actor, thread_id=thread_id)
 
 
+@router.get("/api/v1/sessions/{session_id}/labels", response_model=LabelsBody)
+async def get_session_labels(request: Request, response: Response, actor: Actor, session_id: str) -> LabelsBody:
+    body, etag = await _labels(request).get_session_labels(actor=actor, session_id=session_id)
+    response.headers["ETag"] = etag
+    return body
+
+
+@router.put("/api/v1/sessions/{session_id}/labels", response_model=LabelsBody)
+async def put_session_labels(
+    request: Request,
+    response: Response,
+    actor: Actor,
+    session_id: str,
+    body: LabelsBody,
+    if_match: IfMatch,
+) -> LabelsBody:
+    result, etag = await _labels(request).put_session_labels(
+        actor=actor, session_id=session_id, body=body, if_match=if_match
+    )
+    response.headers["ETag"] = etag
+    return result
+
+
+@router.get("/api/v1/threads/{thread_id}/labels", response_model=LabelsBody)
+async def get_thread_labels(request: Request, response: Response, actor: Actor, thread_id: str) -> LabelsBody:
+    body, etag = await _labels(request).get_thread_labels(actor=actor, thread_id=thread_id)
+    response.headers["ETag"] = etag
+    return body
+
+
+@router.put("/api/v1/threads/{thread_id}/labels", response_model=LabelsBody)
+async def put_thread_labels(
+    request: Request,
+    response: Response,
+    actor: Actor,
+    thread_id: str,
+    body: LabelsBody,
+    if_match: IfMatch,
+) -> LabelsBody:
+    result, etag = await _labels(request).put_thread_labels(
+        actor=actor, thread_id=thread_id, body=body, if_match=if_match
+    )
+    response.headers["ETag"] = etag
+    return result
+
+
 @router.get("/api/v1/sessions/{session_id}/threads", response_model=ThreadCollection)
 async def list_threads(
     request: Request,
@@ -514,13 +572,41 @@ async def list_threads(
     session_id: str,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
+    label: Annotated[LabelFilterValues, Query()] = (),
 ) -> ThreadCollection:
-    return await _queries(request).list_threads(actor=actor, session_id=session_id, limit=limit, cursor=cursor)
+    return await _queries(request).list_threads(
+        actor=actor,
+        session_id=session_id,
+        limit=limit,
+        cursor=cursor,
+        labels=parse_label_filters(label),
+    )
 
 
 @router.get("/api/v1/runs/{run_id}", response_model=RunResource)
 async def get_run(request: Request, actor: Actor, run_id: str) -> RunResource:
     return await _queries(request).get_run(actor=actor, run_id=run_id)
+
+
+@router.get("/api/v1/runs/{run_id}/labels", response_model=LabelsBody)
+async def get_run_labels(request: Request, response: Response, actor: Actor, run_id: str) -> LabelsBody:
+    body, etag = await _labels(request).get_run_labels(actor=actor, run_id=run_id)
+    response.headers["ETag"] = etag
+    return body
+
+
+@router.put("/api/v1/runs/{run_id}/labels", response_model=LabelsBody)
+async def put_run_labels(
+    request: Request,
+    response: Response,
+    actor: Actor,
+    run_id: str,
+    body: LabelsBody,
+    if_match: IfMatch,
+) -> LabelsBody:
+    result, etag = await _labels(request).put_run_labels(actor=actor, run_id=run_id, body=body, if_match=if_match)
+    response.headers["ETag"] = etag
+    return result
 
 
 @router.get("/api/v1/workspaces/{workspace}/runs", response_model=RunCollection)
@@ -530,6 +616,7 @@ async def list_workspace_runs(
     workspace_id: WorkspaceId,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
+    label: Annotated[LabelFilterValues, Query()] = (),
 ) -> RunCollection:
     return await _queries(request).list_runs(
         actor=actor,
@@ -537,6 +624,7 @@ async def list_workspace_runs(
         thread_id=None,
         limit=limit,
         cursor=cursor,
+        labels=parse_label_filters(label),
     )
 
 
@@ -547,6 +635,7 @@ async def list_thread_runs(
     thread_id: str,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
+    label: Annotated[LabelFilterValues, Query()] = (),
 ) -> RunCollection:
     return await _queries(request).list_runs(
         actor=actor,
@@ -554,6 +643,7 @@ async def list_thread_runs(
         thread_id=thread_id,
         limit=limit,
         cursor=cursor,
+        labels=parse_label_filters(label),
     )
 
 

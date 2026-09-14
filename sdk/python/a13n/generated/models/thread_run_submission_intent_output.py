@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from ..models.existing_environment_selection import ExistingEnvironmentSelection
     from ..models.inline_hook_subscription_input import InlineHookSubscriptionInput
     from ..models.new_environment_selection import NewEnvironmentSelection
+    from ..models.thread_run_submission_intent_output_labels import ThreadRunSubmissionIntentOutputLabels
 
 
 T = TypeVar("T", bound="ThreadRunSubmissionIntentOutput")
@@ -29,6 +30,7 @@ class ThreadRunSubmissionIntentOutput:
         environment (ExistingEnvironmentSelection | NewEnvironmentSelection | None | Unset):
         expected_current_revision_id (None | str | Unset):
         hook_subscription (InlineHookSubscriptionInput | None | Unset):
+        labels (ThreadRunSubmissionIntentOutputLabels | Unset):
     """
 
     input_: AgentInput
@@ -38,6 +40,7 @@ class ThreadRunSubmissionIntentOutput:
     environment: ExistingEnvironmentSelection | NewEnvironmentSelection | Unset | None = UNSET
     expected_current_revision_id: str | Unset | None = UNSET
     hook_subscription: InlineHookSubscriptionInput | Unset | None = UNSET
+    labels: ThreadRunSubmissionIntentOutputLabels | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.agent_run_override_output import AgentRunOverrideOutput
@@ -91,6 +94,10 @@ class ThreadRunSubmissionIntentOutput:
         else:
             hook_subscription = self.hook_subscription
 
+        labels: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.labels, Unset):
+            labels = self.labels.to_dict()
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -110,6 +117,8 @@ class ThreadRunSubmissionIntentOutput:
             field_dict["expected_current_revision_id"] = expected_current_revision_id
         if hook_subscription is not UNSET:
             field_dict["hook_subscription"] = hook_subscription
+        if labels is not UNSET:
+            field_dict["labels"] = labels
 
         return field_dict
 
@@ -120,6 +129,9 @@ class ThreadRunSubmissionIntentOutput:
         from ..models.existing_environment_selection import ExistingEnvironmentSelection
         from ..models.inline_hook_subscription_input import InlineHookSubscriptionInput
         from ..models.new_environment_selection import NewEnvironmentSelection
+        from ..models.thread_run_submission_intent_output_labels import (
+            ThreadRunSubmissionIntentOutputLabels,
+        )
 
         d = dict(src_dict)
         input_ = AgentInput.from_dict(d.pop("input"))
@@ -210,6 +222,13 @@ class ThreadRunSubmissionIntentOutput:
 
         hook_subscription = _parse_hook_subscription(d.pop("hook_subscription", UNSET))
 
+        _labels = d.pop("labels", UNSET)
+        labels: ThreadRunSubmissionIntentOutputLabels | Unset
+        if isinstance(_labels, Unset):
+            labels = UNSET
+        else:
+            labels = ThreadRunSubmissionIntentOutputLabels.from_dict(_labels)
+
         thread_run_submission_intent_output = cls(
             input_=input_,
             agent_id=agent_id,
@@ -218,6 +237,7 @@ class ThreadRunSubmissionIntentOutput:
             environment=environment,
             expected_current_revision_id=expected_current_revision_id,
             hook_subscription=hook_subscription,
+            labels=labels,
         )
 
         return thread_run_submission_intent_output

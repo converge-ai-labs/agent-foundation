@@ -19,6 +19,9 @@ pub struct SessionResource {
     #[serde(rename = "id")]
     pub id: String,
 
+    #[serde(rename = "labels")]
+    pub labels: serde_json::Value,
+
     #[serde(rename = "preview", deserialize_with = "Option::deserialize")]
     pub preview: Option<Box<models::SessionPreview>>,
 
@@ -36,6 +39,7 @@ impl SessionResource {
     pub fn new(
         created_at: chrono::DateTime<chrono::FixedOffset>,
         id: String,
+        labels: serde_json::Value,
         preview: Option<models::SessionPreview>,
         run_count: Option<i32>,
         updated_at: chrono::DateTime<chrono::FixedOffset>,
@@ -44,6 +48,7 @@ impl SessionResource {
         SessionResource {
             created_at,
             id,
+            labels,
             preview: if let Some(x) = preview {
                 Some(Box::new(x))
             } else {

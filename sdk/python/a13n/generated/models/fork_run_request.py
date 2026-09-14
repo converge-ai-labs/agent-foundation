@@ -11,6 +11,8 @@ if TYPE_CHECKING:
     from ..models.agent_input import AgentInput
     from ..models.agent_run_override_input import AgentRunOverrideInput
     from ..models.existing_environment_selection import ExistingEnvironmentSelection
+    from ..models.fork_run_request_labels import ForkRunRequestLabels
+    from ..models.fork_run_request_thread_labels import ForkRunRequestThreadLabels
     from ..models.inline_hook_subscription_input import InlineHookSubscriptionInput
     from ..models.new_environment_selection import NewEnvironmentSelection
 
@@ -29,6 +31,8 @@ class ForkRunRequest:
         environment (ExistingEnvironmentSelection | NewEnvironmentSelection | None | Unset):
         expected_current_revision_id (None | str | Unset):
         hook_subscription (InlineHookSubscriptionInput | None | Unset):
+        labels (ForkRunRequestLabels | Unset):
+        thread_labels (ForkRunRequestThreadLabels | Unset):
     """
 
     input_: AgentInput
@@ -38,6 +42,8 @@ class ForkRunRequest:
     environment: ExistingEnvironmentSelection | NewEnvironmentSelection | Unset | None = UNSET
     expected_current_revision_id: str | Unset | None = UNSET
     hook_subscription: InlineHookSubscriptionInput | Unset | None = UNSET
+    labels: ForkRunRequestLabels | Unset = UNSET
+    thread_labels: ForkRunRequestThreadLabels | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.agent_run_override_input import AgentRunOverrideInput
@@ -91,6 +97,14 @@ class ForkRunRequest:
         else:
             hook_subscription = self.hook_subscription
 
+        labels: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.labels, Unset):
+            labels = self.labels.to_dict()
+
+        thread_labels: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.thread_labels, Unset):
+            thread_labels = self.thread_labels.to_dict()
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -110,6 +124,10 @@ class ForkRunRequest:
             field_dict["expected_current_revision_id"] = expected_current_revision_id
         if hook_subscription is not UNSET:
             field_dict["hook_subscription"] = hook_subscription
+        if labels is not UNSET:
+            field_dict["labels"] = labels
+        if thread_labels is not UNSET:
+            field_dict["thread_labels"] = thread_labels
 
         return field_dict
 
@@ -118,6 +136,8 @@ class ForkRunRequest:
         from ..models.agent_input import AgentInput
         from ..models.agent_run_override_input import AgentRunOverrideInput
         from ..models.existing_environment_selection import ExistingEnvironmentSelection
+        from ..models.fork_run_request_labels import ForkRunRequestLabels
+        from ..models.fork_run_request_thread_labels import ForkRunRequestThreadLabels
         from ..models.inline_hook_subscription_input import InlineHookSubscriptionInput
         from ..models.new_environment_selection import NewEnvironmentSelection
 
@@ -210,6 +230,20 @@ class ForkRunRequest:
 
         hook_subscription = _parse_hook_subscription(d.pop("hook_subscription", UNSET))
 
+        _labels = d.pop("labels", UNSET)
+        labels: ForkRunRequestLabels | Unset
+        if isinstance(_labels, Unset):
+            labels = UNSET
+        else:
+            labels = ForkRunRequestLabels.from_dict(_labels)
+
+        _thread_labels = d.pop("thread_labels", UNSET)
+        thread_labels: ForkRunRequestThreadLabels | Unset
+        if isinstance(_thread_labels, Unset):
+            thread_labels = UNSET
+        else:
+            thread_labels = ForkRunRequestThreadLabels.from_dict(_thread_labels)
+
         fork_run_request = cls(
             input_=input_,
             agent_id=agent_id,
@@ -218,6 +252,8 @@ class ForkRunRequest:
             environment=environment,
             expected_current_revision_id=expected_current_revision_id,
             hook_subscription=hook_subscription,
+            labels=labels,
+            thread_labels=thread_labels,
         )
 
         return fork_run_request

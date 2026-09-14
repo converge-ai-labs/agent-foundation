@@ -30,6 +30,7 @@ The following schemas are conceptual domain and public read shapes:
 
 ```python
 class Skill:
+    labels: dict[str, str]
     id: SkillId
     organization_id: OrganizationId
     workspace_id: WorkspaceId
@@ -379,12 +380,13 @@ Stable Skill and Revision identity, active-key uniqueness and reuse, the relatio
 
 ## Invariants
 
-1. A Skill has one permanent opaque ID and one immutable key derived from Revision `1`; every Revision's root `SKILL.md` declares that key.
-2. A Workspace has at most one non-deleted Skill per key; deletion releases the key but never reuses or retargets the old Skill identity.
-3. Publishing distinct current content appends and selects the next immutable Revision, so current always identifies the highest published version.
-4. AgentRevisions freeze stable Skill identities and pinned-or-current selection policy; accepted Runs freeze exact Revision locks.
-5. An Agent or Run selects at most one version of a Skill.
-6. Deleted Skills are publicly unreadable and block every new Run, while already accepted Runs retain exact internal reconstruction authority.
-7. Uploads, GitHub refs, object URLs, caches, and package content grant no runtime authority by themselves.
-8. No database transaction spans source acquisition, object storage, Environment I/O, or Harness work.
-9. Harness scanning begins only after the complete materialized root verifies.
+01. A Skill has one permanent opaque ID and one immutable key derived from Revision `1`; every Revision's root `SKILL.md` declares that key.
+02. A Workspace has at most one non-deleted Skill per key; deletion releases the key but never reuses or retargets the old Skill identity.
+03. Publishing distinct current content appends and selects the next immutable Revision, so current always identifies the highest published version.
+04. AgentRevisions freeze stable Skill identities and pinned-or-current selection policy; accepted Runs freeze exact Revision locks.
+05. An Agent or Run selects at most one version of a Skill.
+06. Deleted Skills are publicly unreadable and block every new Run, while already accepted Runs retain exact internal reconstruction authority.
+07. Uploads, GitHub refs, object URLs, caches, and package content grant no runtime authority by themselves.
+08. No database transaction spans source acquisition, object storage, Environment I/O, or Harness work.
+09. Harness scanning begins only after the complete materialized root verifies.
+10. Skill labels are mutable head metadata outside immutable Revisions. Publishing, restoring, or otherwise selecting a Revision retains the Skill head labels.

@@ -10,8 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.etags import etag_matches, resource_etag
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
+from a13n_service.labels import LabelsBody, label_predicates, labels_etag
 from a13n_service.storage import transaction
-from a13n_service.temporal import Clock, utc_now
+from a13n_service.temporal import Clock, next_updated_at, utc_now
 
 from .cursors import (
     SkillCursorError,
@@ -105,6 +106,7 @@ class SkillCatalogService:
         cursor: str | None,
         q: str | None = None,
         source_kind: Literal["zip", "github"] | None = None,
+        labels: dict[str, str] | None = None,
     ) -> SkillCollection:
         _validate_limit(limit)
         term = q.strip().lower() if q else ""
@@ -113,6 +115,7 @@ class SkillCatalogService:
             scope["source_kind"] = source_kind
         if term:
             scope["q"] = term
+        scope["labels"] = labels or {}
         try:
             position = decode_skill_cursor(cursor, scope=scope) if cursor is not None else None
         except SkillCursorError as error:
@@ -140,6 +143,13 @@ class SkillCatalogService:
                     SkillRecord.organization_id == workspace.organization_id,
                     SkillRecord.workspace_id == workspace_id,
                     SkillRecord.deleted_at.is_(None),
+                )
+            )
+            query = query.where(
+                *label_predicates(
+                    SkillRecord.labels,
+                    labels or {},
+                    dialect=session.bind.dialect.name,
                 )
             )
             if source_kind:
@@ -345,6 +355,54 @@ class SkillCatalogService:
                 action="skill.update",
             )
             raise
+
+    async def get_labels(self, *, actor: AuthenticatedActor, skill_id: str) -> tuple[LabelsBody, str]:
+        skill = await self.get(actor=actor, skill_id=skill_id)
+        return LabelsBody(labels=skill.labels), labels_etag(skill.id, skill.labels)
+
+    async def replace_labels(
+        self, *, actor: AuthenticatedActor, skill_id: str, if_match: str, body: LabelsBody
+    ) -> tuple[LabelsBody, str]:
+        now = self._clock()
+        async with transaction(self._sessions) as session:
+            workspace = await authorize_skill_workspace(
+                session,
+                actor=actor,
+                workspace_id=actor.workspace_id,
+                action=WorkspaceAction.skill_update,
+                concealed_code="skill_not_found",
+            )
+            locked = await lock_active_skill(
+                session,
+                organization_id=workspace.organization_id,
+                workspace_id=workspace.workspace_id,
+                skill_id=skill_id,
+            )
+            current = labels_etag(locked.id, locked.labels)
+            if not etag_matches(if_match, current):
+                raise SkillError(
+                    "labels_etag_mismatch",
+                    "Labels changed since they were read.",
+                    category=ErrorCategory.stale_version,
+                    details={"current_etag": current},
+                )
+            if locked.labels != body.labels:
+                locked.labels = dict(body.labels)
+                locked.updated_by_type = actor.principal.principal_type.value
+                locked.updated_by_id = actor.principal.principal_id
+                locked.updated_at = next_updated_at(locked.updated_at, now)
+                session.add(
+                    skill_audit_record(
+                        actor=actor,
+                        organization_id=workspace.organization_id,
+                        workspace_id=workspace.workspace_id,
+                        skill_id=skill_id,
+                        action="skill.labels.update",
+                        now=now,
+                        details=None,
+                    )
+                )
+            return LabelsBody(labels=locked.labels), labels_etag(locked.id, locked.labels)
 
     async def _update(
         self,

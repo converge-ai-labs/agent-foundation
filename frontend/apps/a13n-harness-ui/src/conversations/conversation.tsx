@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -21,6 +22,7 @@ import { Discussion } from "./comments";
 import { useHistory, useThread } from "./queries";
 import { FocusDisplay, showFocusedOutput, watchThread } from "./stream";
 import { LiveOutput, SavedEntry } from "./transcript";
+import { savedToolGroups } from "./tool-presentation";
 import styles from "./conversation.module.css";
 
 export function ConversationPage(props: {
@@ -112,11 +114,15 @@ function Conversation({
       clearTimeout(refresh);
     };
   }, [transport, threadId, display, reconcile]);
-  const entries =
-    history.data?.pages
-      .slice()
-      .reverse()
-      .flatMap((page) => page.entries) ?? [];
+  const entries = useMemo(
+    () =>
+      history.data?.pages
+        .slice()
+        .reverse()
+        .flatMap((page) => page.entries) ?? [],
+    [history.data],
+  );
+  const toolGroups = useMemo(() => savedToolGroups(entries), [entries]);
   const continuation = history.data?.pages[0]?.continuation_id;
   const operation = detail.data?.thread.root_activity;
   const [lastReceipt, setLastReceipt] = useState<string | null>(null);
@@ -337,6 +343,7 @@ function Conversation({
               <SavedEntry
                 key={`${continuation}:${entry.position}`}
                 entry={entry}
+                toolGroups={toolGroups}
                 threadId={threadId}
               />
             ))}
@@ -387,6 +394,7 @@ function Conversation({
         )}
         {!thread.archived && (
           <Composer
+            autoFocus={search.get("compose") === "1"}
             threadId={threadId}
             activity={thread.root_activity}
             canRun={detail.data.available_actions?.includes("run") ?? false}

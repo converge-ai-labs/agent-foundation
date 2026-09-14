@@ -1,5 +1,10 @@
 import { ApiError, type Schema, type Transport } from "../transport/client";
 import { consumeSse } from "../transport/events";
+import {
+  sourceText,
+  type AppliedEdit,
+  type ToolView,
+} from "./tool-presentation";
 
 export type DisplayBlock = {
   id: string;
@@ -9,6 +14,12 @@ export type DisplayBlock = {
   name?: string;
   result?: string;
   done?: boolean;
+  outcome?: ToolView["outcome"];
+  failure?: string;
+  retry?: boolean;
+  stopped?: boolean;
+  edit?: AppliedEdit;
+  provider?: string;
   metadata?: Record<string, unknown>;
   value?: unknown;
   diagnostic?: boolean;
@@ -276,6 +287,7 @@ export class FocusDisplay {
         done: true,
       });
     } else if (type === "RUN_FINISHED" || type === "RUN_ERROR") {
+      this.stopTools();
       const status = `${this.runId}:execution`;
       this.blocks.set(status, {
         id: status,
@@ -300,11 +312,121 @@ export class FocusDisplay {
       this.foldCustom(event);
     }
   }
+  private stopTools() {
+    for (const [key, block] of this.blocks) {
+      if (block.kind === "tool")
+        this.blocks.set(key, { ...block, stopped: true });
+    }
+  }
   private foldCustom(event: Payload) {
     const name = string(event.name);
     const value = object(event.value) ? event.value : {};
     const source = object(value.event) ? value.event : {};
     const payload = object(source.payload) ? source.payload : {};
+    if (
+      ["a13n.pydantic_ai.part_start", "a13n.pydantic_ai.part_end"].includes(
+        name,
+      ) &&
+      object(source.part)
+    ) {
+      const part = source.part;
+      if (
+        ["builtin-tool-call", "builtin-tool-return"].includes(
+          string(part.part_kind),
+        ) &&
+        typeof part.tool_call_id === "string"
+      ) {
+        const provider = string(part.provider_name) || "provider";
+        const key = `${this.runId}:native:${provider}:${part.tool_call_id}`;
+        const previous = this.blocks.get(key);
+        const returned = part.part_kind === "builtin-tool-return";
+        this.blocks.set(key, {
+          id: key,
+          kind: "tool",
+          name: string(part.tool_name),
+          text: "",
+          ...previous,
+          provider,
+          ...(returned
+            ? {
+                result: sourceText(part.content),
+                done: true,
+                outcome: [
+                  "success",
+                  "failed",
+                  "denied",
+                  "interrupted",
+                ].includes(string(part.outcome))
+                  ? (part.outcome as ToolView["outcome"])
+                  : undefined,
+              }
+            : {
+                text: sourceText(part.args),
+                done: name === "a13n.pydantic_ai.part_end" || previous?.done,
+              }),
+        });
+        return;
+      }
+    }
+    if (
+      name === "a13n.filesystem.edit_applied" &&
+      typeof source.tool_call_id === "string" &&
+      typeof source.file_path === "string" &&
+      typeof source.before === "string" &&
+      typeof source.after === "string"
+    ) {
+      const key = `${this.runId}:${source.tool_call_id}`;
+      const block = this.blocks.get(key);
+      this.blocks.set(key, {
+        id: key,
+        kind: "tool",
+        text: "",
+        name: "edit",
+        ...block,
+        edit: {
+          file_path: source.file_path,
+          before: source.before,
+          after: source.after,
+        },
+      });
+      return;
+    }
+    if (
+      name === "a13n.pydantic_ai.function_tool_result" &&
+      object(source.part) &&
+      typeof source.part.tool_call_id === "string"
+    ) {
+      const part = source.part;
+      if (
+        part.part_kind === "tool-return" ||
+        part.part_kind === "retry-prompt"
+      ) {
+        const key = `${this.runId}:${part.tool_call_id}`;
+        const block = this.blocks.get(key);
+        this.blocks.set(key, {
+          id: key,
+          kind: "tool",
+          text: "",
+          name: string(part.tool_name),
+          ...block,
+          result: sourceText(part.content),
+          done: true,
+          retry: part.part_kind === "retry-prompt",
+          outcome:
+            part.outcome === "failed" ||
+            part.outcome === "denied" ||
+            part.outcome === "interrupted" ||
+            part.outcome === "success"
+              ? part.outcome
+              : undefined,
+          failure:
+            part.part_kind === "retry-prompt"
+              ? sourceText(part.content) || "Tool input validation failed."
+              : undefined,
+        });
+        return;
+      }
+    }
     if (name === "a13n.input.media") {
       const key = `${this.runId}:${string(event.message_id)}`;
       this.blocks.set(key, {
@@ -386,6 +508,7 @@ export class FocusDisplay {
       return;
     }
     if (name === "a13n.harness.run_result") {
+      this.stopTools();
       const key = `${this.runId}:execution`;
       this.blocks.set(key, {
         id: key,

@@ -31,6 +31,9 @@ pub struct ThreadResource {
     #[serde(rename = "id")]
     pub id: String,
 
+    #[serde(rename = "labels")]
+    pub labels: serde_json::Value,
+
     #[serde(rename = "origin_kind")]
     pub origin_kind: String,
 
@@ -63,6 +66,7 @@ impl ThreadResource {
         default_environment_id: Option<String>,
         head_run_id: Option<String>,
         id: String,
+        labels: serde_json::Value,
         origin_kind: String,
         origin_run_id: Option<String>,
         origin_thread_id: Option<String>,
@@ -78,6 +82,7 @@ impl ThreadResource {
             default_environment_id,
             head_run_id,
             id,
+            labels,
             origin_kind,
             origin_run_id,
             origin_thread_id,

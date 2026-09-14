@@ -101,13 +101,13 @@ POST the target to `/api/threads/{root_thread_id}/saved-output` for the original
 
 Comment bodies are not jointly editable and there are no reply/resolution workflows. `POST /api/threads/{root_thread_id}/comments/{comment_id}/capture` explicitly captures one complete publication (body, selection and attribution) plus its complete original assistant block into a Thread attachment. It returns the existing `ThreadAttachment` with `source.kind: comment_reference`, root/comment IDs and the exact saved target. It requires neither native sharing nor a model-side Capability. Complete UTF-8 content, including attribution, must fit 64 KiB; unavailable sources or oversized content fail without truncation. Capture never modifies the shared composer or admits execution. The browser explicitly selects the returned attachment ID only after success.
 
-Ordinary submit and text-only root steering expand the immutable capture as native text with existing `harness_ui.attachment` metadata. Browsers can render an inspectable comment-reference card instead of the expanded editor text; model content remains the complete capture. Retention, eight-attachment bounds and capture-only clearing are unchanged. Publication or inspection alone is never model input.
+Ordinary submit and root steering expand the immutable capture as native text with existing `harness_ui.attachment` metadata. Browsers can render an inspectable comment-reference card instead of the expanded editor text; model content remains the complete capture. Retention, eight-attachment bounds and capture-only clearing are unchanged. Publication or inspection alone is never model input.
 
 ## Shared composer
 
 `features.shared_drafts` advertises the backend protocol, not a finished browser editor. Connect to `/api/threads/{thread_id}/draft/connect` using the same first-frame authentication as the terminal. Only root Threads participate; computer sharing is not required. One App owns one in-memory document per participating Thread. Disconnect removes presence, not the document or an executing Run. App close drops drafts and presence; conversation history keeps its existing storage owner.
 
-`x-interactive.draft` describes the JSON envelopes. The server sends `DraftFrame` with a `draft_id`, connection-local `participant_id`, a base64 **Yjs v1 full-state update**, and current participant presence. The document uses two root types: `text` (`Y.Text`, plain text only) and `attachments` (`Y.Map<string>`). Each map key is a client-generated selection identity; its value is an existing attachment ID from that same Thread. Native file/diff captures use those same IDs, not live paths or duplicated bytes. Sorting selection keys gives deterministic submission order. Collaborators inspect each selected handle through `GET /api/threads/{thread_id}/attachments/{attachment_id}/metadata`, which returns the existing `ThreadAttachment` projection without downloading its bytes. It preserves the Thread scope and immutable file/diff provenance; removing a draft selection does not delete retained input files. The server uses pycrdt/Yrs; CRDT item identities and merging are library-owned.
+`x-interactive.draft` describes the JSON envelopes. The server sends `DraftFrame` with a `draft_id`, connection-local `participant_id`, a base64 **Yjs v1 full-state update**, and current participant presence. The document uses two root types: `text` (`Y.Text`, plain text only) and `attachments` (`Y.Map<string>`). Inline map keys use `inline-<UUID>`; their values are existing attachment IDs from that same Thread, or the incomplete states `pending`/`failed`. The text contains opaque `U+FFFC + key + U+FFFC` identity tokens, rendered as atomic filename controls by the browser. Only live token occurrences select inline input; dormant registry entries support undo and remain bounded by the full CRDT-state limit. Missing registry entries and incomplete states block client submission. Tokens never cross the execution-input boundary. Native file/diff captures use those same IDs, not live paths or duplicated bytes. Clients expand token occurrences in authored text order. Legacy map keys without the `inline-` prefix are still selected in sorted-key order after the text; new clients retain this read compatibility. Collaborators inspect each selected handle through `GET /api/threads/{thread_id}/attachments/{attachment_id}/metadata`, which returns the existing `ThreadAttachment` projection without downloading its bytes. It preserves the Thread scope and immutable file/diff provenance; removing a draft selection does not delete retained input files. The server uses pycrdt/Yrs; CRDT item identities and merging are library-owned.
 
 Apply received updates to a local Yjs-compatible replica. Send `{"kind":"sync","draft_id":"...","update_base64":"..."}` with the replica's **complete** update, including dependencies and deletion sets, rather than a state-vector delta. Full updates make offline/rejoin merge and resending editing state independent of a server-side transport log. The server atomically validates the whole merged composer before publishing it. `draft_invalid` leaves server state unchanged; keep rejected local content and surface the error rather than silently dropping selections. Limits are 512 KiB encoded CRDT state, 256 Ki characters plain text, eight selected attachments, and the existing 20 MiB aggregate attachment limit. CRDT history counts toward the state limit; there is no automatic compaction that changes item identities.
 
@@ -116,11 +116,30 @@ Presence uses `{"kind":"presence","draft_id":"...","presence":{"name":"Alice","c
 Send is a client action, not a draft endpoint:
 
 1. Synchronize pending edits and observe them in the returned CRDT state.
-2. Clone the exact current replica; read its text and attachment IDs for ordinary `/submit`.
-3. On a positive submission acknowledgement, delete only the text/items visible in that captured clone and merge its full deletion update back into the live replica. This preserves concurrent inserts and replaced/added selections. Do not clear the current editor by offsets or replace it with an empty document.
+2. Clone the exact current replica; expand its authored text and live attachment identities into ordered `parts` for ordinary `/submit`.
+3. On a positive submission acknowledgement, delete only the text and legacy selections visible in that captured clone and merge its full deletion update back into the live replica. Keep inline registry entries: an uncaptured occurrence pasted by a peer can reuse a key and arrive after acknowledgement. This preserves concurrent inserts and replaced/added selections. Do not clear the current editor by offsets or replace it with an empty document.
 4. On rejection or unknown outcome, retain the draft. Never retry submission automatically. Resending a CRDT editing update is not resending an execution request.
 
-Explicit root steering accepts `prompt` and optional `attachment_ids`. Only captured NUL-free UTF-8 file/diff/comment context of at most 64 KiB each can be expanded into text for steering, with retained attachment metadata preserved. Ordinary uploads, binary or larger captures return `steer_context_unsupported`; retain the entire draft for ordinary submission. Runtime steering remains text-only. Normal submission retains larger/binary captures using existing Thread attachment behavior. A later Host edit cannot change either path's captured bytes or source attribution.
+Explicit root steering accepts ordered `parts`, or legacy `prompt` and optional `attachment_ids`, using the same attachment preparation and limits as ordinary submission. Images become native image input; ordinary files and binary or larger captures retain readable Thread attachment references. Captured NUL-free UTF-8 file/diff/comment context of at most 64 KiB also supplies attributed inline text. Attachment-only steering is valid, and ordered parts retain their authored order and metadata. A later Host edit cannot change either path's captured bytes or source attribution.
+
+### Ordered input bodies
+
+Root `/submit` and root `/steer` accept `parts` containing strings and `{ "attachment_id": "..." }` references in authored order:
+
+```json
+{
+  "parts": [
+    "Compare ",
+    { "attachment_id": "attachment-first" },
+    " with ",
+    { "attachment_id": "attachment-second" }
+  ]
+}
+```
+
+Stage the bytes through the existing attachment endpoint first. References retain their original Thread-scoped IDs; the App does not duplicate uploads. A repeated ID is a distinct occurrence and counts again toward count/byte limits. The body permits at most 1024 parts and 256 Ki authored text characters in total, subject to the existing attachment limits. Empty input is rejected. Do not combine `parts` with a nonempty `prompt` or `attachment_ids`. Omitting `parts` preserves the legacy prompt-plus-trailing-attachments behavior. No client-supplied media metadata, Host paths, or editor tokens are accepted as references.
+
+Native input content carries the existing `source_id` and `harness_ui.composer.index` presentation metadata. A single attachment can expand into text and binary pieces with the same authored index; displays group those pieces by source/index, not attachment ID alone. Live and retained-history projections preserve this metadata.
 
 ## Create a Thread and submit input
 
@@ -243,7 +262,7 @@ Git Changes is read-only and uses the same computer-sharing gate as Files. Paths
 3. Read `GET /api/host/git/diff?repository_path=...&path=<relative-file>&comparison=unstaged`. `staged` compares observed HEAD (or the empty tree) to index; `unstaged` compares index to worktree; `untracked` explicitly compares a new file. Paths are literal, not patterns; directory/ignored selection belongs in Files. The reply supplies identity, index and diff revisions, and `text`, `binary` or `unchanged` presentation. Only text presentation supplies a UTF-8 patch; conflicts retain Git's combined/unmerged form. An optional `expected_revision` rejects a changed comparison.
 4. Capture with `POST /api/threads/{thread_id}/host-git-captures`. The JSON body has `repository_path`, relative `path`, `comparison`, required `expected_revision`, and optionally both `start_line` and `end_line` as inclusive one-based **patch** lines. The server recomputes and checks the reviewed diff before staging it. The response uses the same `attachment`/`prompt_text` shape as file capture. Binary and unchanged previews are rejected; use Files when selecting binary file bytes.
 
-Captured source metadata includes `kind: git_diff`, Host location, repository/Git directory, selected/original paths, comparison, HEAD, index/diff revisions and range. Send its attachment ID through ordinary `/submit`; the saved bytes and source remain stable after later edits or index/branch changes. Captures up to 64 KiB supply attributed inline text; larger patches remain retained attachments. Steering is still text-only and can deliberately use `prompt_text` when present. Existing file provenance and ordinary attachments remain compatible.
+Captured source metadata includes `kind: git_diff`, Host location, repository/Git directory, selected/original paths, comparison, HEAD, index/diff revisions and range. Send its attachment ID through ordinary `/submit`; the saved bytes and source remain stable after later edits or index/branch changes. Captures up to 64 KiB supply attributed inline text; larger patches remain retained attachments. Steering accepts the same attachment ID and preserves its captured bytes and provenance. Existing file provenance and ordinary attachments remain compatible.
 
 Queries are fresh on demand, without a Git database or watcher. Refresh after file mutations, on returning to Changes, or explicitly to observe other people's and processes' edits. Git state is shared checkout state, not per-Run attribution. Each subprocess is limited to 15 seconds, 2 MiB stdout and 64 KiB stderr; overflow returns `413 host_git_too_large`, timeout returns `504 host_git_timeout`, and cancellation reaps the process. No partial patch is presented as complete. The API disables external diff/textconv helpers and optional index refresh writes. It never stages, commits, discards, switches branches or runs remote operations.
 
@@ -265,7 +284,7 @@ Native revisions are opaque OS metadata observations, not content hashes or hist
 
 Pass that `attachment.attachment_id` in the ordinary `/submit` body's `attachment_ids`. Small-text captures add their attributed content inline to model input; binary and larger-text captures remain retained attachments rather than pretending to be inline text. Existing attachment count, total-input limits, Thread scope, and scratch/retention rules apply. Normal uploaded text attachments without captured source provenance retain their existing behavior.
 
-Root steering accepts `prompt` plus optional captured `attachment_ids`; the App expands supported captured text using the retained bytes and source. Ordinary upload, binary or larger capture selections are rejected together rather than silently omitted. Child steering remains `prompt` only. Runtime steering stays text-only; shared editing is provided by the separate [composer protocol](#shared-composer).
+Root steering accepts ordered `parts` or `prompt` plus optional `attachment_ids`; the App prepares images, ordinary files, and captured context exactly as for ordinary submission. Selected content is never silently omitted. Child steering remains `prompt` only. Shared editing is provided by the separate [composer protocol](#shared-composer).
 
 ## Inspect configuration and working state
 
@@ -312,7 +331,7 @@ Metadata PATCH accepts `expected_version` plus `patch`; use the Thread's current
 
 Decision responses carry `expected_continuation_id` and every selected request exactly once. Question, approval, and external-result kinds must match their pending contract. Do not replace a suspended continuation with an ordinary prompt or submit only the answers convenient to the current UI.
 
-Attachment upload uses raw bytes with a `name` query parameter, not multipart form data. The contract advertises `application/octet-stream`; preserve the returned attachment ID and use it only within its Thread. Limits are 10 MiB each, eight per input, and 20 MiB combined. Downloads return bytes with attachment disposition, not JSON. Root and child steering use a separate text-only `SteerRequest` (`prompt`); attachment fields are rejected rather than accepted and ignored.
+Attachment upload uses raw bytes with a `name` query parameter, not multipart form data. The contract advertises `application/octet-stream`; preserve the returned attachment ID and use it only within its Thread. Limits are 10 MiB each, eight per input, and 20 MiB combined. Downloads return bytes with attachment disposition, not JSON. Root steering accepts the same ordered parts or legacy prompt/attachment fields as submission. Child steering uses the text-only `SteerRequest` (`prompt`) and rejects attachment fields rather than ignoring them.
 
 ## Navigate and inspect child work
 

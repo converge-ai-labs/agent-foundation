@@ -69,6 +69,15 @@ pub enum GetSkillsSkillIdError {
     UnknownValue(serde_json::Value),
 }
 
+/// struct for typed errors of method [`get_skills_skill_id_labels`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum GetSkillsSkillIdLabelsError {
+    Status400(models::ErrorResponse),
+    DefaultResponse(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
 /// struct for typed errors of method [`get_skills_skill_id_references`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -136,6 +145,15 @@ pub enum PostWorkspacesWorkspaceSkillUploadsError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum PostWorkspacesWorkspaceSkillsError {
+    Status400(models::ErrorResponse),
+    DefaultResponse(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
+/// struct for typed errors of method [`put_skills_skill_id_labels`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PutSkillsSkillIdLabelsError {
     Status400(models::ErrorResponse),
     DefaultResponse(models::ErrorResponse),
     UnknownValue(serde_json::Value),
@@ -504,6 +522,72 @@ pub async fn get_skills_skill_id(
     }
 }
 
+pub async fn get_skills_skill_id_labels(
+    configuration: &configuration::Configuration,
+    skill_id: &str,
+) -> Result<Response<models::LabelsBody>, Error<GetSkillsSkillIdLabelsError>> {
+    // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_skill_id = skill_id;
+
+    let uri_str = format!(
+        "{}/api/v1/skills/{skill_id}/labels",
+        configuration.base_path,
+        skill_id = crate::generated::apis::urlencode(p_path_skill_id)
+    );
+    let mut req_builder = configuration.client.request(reqwest::Method::GET, &uri_str);
+
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+    if let Some(ref token) = configuration.bearer_access_token {
+        req_builder = req_builder.bearer_auth(token.to_owned());
+    };
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content)
+                .map(|data| Response {
+                    data,
+                    status,
+                    headers,
+                })
+                .map_err(Error::from),
+            ContentType::Text => {
+                return Err(Error::from(serde_json::Error::custom(
+                    "Received `text/plain` content type response that cannot be converted to `models::LabelsBody`",
+                )));
+            }
+            ContentType::Unsupported(unknown_type) => {
+                return Err(Error::from(serde_json::Error::custom(format!(
+                    "Received `{unknown_type}` content type response that cannot be converted to `models::LabelsBody`"
+                ))));
+            }
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<GetSkillsSkillIdLabelsError> = serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(Box::new(ResponseContent {
+            status,
+            headers,
+            content,
+            entity,
+        })))
+    }
+}
+
 pub async fn get_skills_skill_id_references(
     configuration: &configuration::Configuration,
     skill_id: &str,
@@ -664,6 +748,7 @@ pub async fn get_workspaces_workspace_skills(
     cursor: Option<&str>,
     q: Option<&str>,
     source_kind: Option<&str>,
+    label: Option<Vec<String>>,
 ) -> Result<Response<models::SkillCollection>, Error<GetWorkspacesWorkspaceSkillsError>> {
     // add a prefix to parameters to efficiently prevent name collisions
     let p_path_workspace = workspace;
@@ -671,6 +756,7 @@ pub async fn get_workspaces_workspace_skills(
     let p_query_cursor = cursor;
     let p_query_q = q;
     let p_query_source_kind = source_kind;
+    let p_query_label = label;
 
     let uri_str = format!(
         "{}/api/v1/workspaces/{workspace}/skills",
@@ -690,6 +776,25 @@ pub async fn get_workspaces_workspace_skills(
     }
     if let Some(ref param_value) = p_query_source_kind {
         req_builder = req_builder.query(&[("source_kind", &param_value.to_string())]);
+    }
+    if let Some(ref param_value) = p_query_label {
+        req_builder = match "multi" {
+            "multi" => req_builder.query(
+                &param_value
+                    .into_iter()
+                    .map(|p| ("label".to_owned(), p.to_string()))
+                    .collect::<Vec<(std::string::String, std::string::String)>>(),
+            ),
+            _ => req_builder.query(&[(
+                "label",
+                &param_value
+                    .into_iter()
+                    .map(|p| p.to_string())
+                    .collect::<Vec<String>>()
+                    .join(",")
+                    .to_string(),
+            )]),
+        };
     }
     if let Some(ref user_agent) = configuration.user_agent {
         req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
@@ -1105,6 +1210,78 @@ pub async fn post_workspaces_workspace_skills(
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceSkillsError> =
             serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(Box::new(ResponseContent {
+            status,
+            headers,
+            content,
+            entity,
+        })))
+    }
+}
+
+pub async fn put_skills_skill_id_labels(
+    configuration: &configuration::Configuration,
+    skill_id: &str,
+    if_match: &str,
+    labels_body: models::LabelsBody,
+) -> Result<Response<models::LabelsBody>, Error<PutSkillsSkillIdLabelsError>> {
+    // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_skill_id = skill_id;
+    let p_header_if_match = if_match;
+    let p_body_labels_body = labels_body;
+
+    let uri_str = format!(
+        "{}/api/v1/skills/{skill_id}/labels",
+        configuration.base_path,
+        skill_id = crate::generated::apis::urlencode(p_path_skill_id)
+    );
+    let mut req_builder = configuration.client.request(reqwest::Method::PUT, &uri_str);
+
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+    req_builder = req_builder.header("If-Match", p_header_if_match.to_string());
+    if let Some(ref token) = configuration.bearer_access_token {
+        req_builder = req_builder.bearer_auth(token.to_owned());
+    };
+    req_builder = req_builder.json(&p_body_labels_body);
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content)
+                .map(|data| Response {
+                    data,
+                    status,
+                    headers,
+                })
+                .map_err(Error::from),
+            ContentType::Text => {
+                return Err(Error::from(serde_json::Error::custom(
+                    "Received `text/plain` content type response that cannot be converted to `models::LabelsBody`",
+                )));
+            }
+            ContentType::Unsupported(unknown_type) => {
+                return Err(Error::from(serde_json::Error::custom(format!(
+                    "Received `{unknown_type}` content type response that cannot be converted to `models::LabelsBody`"
+                ))));
+            }
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<PutSkillsSkillIdLabelsError> = serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,

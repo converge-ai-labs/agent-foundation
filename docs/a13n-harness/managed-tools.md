@@ -4,6 +4,127 @@ Ordinary Pydantic AI tools remain ordinary Python: they can use the process's am
 
 This is not an operating-system sandbox. Provider isolation and Host access policy remain separate. Client-executed declarations belong in [Client-side tools](client-tools.md).
 
+## Select tool permissions
+
+Permissions work for ordinary local Pydantic tools as well as managed tools. Add `ToolPermissionsCapability` to the definition; keep fresh resource authorization in `InvocationPolicyCapability`:
+
+```python
+from a13n_harness.tools import ToolPermissions, ToolPermissionsCapability
+
+permissions = ToolPermissionsCapability(
+    ToolPermissions(
+        default="inherit",
+        rules={
+            "environment.shell_exec": "review",
+            "filesystem.remove": "ask",
+            "tool/reporting/*": "allow",
+            "mcp/untrusted-source/*": "deny",
+        },
+    )
+)
+```
+
+Use the actual prepared stable IDs, not display names. Managed tools retain their declared IDs; ordinary tools use `tool/<toolset-id>/<original-name>`, and local MCP tools use `mcp/<source-id>/<original-name>`. Source/name segments are percent-encoded. MCP needs a stable source ID. Prefixing, renaming, ToolProxy, and CodeAct do not change a target's permission identity. Hosts using custom naming wrappers can attach `ToolIdentityToolset` before them.
+
+Exact rules win over the longest `.*` or `/*` prefix, then `*`, then `default`. `inherit` uses the tool default, which is `allow` without review unless trusted code explicitly declares otherwise. External/provider-native tools retain their separate boundaries. A reviewer and its risk rules do not enable review by themselves; select permission `review` for the tools you want assessed. `allow` continues, `deny` fails before custom validation, `ask` requests human approval, and `review` consults a matching reviewer. If no reviewer is configured or matches, review adds no restriction. None of these modes supplies credentials or bypasses Host/Environment policy.
+
+### Configure or replace the reviewer
+
+The same `ToolPermissionsCapability` owns optional review configuration, reviewer selection, and the per-Run review lifecycle. Its model-backed reviewer uses a separate Agent with no execution tools:
+
+```python
+from a13n_harness.capabilities import (
+    ToolReviewConfig,
+    ToolReviewPolicy,
+    ToolReviewRule,
+    ToolRiskLevel,
+)
+
+permissions = ToolPermissionsCapability(
+    ToolPermissions(rules={"environment.shell_exec": "review", "tool/reporting/*": "review"}),
+    review=ToolReviewConfig(
+        model="review-model",
+        instruction="Treat private customer data exports as high risk.",
+        shell_instruction="Treat irreversible shell operations as extra-high risk.",
+        risk_threshold=ToolRiskLevel.EXTRA_HIGH,
+        on_flagged="deny",
+        rules={
+            "tool/reporting/*": ToolReviewRule(
+                risk_threshold=ToolRiskLevel.HIGH, on_flagged="approval_required"
+            ),
+        },
+        timeout_seconds=30,
+        on_error="approval_required",
+    )
+)
+# Pass this one permissions Capability in HarnessBuilder.build(..., capabilities=(...)).
+# Your Host's Run Model resolver resolves the logical "review-model" selection.
+```
+
+The packaged system prompt stays separate from custom `instruction`. A shell-specific instruction replaces the general custom instruction for shell calls. Custom text is escaped inside `<custom-instruction>`; the tool schema, arguments, and task are request data, not reviewer instructions. Requests redact sensitive fields, omit environment variable values, and include bounded task and passive Environment context. Reviews run after structural validation but before custom validation, resource lookup, or dispatch. Timeout always denies, even after earlier approval; other failures follow `on_error`.
+
+Reviewers return only `risk` and `reason`. Risk order is `low < medium < high < extra_high`; the runtime applies the configured action at or above the threshold. Defaults are global `extra_high` and `deny`. One best rule wins: exact ID, longest prefix, then `*`; missing fields inherit global values, not broader rules. `ToolReviewConfig` contains this policy; code-first reviewers may instead use `ToolReviewPolicy`.
+
+The single common prompt renders XML with an intact redacted current call and original schema, targeting 16 KiB with a 64 KiB hard limit. Optional blocks are omitted explicitly, never by truncating the current operation. Task/correction text, passive Environment information, up to five earlier reviews, and eight recent actions supply bounded context. At most 48 flat evidence records travel with saved Harness state across Runs; they contain no full arguments or results. Human denials and observed dispatch outcomes are distinguished from assessments. History is advisory, not reusable approval or proof of successful external effects.
+
+To implement a trusted reviewer without another model request:
+
+```python
+from a13n_harness import AgentContext
+from a13n_harness.capabilities import (
+    ToolReviewAssessment,
+    ToolReviewRequest,
+    ToolReviewResult,
+)
+
+
+class ExportReviewer:
+    async def review(
+        self, request: ToolReviewRequest, *, context: AgentContext
+    ) -> ToolReviewResult:
+        return ToolReviewResult(
+            assessment=ToolReviewAssessment(
+                risk="high",
+                reason="Confirm the export destination before sending data.",
+            ),
+        )
+
+
+permissions = ToolPermissionsCapability(
+    ToolPermissions(rules={"tool/reporting/*": "review"}),
+    reviewers={"tool/reporting/*": ExportReviewer()},
+    policy=ToolReviewPolicy(risk_threshold=ToolRiskLevel.HIGH, on_flagged="approval_required"),
+)
+```
+
+A custom reviewer can return provider usage receipts in `ToolReviewResult.usage` or preserve proven receipts in `ToolReviewError`. The shared gate records them in the existing ledger with source `tool.review` and tool/call IDs for all tools, including shell. Completed `HarnessExtensionEvent(kind="tool")` events with `payload.type="tool_review_result"` expose the redacted result, including risk/reason and usage, plus a separate runtime-computed `decision`. Errors expose a safe code and effective decision with `result=null`. Do not account the event receipts a second time. Missing reviewers produce neither a review call nor a result event.
+
+### Read human approval provenance
+
+`ToolApprovalContext` is available through the read-only `AgentContext.tool_approval` accessor. It is `None` outside the active call, isolated between concurrent calls, and exposes immutable `tool_id`, `tool_call_id`, and `approved_sources`:
+
+- `permission`: approval requested by configured permissions or managed policy;
+- `reviewer`: approval requested by review;
+- `tool`: approval requested by the tool itself.
+
+Automatic `allow` decisions never populate this set. A tool needing its own confirmation checks its own source:
+
+```python
+from pydantic_ai import RunContext
+from pydantic_ai.exceptions import ApprovalRequired
+
+
+def export_report(ctx: RunContext[AgentContext]) -> str:
+    approval = ctx.deps.tool_approval
+    if approval is None or "tool" not in approval.approved_sources:
+        raise ApprovalRequired(metadata={"reason": "Confirm report export"})
+    return "Export confirmed"
+```
+
+Earlier approvals survive another suspension of the same call; approving the reviewer does not approve a later tool or managed-policy decision. The Host still uses native deferred requests/results and authenticated feedback. Changes to identity, schema, arguments, or approval-bound resources invalidate prior evidence. Review and current policy run again on resume, so a fresh denial still blocks execution.
+
+Provider-native tools and external client tools are not local permission-gate calls. Select Host Web search if `web.search` needs a non-allow permission; an active provider-native search tool with that policy fails explicitly instead of claiming enforcement.
+
 ## Author and authorize a tool
 
 This complete offline example wraps a read-only function in managed metadata and supplies a fresh Run policy. `TestModel` exercises the tool without an API key:

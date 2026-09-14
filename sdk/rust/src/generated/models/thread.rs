@@ -43,6 +43,9 @@ pub struct Thread {
     #[serde(rename = "id")]
     pub id: String,
 
+    #[serde(rename = "labels", skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Value>,
+
     #[serde(rename = "organization_id")]
     pub organization_id: String,
 
@@ -99,6 +102,7 @@ impl Thread {
             default_environment_id: None,
             head_run_id: None,
             id,
+            labels: None,
             organization_id,
             origin_kind,
             origin_run_id: None,

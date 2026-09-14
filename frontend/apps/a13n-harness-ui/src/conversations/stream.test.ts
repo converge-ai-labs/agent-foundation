@@ -403,3 +403,157 @@ it("retains unsaved initial output and only cuts over after replacement history 
   expect(showFocusedOutput(display, "C1", null)).toBe(true);
   expect(showFocusedOutput(display, "C2", null)).toBe(false);
 });
+
+it("folds native applied edits and failed results by exact ID without guessing proxy identities", () => {
+  const display = new FocusDisplay();
+  const events = [
+    ["TOOL_CALL_START", { tool_call_id: "outer", tool_call_name: "call" }],
+    [
+      "TOOL_CALL_ARGS",
+      { tool_call_id: "outer", delta: '{"group":"filesystem","tool":"edit"}' },
+    ],
+    ["TOOL_CALL_END", { tool_call_id: "outer" }],
+    [
+      "CUSTOM",
+      {
+        name: "a13n.filesystem.edit_applied",
+        value: {
+          event: {
+            tool_call_id: "inner",
+            file_path: "/native/a",
+            before: "old",
+            after: "new",
+          },
+        },
+      },
+    ],
+    [
+      "CUSTOM",
+      {
+        name: "a13n.pydantic_ai.function_tool_result",
+        value: {
+          event: {
+            part: {
+              part_kind: "tool-return",
+              tool_name: "edit",
+              tool_call_id: "inner",
+              outcome: "failed",
+              content: "Failed after write",
+            },
+          },
+        },
+      },
+    ],
+    ["TOOL_CALL_START", { tool_call_id: "retry", tool_call_name: "view" }],
+    [
+      "CUSTOM",
+      {
+        name: "a13n.pydantic_ai.function_tool_result",
+        value: {
+          event: {
+            part: {
+              part_kind: "retry-prompt",
+              tool_call_id: "retry",
+              content: "Invalid input",
+            },
+          },
+        },
+      },
+    ],
+    ["RUN_ERROR", { code: "run_cancelled" }],
+  ];
+  display.accept(snapshot(events.length));
+  display.accept(
+    focusFrame({
+      kind: "root_stream",
+      run_id: "run-one",
+      events: events.map(([event_type, payload], index) => ({
+        index,
+        event_type,
+        payload,
+        payload_omitted: false,
+      })),
+    }),
+  );
+  expect(display.blocks.get("run-one:outer")).toMatchObject({
+    done: true,
+    stopped: true,
+  });
+  expect(display.blocks.get("run-one:outer")?.result).toBeUndefined();
+  expect(display.blocks.get("run-one:outer")?.edit).toBeUndefined();
+  expect(display.blocks.get("run-one:inner")).toMatchObject({
+    outcome: "failed",
+    result: "Failed after write",
+    edit: { before: "old", after: "new" },
+    stopped: true,
+  });
+  expect(display.blocks.get("run-one:retry")?.failure).toBe("Invalid input");
+  expect(display.blocks.get("run-one:retry")?.retry).toBe(true);
+  expect(
+    [...display.blocks.values()].filter((block) => block.diagnostic),
+  ).toHaveLength(0);
+});
+
+it("folds provider-native search snapshots once, retaining final arguments and separate local call identity", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "cursor-ready" }));
+  let sequence = 101;
+  const emit = (event_type: string, payload: Record<string, unknown>) =>
+    display.accept(
+      focusFrame({
+        kind: "event",
+        resume_cursor: `cursor-${sequence}`,
+        event: {
+          sequence: sequence++,
+          epoch: "epoch-one",
+          run_kind: "root",
+          thread_id: "thread-one",
+          root_thread_id: "thread-one",
+          run_id: "run-one",
+          event_type,
+          payload,
+        },
+      }),
+    );
+  const part = {
+    part_kind: "builtin-tool-call",
+    tool_name: "web_search",
+    tool_call_id: "same",
+    provider_name: "openai",
+    args: null,
+  };
+  const native = (name: string, value: Record<string, unknown>) =>
+    emit("CUSTOM", {
+      name: `a13n.pydantic_ai.${name}`,
+      value: { event: { index: 0, part: value } },
+    });
+  native("part_start", part);
+  expect([...display.blocks.values()][0].result).toBeUndefined();
+  native("part_end", {
+    ...part,
+    args: { type: "search", query: "final query" },
+  });
+  expect([...display.blocks.values()][0].text).toContain("final query");
+  expect([...display.blocks.values()][0].result).toBeUndefined();
+  const returned = {
+    ...part,
+    part_kind: "builtin-tool-return",
+    content: { status: "completed", sources: [] },
+    outcome: "success",
+  };
+  native("part_start", returned);
+  native("part_end", returned);
+  emit("TOOL_CALL_START", {
+    tool_call_id: "same",
+    tool_call_name: "web_search",
+  });
+  expect(display.blocks.size).toBe(2);
+  const provider = [...display.blocks.values()].find((block) => block.provider);
+  expect(provider?.outcome).toBe("success");
+  expect(provider?.text).toContain("final query");
+  expect(provider?.result).toContain("completed");
+  expect([...display.blocks.values()].every((block) => !block.diagnostic)).toBe(
+    true,
+  );
+});

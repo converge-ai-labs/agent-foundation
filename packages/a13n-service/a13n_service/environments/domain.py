@@ -7,9 +7,17 @@ from enum import StrEnum
 from typing import Annotated, Literal, get_args
 
 from a13n_environment import EnvironmentState
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    StringConstraints,
+    model_validator,
+)
 
 from a13n_service.ids import ObjectId
+from a13n_service.labels import Labels
 
 EnvironmentName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
 type LocalProviderType = Literal["a13n.direct-local", "a13n.local-envd", "a13n.docker"]
@@ -89,6 +97,7 @@ class EnvironmentTemplate(DomainModel):
     workspace_id: ObjectId | None
     name: EnvironmentName
     description: str | None
+    labels: Labels = Field(default_factory=dict)
     version: int
     current_revision_id: ObjectId
     archived_at: datetime | None
@@ -116,6 +125,7 @@ class EnvironmentStatus(StrEnum):
 class Environment(DomainModel):
     id: ObjectId
     name: EnvironmentName
+    labels: Labels = Field(default_factory=dict)
     organization_id: ObjectId
     workspace_id: ObjectId
     provider_id: ObjectId
@@ -136,6 +146,7 @@ class ExistingEnvironmentSelection(DomainModel):
 
 class NewEnvironmentSelection(DomainModel):
     template_id: ObjectId
+    labels: Labels = Field(default_factory=dict)
     version: Annotated[int, Field(ge=1)] | None = None
 
 
@@ -162,6 +173,7 @@ class ReplaceCredentialRequest(DomainModel):
 class CreateTemplateRequest(TemplateConfiguration):
     name: EnvironmentName
     description: Annotated[str, Field(max_length=4096)] | None = None
+    labels: Labels = Field(default_factory=dict)
 
 
 class CreateTemplateRevisionRequest(TemplateConfiguration):
@@ -179,6 +191,7 @@ class RegisterEnvironmentRequest(EnvironmentConfiguration):
     name: EnvironmentName | None = None
     state: EnvironmentState | None = None
     access: EnvironmentAccess = EnvironmentAccess.full
+    labels: Labels = Field(default_factory=dict)
 
 
 class CreateManagedEnvironmentRequest(NewEnvironmentSelection):

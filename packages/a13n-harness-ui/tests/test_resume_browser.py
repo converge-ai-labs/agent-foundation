@@ -112,9 +112,10 @@ async def test_keyboard_search_preview_history_rename_and_cancel_preserve_draft(
         shell = CliShell(CliRequest())
         shell.backend = backend = _backend()
         monkeypatch.setattr(shell, "_load_notes", AsyncMock())
-        shell.images = (AttachmentUpload("picture.png", b"fixture", "image/png"),)
         marker = shell.pastes.insert("large paste " * 200)
-        shell.composer.buffer.document = draft = Document("draft " + marker, cursor_position=2)
+        shell.composer.buffer.document = Document("draft " + marker, cursor_position=2)
+        shell.insert_attachments((AttachmentUpload("picture.png", b"fixture", "image/png"),))
+        draft = shell.composer.buffer.document
         shell.emit("Original live conversation")
         terminal = asyncio.create_task(shell.app.run_async())
         try:
@@ -159,7 +160,7 @@ async def test_keyboard_search_preview_history_rename_and_cancel_preserve_draft(
             pipe.send_text("\x1b")
             await _until(lambda: shell.resume_browser is None)
             assert shell.composer.buffer.document == draft
-            assert shell.pastes.expand(draft.text) == "draft " + "large paste " * 200
+            assert shell.inline.compile(shell.pastes.expand(draft.text)).text == "draft " + "large paste " * 200
             assert shell.images[0].name == "picture.png"
             assert "Original live conversation" in _source(shell)
             assert "Retained answer" not in _source(shell)
@@ -178,7 +179,7 @@ async def test_pages_scope_inspection_and_successful_switch(monkeypatch, project
         shell = CliShell(CliRequest())
         shell.backend = backend = _backend()
         monkeypatch.setattr(shell, "_load_notes", AsyncMock())
-        shell.images = (AttachmentUpload("picture.png", b"fixture", "image/png"),)
+        shell.insert_attachments((AttachmentUpload("picture.png", b"fixture", "image/png"),))
         terminal = asyncio.create_task(shell.app.run_async())
         try:
             await _until(lambda: shell.app.is_running)

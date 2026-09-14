@@ -13,6 +13,9 @@ if TYPE_CHECKING:
     from ..models.existing_environment_selection import ExistingEnvironmentSelection
     from ..models.inline_hook_subscription_input import InlineHookSubscriptionInput
     from ..models.new_environment_selection import NewEnvironmentSelection
+    from ..models.start_run_request_labels import StartRunRequestLabels
+    from ..models.start_run_request_session_labels import StartRunRequestSessionLabels
+    from ..models.start_run_request_thread_labels import StartRunRequestThreadLabels
 
 
 T = TypeVar("T", bound="StartRunRequest")
@@ -29,7 +32,10 @@ class StartRunRequest:
         environment (ExistingEnvironmentSelection | NewEnvironmentSelection | None | Unset):
         expected_current_revision_id (None | str | Unset):
         hook_subscription (InlineHookSubscriptionInput | None | Unset):
+        labels (StartRunRequestLabels | Unset):
         session_id (None | str | Unset):
+        session_labels (StartRunRequestSessionLabels | Unset):
+        thread_labels (StartRunRequestThreadLabels | Unset):
     """
 
     agent_id: str
@@ -39,7 +45,10 @@ class StartRunRequest:
     environment: ExistingEnvironmentSelection | NewEnvironmentSelection | Unset | None = UNSET
     expected_current_revision_id: str | Unset | None = UNSET
     hook_subscription: InlineHookSubscriptionInput | Unset | None = UNSET
+    labels: StartRunRequestLabels | Unset = UNSET
     session_id: str | Unset | None = UNSET
+    session_labels: StartRunRequestSessionLabels | Unset = UNSET
+    thread_labels: StartRunRequestThreadLabels | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.agent_run_override_input import AgentRunOverrideInput
@@ -89,11 +98,23 @@ class StartRunRequest:
         else:
             hook_subscription = self.hook_subscription
 
+        labels: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.labels, Unset):
+            labels = self.labels.to_dict()
+
         session_id: str | Unset | None
         if isinstance(self.session_id, Unset):
             session_id = UNSET
         else:
             session_id = self.session_id
+
+        session_labels: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.session_labels, Unset):
+            session_labels = self.session_labels.to_dict()
+
+        thread_labels: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.thread_labels, Unset):
+            thread_labels = self.thread_labels.to_dict()
 
         field_dict: dict[str, Any] = {}
 
@@ -113,8 +134,14 @@ class StartRunRequest:
             field_dict["expected_current_revision_id"] = expected_current_revision_id
         if hook_subscription is not UNSET:
             field_dict["hook_subscription"] = hook_subscription
+        if labels is not UNSET:
+            field_dict["labels"] = labels
         if session_id is not UNSET:
             field_dict["session_id"] = session_id
+        if session_labels is not UNSET:
+            field_dict["session_labels"] = session_labels
+        if thread_labels is not UNSET:
+            field_dict["thread_labels"] = thread_labels
 
         return field_dict
 
@@ -125,6 +152,9 @@ class StartRunRequest:
         from ..models.existing_environment_selection import ExistingEnvironmentSelection
         from ..models.inline_hook_subscription_input import InlineHookSubscriptionInput
         from ..models.new_environment_selection import NewEnvironmentSelection
+        from ..models.start_run_request_labels import StartRunRequestLabels
+        from ..models.start_run_request_session_labels import StartRunRequestSessionLabels
+        from ..models.start_run_request_thread_labels import StartRunRequestThreadLabels
 
         d = dict(src_dict)
         agent_id = d.pop("agent_id")
@@ -208,6 +238,13 @@ class StartRunRequest:
 
         hook_subscription = _parse_hook_subscription(d.pop("hook_subscription", UNSET))
 
+        _labels = d.pop("labels", UNSET)
+        labels: StartRunRequestLabels | Unset
+        if isinstance(_labels, Unset):
+            labels = UNSET
+        else:
+            labels = StartRunRequestLabels.from_dict(_labels)
+
         def _parse_session_id(data: object) -> str | Unset | None:
             if data is None:
                 return data
@@ -217,6 +254,20 @@ class StartRunRequest:
 
         session_id = _parse_session_id(d.pop("session_id", UNSET))
 
+        _session_labels = d.pop("session_labels", UNSET)
+        session_labels: StartRunRequestSessionLabels | Unset
+        if isinstance(_session_labels, Unset):
+            session_labels = UNSET
+        else:
+            session_labels = StartRunRequestSessionLabels.from_dict(_session_labels)
+
+        _thread_labels = d.pop("thread_labels", UNSET)
+        thread_labels: StartRunRequestThreadLabels | Unset
+        if isinstance(_thread_labels, Unset):
+            thread_labels = UNSET
+        else:
+            thread_labels = StartRunRequestThreadLabels.from_dict(_thread_labels)
+
         start_run_request = cls(
             agent_id=agent_id,
             input_=input_,
@@ -225,7 +276,10 @@ class StartRunRequest:
             environment=environment,
             expected_current_revision_id=expected_current_revision_id,
             hook_subscription=hook_subscription,
+            labels=labels,
             session_id=session_id,
+            session_labels=session_labels,
+            thread_labels=thread_labels,
         )
 
         return start_run_request

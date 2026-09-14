@@ -28,6 +28,9 @@ pub struct Environment {
     #[serde(rename = "id")]
     pub id: String,
 
+    #[serde(rename = "labels", skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Value>,
+
     #[serde(rename = "name")]
     pub name: String,
 
@@ -82,6 +85,7 @@ impl Environment {
             created_at,
             generation,
             id,
+            labels: None,
             name,
             organization_id,
             ownership,

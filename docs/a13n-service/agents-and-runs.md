@@ -35,6 +35,43 @@ curl --fail-with-body "$SERVICE_URL/api/v1/workspaces/$WORKSPACE/agents" \
 
 The `201` representation contains `agent` and `revision`. Save their returned IDs; do not fabricate IDs from the display name. The input adapter is the installed `native` adapter. This minimal Agent requires no Environment or external tools; its prompt should contain the material to review.
 
+## Configure tool permissions and a reviewer
+
+Add optional `permissions` and `reviewer` objects to the Agent `config` when local tool calls need a front permission gate. The following is a fragment to merge into a complete config; replace the reviewer placeholder with a real managed Model **ID**, not a Model key or provider route:
+
+```json
+{
+  "permissions": {
+    "default": "auto",
+    "rules": {
+      "environment.shell_exec": "review",
+      "filesystem.remove": "ask",
+      "tool/reporting/*": "review"
+    }
+  },
+  "reviewer": {
+    "model": "REVIEW_MODEL_ID",
+    "instruction": "Treat private customer data exports as high risk.",
+    "shell_instruction": "Treat irreversible shell operations as extra-high risk.",
+    "risk_threshold": "extra_high",
+    "on_flagged": "deny",
+    "rules": {
+      "tool/reporting/*": {"risk_threshold": "high", "on_flagged": "approval_required"}
+    },
+    "timeout_seconds": 30,
+    "on_error": "approval_required"
+  }
+}
+```
+
+Use actual stable tool IDs from the prepared surface, not display-name guesses. `inherit` uses the tool's declared default, which is `allow` unless explicitly overridden by trusted tool code. A reviewer or risk rule alone does not enable review; `allow` continues, `deny` blocks, `ask` requests human approval, and `review` consults the reviewer. Without a matching reviewer, review adds no restriction. These settings never widen Service IAM or Environment authority. See the [Harness permission guide](../a13n-harness/managed-tools.md#select-tool-permissions) for selectors, custom instructions, and distinct approval sources.
+
+Run acceptance freezes reviewer Model execution settings alongside the main Model. Later Model edits do not change an accepted Run; credentials still resolve through current managed authentication. In `config_override`, omission inherits either field, null clears it, and an object replaces it entirely. A reviewer approval may be followed by a separate tool-policy approval through the normal waiting/feedback flow.
+
+Review usage enters the existing accounting records with tool/call correlation. The stream exposes `tool_review_result` custom events with a completed risk/reason/usage result and independently computed decision, or a safe error code and effective decision. Treat those as observations, not another billable record or proof of execution.
+
+For first-party Web access, `search.allow_domains` and `search.deny_domains` constrain returned search URLs and fetch/download/scrape destinations, including redirect hops. Use exact hosts or explicit `*.` subdomains; deny wins. Existing `include_domains` keeps its separate search-filter semantics. These settings do not sandbox shell or remote MCP network access.
+
 ## Accept a Run
 
 Save as `run.json`, replacing `AGENT_ID_FROM_CREATE` with `agent.id`:
@@ -133,4 +170,14 @@ A control-capable process reconciles sealed child results, configured cancellati
 
 ## Next steps
 
-[Manage resources](resources.md), [select external tools](external-tools.md), [use a language SDK](sdks.md), or inspect the [complete Native API](api-reference.md). The companion `a13n-service-cli` currently has help/version only; it cannot execute this workflow.
+[Manage resources](resources.md), [select external tools](external-tools.md), [use a language SDK](sdks.md), or inspect the [complete Native API](api-reference.md). The companion `a13n-service-cli` supports remote label reads and replacements; it cannot execute this Run workflow.
+
+## Resource labels
+
+Agents, Sessions, Threads, Runs, Skills, Environment Templates, and Environments support string-to-string `labels` for business classification. For example, `{"project":"support","batch":"eval-09"}` can identify a project and evaluation batch. Use repeated `label=key=value` parameters on collection requests to require all matching pairs. Existing authorization and pagination still apply.
+
+New Threads copy their Session labels; new Runs copy their Thread labels. New Environments copy their Template's current labels, including when a historical Template revision is selected. Explicit creation labels override matching inherited keys. Forked Threads and retried Runs copy their source instead. These are one-time copies: later parent edits do not update existing resources. Queued Run overrides are merged when execution is accepted, using the Thread labels at that time.
+
+Read `<resource-path>/labels` to obtain the label map and its `ETag`. Replace the entire map with `PUT` to that same path, a body of `{"labels": {...}}`, and the exact `If-Match` tag. Send `{"labels": {}}` to clear the map. A stale tag returns `412`; read current labels before resolving the conflict. Label edits update the resource timestamp without changing configuration revisions, execution versions, queue versions, or Environment generations.
+
+Each resource permits up to 32 labels. Keys use 1–63 ASCII letters, digits, underscores, hyphens, or dots and begin with a letter or digit. Values permit up to 256 Unicode characters, including empty strings, but no control characters. Matching is case-sensitive. Labels provide classification, not access control or Agent instructions.

@@ -29,6 +29,9 @@ pub struct CreateThreadRequest {
     )]
     pub environment: Option<Option<Box<models::EnvironmentSelection>>>,
 
+    #[serde(rename = "labels", skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Value>,
+
     #[serde(
         rename = "session_id",
         default,
@@ -36,6 +39,9 @@ pub struct CreateThreadRequest {
         skip_serializing_if = "Option::is_none"
     )]
     pub session_id: Option<Option<String>>,
+
+    #[serde(rename = "session_labels", skip_serializing_if = "Option::is_none")]
+    pub session_labels: Option<serde_json::Value>,
 }
 
 impl CreateThreadRequest {
@@ -43,7 +49,9 @@ impl CreateThreadRequest {
         CreateThreadRequest {
             agent_id: None,
             environment: None,
+            labels: None,
             session_id: None,
+            session_labels: None,
         }
     }
 }

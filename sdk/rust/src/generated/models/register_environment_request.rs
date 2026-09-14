@@ -25,6 +25,9 @@ pub struct RegisterEnvironmentRequest {
     )]
     pub configuration_schema_version: Option<String>,
 
+    #[serde(rename = "labels", skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Value>,
+
     #[serde(
         rename = "name",
         default,
@@ -54,6 +57,7 @@ impl RegisterEnvironmentRequest {
             access: None,
             configuration,
             configuration_schema_version: None,
+            labels: None,
             name: None,
             provider_id,
             state: None,

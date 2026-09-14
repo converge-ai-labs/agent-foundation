@@ -66,10 +66,28 @@ pub enum GetEnvironmentTemplatesResourceIdError {
     UnknownValue(serde_json::Value),
 }
 
+/// struct for typed errors of method [`get_environment_templates_template_id_labels`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum GetEnvironmentTemplatesTemplateIdLabelsError {
+    Status400(models::ErrorResponse),
+    DefaultResponse(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
 /// struct for typed errors of method [`get_environment_templates_template_id_revisions`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum GetEnvironmentTemplatesTemplateIdRevisionsError {
+    Status400(models::ErrorResponse),
+    DefaultResponse(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
+/// struct for typed errors of method [`get_environments_environment_id_labels`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum GetEnvironmentsEnvironmentIdLabelsError {
     Status400(models::ErrorResponse),
     DefaultResponse(models::ErrorResponse),
     UnknownValue(serde_json::Value),
@@ -232,6 +250,24 @@ pub enum PostWorkspacesWorkspaceEnvironmentsError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum PutEnvironmentProvidersProviderIdCredentialError {
+    Status400(models::ErrorResponse),
+    DefaultResponse(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
+/// struct for typed errors of method [`put_environment_templates_template_id_labels`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PutEnvironmentTemplatesTemplateIdLabelsError {
+    Status400(models::ErrorResponse),
+    DefaultResponse(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
+/// struct for typed errors of method [`put_environments_environment_id_labels`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PutEnvironmentsEnvironmentIdLabelsError {
     Status400(models::ErrorResponse),
     DefaultResponse(models::ErrorResponse),
     UnknownValue(serde_json::Value),
@@ -642,6 +678,73 @@ pub async fn get_environment_templates_resource_id(
     }
 }
 
+pub async fn get_environment_templates_template_id_labels(
+    configuration: &configuration::Configuration,
+    template_id: &str,
+) -> Result<Response<models::LabelsBody>, Error<GetEnvironmentTemplatesTemplateIdLabelsError>> {
+    // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_template_id = template_id;
+
+    let uri_str = format!(
+        "{}/api/v1/environment-templates/{template_id}/labels",
+        configuration.base_path,
+        template_id = crate::generated::apis::urlencode(p_path_template_id)
+    );
+    let mut req_builder = configuration.client.request(reqwest::Method::GET, &uri_str);
+
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+    if let Some(ref token) = configuration.bearer_access_token {
+        req_builder = req_builder.bearer_auth(token.to_owned());
+    };
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content)
+                .map(|data| Response {
+                    data,
+                    status,
+                    headers,
+                })
+                .map_err(Error::from),
+            ContentType::Text => {
+                return Err(Error::from(serde_json::Error::custom(
+                    "Received `text/plain` content type response that cannot be converted to `models::LabelsBody`",
+                )));
+            }
+            ContentType::Unsupported(unknown_type) => {
+                return Err(Error::from(serde_json::Error::custom(format!(
+                    "Received `{unknown_type}` content type response that cannot be converted to `models::LabelsBody`"
+                ))));
+            }
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<GetEnvironmentTemplatesTemplateIdLabelsError> =
+            serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(Box::new(ResponseContent {
+            status,
+            headers,
+            content,
+            entity,
+        })))
+    }
+}
+
 pub async fn get_environment_templates_template_id_revisions(
     configuration: &configuration::Configuration,
     template_id: &str,
@@ -712,6 +815,73 @@ pub async fn get_environment_templates_template_id_revisions(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetEnvironmentTemplatesTemplateIdRevisionsError> =
+            serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(Box::new(ResponseContent {
+            status,
+            headers,
+            content,
+            entity,
+        })))
+    }
+}
+
+pub async fn get_environments_environment_id_labels(
+    configuration: &configuration::Configuration,
+    environment_id: &str,
+) -> Result<Response<models::LabelsBody>, Error<GetEnvironmentsEnvironmentIdLabelsError>> {
+    // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_environment_id = environment_id;
+
+    let uri_str = format!(
+        "{}/api/v1/environments/{environment_id}/labels",
+        configuration.base_path,
+        environment_id = crate::generated::apis::urlencode(p_path_environment_id)
+    );
+    let mut req_builder = configuration.client.request(reqwest::Method::GET, &uri_str);
+
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+    if let Some(ref token) = configuration.bearer_access_token {
+        req_builder = req_builder.bearer_auth(token.to_owned());
+    };
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content)
+                .map(|data| Response {
+                    data,
+                    status,
+                    headers,
+                })
+                .map_err(Error::from),
+            ContentType::Text => {
+                return Err(Error::from(serde_json::Error::custom(
+                    "Received `text/plain` content type response that cannot be converted to `models::LabelsBody`",
+                )));
+            }
+            ContentType::Unsupported(unknown_type) => {
+                return Err(Error::from(serde_json::Error::custom(format!(
+                    "Received `{unknown_type}` content type response that cannot be converted to `models::LabelsBody`"
+                ))));
+            }
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<GetEnvironmentsEnvironmentIdLabelsError> =
             serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,
@@ -873,6 +1043,7 @@ pub async fn get_organizations_organization_environment_templates(
     organization: &str,
     limit: Option<i32>,
     cursor: Option<&str>,
+    label: Option<Vec<String>>,
 ) -> Result<
     Response<models::CollectionEnvironmentTemplate>,
     Error<GetOrganizationsOrganizationEnvironmentTemplatesError>,
@@ -881,6 +1052,7 @@ pub async fn get_organizations_organization_environment_templates(
     let p_path_organization = organization;
     let p_query_limit = limit;
     let p_query_cursor = cursor;
+    let p_query_label = label;
 
     let uri_str = format!(
         "{}/api/v1/organizations/{organization}/environment-templates",
@@ -894,6 +1066,25 @@ pub async fn get_organizations_organization_environment_templates(
     }
     if let Some(ref param_value) = p_query_cursor {
         req_builder = req_builder.query(&[("cursor", &param_value.to_string())]);
+    }
+    if let Some(ref param_value) = p_query_label {
+        req_builder = match "multi" {
+            "multi" => req_builder.query(
+                &param_value
+                    .into_iter()
+                    .map(|p| ("label".to_owned(), p.to_string()))
+                    .collect::<Vec<(std::string::String, std::string::String)>>(),
+            ),
+            _ => req_builder.query(&[(
+                "label",
+                &param_value
+                    .into_iter()
+                    .map(|p| p.to_string())
+                    .collect::<Vec<String>>()
+                    .join(",")
+                    .to_string(),
+            )]),
+        };
     }
     if let Some(ref user_agent) = configuration.user_agent {
         req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
@@ -1033,6 +1224,7 @@ pub async fn get_workspaces_workspace_environment_templates(
     workspace: &str,
     limit: Option<i32>,
     cursor: Option<&str>,
+    label: Option<Vec<String>>,
 ) -> Result<
     Response<models::CollectionEnvironmentTemplate>,
     Error<GetWorkspacesWorkspaceEnvironmentTemplatesError>,
@@ -1041,6 +1233,7 @@ pub async fn get_workspaces_workspace_environment_templates(
     let p_path_workspace = workspace;
     let p_query_limit = limit;
     let p_query_cursor = cursor;
+    let p_query_label = label;
 
     let uri_str = format!(
         "{}/api/v1/workspaces/{workspace}/environment-templates",
@@ -1054,6 +1247,25 @@ pub async fn get_workspaces_workspace_environment_templates(
     }
     if let Some(ref param_value) = p_query_cursor {
         req_builder = req_builder.query(&[("cursor", &param_value.to_string())]);
+    }
+    if let Some(ref param_value) = p_query_label {
+        req_builder = match "multi" {
+            "multi" => req_builder.query(
+                &param_value
+                    .into_iter()
+                    .map(|p| ("label".to_owned(), p.to_string()))
+                    .collect::<Vec<(std::string::String, std::string::String)>>(),
+            ),
+            _ => req_builder.query(&[(
+                "label",
+                &param_value
+                    .into_iter()
+                    .map(|p| p.to_string())
+                    .collect::<Vec<String>>()
+                    .join(",")
+                    .to_string(),
+            )]),
+        };
     }
     if let Some(ref user_agent) = configuration.user_agent {
         req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
@@ -1113,12 +1325,14 @@ pub async fn get_workspaces_workspace_environments(
     workspace: &str,
     limit: Option<i32>,
     cursor: Option<&str>,
+    label: Option<Vec<String>>,
 ) -> Result<Response<models::CollectionEnvironment>, Error<GetWorkspacesWorkspaceEnvironmentsError>>
 {
     // add a prefix to parameters to efficiently prevent name collisions
     let p_path_workspace = workspace;
     let p_query_limit = limit;
     let p_query_cursor = cursor;
+    let p_query_label = label;
 
     let uri_str = format!(
         "{}/api/v1/workspaces/{workspace}/environments",
@@ -1132,6 +1346,25 @@ pub async fn get_workspaces_workspace_environments(
     }
     if let Some(ref param_value) = p_query_cursor {
         req_builder = req_builder.query(&[("cursor", &param_value.to_string())]);
+    }
+    if let Some(ref param_value) = p_query_label {
+        req_builder = match "multi" {
+            "multi" => req_builder.query(
+                &param_value
+                    .into_iter()
+                    .map(|p| ("label".to_owned(), p.to_string()))
+                    .collect::<Vec<(std::string::String, std::string::String)>>(),
+            ),
+            _ => req_builder.query(&[(
+                "label",
+                &param_value
+                    .into_iter()
+                    .map(|p| p.to_string())
+                    .collect::<Vec<String>>()
+                    .join(",")
+                    .to_string(),
+            )]),
+        };
     }
     if let Some(ref user_agent) = configuration.user_agent {
         req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
@@ -2079,6 +2312,152 @@ pub async fn put_environment_providers_provider_id_credential(
     } else {
         let content = resp.text().await?;
         let entity: Option<PutEnvironmentProvidersProviderIdCredentialError> =
+            serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(Box::new(ResponseContent {
+            status,
+            headers,
+            content,
+            entity,
+        })))
+    }
+}
+
+pub async fn put_environment_templates_template_id_labels(
+    configuration: &configuration::Configuration,
+    template_id: &str,
+    if_match: &str,
+    labels_body: models::LabelsBody,
+) -> Result<Response<models::LabelsBody>, Error<PutEnvironmentTemplatesTemplateIdLabelsError>> {
+    // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_template_id = template_id;
+    let p_header_if_match = if_match;
+    let p_body_labels_body = labels_body;
+
+    let uri_str = format!(
+        "{}/api/v1/environment-templates/{template_id}/labels",
+        configuration.base_path,
+        template_id = crate::generated::apis::urlencode(p_path_template_id)
+    );
+    let mut req_builder = configuration.client.request(reqwest::Method::PUT, &uri_str);
+
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+    req_builder = req_builder.header("If-Match", p_header_if_match.to_string());
+    if let Some(ref token) = configuration.bearer_access_token {
+        req_builder = req_builder.bearer_auth(token.to_owned());
+    };
+    req_builder = req_builder.json(&p_body_labels_body);
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content)
+                .map(|data| Response {
+                    data,
+                    status,
+                    headers,
+                })
+                .map_err(Error::from),
+            ContentType::Text => {
+                return Err(Error::from(serde_json::Error::custom(
+                    "Received `text/plain` content type response that cannot be converted to `models::LabelsBody`",
+                )));
+            }
+            ContentType::Unsupported(unknown_type) => {
+                return Err(Error::from(serde_json::Error::custom(format!(
+                    "Received `{unknown_type}` content type response that cannot be converted to `models::LabelsBody`"
+                ))));
+            }
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<PutEnvironmentTemplatesTemplateIdLabelsError> =
+            serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(Box::new(ResponseContent {
+            status,
+            headers,
+            content,
+            entity,
+        })))
+    }
+}
+
+pub async fn put_environments_environment_id_labels(
+    configuration: &configuration::Configuration,
+    environment_id: &str,
+    if_match: &str,
+    labels_body: models::LabelsBody,
+) -> Result<Response<models::LabelsBody>, Error<PutEnvironmentsEnvironmentIdLabelsError>> {
+    // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_environment_id = environment_id;
+    let p_header_if_match = if_match;
+    let p_body_labels_body = labels_body;
+
+    let uri_str = format!(
+        "{}/api/v1/environments/{environment_id}/labels",
+        configuration.base_path,
+        environment_id = crate::generated::apis::urlencode(p_path_environment_id)
+    );
+    let mut req_builder = configuration.client.request(reqwest::Method::PUT, &uri_str);
+
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+    req_builder = req_builder.header("If-Match", p_header_if_match.to_string());
+    if let Some(ref token) = configuration.bearer_access_token {
+        req_builder = req_builder.bearer_auth(token.to_owned());
+    };
+    req_builder = req_builder.json(&p_body_labels_body);
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content)
+                .map(|data| Response {
+                    data,
+                    status,
+                    headers,
+                })
+                .map_err(Error::from),
+            ContentType::Text => {
+                return Err(Error::from(serde_json::Error::custom(
+                    "Received `text/plain` content type response that cannot be converted to `models::LabelsBody`",
+                )));
+            }
+            ContentType::Unsupported(unknown_type) => {
+                return Err(Error::from(serde_json::Error::custom(format!(
+                    "Received `{unknown_type}` content type response that cannot be converted to `models::LabelsBody`"
+                ))));
+            }
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<PutEnvironmentsEnvironmentIdLabelsError> =
             serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,

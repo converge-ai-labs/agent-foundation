@@ -87,5 +87,5 @@ def add_images(
 ) -> tuple[AttachmentUpload, ...]:
     result = current + incoming
     if len(result) > MAX_ATTACHMENTS or sum(len(image.data) for image in result) > MAX_INPUT_BYTES:
-        raise ValueError("A draft supports up to eight attachments and 20 MiB total. Use /remove first.")
+        raise ValueError("A draft supports up to eight attachments and 20 MiB total. Delete an attachment first.")
     return result

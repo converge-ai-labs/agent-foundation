@@ -132,7 +132,7 @@ async def test_real_shared_composer_submit_capture_steer_rejoin_restart(
                 await containing(first, "NEXT")
                 rejected = await api.post(prefix + "/submit", json={"prompt": "busy"})
                 assert rejected.status_code == 409, rejected.text
-                # Deliberate text-only steer translates captured context, not current Host bytes.
+                # Steering translates captured context, not current Host bytes.
                 steer = await api.post(
                     f"/api/operations/{receipt}/steer", json={"prompt": "use captured", "attachment_ids": ids}
                 )
@@ -140,12 +140,12 @@ async def test_real_shared_composer_submit_capture_steer_rejoin_restart(
                 upload = (
                     await api.post(prefix + "/attachments", params={"name": "binary.bin"}, content=b"\x00\xff")
                 ).json()
-                unsupported = await api.post(
+                binary_steer = await api.post(
                     f"/api/operations/{receipt}/steer",
                     json={"prompt": "keep", "attachment_ids": [upload["attachment_id"]]},
                 )
-                assert unsupported.status_code == 400, unsupported.text
-                assert unsupported.json()["error"]["code"] == "steer_context_unsupported"
+                assert binary_steer.status_code == 200, binary_steer.text
+                assert binary_steer.json()["accepted"]
                 # Positive submit ack permits clearing only captured item identities.
                 with captured.transaction():
                     del captured.get("text", type=Text)[:]

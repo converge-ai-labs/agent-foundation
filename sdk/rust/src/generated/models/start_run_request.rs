@@ -59,6 +59,9 @@ pub struct StartRunRequest {
     #[serde(rename = "input")]
     pub input: Box<models::AgentInput>,
 
+    #[serde(rename = "labels", skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Value>,
+
     #[serde(
         rename = "session_id",
         default,
@@ -66,6 +69,12 @@ pub struct StartRunRequest {
         skip_serializing_if = "Option::is_none"
     )]
     pub session_id: Option<Option<String>>,
+
+    #[serde(rename = "session_labels", skip_serializing_if = "Option::is_none")]
+    pub session_labels: Option<serde_json::Value>,
+
+    #[serde(rename = "thread_labels", skip_serializing_if = "Option::is_none")]
+    pub thread_labels: Option<serde_json::Value>,
 }
 
 impl StartRunRequest {
@@ -78,7 +87,10 @@ impl StartRunRequest {
             expected_current_revision_id: None,
             hook_subscription: None,
             input: Box::new(input),
+            labels: None,
             session_id: None,
+            session_labels: None,
+            thread_labels: None,
         }
     }
 }

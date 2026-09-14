@@ -58,6 +58,7 @@ class PreparedRevisionResolution:
     skills: tuple[PreparedSkillBinding, ...]
     subagents: tuple[PreparedSubagent, ...]
     connectivity: PreparedConnectivity
+    reviewer_model: PreparedModelExecution | None = None
 
 
 class AgentResolver:
@@ -91,6 +92,16 @@ class AgentResolver:
             workspace_id=workspace_id,
             model_key=config.model.model_key,
             settings=config.model.settings,
+        )
+        reviewer_model = (
+            await self._model_selector.prepare(
+                organization_id=organization_id,
+                workspace_id=workspace_id,
+                model_id=config.reviewer.model,
+                settings=config.reviewer.model_settings or {},
+            )
+            if config.reviewer is not None
+            else None
         )
         async with short_session(self._sessions) as session:
             await authorize_agent(
@@ -133,6 +144,7 @@ class AgentResolver:
             skills=skills,
             subagents=subagents,
             connectivity=connectivity,
+            reviewer_model=reviewer_model,
         )
 
     async def freeze_in_transaction(
@@ -157,6 +169,8 @@ class AgentResolver:
                 eligible=True,
             )
         model = await self._model_selector.freeze_in_transaction(session, prepared=prepared.model)
+        if prepared.reviewer_model is not None:
+            await self._model_selector.freeze_in_transaction(session, prepared=prepared.reviewer_model)
         skills = await self._freeze_skills(session, prepared)
         subagents = await self._freeze_subagents(session, prepared)
         await freeze_revision_connectivity(self._connectivity_resolver, session, prepared.connectivity)

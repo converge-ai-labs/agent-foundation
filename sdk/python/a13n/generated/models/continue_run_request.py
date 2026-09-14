@@ -10,6 +10,7 @@ from ..types import UNSET, Unset
 if TYPE_CHECKING:
     from ..models.agent_input import AgentInput
     from ..models.agent_run_override_input import AgentRunOverrideInput
+    from ..models.continue_run_request_labels import ContinueRunRequestLabels
     from ..models.existing_environment_selection import ExistingEnvironmentSelection
     from ..models.inline_hook_subscription_input import InlineHookSubscriptionInput
     from ..models.new_environment_selection import NewEnvironmentSelection
@@ -30,6 +31,7 @@ class ContinueRunRequest:
         environment (ExistingEnvironmentSelection | NewEnvironmentSelection | None | Unset):
         expected_current_revision_id (None | str | Unset):
         hook_subscription (InlineHookSubscriptionInput | None | Unset):
+        labels (ContinueRunRequestLabels | Unset):
     """
 
     expected_thread_version: int
@@ -40,6 +42,7 @@ class ContinueRunRequest:
     environment: ExistingEnvironmentSelection | NewEnvironmentSelection | Unset | None = UNSET
     expected_current_revision_id: str | Unset | None = UNSET
     hook_subscription: InlineHookSubscriptionInput | Unset | None = UNSET
+    labels: ContinueRunRequestLabels | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.agent_run_override_input import AgentRunOverrideInput
@@ -95,6 +98,10 @@ class ContinueRunRequest:
         else:
             hook_subscription = self.hook_subscription
 
+        labels: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.labels, Unset):
+            labels = self.labels.to_dict()
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -115,6 +122,8 @@ class ContinueRunRequest:
             field_dict["expected_current_revision_id"] = expected_current_revision_id
         if hook_subscription is not UNSET:
             field_dict["hook_subscription"] = hook_subscription
+        if labels is not UNSET:
+            field_dict["labels"] = labels
 
         return field_dict
 
@@ -122,6 +131,7 @@ class ContinueRunRequest:
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         from ..models.agent_input import AgentInput
         from ..models.agent_run_override_input import AgentRunOverrideInput
+        from ..models.continue_run_request_labels import ContinueRunRequestLabels
         from ..models.existing_environment_selection import ExistingEnvironmentSelection
         from ..models.inline_hook_subscription_input import InlineHookSubscriptionInput
         from ..models.new_environment_selection import NewEnvironmentSelection
@@ -217,6 +227,13 @@ class ContinueRunRequest:
 
         hook_subscription = _parse_hook_subscription(d.pop("hook_subscription", UNSET))
 
+        _labels = d.pop("labels", UNSET)
+        labels: ContinueRunRequestLabels | Unset
+        if isinstance(_labels, Unset):
+            labels = UNSET
+        else:
+            labels = ContinueRunRequestLabels.from_dict(_labels)
+
         continue_run_request = cls(
             expected_thread_version=expected_thread_version,
             input_=input_,
@@ -226,6 +243,7 @@ class ContinueRunRequest:
             environment=environment,
             expected_current_revision_id=expected_current_revision_id,
             hook_subscription=hook_subscription,
+            labels=labels,
         )
 
         return continue_run_request

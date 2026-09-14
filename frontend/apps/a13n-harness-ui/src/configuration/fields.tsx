@@ -266,6 +266,40 @@ export function ResourceFields({
         document.has("schema_version") &&
         !document.has("mcpServers") && (
           <>
+            <SettingsRow
+              label="Sidekick"
+              description="Add instructions for independent work in other conversations. Does not start work automatically. Thread and resource tools remain available when disabled."
+            >
+              <ChoiceField
+                label="Sidekick"
+                hideLabel
+                className={styles.settingControl}
+                value={get(["webui", "sidekick"]) ? "enabled" : "disabled"}
+                onValueChange={(value) =>
+                  set(["webui", "sidekick"], value === "disabled" ? null : {})
+                }
+                options={[
+                  { value: "disabled", label: "Disabled" },
+                  { value: "enabled", label: "Enabled" },
+                ]}
+              />
+            </SettingsRow>
+            {get(["webui", "sidekick"]) != null && (
+              <>
+                {scalar(
+                  "Sidekick agent",
+                  ["webui", "sidekick", "agent"],
+                  agentOptions,
+                  "Inherit current agent",
+                )}
+                {scalar(
+                  "Sidekick model",
+                  ["webui", "sidekick", "model"],
+                  models,
+                  "Use agent model",
+                )}
+              </>
+            )}
             {scalar("Default agent", ["defaults", "agent"], agentOptions)}
             {scalar(
               "Default environment",

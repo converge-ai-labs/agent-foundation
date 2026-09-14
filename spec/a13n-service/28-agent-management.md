@@ -45,6 +45,7 @@ The following schemas are conceptual. They define durable field meaning rather t
 
 ```python
 class Agent:
+    labels: dict[str, str]
     id: AgentId
     organization_id: OrganizationId
     workspace_id: WorkspaceId
@@ -68,7 +69,7 @@ class Agent:
 
 `Agent.version` starts at `1` and always equals the current `AgentRevision.version`. It advances only when a genuinely new immutable Revision becomes current. `current_revision_id` is always present; Service never exposes an Agent without an executable Revision.
 
-`name`, `key`, `description` and `default_environment_template_id` are mutable head metadata. Name changes preserve the key; explicit key changes follow the shared resource-key contract and preserve the Agent ID. The template default only seeds new Thread Environment allocation under [Environment Management](29-environment-management.md#thread-defaults-and-run-selection); it never changes an existing Thread or Run and does not publish an AgentRevision. `enabled` and `archived_at` are independent lifecycle axes. Their mutations change `updated_at` and the representation ETag without advancing `version` or rewriting a Revision.
+`name`, `key`, `description`, `labels`, and `default_environment_template_id` are mutable head metadata. Label reads and replacement follow [Resource labels](16-management-api.md#resource-labels). Name changes preserve the key; explicit key changes follow the shared resource-key contract and preserve the Agent ID. The template default only seeds new Thread Environment allocation under [Environment Management](29-environment-management.md#thread-defaults-and-run-selection); it never changes an existing Thread or Run and does not publish an AgentRevision. `enabled` and `archived_at` are independent lifecycle axes. Their mutations change `updated_at` and the representation ETag without advancing `version` or rewriting a Revision.
 
 ### Avatar
 
@@ -170,6 +171,8 @@ class AgentConfig:
     subagent_mode: Literal["inline", "async"] = "inline"
     model: AgentModel
     search: SearchSelection | None
+    permissions: ToolPermissions | None
+    reviewer: AgentReviewer | None
     instructions: str
     input_adapter: InputAdapterConfig
     plugins: tuple[PluginSelection, ...]
@@ -185,6 +188,10 @@ class AgentConfig:
 ```
 
 The [`PluginSelection` contract](36-installed-harness-plugins.md#configuration-and-recovery) selects an installed factory key, instance name, and bounded configuration. `instructions` is the Agent's stable system prompt; Service- and Harness-generated runtime context is not stored in this field. A [`SkillSelection`](31-skill-management.md#agent-selection-and-run-locking) names one stable Skill key and optionally pins an integer version. The model selects one stable Model key. Primary Environment selection is independent Thread/Run context under [Environment Management](29-environment-management.md#thread-defaults-and-run-selection). `ChildEnvironmentPolicy.template_revision_id` is required exactly for `dedicated`; `shared` uses the spawning Run's Environment and `none` supplies no environment. The selected Model owns its one calling API and default request settings. Agent Revision creation resolves and retains stable Model and Skill identities but does not freeze mutable Model configuration or an unpinned Skill's current Revision; every Run resolves those selections under their owning contracts. Subagent map keys are stable local names within the Agent.
+
+`permissions` selects the shared Harness `ToolPermissions` modes and stable-ID rules. Unconfigured tools default to `allow` without review; supplying `reviewer` or its risk rules alone does not opt tools into review. Select effective permission `review` for the desired tools. `reviewer` is optional `AgentReviewer`, using the shared `ToolReviewConfig` fields but constraining `model` to a managed immutable Model ID, not a provider route or executable import. Its `risk_threshold` (default `extra_high`), `on_flagged` (default `deny`), and single-best-selector `rules` configure shared risk policy; optional `instruction`, `shell_instruction`, `model_settings`, `timeout_seconds`, and `on_error` configure the default reviewer. These fields are frozen and reconstructed together with the reviewer Model snapshot. The Harness owns [permission and review semantics](../a13n-harness/07-tool-execution.md#tool-permissions-and-review); these settings do not widen Service IAM or Environment ceilings.
+
+Revision creation validates reviewer Model eligibility and settings without resolving credentials. The authored Model ID already freezes the stable reference; no separate reviewer Revision field is needed. Run acceptance resolves and freezes `resolved_reviewer_model` with the complete Model execution snapshot and merged Model-default/reviewer settings for every selected graph node. The worker reconstructs the reviewer from that accepted snapshot using the same managed Run Model resolver and current authentication path as the main Model. A missing required reviewer snapshot rejects reconstruction rather than falling back to ambient model inference. Main and reviewer may share a Model ID while retaining independent request settings. Optional absent fields remain absent from serialized legacy configurations and their digests.
 
 `search` selects one first-party search account and bounded parameters under [Search Provider Management](41-search-provider-management.md#agent-selection). Absence or null disables this feature. The selection is Agent Revision content and is retained in each accepted graph node; the Provider owns live credentials and availability. Service composes the search capability directly, without requiring a Connector or installed-plugin selection.
 
@@ -260,6 +267,8 @@ class RetryOverride:
 class AgentRunOverride:
     model: ModelOverride | None
     search: SearchSelection | None  # May be absent.
+    permissions: ToolPermissions | None  # May be absent.
+    reviewer: AgentReviewer | None  # May be absent.
     instructions: str | None
     plugins: tuple[PluginSelection, ...] | None
     skills: tuple[SkillSelection, ...] | None
@@ -278,6 +287,8 @@ Within `model`, an absent `model_key` inherits the Agent selection; a supplied k
 
 `search` absence inherits the selected Revision, null disables first-party search, and an object replaces the complete selection. Its resource validation, override authorization, and per-node execution semantics belong to [Search Provider Management](41-search-provider-management.md#agent-selection).
 
+`permissions` and `reviewer` each use whole-value replacement: absence inherits, null clears the selection, and an object replaces it with its own defaults. These fields do not patch nested rules or instructions. Current resource validation and authorization apply to an override just as to an authored selection.
+
 `subagents` remains a name-keyed patch: an absent map inherits, explicit null clears all entries, an empty object changes nothing, and a mapped null deletes one entry. Its entries select managed Agents only.
 
 Plugin override replacement and resolution follow the [installed Plugin selection contract](36-installed-harness-plugins.md#configuration-and-recovery). Every selected resource remains subject to current authorization, schema validation, deployment compatibility, and platform security ceilings. Run overrides select managed resources and accept no direct credential values. The owning resource domain resolves current credentials at its execution boundary.
@@ -290,7 +301,10 @@ class EffectiveAgentConfig:
     child_configs: dict[AgentRevisionId, ChildAgentExecution]
     schema_version: str
     model: EffectiveAgentModel
+    resolved_reviewer_model: EffectiveAgentModel | None
     search: SearchSelection | None
+    permissions: ToolPermissions | None
+    reviewer: AgentReviewer | None
     instructions: str
     input_adapter: InputAdapterConfig
     plugins: tuple[PluginSelection, ...]
@@ -469,3 +483,4 @@ Atomically creating and advancing immutable Revisions removes a mutable draft/de
 08. Restore copies retained content into a new later Revision and never moves the Agent head backward.
 09. ProtocolConfig is Agent-owned Revision content rather than another resource, digest, or per-Agent protocol switch.
 10. Plugin code and dependencies belong to the Worker build; Agent Management stores authored selections and Worker execution owns durable normalized configuration under the installed Plugin contract.
+11. Agent labels are head metadata outside immutable Revisions. Duplicate copies the source Agent's current labels and applies explicit overrides; publish and restore retain the target head labels.

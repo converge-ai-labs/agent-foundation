@@ -142,6 +142,7 @@ class SealedRunState:
 
 
 class Run:
+    labels: dict[str, str]
     id: str
     version: int
     organization_id: str
@@ -758,7 +759,7 @@ Each new Run owns a complete state copy, so initialization cost grows with the r
 04. The derived `initial_input_applied` property prevents accepted input from being injected twice.
 05. A consumed Thread inbox entry is represented in complete Run state by its stable receipt; the active-control contract owns relational reconciliation and delivery.
 06. `parent_run_id` is the sole semantic history edge. Waiting Feedback or Continue creates another Run rather than mutating the sealed parent; `retry_of_run_id` records copied terminal intent without becoming another history edge or reviving child results suppressed by that terminal source.
-07. Waiting and completed outcomes become authoritative only when relational sealing selects the matching state candidate; the sealed Run and state are immutable.
+07. Waiting and completed outcomes become authoritative only when relational sealing selects the matching state candidate; the sealed execution fields and state are immutable. Classification labels and the resource update timestamp remain independently mutable under [Resource labels](16-management-api.md#resource-labels).
 08. Persisted state restores data and correlation, never current authority. Events, Items, streams, accounting records, listings, and worker memory never select state.
 09. The [state envelope](#run-state-object) stores the immutable non-secret `EffectiveAgentConfig`; the Run row stores its matching digest and immutable safe model observation.
 10. Checkpoint replacement preserves the accepted configuration and digest without reapplying override merge rules; reconstruction follows the [owning resource contracts](#configuration-and-resource-references).
@@ -770,3 +771,4 @@ Each new Run owns a complete state copy, so initialization cost grows with the r
 16. Asset references remain inside the accepted input, output, Harness messages, or retained Items that own them; `state.json` has no Asset-specific authority or publication state, and Run persistence defines no Asset link table.
 17. Run selection is immutable; preparation acquires Environment use, and leaving running releases it atomically with status and retention updates. Attempt replacement preserves acquired use.
 18. Every Run persists exactly one User or Service Account `authority_principal`; every attempt re-evaluates that Principal's current authority, and no credential, role, permission set, internal worker, queue consumer, or system actor can replace it implicitly.
+19. Run labels are mutable classification metadata outside immutable execution selection and state. Ordinary, waiting, queued, and automatic successor Runs copy the Thread's current labels in their acceptance transaction; retry instead copies the source Run. Replacement Attempts retain the same Run labels and Worker publication never overwrites them.

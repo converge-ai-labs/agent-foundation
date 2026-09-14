@@ -143,6 +143,45 @@ func (e AgentInputSchemaVersion) Valid() bool {
 	}
 }
 
+// Defines values for AgentReviewerOnError.
+const (
+	AgentReviewerOnErrorAllow            AgentReviewerOnError = "allow"
+	AgentReviewerOnErrorApprovalRequired AgentReviewerOnError = "approval_required"
+	AgentReviewerOnErrorDeny             AgentReviewerOnError = "deny"
+)
+
+// Valid indicates whether the value is a known member of the AgentReviewerOnError enum.
+func (e AgentReviewerOnError) Valid() bool {
+	switch e {
+	case AgentReviewerOnErrorAllow:
+		return true
+	case AgentReviewerOnErrorApprovalRequired:
+		return true
+	case AgentReviewerOnErrorDeny:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentReviewerOnFlagged.
+const (
+	AgentReviewerOnFlaggedApprovalRequired AgentReviewerOnFlagged = "approval_required"
+	AgentReviewerOnFlaggedDeny             AgentReviewerOnFlagged = "deny"
+)
+
+// Valid indicates whether the value is a known member of the AgentReviewerOnFlagged enum.
+func (e AgentReviewerOnFlagged) Valid() bool {
+	switch e {
+	case AgentReviewerOnFlaggedApprovalRequired:
+		return true
+	case AgentReviewerOnFlaggedDeny:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AgentSource.
 const (
 	AgentSourceBuiltin AgentSource = "builtin"
@@ -2360,6 +2399,87 @@ func (e ToolMessageRole) Valid() bool {
 	}
 }
 
+// Defines values for ToolPermissionMode.
+const (
+	ToolPermissionModeAllow  ToolPermissionMode = "allow"
+	ToolPermissionModeAsk    ToolPermissionMode = "ask"
+	ToolPermissionModeDeny   ToolPermissionMode = "deny"
+	ToolPermissionModeReview ToolPermissionMode = "review"
+)
+
+// Valid indicates whether the value is a known member of the ToolPermissionMode enum.
+func (e ToolPermissionMode) Valid() bool {
+	switch e {
+	case ToolPermissionModeAllow:
+		return true
+	case ToolPermissionModeAsk:
+		return true
+	case ToolPermissionModeDeny:
+		return true
+	case ToolPermissionModeReview:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ToolPermissionSetting1.
+const (
+	Inherit ToolPermissionSetting1 = "inherit"
+)
+
+// Valid indicates whether the value is a known member of the ToolPermissionSetting1 enum.
+func (e ToolPermissionSetting1) Valid() bool {
+	switch e {
+	case Inherit:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ToolReviewRuleOnFlagged.
+const (
+	ToolReviewRuleOnFlaggedApprovalRequired ToolReviewRuleOnFlagged = "approval_required"
+	ToolReviewRuleOnFlaggedDeny             ToolReviewRuleOnFlagged = "deny"
+)
+
+// Valid indicates whether the value is a known member of the ToolReviewRuleOnFlagged enum.
+func (e ToolReviewRuleOnFlagged) Valid() bool {
+	switch e {
+	case ToolReviewRuleOnFlaggedApprovalRequired:
+		return true
+	case ToolReviewRuleOnFlaggedDeny:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ToolRiskLevel.
+const (
+	ExtraHigh ToolRiskLevel = "extra_high"
+	High      ToolRiskLevel = "high"
+	Low       ToolRiskLevel = "low"
+	Medium    ToolRiskLevel = "medium"
+)
+
+// Valid indicates whether the value is a known member of the ToolRiskLevel enum.
+func (e ToolRiskLevel) Valid() bool {
+	switch e {
+	case ExtraHigh:
+		return true
+	case High:
+		return true
+	case Low:
+		return true
+	case Medium:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TraceView.
 const (
 	TraceViewCompact TraceView = "compact"
@@ -2770,6 +2890,7 @@ type Agent struct {
 	Id                           string                       `json:"id"`
 	ImageUrl                     nullable.Nullable[string]    `json:"image_url,omitempty"`
 	Key                          string                       `json:"key"`
+	Labels                       *map[string]interface{}      `json:"labels,omitempty"`
 	Name                         string                       `json:"name"`
 	OrganizationId               string                       `json:"organization_id"`
 	Source                       AgentSource                  `json:"source"`
@@ -2794,9 +2915,11 @@ type AgentConfigInput struct {
 	Instructions       *string                                   `json:"instructions,omitempty"`
 	Model              AgentModel                                `json:"model"`
 	OutputSpec         nullable.Nullable[OutputSpec]             `json:"output_spec,omitempty"`
+	Permissions        nullable.Nullable[ToolPermissions]        `json:"permissions,omitempty"`
 	Plugins            *[]PluginSelection                        `json:"plugins,omitempty"`
 	Protocol           ProtocolConfig                            `json:"protocol"`
 	Retries            nullable.Nullable[RetryConfig]            `json:"retries,omitempty"`
+	Reviewer           nullable.Nullable[AgentReviewer]          `json:"reviewer,omitempty"`
 	Search             nullable.Nullable[SearchSelection]        `json:"search,omitempty"`
 	SecretRequirements *[]SecretRequirement                      `json:"secret_requirements,omitempty"`
 	Skills             *[]SkillSelection                         `json:"skills,omitempty"`
@@ -2816,9 +2939,11 @@ type AgentConfigOutput struct {
 	Instructions       *string                                   `json:"instructions,omitempty"`
 	Model              AgentModel                                `json:"model"`
 	OutputSpec         nullable.Nullable[OutputSpec]             `json:"output_spec,omitempty"`
+	Permissions        nullable.Nullable[ToolPermissions]        `json:"permissions,omitempty"`
 	Plugins            *[]PluginSelection                        `json:"plugins,omitempty"`
 	Protocol           ProtocolConfig                            `json:"protocol"`
 	Retries            nullable.Nullable[RetryConfig]            `json:"retries,omitempty"`
+	Reviewer           nullable.Nullable[AgentReviewer]          `json:"reviewer,omitempty"`
 	Search             nullable.Nullable[SearchSelection]        `json:"search,omitempty"`
 	SecretRequirements *[]SecretRequirement                      `json:"secret_requirements,omitempty"`
 	Skills             *[]SkillSelection                         `json:"skills,omitempty"`
@@ -2852,6 +2977,25 @@ type AgentModel struct {
 	ModelKey        string                       `json:"model_key"`
 	Settings        *map[string]JsonValue        `json:"settings,omitempty"`
 }
+
+// AgentReviewer Reviewer selected by immutable managed Model ID, never a provider route.
+type AgentReviewer struct {
+	Instruction      nullable.Nullable[string]               `json:"instruction,omitempty"`
+	Model            string                                  `json:"model"`
+	ModelSettings    nullable.Nullable[map[string]JsonValue] `json:"model_settings,omitempty"`
+	OnError          *AgentReviewerOnError                   `json:"on_error,omitempty"`
+	OnFlagged        *AgentReviewerOnFlagged                 `json:"on_flagged,omitempty"`
+	RiskThreshold    *ToolRiskLevel                          `json:"risk_threshold,omitempty"`
+	Rules            *map[string]ToolReviewRule              `json:"rules,omitempty"`
+	ShellInstruction nullable.Nullable[string]               `json:"shell_instruction,omitempty"`
+	TimeoutSeconds   *float32                                `json:"timeout_seconds,omitempty"`
+}
+
+// AgentReviewerOnError defines model for AgentReviewer.OnError.
+type AgentReviewerOnError string
+
+// AgentReviewerOnFlagged defines model for AgentReviewer.OnFlagged.
+type AgentReviewerOnFlagged string
 
 // AgentRevision defines model for AgentRevision.
 type AgentRevision struct {
@@ -2891,8 +3035,10 @@ type AgentRunOverrideInput struct {
 	Instructions    nullable.Nullable[string]                    `json:"instructions,omitempty"`
 	Model           nullable.Nullable[ModelOverride]             `json:"model,omitempty"`
 	OutputSpec      nullable.Nullable[OutputSpec]                `json:"output_spec,omitempty"`
+	Permissions     nullable.Nullable[ToolPermissions]           `json:"permissions,omitempty"`
 	Plugins         nullable.Nullable[[]PluginSelection]         `json:"plugins,omitempty"`
 	Retries         nullable.Nullable[RetryOverride]             `json:"retries,omitempty"`
+	Reviewer        nullable.Nullable[AgentReviewer]             `json:"reviewer,omitempty"`
 	Search          nullable.Nullable[SearchSelection]           `json:"search,omitempty"`
 	Skills          nullable.Nullable[[]SkillSelection]          `json:"skills,omitempty"`
 	Subagents       nullable.Nullable[map[string]interface{}]    `json:"subagents,omitempty"`
@@ -2905,8 +3051,10 @@ type AgentRunOverrideOutput struct {
 	Instructions    nullable.Nullable[string]                    `json:"instructions,omitempty"`
 	Model           nullable.Nullable[ModelOverride]             `json:"model,omitempty"`
 	OutputSpec      nullable.Nullable[OutputSpec]                `json:"output_spec,omitempty"`
+	Permissions     nullable.Nullable[ToolPermissions]           `json:"permissions,omitempty"`
 	Plugins         nullable.Nullable[[]PluginSelection]         `json:"plugins,omitempty"`
 	Retries         nullable.Nullable[RetryOverride]             `json:"retries,omitempty"`
+	Reviewer        nullable.Nullable[AgentReviewer]             `json:"reviewer,omitempty"`
 	Search          nullable.Nullable[SearchSelection]           `json:"search,omitempty"`
 	Skills          nullable.Nullable[[]SkillSelection]          `json:"skills,omitempty"`
 	Subagents       nullable.Nullable[map[string]interface{}]    `json:"subagents,omitempty"`
@@ -3424,7 +3572,8 @@ type ContinueRunRequest struct {
 	HookSubscription          nullable.Nullable[InlineHookSubscriptionInput] `json:"hook_subscription,omitempty"`
 
 	// Input Submitted or retained versioned ordinary Agent input.
-	Input AgentInput `json:"input"`
+	Input  AgentInput              `json:"input"`
+	Labels *map[string]interface{} `json:"labels,omitempty"`
 }
 
 // CreateAccountRequest defines model for CreateAccountRequest.
@@ -3447,6 +3596,7 @@ type CreateAgentRequest struct {
 	DefaultEnvironmentTemplateId nullable.Nullable[string] `json:"default_environment_template_id,omitempty"`
 	Description                  nullable.Nullable[string] `json:"description,omitempty"`
 	Key                          nullable.Nullable[string] `json:"key,omitempty"`
+	Labels                       *map[string]interface{}   `json:"labels,omitempty"`
 	Name                         string                    `json:"name"`
 }
 
@@ -3513,6 +3663,7 @@ type CreateKeyRequest struct {
 
 // CreateManagedEnvironmentRequest defines model for CreateManagedEnvironmentRequest.
 type CreateManagedEnvironmentRequest struct {
+	Labels     *map[string]interface{}   `json:"labels,omitempty"`
 	Name       nullable.Nullable[string] `json:"name,omitempty"`
 	TemplateId string                    `json:"template_id"`
 	Version    nullable.Nullable[int]    `json:"version,omitempty"`
@@ -3572,6 +3723,7 @@ type CreateServiceAccountRequestRole string
 
 // CreateSkillRequest defines model for CreateSkillRequest.
 type CreateSkillRequest struct {
+	Labels *map[string]interface{}   `json:"labels,omitempty"`
 	Name   nullable.Nullable[string] `json:"name,omitempty"`
 	Source CreateSkillRequest_Source `json:"source"`
 }
@@ -3598,6 +3750,7 @@ type CreateTemplateRequest struct {
 	Configuration              map[string]JsonValue              `json:"configuration"`
 	ConfigurationSchemaVersion *string                           `json:"configuration_schema_version,omitempty"`
 	Description                nullable.Nullable[string]         `json:"description,omitempty"`
+	Labels                     *map[string]interface{}           `json:"labels,omitempty"`
 	Name                       string                            `json:"name"`
 	Preparation                *CreateTemplateRequestPreparation `json:"preparation,omitempty"`
 	ProviderId                 string                            `json:"provider_id"`
@@ -3623,9 +3776,11 @@ type CreateTemplateRevisionRequestPreparation string
 
 // CreateThreadRequest defines model for CreateThreadRequest.
 type CreateThreadRequest struct {
-	AgentId     nullable.Nullable[string]               `json:"agent_id,omitempty"`
-	Environment nullable.Nullable[EnvironmentSelection] `json:"environment,omitempty"`
-	SessionId   nullable.Nullable[string]               `json:"session_id,omitempty"`
+	AgentId       nullable.Nullable[string]               `json:"agent_id,omitempty"`
+	Environment   nullable.Nullable[EnvironmentSelection] `json:"environment,omitempty"`
+	Labels        *map[string]interface{}                 `json:"labels,omitempty"`
+	SessionId     nullable.Nullable[string]               `json:"session_id,omitempty"`
+	SessionLabels *map[string]interface{}                 `json:"session_labels,omitempty"`
 }
 
 // CreateWorkspaceRequest defines model for CreateWorkspaceRequest.
@@ -3704,6 +3859,7 @@ type DuplicateAgentRequest struct {
 	Description     nullable.Nullable[string] `json:"description,omitempty"`
 	ExpectedVersion int                       `json:"expected_version"`
 	Key             nullable.Nullable[string] `json:"key,omitempty"`
+	Labels          *map[string]interface{}   `json:"labels,omitempty"`
 	Name            string                    `json:"name"`
 }
 
@@ -3720,6 +3876,7 @@ type Environment struct {
 	CreatedAt          time.Time                     `json:"created_at"`
 	Generation         int                           `json:"generation"`
 	Id                 string                        `json:"id"`
+	Labels             *map[string]interface{}       `json:"labels,omitempty"`
 	Name               string                        `json:"name"`
 	OrganizationId     string                        `json:"organization_id"`
 	Ownership          EnvironmentOwnership          `json:"ownership"`
@@ -3811,6 +3968,7 @@ type EnvironmentTemplate struct {
 	CurrentRevisionId string                       `json:"current_revision_id"`
 	Description       nullable.Nullable[string]    `json:"description"`
 	Id                string                       `json:"id"`
+	Labels            *map[string]interface{}      `json:"labels,omitempty"`
 	Name              string                       `json:"name"`
 	OrganizationId    string                       `json:"organization_id"`
 	UpdatedAt         time.Time                    `json:"updated_at"`
@@ -3875,7 +4033,9 @@ type ForkRunRequest struct {
 	HookSubscription          nullable.Nullable[InlineHookSubscriptionInput] `json:"hook_subscription,omitempty"`
 
 	// Input Submitted or retained versioned ordinary Agent input.
-	Input AgentInput `json:"input"`
+	Input        AgentInput              `json:"input"`
+	Labels       *map[string]interface{} `json:"labels,omitempty"`
+	ThreadLabels *map[string]interface{} `json:"thread_labels,omitempty"`
 }
 
 // FunctionCall Name and arguments of a function call.
@@ -4146,6 +4306,11 @@ type ItemResource struct {
 
 // JsonValue defines model for JsonValue.
 type JsonValue = interface{}
+
+// LabelsBody Complete replacement body for a resource label map.
+type LabelsBody struct {
+	Labels map[string]interface{} `json:"labels"`
+}
 
 // LaunchAuthorizationRequest defines model for LaunchAuthorizationRequest.
 type LaunchAuthorizationRequest struct {
@@ -4502,8 +4667,9 @@ type ModelTestRequest = map[string]interface{}
 
 // NewEnvironmentSelection defines model for NewEnvironmentSelection.
 type NewEnvironmentSelection struct {
-	TemplateId string                 `json:"template_id"`
-	Version    nullable.Nullable[int] `json:"version,omitempty"`
+	Labels     *map[string]interface{} `json:"labels,omitempty"`
+	TemplateId string                  `json:"template_id"`
+	Version    nullable.Nullable[int]  `json:"version,omitempty"`
 }
 
 // NotificationSubscription defines model for NotificationSubscription.
@@ -4801,6 +4967,7 @@ type RegisterEnvironmentRequest struct {
 	Access                     *EnvironmentAccess                  `json:"access,omitempty"`
 	Configuration              map[string]JsonValue                `json:"configuration"`
 	ConfigurationSchemaVersion *string                             `json:"configuration_schema_version,omitempty"`
+	Labels                     *map[string]interface{}             `json:"labels,omitempty"`
 	Name                       nullable.Nullable[string]           `json:"name,omitempty"`
 	ProviderId                 string                              `json:"provider_id"`
 	State                      nullable.Nullable[EnvironmentState] `json:"state,omitempty"`
@@ -4946,6 +5113,7 @@ type RetryOverride struct {
 type RetryRunRequest struct {
 	ExpectedThreadVersion int                                            `json:"expected_thread_version"`
 	HookSubscription      nullable.Nullable[InlineHookSubscriptionInput] `json:"hook_subscription,omitempty"`
+	Labels                *map[string]interface{}                        `json:"labels,omitempty"`
 }
 
 // RoleBinding defines model for RoleBinding.
@@ -5074,6 +5242,7 @@ type RunResource struct {
 	Input                      nullable.Nullable[JsonValue] `json:"input"`
 	InputKind                  string                       `json:"input_kind"`
 	InputText                  nullable.Nullable[string]    `json:"input_text"`
+	Labels                     map[string]interface{}       `json:"labels"`
 	LineageKind                RunLineageKind               `json:"lineage_kind"`
 	Output                     nullable.Nullable[JsonValue] `json:"output"`
 	OutputText                 nullable.Nullable[string]    `json:"output_text"`
@@ -5193,6 +5362,8 @@ type SearchProviderTestResult struct {
 
 // SearchSelection defines model for SearchSelection.
 type SearchSelection struct {
+	AllowDomains   *[]string `json:"allow_domains,omitempty"`
+	DenyDomains    *[]string `json:"deny_domains,omitempty"`
 	IncludeDomains *[]string `json:"include_domains,omitempty"`
 	MaxResults     *int      `json:"max_results,omitempty"`
 	ProviderId     string    `json:"provider_id"`
@@ -5256,6 +5427,7 @@ type SessionPreview struct {
 type SessionResource struct {
 	CreatedAt   time.Time                         `json:"created_at"`
 	Id          string                            `json:"id"`
+	Labels      map[string]interface{}            `json:"labels"`
 	Preview     nullable.Nullable[SessionPreview] `json:"preview"`
 	RunCount    nullable.Nullable[int]            `json:"run_count"`
 	UpdatedAt   time.Time                         `json:"updated_at"`
@@ -5279,6 +5451,7 @@ type Skill struct {
 	DeletedAt         nullable.Nullable[time.Time] `json:"deleted_at"`
 	Id                string                       `json:"id"`
 	Key               string                       `json:"key"`
+	Labels            *map[string]interface{}      `json:"labels,omitempty"`
 	Name              string                       `json:"name"`
 	OrganizationId    string                       `json:"organization_id"`
 	UpdatedAt         time.Time                    `json:"updated_at"`
@@ -5315,6 +5488,7 @@ type SkillListItem struct {
 	DeletedAt         nullable.Nullable[time.Time] `json:"deleted_at"`
 	Id                string                       `json:"id"`
 	Key               string                       `json:"key"`
+	Labels            *map[string]interface{}      `json:"labels,omitempty"`
 	Name              string                       `json:"name"`
 	OrganizationId    string                       `json:"organization_id"`
 	SourceKind        SkillListItemSourceKind      `json:"source_kind"`
@@ -5411,8 +5585,11 @@ type StartRunRequest struct {
 	HookSubscription          nullable.Nullable[InlineHookSubscriptionInput] `json:"hook_subscription,omitempty"`
 
 	// Input Submitted or retained versioned ordinary Agent input.
-	Input     AgentInput                `json:"input"`
-	SessionId nullable.Nullable[string] `json:"session_id,omitempty"`
+	Input         AgentInput                `json:"input"`
+	Labels        *map[string]interface{}   `json:"labels,omitempty"`
+	SessionId     nullable.Nullable[string] `json:"session_id,omitempty"`
+	SessionLabels *map[string]interface{}   `json:"session_labels,omitempty"`
+	ThreadLabels  *map[string]interface{}   `json:"thread_labels,omitempty"`
 }
 
 // SteerReceipt defines model for SteerReceipt.
@@ -5561,6 +5738,7 @@ type Thread struct {
 	DefaultEnvironmentId nullable.Nullable[string] `json:"default_environment_id,omitempty"`
 	HeadRunId            nullable.Nullable[string] `json:"head_run_id,omitempty"`
 	Id                   string                    `json:"id"`
+	Labels               *map[string]interface{}   `json:"labels,omitempty"`
 	OrganizationId       string                    `json:"organization_id"`
 	OriginKind           ThreadOriginKind          `json:"origin_kind"`
 	OriginRunId          nullable.Nullable[string] `json:"origin_run_id,omitempty"`
@@ -5594,6 +5772,7 @@ type ThreadResource struct {
 	DefaultEnvironmentId nullable.Nullable[string] `json:"default_environment_id"`
 	HeadRunId            nullable.Nullable[string] `json:"head_run_id"`
 	Id                   string                    `json:"id"`
+	Labels               map[string]interface{}    `json:"labels"`
 	OriginKind           string                    `json:"origin_kind"`
 	OriginRunId          nullable.Nullable[string] `json:"origin_run_id"`
 	OriginThreadId       nullable.Nullable[string] `json:"origin_thread_id"`
@@ -5617,7 +5796,8 @@ type ThreadRunSubmissionIntentInput struct {
 	HookSubscription          nullable.Nullable[InlineHookSubscriptionInput] `json:"hook_subscription,omitempty"`
 
 	// Input Submitted or retained versioned ordinary Agent input.
-	Input AgentInput `json:"input"`
+	Input  AgentInput              `json:"input"`
+	Labels *map[string]interface{} `json:"labels,omitempty"`
 }
 
 // ThreadRunSubmissionIntentOutput defines model for ThreadRunSubmissionIntent-Output.
@@ -5630,7 +5810,8 @@ type ThreadRunSubmissionIntentOutput struct {
 	HookSubscription          nullable.Nullable[InlineHookSubscriptionInput] `json:"hook_subscription,omitempty"`
 
 	// Input Submitted or retained versioned ordinary Agent input.
-	Input AgentInput `json:"input"`
+	Input  AgentInput              `json:"input"`
+	Labels *map[string]interface{} `json:"labels,omitempty"`
 }
 
 // ThreadRunSubmissionReceipt defines model for ThreadRunSubmissionReceipt.
@@ -5656,6 +5837,7 @@ type ThreadRunSubmissionRequest struct {
 
 	// Input Submitted or retained versioned ordinary Agent input.
 	Input             AgentInput                                   `json:"input"`
+	Labels            *map[string]interface{}                      `json:"labels,omitempty"`
 	WaitingResolution nullable.Nullable[WaitingResolutionDefaults] `json:"waiting_resolution,omitempty"`
 }
 
@@ -5694,6 +5876,35 @@ type ToolMessage struct {
 
 // ToolMessageRole defines model for ToolMessage.Role.
 type ToolMessageRole string
+
+// ToolPermissionMode defines model for ToolPermissionMode.
+type ToolPermissionMode string
+
+// ToolPermissionSetting defines model for ToolPermissionSetting.
+type ToolPermissionSetting struct {
+	union json.RawMessage
+}
+
+// ToolPermissionSetting1 defines model for ToolPermissionSetting.1.
+type ToolPermissionSetting1 string
+
+// ToolPermissions Portable configuration. Inherit resolves a tool default, never an execution decision.
+type ToolPermissions struct {
+	Default *ToolPermissionSetting            `json:"default,omitempty"`
+	Rules   *map[string]ToolPermissionSetting `json:"rules,omitempty"`
+}
+
+// ToolReviewRule A matching rule overrides the supplied fields of the global policy.
+type ToolReviewRule struct {
+	OnFlagged     nullable.Nullable[ToolReviewRuleOnFlagged] `json:"on_flagged,omitempty"`
+	RiskThreshold nullable.Nullable[ToolRiskLevel]           `json:"risk_threshold,omitempty"`
+}
+
+// ToolReviewRuleOnFlagged defines model for ToolReviewRule.OnFlagged.
+type ToolReviewRuleOnFlagged string
+
+// ToolRiskLevel defines model for ToolRiskLevel.
+type ToolRiskLevel string
 
 // Trace defines model for Trace.
 type Trace struct {
@@ -6016,6 +6227,7 @@ type WaitingResolutionDefaultsMode string
 type WaitingRunFeedbackRequest struct {
 	ExpectedThreadVersion   int                                            `json:"expected_thread_version"`
 	HookSubscription        nullable.Nullable[InlineHookSubscriptionInput] `json:"hook_subscription,omitempty"`
+	Labels                  *map[string]interface{}                        `json:"labels,omitempty"`
 	Resolutions             *[]WaitingRunFeedbackRequest_Resolutions_Item  `json:"resolutions,omitempty"`
 	SealedStateDigestSha256 string                                         `json:"sealed_state_digest_sha256"`
 }
@@ -6182,6 +6394,11 @@ type PatchEnvironmentTemplatesTemplateIdParams struct {
 	IfMatch string `json:"If-Match"`
 }
 
+// PutEnvironmentTemplatesTemplateIdLabelsParams defines parameters for PutEnvironmentTemplatesTemplateIdLabels.
+type PutEnvironmentTemplatesTemplateIdLabelsParams struct {
+	IfMatch string `json:"If-Match"`
+}
+
 // GetEnvironmentTemplatesTemplateIdRevisionsParams defines parameters for GetEnvironmentTemplatesTemplateIdRevisions.
 type GetEnvironmentTemplatesTemplateIdRevisionsParams struct {
 	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
@@ -6196,6 +6413,11 @@ type PatchEnvironmentsEnvironmentIdParams struct {
 // PostEnvironmentsEnvironmentIdDeleteParams defines parameters for PostEnvironmentsEnvironmentIdDelete.
 type PostEnvironmentsEnvironmentIdDeleteParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
+// PutEnvironmentsEnvironmentIdLabelsParams defines parameters for PutEnvironmentsEnvironmentIdLabels.
+type PutEnvironmentsEnvironmentIdLabelsParams struct {
+	IfMatch string `json:"If-Match"`
 }
 
 // PostEnvironmentsEnvironmentIdStopParams defines parameters for PostEnvironmentsEnvironmentIdStop.
@@ -6249,8 +6471,9 @@ type GetOrganizationsOrganizationEnvironmentProvidersParams struct {
 
 // GetOrganizationsOrganizationEnvironmentTemplatesParams defines parameters for GetOrganizationsOrganizationEnvironmentTemplates.
 type GetOrganizationsOrganizationEnvironmentTemplatesParams struct {
-	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
-	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *int      `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string   `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Label  *[]string `form:"label,omitempty" json:"label,omitempty"`
 }
 
 // PostOrganizationsOrganizationEnvironmentTemplatesParams defines parameters for PostOrganizationsOrganizationEnvironmentTemplates.
@@ -6407,6 +6630,11 @@ type GetRunsRunIdItemsParams struct {
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// PutRunsRunIdLabelsParams defines parameters for PutRunsRunIdLabels.
+type PutRunsRunIdLabelsParams struct {
+	IfMatch string `json:"If-Match"`
+}
+
 // PostRunsRunIdRetryParams defines parameters for PostRunsRunIdRetry.
 type PostRunsRunIdRetryParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
@@ -6434,10 +6662,16 @@ type GetServiceAccountsAccountIdApiKeysParams struct {
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// PutSessionsSessionIdLabelsParams defines parameters for PutSessionsSessionIdLabels.
+type PutSessionsSessionIdLabelsParams struct {
+	IfMatch string `json:"If-Match"`
+}
+
 // GetSessionsSessionIdThreadsParams defines parameters for GetSessionsSessionIdThreads.
 type GetSessionsSessionIdThreadsParams struct {
-	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
-	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *int      `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string   `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Label  *[]string `form:"label,omitempty" json:"label,omitempty"`
 }
 
 // DeleteSkillsSkillIdParams defines parameters for DeleteSkillsSkillId.
@@ -6447,6 +6681,11 @@ type DeleteSkillsSkillIdParams struct {
 
 // PatchSkillsSkillIdParams defines parameters for PatchSkillsSkillId.
 type PatchSkillsSkillIdParams struct {
+	IfMatch string `json:"If-Match"`
+}
+
+// PutSkillsSkillIdLabelsParams defines parameters for PutSkillsSkillIdLabels.
+type PutSkillsSkillIdLabelsParams struct {
 	IfMatch string `json:"If-Match"`
 }
 
@@ -6467,6 +6706,11 @@ type PostSkillsSkillIdRevisionsParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
 }
 
+// PutThreadsThreadIdLabelsParams defines parameters for PutThreadsThreadIdLabels.
+type PutThreadsThreadIdLabelsParams struct {
+	IfMatch string `json:"If-Match"`
+}
+
 // GetThreadsThreadIdQueuedSubmissionsParams defines parameters for GetThreadsThreadIdQueuedSubmissions.
 type GetThreadsThreadIdQueuedSubmissionsParams struct {
 	State *QueuedSubmissionState `form:"state,omitempty" json:"state,omitempty"`
@@ -6485,8 +6729,9 @@ type PostThreadsThreadIdQueuedSubmissionsReorderParams struct {
 
 // GetThreadsThreadIdRunsParams defines parameters for GetThreadsThreadIdRuns.
 type GetThreadsThreadIdRunsParams struct {
-	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
-	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *int      `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string   `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Label  *[]string `form:"label,omitempty" json:"label,omitempty"`
 }
 
 // PostThreadsThreadIdRunsParams defines parameters for PostThreadsThreadIdRuns.
@@ -6538,6 +6783,7 @@ type GetWorkspacesWorkspaceAgentsParams struct {
 	Enabled         *bool        `form:"enabled,omitempty" json:"enabled,omitempty"`
 	Source          *AgentSource `form:"source,omitempty" json:"source,omitempty"`
 	IncludeArchived *bool        `form:"include_archived,omitempty" json:"include_archived,omitempty"`
+	Label           *[]string    `form:"label,omitempty" json:"label,omitempty"`
 }
 
 // PostWorkspacesWorkspaceAgentsParams defines parameters for PostWorkspacesWorkspaceAgents.
@@ -6563,6 +6809,11 @@ type PutWorkspacesWorkspaceAgentsAgentAvatarParams struct {
 // PostWorkspacesWorkspaceAgentsAgentDuplicateParams defines parameters for PostWorkspacesWorkspaceAgentsAgentDuplicate.
 type PostWorkspacesWorkspaceAgentsAgentDuplicateParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
+// PutWorkspacesWorkspaceAgentsAgentLabelsParams defines parameters for PutWorkspacesWorkspaceAgentsAgentLabels.
+type PutWorkspacesWorkspaceAgentsAgentLabelsParams struct {
+	IfMatch string `json:"If-Match"`
 }
 
 // GetWorkspacesWorkspaceAgentsAgentRevisionsParams defines parameters for GetWorkspacesWorkspaceAgentsAgentRevisions.
@@ -6652,8 +6903,9 @@ type GetWorkspacesWorkspaceEnvironmentProvidersParams struct {
 
 // GetWorkspacesWorkspaceEnvironmentTemplatesParams defines parameters for GetWorkspacesWorkspaceEnvironmentTemplates.
 type GetWorkspacesWorkspaceEnvironmentTemplatesParams struct {
-	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
-	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *int      `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string   `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Label  *[]string `form:"label,omitempty" json:"label,omitempty"`
 }
 
 // PostWorkspacesWorkspaceEnvironmentTemplatesParams defines parameters for PostWorkspacesWorkspaceEnvironmentTemplates.
@@ -6663,8 +6915,9 @@ type PostWorkspacesWorkspaceEnvironmentTemplatesParams struct {
 
 // GetWorkspacesWorkspaceEnvironmentsParams defines parameters for GetWorkspacesWorkspaceEnvironments.
 type GetWorkspacesWorkspaceEnvironmentsParams struct {
-	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
-	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *int      `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string   `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Label  *[]string `form:"label,omitempty" json:"label,omitempty"`
 }
 
 // PostWorkspacesWorkspaceEnvironmentsJSONBody defines parameters for PostWorkspacesWorkspaceEnvironments.
@@ -6760,8 +7013,9 @@ type GetWorkspacesWorkspaceRoleBindingsParams struct {
 
 // GetWorkspacesWorkspaceRunsParams defines parameters for GetWorkspacesWorkspaceRuns.
 type GetWorkspacesWorkspaceRunsParams struct {
-	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
-	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *int      `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string   `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Label  *[]string `form:"label,omitempty" json:"label,omitempty"`
 }
 
 // PostWorkspacesWorkspaceRunsParams defines parameters for PostWorkspacesWorkspaceRuns.
@@ -6808,6 +7062,7 @@ type GetWorkspacesWorkspaceSessionsParams struct {
 	TriggerType   *[]string    `form:"trigger_type,omitempty" json:"trigger_type,omitempty"`
 	UpdatedAfter  *time.Time   `form:"updated_after,omitempty" json:"updated_after,omitempty"`
 	UpdatedBefore *time.Time   `form:"updated_before,omitempty" json:"updated_before,omitempty"`
+	Label         *[]string    `form:"label,omitempty" json:"label,omitempty"`
 	Limit         *int         `form:"limit,omitempty" json:"limit,omitempty"`
 	Cursor        *string      `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
@@ -6823,6 +7078,7 @@ type GetWorkspacesWorkspaceSkillsParams struct {
 	Cursor     *string                                       `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Q          *string                                       `form:"q,omitempty" json:"q,omitempty"`
 	SourceKind *GetWorkspacesWorkspaceSkillsParamsSourceKind `form:"source_kind,omitempty" json:"source_kind,omitempty"`
+	Label      *[]string                                     `form:"label,omitempty" json:"label,omitempty"`
 }
 
 // GetWorkspacesWorkspaceSkillsParamsSourceKind defines parameters for GetWorkspacesWorkspaceSkills.
@@ -6948,11 +7204,17 @@ type PutEnvironmentProvidersProviderIdCredentialJSONRequestBody = ReplaceCredent
 // PatchEnvironmentTemplatesTemplateIdJSONRequestBody defines body for PatchEnvironmentTemplatesTemplateId for application/json ContentType.
 type PatchEnvironmentTemplatesTemplateIdJSONRequestBody = UpdateTemplateRequest
 
+// PutEnvironmentTemplatesTemplateIdLabelsJSONRequestBody defines body for PutEnvironmentTemplatesTemplateIdLabels for application/json ContentType.
+type PutEnvironmentTemplatesTemplateIdLabelsJSONRequestBody = LabelsBody
+
 // PostEnvironmentTemplatesTemplateIdRevisionsJSONRequestBody defines body for PostEnvironmentTemplatesTemplateIdRevisions for application/json ContentType.
 type PostEnvironmentTemplatesTemplateIdRevisionsJSONRequestBody = CreateTemplateRevisionRequest
 
 // PatchEnvironmentsEnvironmentIdJSONRequestBody defines body for PatchEnvironmentsEnvironmentId for application/json ContentType.
 type PatchEnvironmentsEnvironmentIdJSONRequestBody = UpdateEnvironmentRequest
+
+// PutEnvironmentsEnvironmentIdLabelsJSONRequestBody defines body for PutEnvironmentsEnvironmentIdLabels for application/json ContentType.
+type PutEnvironmentsEnvironmentIdLabelsJSONRequestBody = LabelsBody
 
 // PatchHookSubscriptionsSubscriptionIdJSONRequestBody defines body for PatchHookSubscriptionsSubscriptionId for application/json ContentType.
 type PatchHookSubscriptionsSubscriptionIdJSONRequestBody = UpdateHookSubscriptionStateRequest
@@ -7035,6 +7297,9 @@ type PostRunsRunIdForkJSONRequestBody = ForkRunRequest
 // PostRunsRunIdInterruptJSONRequestBody defines body for PostRunsRunIdInterrupt for application/json ContentType.
 type PostRunsRunIdInterruptJSONRequestBody = InterruptRequest
 
+// PutRunsRunIdLabelsJSONRequestBody defines body for PutRunsRunIdLabels for application/json ContentType.
+type PutRunsRunIdLabelsJSONRequestBody = LabelsBody
+
 // PostRunsRunIdRetryJSONRequestBody defines body for PostRunsRunIdRetry for application/json ContentType.
 type PostRunsRunIdRetryJSONRequestBody = RetryRunRequest
 
@@ -7053,11 +7318,20 @@ type PatchServiceAccountsAccountIdJSONRequestBody = UpdateServiceAccountRequest
 // PostServiceAccountsAccountIdApiKeysJSONRequestBody defines body for PostServiceAccountsAccountIdApiKeys for application/json ContentType.
 type PostServiceAccountsAccountIdApiKeysJSONRequestBody = CreateKeyRequest
 
+// PutSessionsSessionIdLabelsJSONRequestBody defines body for PutSessionsSessionIdLabels for application/json ContentType.
+type PutSessionsSessionIdLabelsJSONRequestBody = LabelsBody
+
 // PatchSkillsSkillIdJSONRequestBody defines body for PatchSkillsSkillId for application/json ContentType.
 type PatchSkillsSkillIdJSONRequestBody = UpdateSkillRequest
 
+// PutSkillsSkillIdLabelsJSONRequestBody defines body for PutSkillsSkillIdLabels for application/json ContentType.
+type PutSkillsSkillIdLabelsJSONRequestBody = LabelsBody
+
 // PostSkillsSkillIdRevisionsJSONRequestBody defines body for PostSkillsSkillIdRevisions for application/json ContentType.
 type PostSkillsSkillIdRevisionsJSONRequestBody = CreateSkillRevisionRequest
+
+// PutThreadsThreadIdLabelsJSONRequestBody defines body for PutThreadsThreadIdLabels for application/json ContentType.
+type PutThreadsThreadIdLabelsJSONRequestBody = LabelsBody
 
 // PostThreadsThreadIdQueuedSubmissionsConsumeJSONRequestBody defines body for PostThreadsThreadIdQueuedSubmissionsConsume for application/json ContentType.
 type PostThreadsThreadIdQueuedSubmissionsConsumeJSONRequestBody = ConsumeQueuedSubmissionRequest
@@ -7091,6 +7365,9 @@ type PatchWorkspacesWorkspaceAgentsAgentJSONRequestBody = UpdateAgentRequest
 
 // PostWorkspacesWorkspaceAgentsAgentDuplicateJSONRequestBody defines body for PostWorkspacesWorkspaceAgentsAgentDuplicate for application/json ContentType.
 type PostWorkspacesWorkspaceAgentsAgentDuplicateJSONRequestBody = DuplicateAgentRequest
+
+// PutWorkspacesWorkspaceAgentsAgentLabelsJSONRequestBody defines body for PutWorkspacesWorkspaceAgentsAgentLabels for application/json ContentType.
+type PutWorkspacesWorkspaceAgentsAgentLabelsJSONRequestBody = LabelsBody
 
 // PostWorkspacesWorkspaceAgentsAgentRevisionsJSONRequestBody defines body for PostWorkspacesWorkspaceAgentsAgentRevisions for application/json ContentType.
 type PostWorkspacesWorkspaceAgentsAgentRevisionsJSONRequestBody = CreateAgentRevisionRequest
@@ -11107,6 +11384,68 @@ func (t *SkillRevision_ImportedFrom) UnmarshalJSON(b []byte) error {
 	return err
 }
 
+// AsToolPermissionMode returns the union data inside the ToolPermissionSetting as a ToolPermissionMode
+func (t ToolPermissionSetting) AsToolPermissionMode() (ToolPermissionMode, error) {
+	var body ToolPermissionMode
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromToolPermissionMode overwrites any union data inside the ToolPermissionSetting as the provided ToolPermissionMode
+func (t *ToolPermissionSetting) FromToolPermissionMode(v ToolPermissionMode) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeToolPermissionMode performs a merge with any union data inside the ToolPermissionSetting, using the provided ToolPermissionMode
+func (t *ToolPermissionSetting) MergeToolPermissionMode(v ToolPermissionMode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsToolPermissionSetting1 returns the union data inside the ToolPermissionSetting as a ToolPermissionSetting1
+func (t ToolPermissionSetting) AsToolPermissionSetting1() (ToolPermissionSetting1, error) {
+	var body ToolPermissionSetting1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromToolPermissionSetting1 overwrites any union data inside the ToolPermissionSetting as the provided ToolPermissionSetting1
+func (t *ToolPermissionSetting) FromToolPermissionSetting1(v ToolPermissionSetting1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeToolPermissionSetting1 performs a merge with any union data inside the ToolPermissionSetting, using the provided ToolPermissionSetting1
+func (t *ToolPermissionSetting) MergeToolPermissionSetting1(v ToolPermissionSetting1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t ToolPermissionSetting) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *ToolPermissionSetting) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
 // AsUsageLimitsInputCostLimit0 returns the union data inside the UsageLimitsInput_CostLimit as a UsageLimitsInputCostLimit0
 func (t UsageLimitsInput_CostLimit) AsUsageLimitsInputCostLimit0() (UsageLimitsInputCostLimit0, error) {
 	var body UsageLimitsInputCostLimit0
@@ -12495,6 +12834,25 @@ type ClientInterface interface {
 	// Corresponds with PATCH /api/v1/environment-templates/{template_id} (the `PatchEnvironmentTemplatesTemplateId` operationId).
 	PatchEnvironmentTemplatesTemplateId(ctx context.Context, templateId string, params *PatchEnvironmentTemplatesTemplateIdParams, body PatchEnvironmentTemplatesTemplateIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetEnvironmentTemplatesTemplateIdLabels Get Template Labels
+	//
+	// Corresponds with GET /api/v1/environment-templates/{template_id}/labels (the `GetEnvironmentTemplatesTemplateIdLabels` operationId).
+	GetEnvironmentTemplatesTemplateIdLabels(ctx context.Context, templateId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutEnvironmentTemplatesTemplateIdLabelsWithBody Put Template Labels
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /api/v1/environment-templates/{template_id}/labels (the `PutEnvironmentTemplatesTemplateIdLabels` operationId).
+	PutEnvironmentTemplatesTemplateIdLabelsWithBody(ctx context.Context, templateId string, params *PutEnvironmentTemplatesTemplateIdLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutEnvironmentTemplatesTemplateIdLabels Put Template Labels
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /api/v1/environment-templates/{template_id}/labels (the `PutEnvironmentTemplatesTemplateIdLabels` operationId).
+	PutEnvironmentTemplatesTemplateIdLabels(ctx context.Context, templateId string, params *PutEnvironmentTemplatesTemplateIdLabelsParams, body PutEnvironmentTemplatesTemplateIdLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetEnvironmentTemplatesTemplateIdRevisions List Revisions
 	//
 	// Corresponds with GET /api/v1/environment-templates/{template_id}/revisions (the `GetEnvironmentTemplatesTemplateIdRevisions` operationId).
@@ -12532,6 +12890,25 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /api/v1/environments/{environment_id}/delete (the `PostEnvironmentsEnvironmentIdDelete` operationId).
 	PostEnvironmentsEnvironmentIdDelete(ctx context.Context, environmentId string, params *PostEnvironmentsEnvironmentIdDeleteParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetEnvironmentsEnvironmentIdLabels Get Environment Labels
+	//
+	// Corresponds with GET /api/v1/environments/{environment_id}/labels (the `GetEnvironmentsEnvironmentIdLabels` operationId).
+	GetEnvironmentsEnvironmentIdLabels(ctx context.Context, environmentId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutEnvironmentsEnvironmentIdLabelsWithBody Put Environment Labels
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /api/v1/environments/{environment_id}/labels (the `PutEnvironmentsEnvironmentIdLabels` operationId).
+	PutEnvironmentsEnvironmentIdLabelsWithBody(ctx context.Context, environmentId string, params *PutEnvironmentsEnvironmentIdLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutEnvironmentsEnvironmentIdLabels Put Environment Labels
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /api/v1/environments/{environment_id}/labels (the `PutEnvironmentsEnvironmentIdLabels` operationId).
+	PutEnvironmentsEnvironmentIdLabels(ctx context.Context, environmentId string, params *PutEnvironmentsEnvironmentIdLabelsParams, body PutEnvironmentsEnvironmentIdLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostEnvironmentsEnvironmentIdStop Stop Environment
 	//
@@ -13113,6 +13490,25 @@ type ClientInterface interface {
 	// Corresponds with GET /api/v1/runs/{run_id}/items (the `GetRunsRunIdItems` operationId).
 	GetRunsRunIdItems(ctx context.Context, runId string, params *GetRunsRunIdItemsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetRunsRunIdLabels Get Run Labels
+	//
+	// Corresponds with GET /api/v1/runs/{run_id}/labels (the `GetRunsRunIdLabels` operationId).
+	GetRunsRunIdLabels(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutRunsRunIdLabelsWithBody Put Run Labels
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /api/v1/runs/{run_id}/labels (the `PutRunsRunIdLabels` operationId).
+	PutRunsRunIdLabelsWithBody(ctx context.Context, runId string, params *PutRunsRunIdLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutRunsRunIdLabels Put Run Labels
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /api/v1/runs/{run_id}/labels (the `PutRunsRunIdLabels` operationId).
+	PutRunsRunIdLabels(ctx context.Context, runId string, params *PutRunsRunIdLabelsParams, body PutRunsRunIdLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetRunsRunIdLineage Get Run Lineage
 	//
 	// Corresponds with GET /api/v1/runs/{run_id}/lineage (the `GetRunsRunIdLineage` operationId).
@@ -13237,6 +13633,25 @@ type ClientInterface interface {
 	// Corresponds with POST /api/v1/service-accounts/{account_id}/api-keys (the `PostServiceAccountsAccountIdApiKeys` operationId).
 	PostServiceAccountsAccountIdApiKeys(ctx context.Context, accountId string, body PostServiceAccountsAccountIdApiKeysJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetSessionsSessionIdLabels Get Session Labels
+	//
+	// Corresponds with GET /api/v1/sessions/{session_id}/labels (the `GetSessionsSessionIdLabels` operationId).
+	GetSessionsSessionIdLabels(ctx context.Context, sessionId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutSessionsSessionIdLabelsWithBody Put Session Labels
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /api/v1/sessions/{session_id}/labels (the `PutSessionsSessionIdLabels` operationId).
+	PutSessionsSessionIdLabelsWithBody(ctx context.Context, sessionId string, params *PutSessionsSessionIdLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutSessionsSessionIdLabels Put Session Labels
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /api/v1/sessions/{session_id}/labels (the `PutSessionsSessionIdLabels` operationId).
+	PutSessionsSessionIdLabels(ctx context.Context, sessionId string, params *PutSessionsSessionIdLabelsParams, body PutSessionsSessionIdLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetSessionsSessionIdThreads List Threads
 	//
 	// Corresponds with GET /api/v1/sessions/{session_id}/threads (the `GetSessionsSessionIdThreads` operationId).
@@ -13286,6 +13701,25 @@ type ClientInterface interface {
 	// Corresponds with PATCH /api/v1/skills/{skill_id} (the `PatchSkillsSkillId` operationId).
 	PatchSkillsSkillId(ctx context.Context, skillId string, params *PatchSkillsSkillIdParams, body PatchSkillsSkillIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetSkillsSkillIdLabels Get Skill Labels
+	//
+	// Corresponds with GET /api/v1/skills/{skill_id}/labels (the `GetSkillsSkillIdLabels` operationId).
+	GetSkillsSkillIdLabels(ctx context.Context, skillId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutSkillsSkillIdLabelsWithBody Put Skill Labels
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /api/v1/skills/{skill_id}/labels (the `PutSkillsSkillIdLabels` operationId).
+	PutSkillsSkillIdLabelsWithBody(ctx context.Context, skillId string, params *PutSkillsSkillIdLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutSkillsSkillIdLabels Put Skill Labels
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /api/v1/skills/{skill_id}/labels (the `PutSkillsSkillIdLabels` operationId).
+	PutSkillsSkillIdLabels(ctx context.Context, skillId string, params *PutSkillsSkillIdLabelsParams, body PutSkillsSkillIdLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetSkillsSkillIdReferences List Skill References
 	//
 	// Corresponds with GET /api/v1/skills/{skill_id}/references (the `GetSkillsSkillIdReferences` operationId).
@@ -13314,6 +13748,25 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /api/v1/threads/{thread_id} (the `GetThreadsThreadId` operationId).
 	GetThreadsThreadId(ctx context.Context, threadId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetThreadsThreadIdLabels Get Thread Labels
+	//
+	// Corresponds with GET /api/v1/threads/{thread_id}/labels (the `GetThreadsThreadIdLabels` operationId).
+	GetThreadsThreadIdLabels(ctx context.Context, threadId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutThreadsThreadIdLabelsWithBody Put Thread Labels
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /api/v1/threads/{thread_id}/labels (the `PutThreadsThreadIdLabels` operationId).
+	PutThreadsThreadIdLabelsWithBody(ctx context.Context, threadId string, params *PutThreadsThreadIdLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutThreadsThreadIdLabels Put Thread Labels
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /api/v1/threads/{thread_id}/labels (the `PutThreadsThreadIdLabels` operationId).
+	PutThreadsThreadIdLabels(ctx context.Context, threadId string, params *PutThreadsThreadIdLabelsParams, body PutThreadsThreadIdLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetThreadsThreadIdQueuedSubmissions List Queued Submissions
 	//
@@ -13552,6 +14005,25 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /api/v1/workspaces/{workspace}/agents/{agent}/duplicate (the `PostWorkspacesWorkspaceAgentsAgentDuplicate` operationId).
 	PostWorkspacesWorkspaceAgentsAgentDuplicate(ctx context.Context, workspace string, agent string, params *PostWorkspacesWorkspaceAgentsAgentDuplicateParams, body PostWorkspacesWorkspaceAgentsAgentDuplicateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWorkspacesWorkspaceAgentsAgentLabels Get Agent Labels
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/agents/{agent}/labels (the `GetWorkspacesWorkspaceAgentsAgentLabels` operationId).
+	GetWorkspacesWorkspaceAgentsAgentLabels(ctx context.Context, workspace string, agent string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutWorkspacesWorkspaceAgentsAgentLabelsWithBody Put Agent Labels
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /api/v1/workspaces/{workspace}/agents/{agent}/labels (the `PutWorkspacesWorkspaceAgentsAgentLabels` operationId).
+	PutWorkspacesWorkspaceAgentsAgentLabelsWithBody(ctx context.Context, workspace string, agent string, params *PutWorkspacesWorkspaceAgentsAgentLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutWorkspacesWorkspaceAgentsAgentLabels Put Agent Labels
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /api/v1/workspaces/{workspace}/agents/{agent}/labels (the `PutWorkspacesWorkspaceAgentsAgentLabels` operationId).
+	PutWorkspacesWorkspaceAgentsAgentLabels(ctx context.Context, workspace string, agent string, params *PutWorkspacesWorkspaceAgentsAgentLabelsParams, body PutWorkspacesWorkspaceAgentsAgentLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetWorkspacesWorkspaceAgentsAgentRevisions List Agent Revisions
 	//
@@ -15537,6 +16009,55 @@ func (c *Client) PatchEnvironmentTemplatesTemplateId(ctx context.Context, templa
 	return c.Client.Do(req)
 }
 
+// GetEnvironmentTemplatesTemplateIdLabels Get Template Labels
+//
+// Corresponds with GET /api/v1/environment-templates/{template_id}/labels (the `GetEnvironmentTemplatesTemplateIdLabels` operationId).
+func (c *Client) GetEnvironmentTemplatesTemplateIdLabels(ctx context.Context, templateId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetEnvironmentTemplatesTemplateIdLabelsRequest(c.Server, templateId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutEnvironmentTemplatesTemplateIdLabelsWithBody Put Template Labels
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /api/v1/environment-templates/{template_id}/labels (the `PutEnvironmentTemplatesTemplateIdLabels` operationId).
+func (c *Client) PutEnvironmentTemplatesTemplateIdLabelsWithBody(ctx context.Context, templateId string, params *PutEnvironmentTemplatesTemplateIdLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutEnvironmentTemplatesTemplateIdLabelsRequestWithBody(c.Server, templateId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutEnvironmentTemplatesTemplateIdLabels Put Template Labels
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /api/v1/environment-templates/{template_id}/labels (the `PutEnvironmentTemplatesTemplateIdLabels` operationId).
+func (c *Client) PutEnvironmentTemplatesTemplateIdLabels(ctx context.Context, templateId string, params *PutEnvironmentTemplatesTemplateIdLabelsParams, body PutEnvironmentTemplatesTemplateIdLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutEnvironmentTemplatesTemplateIdLabelsRequest(c.Server, templateId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetEnvironmentTemplatesTemplateIdRevisions List Revisions
 //
 // Corresponds with GET /api/v1/environment-templates/{template_id}/revisions (the `GetEnvironmentTemplatesTemplateIdRevisions` operationId).
@@ -15625,6 +16146,55 @@ func (c *Client) PatchEnvironmentsEnvironmentId(ctx context.Context, environment
 // Corresponds with POST /api/v1/environments/{environment_id}/delete (the `PostEnvironmentsEnvironmentIdDelete` operationId).
 func (c *Client) PostEnvironmentsEnvironmentIdDelete(ctx context.Context, environmentId string, params *PostEnvironmentsEnvironmentIdDeleteParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostEnvironmentsEnvironmentIdDeleteRequest(c.Server, environmentId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetEnvironmentsEnvironmentIdLabels Get Environment Labels
+//
+// Corresponds with GET /api/v1/environments/{environment_id}/labels (the `GetEnvironmentsEnvironmentIdLabels` operationId).
+func (c *Client) GetEnvironmentsEnvironmentIdLabels(ctx context.Context, environmentId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetEnvironmentsEnvironmentIdLabelsRequest(c.Server, environmentId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutEnvironmentsEnvironmentIdLabelsWithBody Put Environment Labels
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /api/v1/environments/{environment_id}/labels (the `PutEnvironmentsEnvironmentIdLabels` operationId).
+func (c *Client) PutEnvironmentsEnvironmentIdLabelsWithBody(ctx context.Context, environmentId string, params *PutEnvironmentsEnvironmentIdLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutEnvironmentsEnvironmentIdLabelsRequestWithBody(c.Server, environmentId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutEnvironmentsEnvironmentIdLabels Put Environment Labels
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /api/v1/environments/{environment_id}/labels (the `PutEnvironmentsEnvironmentIdLabels` operationId).
+func (c *Client) PutEnvironmentsEnvironmentIdLabels(ctx context.Context, environmentId string, params *PutEnvironmentsEnvironmentIdLabelsParams, body PutEnvironmentsEnvironmentIdLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutEnvironmentsEnvironmentIdLabelsRequest(c.Server, environmentId, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -17155,6 +17725,55 @@ func (c *Client) GetRunsRunIdItems(ctx context.Context, runId string, params *Ge
 	return c.Client.Do(req)
 }
 
+// GetRunsRunIdLabels Get Run Labels
+//
+// Corresponds with GET /api/v1/runs/{run_id}/labels (the `GetRunsRunIdLabels` operationId).
+func (c *Client) GetRunsRunIdLabels(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetRunsRunIdLabelsRequest(c.Server, runId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutRunsRunIdLabelsWithBody Put Run Labels
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /api/v1/runs/{run_id}/labels (the `PutRunsRunIdLabels` operationId).
+func (c *Client) PutRunsRunIdLabelsWithBody(ctx context.Context, runId string, params *PutRunsRunIdLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutRunsRunIdLabelsRequestWithBody(c.Server, runId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutRunsRunIdLabels Put Run Labels
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /api/v1/runs/{run_id}/labels (the `PutRunsRunIdLabels` operationId).
+func (c *Client) PutRunsRunIdLabels(ctx context.Context, runId string, params *PutRunsRunIdLabelsParams, body PutRunsRunIdLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutRunsRunIdLabelsRequest(c.Server, runId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetRunsRunIdLineage Get Run Lineage
 //
 // Corresponds with GET /api/v1/runs/{run_id}/lineage (the `GetRunsRunIdLineage` operationId).
@@ -17479,6 +18098,55 @@ func (c *Client) PostServiceAccountsAccountIdApiKeys(ctx context.Context, accoun
 	return c.Client.Do(req)
 }
 
+// GetSessionsSessionIdLabels Get Session Labels
+//
+// Corresponds with GET /api/v1/sessions/{session_id}/labels (the `GetSessionsSessionIdLabels` operationId).
+func (c *Client) GetSessionsSessionIdLabels(ctx context.Context, sessionId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSessionsSessionIdLabelsRequest(c.Server, sessionId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutSessionsSessionIdLabelsWithBody Put Session Labels
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /api/v1/sessions/{session_id}/labels (the `PutSessionsSessionIdLabels` operationId).
+func (c *Client) PutSessionsSessionIdLabelsWithBody(ctx context.Context, sessionId string, params *PutSessionsSessionIdLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutSessionsSessionIdLabelsRequestWithBody(c.Server, sessionId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutSessionsSessionIdLabels Put Session Labels
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /api/v1/sessions/{session_id}/labels (the `PutSessionsSessionIdLabels` operationId).
+func (c *Client) PutSessionsSessionIdLabels(ctx context.Context, sessionId string, params *PutSessionsSessionIdLabelsParams, body PutSessionsSessionIdLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutSessionsSessionIdLabelsRequest(c.Server, sessionId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetSessionsSessionIdThreads List Threads
 //
 // Corresponds with GET /api/v1/sessions/{session_id}/threads (the `GetSessionsSessionIdThreads` operationId).
@@ -17618,6 +18286,55 @@ func (c *Client) PatchSkillsSkillId(ctx context.Context, skillId string, params 
 	return c.Client.Do(req)
 }
 
+// GetSkillsSkillIdLabels Get Skill Labels
+//
+// Corresponds with GET /api/v1/skills/{skill_id}/labels (the `GetSkillsSkillIdLabels` operationId).
+func (c *Client) GetSkillsSkillIdLabels(ctx context.Context, skillId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSkillsSkillIdLabelsRequest(c.Server, skillId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutSkillsSkillIdLabelsWithBody Put Skill Labels
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /api/v1/skills/{skill_id}/labels (the `PutSkillsSkillIdLabels` operationId).
+func (c *Client) PutSkillsSkillIdLabelsWithBody(ctx context.Context, skillId string, params *PutSkillsSkillIdLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutSkillsSkillIdLabelsRequestWithBody(c.Server, skillId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutSkillsSkillIdLabels Put Skill Labels
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /api/v1/skills/{skill_id}/labels (the `PutSkillsSkillIdLabels` operationId).
+func (c *Client) PutSkillsSkillIdLabels(ctx context.Context, skillId string, params *PutSkillsSkillIdLabelsParams, body PutSkillsSkillIdLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutSkillsSkillIdLabelsRequest(c.Server, skillId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetSkillsSkillIdReferences List Skill References
 //
 // Corresponds with GET /api/v1/skills/{skill_id}/references (the `GetSkillsSkillIdReferences` operationId).
@@ -17687,6 +18404,55 @@ func (c *Client) PostSkillsSkillIdRevisions(ctx context.Context, skillId string,
 // Corresponds with GET /api/v1/threads/{thread_id} (the `GetThreadsThreadId` operationId).
 func (c *Client) GetThreadsThreadId(ctx context.Context, threadId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetThreadsThreadIdRequest(c.Server, threadId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetThreadsThreadIdLabels Get Thread Labels
+//
+// Corresponds with GET /api/v1/threads/{thread_id}/labels (the `GetThreadsThreadIdLabels` operationId).
+func (c *Client) GetThreadsThreadIdLabels(ctx context.Context, threadId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetThreadsThreadIdLabelsRequest(c.Server, threadId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutThreadsThreadIdLabelsWithBody Put Thread Labels
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /api/v1/threads/{thread_id}/labels (the `PutThreadsThreadIdLabels` operationId).
+func (c *Client) PutThreadsThreadIdLabelsWithBody(ctx context.Context, threadId string, params *PutThreadsThreadIdLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutThreadsThreadIdLabelsRequestWithBody(c.Server, threadId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutThreadsThreadIdLabels Put Thread Labels
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /api/v1/threads/{thread_id}/labels (the `PutThreadsThreadIdLabels` operationId).
+func (c *Client) PutThreadsThreadIdLabels(ctx context.Context, threadId string, params *PutThreadsThreadIdLabelsParams, body PutThreadsThreadIdLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutThreadsThreadIdLabelsRequest(c.Server, threadId, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -18305,6 +19071,55 @@ func (c *Client) PostWorkspacesWorkspaceAgentsAgentDuplicateWithBody(ctx context
 // Corresponds with POST /api/v1/workspaces/{workspace}/agents/{agent}/duplicate (the `PostWorkspacesWorkspaceAgentsAgentDuplicate` operationId).
 func (c *Client) PostWorkspacesWorkspaceAgentsAgentDuplicate(ctx context.Context, workspace string, agent string, params *PostWorkspacesWorkspaceAgentsAgentDuplicateParams, body PostWorkspacesWorkspaceAgentsAgentDuplicateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostWorkspacesWorkspaceAgentsAgentDuplicateRequest(c.Server, workspace, agent, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetWorkspacesWorkspaceAgentsAgentLabels Get Agent Labels
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/agents/{agent}/labels (the `GetWorkspacesWorkspaceAgentsAgentLabels` operationId).
+func (c *Client) GetWorkspacesWorkspaceAgentsAgentLabels(ctx context.Context, workspace string, agent string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspacesWorkspaceAgentsAgentLabelsRequest(c.Server, workspace, agent)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutWorkspacesWorkspaceAgentsAgentLabelsWithBody Put Agent Labels
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /api/v1/workspaces/{workspace}/agents/{agent}/labels (the `PutWorkspacesWorkspaceAgentsAgentLabels` operationId).
+func (c *Client) PutWorkspacesWorkspaceAgentsAgentLabelsWithBody(ctx context.Context, workspace string, agent string, params *PutWorkspacesWorkspaceAgentsAgentLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutWorkspacesWorkspaceAgentsAgentLabelsRequestWithBody(c.Server, workspace, agent, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutWorkspacesWorkspaceAgentsAgentLabels Put Agent Labels
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /api/v1/workspaces/{workspace}/agents/{agent}/labels (the `PutWorkspacesWorkspaceAgentsAgentLabels` operationId).
+func (c *Client) PutWorkspacesWorkspaceAgentsAgentLabels(ctx context.Context, workspace string, agent string, params *PutWorkspacesWorkspaceAgentsAgentLabelsParams, body PutWorkspacesWorkspaceAgentsAgentLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutWorkspacesWorkspaceAgentsAgentLabelsRequest(c.Server, workspace, agent, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -22510,6 +23325,100 @@ func NewPatchEnvironmentTemplatesTemplateIdRequestWithBody(server string, templa
 	return req, nil
 }
 
+// NewGetEnvironmentTemplatesTemplateIdLabelsRequest constructs an http.Request for the GetEnvironmentTemplatesTemplateIdLabels method
+func NewGetEnvironmentTemplatesTemplateIdLabelsRequest(server string, templateId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "template_id", templateId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/environment-templates/%s/labels", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutEnvironmentTemplatesTemplateIdLabelsRequest calls the generic PutEnvironmentTemplatesTemplateIdLabels builder with application/json body
+func NewPutEnvironmentTemplatesTemplateIdLabelsRequest(server string, templateId string, params *PutEnvironmentTemplatesTemplateIdLabelsParams, body PutEnvironmentTemplatesTemplateIdLabelsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutEnvironmentTemplatesTemplateIdLabelsRequestWithBody(server, templateId, params, "application/json", bodyReader)
+}
+
+// NewPutEnvironmentTemplatesTemplateIdLabelsRequestWithBody constructs an http.Request for the PutEnvironmentTemplatesTemplateIdLabels method, with any body, and a specified content type
+func NewPutEnvironmentTemplatesTemplateIdLabelsRequestWithBody(server string, templateId string, params *PutEnvironmentTemplatesTemplateIdLabelsParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "template_id", templateId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/environment-templates/%s/labels", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "If-Match", params.IfMatch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("If-Match", headerParam0)
+
+	}
+
+	return req, nil
+}
+
 // NewGetEnvironmentTemplatesTemplateIdRevisionsRequest constructs an http.Request for the GetEnvironmentTemplatesTemplateIdRevisions method
 func NewGetEnvironmentTemplatesTemplateIdRevisionsRequest(server string, templateId string, params *GetEnvironmentTemplatesTemplateIdRevisionsParams) (*http.Request, error) {
 	var err error
@@ -22731,6 +23640,100 @@ func NewPostEnvironmentsEnvironmentIdDeleteRequest(server string, environmentId 
 		}
 
 		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewGetEnvironmentsEnvironmentIdLabelsRequest constructs an http.Request for the GetEnvironmentsEnvironmentIdLabels method
+func NewGetEnvironmentsEnvironmentIdLabelsRequest(server string, environmentId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "environment_id", environmentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/environments/%s/labels", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutEnvironmentsEnvironmentIdLabelsRequest calls the generic PutEnvironmentsEnvironmentIdLabels builder with application/json body
+func NewPutEnvironmentsEnvironmentIdLabelsRequest(server string, environmentId string, params *PutEnvironmentsEnvironmentIdLabelsParams, body PutEnvironmentsEnvironmentIdLabelsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutEnvironmentsEnvironmentIdLabelsRequestWithBody(server, environmentId, params, "application/json", bodyReader)
+}
+
+// NewPutEnvironmentsEnvironmentIdLabelsRequestWithBody constructs an http.Request for the PutEnvironmentsEnvironmentIdLabels method, with any body, and a specified content type
+func NewPutEnvironmentsEnvironmentIdLabelsRequestWithBody(server string, environmentId string, params *PutEnvironmentsEnvironmentIdLabelsParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "environment_id", environmentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/environments/%s/labels", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "If-Match", params.IfMatch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("If-Match", headerParam0)
 
 	}
 
@@ -23764,6 +24767,18 @@ func NewGetOrganizationsOrganizationEnvironmentTemplatesRequest(server string, o
 		if params.Cursor != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Label != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "label", *params.Label, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -26463,6 +27478,100 @@ func NewGetRunsRunIdItemsRequest(server string, runId string, params *GetRunsRun
 	return req, nil
 }
 
+// NewGetRunsRunIdLabelsRequest constructs an http.Request for the GetRunsRunIdLabels method
+func NewGetRunsRunIdLabelsRequest(server string, runId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "run_id", runId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/runs/%s/labels", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutRunsRunIdLabelsRequest calls the generic PutRunsRunIdLabels builder with application/json body
+func NewPutRunsRunIdLabelsRequest(server string, runId string, params *PutRunsRunIdLabelsParams, body PutRunsRunIdLabelsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutRunsRunIdLabelsRequestWithBody(server, runId, params, "application/json", bodyReader)
+}
+
+// NewPutRunsRunIdLabelsRequestWithBody constructs an http.Request for the PutRunsRunIdLabels method, with any body, and a specified content type
+func NewPutRunsRunIdLabelsRequestWithBody(server string, runId string, params *PutRunsRunIdLabelsParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "run_id", runId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/runs/%s/labels", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "If-Match", params.IfMatch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("If-Match", headerParam0)
+
+	}
+
+	return req, nil
+}
+
 // NewGetRunsRunIdLineageRequest constructs an http.Request for the GetRunsRunIdLineage method
 func NewGetRunsRunIdLineageRequest(server string, runId string) (*http.Request, error) {
 	var err error
@@ -27121,6 +28230,100 @@ func NewPostServiceAccountsAccountIdApiKeysRequestWithBody(server string, accoun
 	return req, nil
 }
 
+// NewGetSessionsSessionIdLabelsRequest constructs an http.Request for the GetSessionsSessionIdLabels method
+func NewGetSessionsSessionIdLabelsRequest(server string, sessionId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "session_id", sessionId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/sessions/%s/labels", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutSessionsSessionIdLabelsRequest calls the generic PutSessionsSessionIdLabels builder with application/json body
+func NewPutSessionsSessionIdLabelsRequest(server string, sessionId string, params *PutSessionsSessionIdLabelsParams, body PutSessionsSessionIdLabelsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutSessionsSessionIdLabelsRequestWithBody(server, sessionId, params, "application/json", bodyReader)
+}
+
+// NewPutSessionsSessionIdLabelsRequestWithBody constructs an http.Request for the PutSessionsSessionIdLabels method, with any body, and a specified content type
+func NewPutSessionsSessionIdLabelsRequestWithBody(server string, sessionId string, params *PutSessionsSessionIdLabelsParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "session_id", sessionId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/sessions/%s/labels", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "If-Match", params.IfMatch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("If-Match", headerParam0)
+
+	}
+
+	return req, nil
+}
+
 // NewGetSessionsSessionIdThreadsRequest constructs an http.Request for the GetSessionsSessionIdThreads method
 func NewGetSessionsSessionIdThreadsRequest(server string, sessionId string, params *GetSessionsSessionIdThreadsParams) (*http.Request, error) {
 	var err error
@@ -27171,6 +28374,18 @@ func NewGetSessionsSessionIdThreadsRequest(server string, sessionId string, para
 		if params.Cursor != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Label != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "label", *params.Label, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -27471,6 +28686,100 @@ func NewPatchSkillsSkillIdRequestWithBody(server string, skillId string, params 
 	return req, nil
 }
 
+// NewGetSkillsSkillIdLabelsRequest constructs an http.Request for the GetSkillsSkillIdLabels method
+func NewGetSkillsSkillIdLabelsRequest(server string, skillId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "skill_id", skillId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/skills/%s/labels", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutSkillsSkillIdLabelsRequest calls the generic PutSkillsSkillIdLabels builder with application/json body
+func NewPutSkillsSkillIdLabelsRequest(server string, skillId string, params *PutSkillsSkillIdLabelsParams, body PutSkillsSkillIdLabelsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutSkillsSkillIdLabelsRequestWithBody(server, skillId, params, "application/json", bodyReader)
+}
+
+// NewPutSkillsSkillIdLabelsRequestWithBody constructs an http.Request for the PutSkillsSkillIdLabels method, with any body, and a specified content type
+func NewPutSkillsSkillIdLabelsRequestWithBody(server string, skillId string, params *PutSkillsSkillIdLabelsParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "skill_id", skillId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/skills/%s/labels", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "If-Match", params.IfMatch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("If-Match", headerParam0)
+
+	}
+
+	return req, nil
+}
+
 // NewGetSkillsSkillIdReferencesRequest constructs an http.Request for the GetSkillsSkillIdReferences method
 func NewGetSkillsSkillIdReferencesRequest(server string, skillId string, params *GetSkillsSkillIdReferencesParams) (*http.Request, error) {
 	var err error
@@ -27706,6 +29015,100 @@ func NewGetThreadsThreadIdRequest(server string, threadId string) (*http.Request
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetThreadsThreadIdLabelsRequest constructs an http.Request for the GetThreadsThreadIdLabels method
+func NewGetThreadsThreadIdLabelsRequest(server string, threadId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "thread_id", threadId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/threads/%s/labels", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutThreadsThreadIdLabelsRequest calls the generic PutThreadsThreadIdLabels builder with application/json body
+func NewPutThreadsThreadIdLabelsRequest(server string, threadId string, params *PutThreadsThreadIdLabelsParams, body PutThreadsThreadIdLabelsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutThreadsThreadIdLabelsRequestWithBody(server, threadId, params, "application/json", bodyReader)
+}
+
+// NewPutThreadsThreadIdLabelsRequestWithBody constructs an http.Request for the PutThreadsThreadIdLabels method, with any body, and a specified content type
+func NewPutThreadsThreadIdLabelsRequestWithBody(server string, threadId string, params *PutThreadsThreadIdLabelsParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "thread_id", threadId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/threads/%s/labels", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "If-Match", params.IfMatch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("If-Match", headerParam0)
+
 	}
 
 	return req, nil
@@ -27954,6 +29357,18 @@ func NewGetThreadsThreadIdRunsRequest(server string, threadId string, params *Ge
 		if params.Cursor != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Label != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "label", *params.Label, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -28762,6 +30177,18 @@ func NewGetWorkspacesWorkspaceAgentsRequest(server string, workspace string, par
 
 		}
 
+		if params.Label != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "label", *params.Label, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -29163,6 +30590,114 @@ func NewPostWorkspacesWorkspaceAgentsAgentDuplicateRequestWithBody(server string
 		}
 
 		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewGetWorkspacesWorkspaceAgentsAgentLabelsRequest constructs an http.Request for the GetWorkspacesWorkspaceAgentsAgentLabels method
+func NewGetWorkspacesWorkspaceAgentsAgentLabelsRequest(server string, workspace string, agent string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "agent", agent, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/agents/%s/labels", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutWorkspacesWorkspaceAgentsAgentLabelsRequest calls the generic PutWorkspacesWorkspaceAgentsAgentLabels builder with application/json body
+func NewPutWorkspacesWorkspaceAgentsAgentLabelsRequest(server string, workspace string, agent string, params *PutWorkspacesWorkspaceAgentsAgentLabelsParams, body PutWorkspacesWorkspaceAgentsAgentLabelsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutWorkspacesWorkspaceAgentsAgentLabelsRequestWithBody(server, workspace, agent, params, "application/json", bodyReader)
+}
+
+// NewPutWorkspacesWorkspaceAgentsAgentLabelsRequestWithBody constructs an http.Request for the PutWorkspacesWorkspaceAgentsAgentLabels method, with any body, and a specified content type
+func NewPutWorkspacesWorkspaceAgentsAgentLabelsRequestWithBody(server string, workspace string, agent string, params *PutWorkspacesWorkspaceAgentsAgentLabelsParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "agent", agent, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/agents/%s/labels", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "If-Match", params.IfMatch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("If-Match", headerParam0)
 
 	}
 
@@ -30326,6 +31861,18 @@ func NewGetWorkspacesWorkspaceEnvironmentTemplatesRequest(server string, workspa
 
 		}
 
+		if params.Label != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "label", *params.Label, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -30450,6 +31997,18 @@ func NewGetWorkspacesWorkspaceEnvironmentsRequest(server string, workspace strin
 		if params.Cursor != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Label != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "label", *params.Label, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -32119,6 +33678,18 @@ func NewGetWorkspacesWorkspaceRunsRequest(server string, workspace string, param
 
 		}
 
+		if params.Label != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "label", *params.Label, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -32879,6 +34450,18 @@ func NewGetWorkspacesWorkspaceSessionsRequest(server string, workspace string, p
 
 		}
 
+		if params.Label != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "label", *params.Label, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if params.Limit != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
@@ -33040,6 +34623,18 @@ func NewGetWorkspacesWorkspaceSkillsRequest(server string, workspace string, par
 		if params.SourceKind != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "source_kind", *params.SourceKind, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Label != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "label", *params.Label, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -34240,6 +35835,27 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with PATCH /api/v1/environment-templates/{template_id} (the `PatchEnvironmentTemplatesTemplateId` operationId).
 	PatchEnvironmentTemplatesTemplateIdWithResponse(ctx context.Context, templateId string, params *PatchEnvironmentTemplatesTemplateIdParams, body PatchEnvironmentTemplatesTemplateIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchEnvironmentTemplatesTemplateIdResponse, error)
 
+	// GetEnvironmentTemplatesTemplateIdLabelsWithResponse Get Template Labels
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/environment-templates/{template_id}/labels (the `GetEnvironmentTemplatesTemplateIdLabels` operationId).
+	GetEnvironmentTemplatesTemplateIdLabelsWithResponse(ctx context.Context, templateId string, reqEditors ...RequestEditorFn) (*GetEnvironmentTemplatesTemplateIdLabelsResponse, error)
+
+	// PutEnvironmentTemplatesTemplateIdLabelsWithBodyWithResponse Put Template Labels
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v1/environment-templates/{template_id}/labels (the `PutEnvironmentTemplatesTemplateIdLabels` operationId).
+	PutEnvironmentTemplatesTemplateIdLabelsWithBodyWithResponse(ctx context.Context, templateId string, params *PutEnvironmentTemplatesTemplateIdLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutEnvironmentTemplatesTemplateIdLabelsResponse, error)
+
+	// PutEnvironmentTemplatesTemplateIdLabelsWithResponse Put Template Labels
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v1/environment-templates/{template_id}/labels (the `PutEnvironmentTemplatesTemplateIdLabels` operationId).
+	PutEnvironmentTemplatesTemplateIdLabelsWithResponse(ctx context.Context, templateId string, params *PutEnvironmentTemplatesTemplateIdLabelsParams, body PutEnvironmentTemplatesTemplateIdLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*PutEnvironmentTemplatesTemplateIdLabelsResponse, error)
+
 	// GetEnvironmentTemplatesTemplateIdRevisionsWithResponse List Revisions
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -34281,6 +35897,27 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /api/v1/environments/{environment_id}/delete (the `PostEnvironmentsEnvironmentIdDelete` operationId).
 	PostEnvironmentsEnvironmentIdDeleteWithResponse(ctx context.Context, environmentId string, params *PostEnvironmentsEnvironmentIdDeleteParams, reqEditors ...RequestEditorFn) (*PostEnvironmentsEnvironmentIdDeleteResponse, error)
+
+	// GetEnvironmentsEnvironmentIdLabelsWithResponse Get Environment Labels
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/environments/{environment_id}/labels (the `GetEnvironmentsEnvironmentIdLabels` operationId).
+	GetEnvironmentsEnvironmentIdLabelsWithResponse(ctx context.Context, environmentId string, reqEditors ...RequestEditorFn) (*GetEnvironmentsEnvironmentIdLabelsResponse, error)
+
+	// PutEnvironmentsEnvironmentIdLabelsWithBodyWithResponse Put Environment Labels
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v1/environments/{environment_id}/labels (the `PutEnvironmentsEnvironmentIdLabels` operationId).
+	PutEnvironmentsEnvironmentIdLabelsWithBodyWithResponse(ctx context.Context, environmentId string, params *PutEnvironmentsEnvironmentIdLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutEnvironmentsEnvironmentIdLabelsResponse, error)
+
+	// PutEnvironmentsEnvironmentIdLabelsWithResponse Put Environment Labels
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v1/environments/{environment_id}/labels (the `PutEnvironmentsEnvironmentIdLabels` operationId).
+	PutEnvironmentsEnvironmentIdLabelsWithResponse(ctx context.Context, environmentId string, params *PutEnvironmentsEnvironmentIdLabelsParams, body PutEnvironmentsEnvironmentIdLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*PutEnvironmentsEnvironmentIdLabelsResponse, error)
 
 	// PostEnvironmentsEnvironmentIdStopWithResponse Stop Environment
 	//
@@ -34940,6 +36577,27 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /api/v1/runs/{run_id}/items (the `GetRunsRunIdItems` operationId).
 	GetRunsRunIdItemsWithResponse(ctx context.Context, runId string, params *GetRunsRunIdItemsParams, reqEditors ...RequestEditorFn) (*GetRunsRunIdItemsResponse, error)
 
+	// GetRunsRunIdLabelsWithResponse Get Run Labels
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/runs/{run_id}/labels (the `GetRunsRunIdLabels` operationId).
+	GetRunsRunIdLabelsWithResponse(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*GetRunsRunIdLabelsResponse, error)
+
+	// PutRunsRunIdLabelsWithBodyWithResponse Put Run Labels
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v1/runs/{run_id}/labels (the `PutRunsRunIdLabels` operationId).
+	PutRunsRunIdLabelsWithBodyWithResponse(ctx context.Context, runId string, params *PutRunsRunIdLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutRunsRunIdLabelsResponse, error)
+
+	// PutRunsRunIdLabelsWithResponse Put Run Labels
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v1/runs/{run_id}/labels (the `PutRunsRunIdLabels` operationId).
+	PutRunsRunIdLabelsWithResponse(ctx context.Context, runId string, params *PutRunsRunIdLabelsParams, body PutRunsRunIdLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*PutRunsRunIdLabelsResponse, error)
+
 	// GetRunsRunIdLineageWithResponse Get Run Lineage
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -35080,6 +36738,27 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /api/v1/service-accounts/{account_id}/api-keys (the `PostServiceAccountsAccountIdApiKeys` operationId).
 	PostServiceAccountsAccountIdApiKeysWithResponse(ctx context.Context, accountId string, body PostServiceAccountsAccountIdApiKeysJSONRequestBody, reqEditors ...RequestEditorFn) (*PostServiceAccountsAccountIdApiKeysResponse, error)
 
+	// GetSessionsSessionIdLabelsWithResponse Get Session Labels
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/sessions/{session_id}/labels (the `GetSessionsSessionIdLabels` operationId).
+	GetSessionsSessionIdLabelsWithResponse(ctx context.Context, sessionId string, reqEditors ...RequestEditorFn) (*GetSessionsSessionIdLabelsResponse, error)
+
+	// PutSessionsSessionIdLabelsWithBodyWithResponse Put Session Labels
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v1/sessions/{session_id}/labels (the `PutSessionsSessionIdLabels` operationId).
+	PutSessionsSessionIdLabelsWithBodyWithResponse(ctx context.Context, sessionId string, params *PutSessionsSessionIdLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutSessionsSessionIdLabelsResponse, error)
+
+	// PutSessionsSessionIdLabelsWithResponse Put Session Labels
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v1/sessions/{session_id}/labels (the `PutSessionsSessionIdLabels` operationId).
+	PutSessionsSessionIdLabelsWithResponse(ctx context.Context, sessionId string, params *PutSessionsSessionIdLabelsParams, body PutSessionsSessionIdLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*PutSessionsSessionIdLabelsResponse, error)
+
 	// GetSessionsSessionIdThreadsWithResponse List Threads
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -35143,6 +36822,27 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with PATCH /api/v1/skills/{skill_id} (the `PatchSkillsSkillId` operationId).
 	PatchSkillsSkillIdWithResponse(ctx context.Context, skillId string, params *PatchSkillsSkillIdParams, body PatchSkillsSkillIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchSkillsSkillIdResponse, error)
 
+	// GetSkillsSkillIdLabelsWithResponse Get Skill Labels
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/skills/{skill_id}/labels (the `GetSkillsSkillIdLabels` operationId).
+	GetSkillsSkillIdLabelsWithResponse(ctx context.Context, skillId string, reqEditors ...RequestEditorFn) (*GetSkillsSkillIdLabelsResponse, error)
+
+	// PutSkillsSkillIdLabelsWithBodyWithResponse Put Skill Labels
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v1/skills/{skill_id}/labels (the `PutSkillsSkillIdLabels` operationId).
+	PutSkillsSkillIdLabelsWithBodyWithResponse(ctx context.Context, skillId string, params *PutSkillsSkillIdLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutSkillsSkillIdLabelsResponse, error)
+
+	// PutSkillsSkillIdLabelsWithResponse Put Skill Labels
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v1/skills/{skill_id}/labels (the `PutSkillsSkillIdLabels` operationId).
+	PutSkillsSkillIdLabelsWithResponse(ctx context.Context, skillId string, params *PutSkillsSkillIdLabelsParams, body PutSkillsSkillIdLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*PutSkillsSkillIdLabelsResponse, error)
+
 	// GetSkillsSkillIdReferencesWithResponse List Skill References
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -35177,6 +36877,27 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /api/v1/threads/{thread_id} (the `GetThreadsThreadId` operationId).
 	GetThreadsThreadIdWithResponse(ctx context.Context, threadId string, reqEditors ...RequestEditorFn) (*GetThreadsThreadIdResponse, error)
+
+	// GetThreadsThreadIdLabelsWithResponse Get Thread Labels
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/threads/{thread_id}/labels (the `GetThreadsThreadIdLabels` operationId).
+	GetThreadsThreadIdLabelsWithResponse(ctx context.Context, threadId string, reqEditors ...RequestEditorFn) (*GetThreadsThreadIdLabelsResponse, error)
+
+	// PutThreadsThreadIdLabelsWithBodyWithResponse Put Thread Labels
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v1/threads/{thread_id}/labels (the `PutThreadsThreadIdLabels` operationId).
+	PutThreadsThreadIdLabelsWithBodyWithResponse(ctx context.Context, threadId string, params *PutThreadsThreadIdLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutThreadsThreadIdLabelsResponse, error)
+
+	// PutThreadsThreadIdLabelsWithResponse Put Thread Labels
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v1/threads/{thread_id}/labels (the `PutThreadsThreadIdLabels` operationId).
+	PutThreadsThreadIdLabelsWithResponse(ctx context.Context, threadId string, params *PutThreadsThreadIdLabelsParams, body PutThreadsThreadIdLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*PutThreadsThreadIdLabelsResponse, error)
 
 	// GetThreadsThreadIdQueuedSubmissionsWithResponse List Queued Submissions
 	//
@@ -35443,6 +37164,27 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /api/v1/workspaces/{workspace}/agents/{agent}/duplicate (the `PostWorkspacesWorkspaceAgentsAgentDuplicate` operationId).
 	PostWorkspacesWorkspaceAgentsAgentDuplicateWithResponse(ctx context.Context, workspace string, agent string, params *PostWorkspacesWorkspaceAgentsAgentDuplicateParams, body PostWorkspacesWorkspaceAgentsAgentDuplicateJSONRequestBody, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceAgentsAgentDuplicateResponse, error)
+
+	// GetWorkspacesWorkspaceAgentsAgentLabelsWithResponse Get Agent Labels
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/agents/{agent}/labels (the `GetWorkspacesWorkspaceAgentsAgentLabels` operationId).
+	GetWorkspacesWorkspaceAgentsAgentLabelsWithResponse(ctx context.Context, workspace string, agent string, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceAgentsAgentLabelsResponse, error)
+
+	// PutWorkspacesWorkspaceAgentsAgentLabelsWithBodyWithResponse Put Agent Labels
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v1/workspaces/{workspace}/agents/{agent}/labels (the `PutWorkspacesWorkspaceAgentsAgentLabels` operationId).
+	PutWorkspacesWorkspaceAgentsAgentLabelsWithBodyWithResponse(ctx context.Context, workspace string, agent string, params *PutWorkspacesWorkspaceAgentsAgentLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutWorkspacesWorkspaceAgentsAgentLabelsResponse, error)
+
+	// PutWorkspacesWorkspaceAgentsAgentLabelsWithResponse Put Agent Labels
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v1/workspaces/{workspace}/agents/{agent}/labels (the `PutWorkspacesWorkspaceAgentsAgentLabels` operationId).
+	PutWorkspacesWorkspaceAgentsAgentLabelsWithResponse(ctx context.Context, workspace string, agent string, params *PutWorkspacesWorkspaceAgentsAgentLabelsParams, body PutWorkspacesWorkspaceAgentsAgentLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*PutWorkspacesWorkspaceAgentsAgentLabelsResponse, error)
 
 	// GetWorkspacesWorkspaceAgentsAgentRevisionsWithResponse List Agent Revisions
 	//
@@ -40507,6 +42249,160 @@ func (r PatchEnvironmentTemplatesTemplateIdResponse) ContentType() string {
 	return ""
 }
 
+// GetEnvironmentTemplatesTemplateIdLabelsResponse200Headers the declared response headers of an HTTP 200 response for GetEnvironmentTemplatesTemplateIdLabels
+type GetEnvironmentTemplatesTemplateIdLabelsResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetEnvironmentTemplatesTemplateIdLabelsResponse400Headers the declared response headers of an HTTP 400 response for GetEnvironmentTemplatesTemplateIdLabels
+type GetEnvironmentTemplatesTemplateIdLabelsResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetEnvironmentTemplatesTemplateIdLabelsResponseDefaultHeaders the declared response headers of an HTTP default response for GetEnvironmentTemplatesTemplateIdLabels
+type GetEnvironmentTemplatesTemplateIdLabelsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetEnvironmentTemplatesTemplateIdLabelsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *LabelsBody
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetEnvironmentTemplatesTemplateIdLabelsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetEnvironmentTemplatesTemplateIdLabelsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetEnvironmentTemplatesTemplateIdLabelsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetEnvironmentTemplatesTemplateIdLabelsResponse) GetJSON200() *LabelsBody {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetEnvironmentTemplatesTemplateIdLabelsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetEnvironmentTemplatesTemplateIdLabelsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetEnvironmentTemplatesTemplateIdLabelsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetEnvironmentTemplatesTemplateIdLabelsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetEnvironmentTemplatesTemplateIdLabelsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetEnvironmentTemplatesTemplateIdLabelsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PutEnvironmentTemplatesTemplateIdLabelsResponse200Headers the declared response headers of an HTTP 200 response for PutEnvironmentTemplatesTemplateIdLabels
+type PutEnvironmentTemplatesTemplateIdLabelsResponse200Headers struct {
+	XRequestID *string
+}
+
+// PutEnvironmentTemplatesTemplateIdLabelsResponse400Headers the declared response headers of an HTTP 400 response for PutEnvironmentTemplatesTemplateIdLabels
+type PutEnvironmentTemplatesTemplateIdLabelsResponse400Headers struct {
+	XRequestID *string
+}
+
+// PutEnvironmentTemplatesTemplateIdLabelsResponseDefaultHeaders the declared response headers of an HTTP default response for PutEnvironmentTemplatesTemplateIdLabels
+type PutEnvironmentTemplatesTemplateIdLabelsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PutEnvironmentTemplatesTemplateIdLabelsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *LabelsBody
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PutEnvironmentTemplatesTemplateIdLabelsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PutEnvironmentTemplatesTemplateIdLabelsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PutEnvironmentTemplatesTemplateIdLabelsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PutEnvironmentTemplatesTemplateIdLabelsResponse) GetJSON200() *LabelsBody {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PutEnvironmentTemplatesTemplateIdLabelsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PutEnvironmentTemplatesTemplateIdLabelsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PutEnvironmentTemplatesTemplateIdLabelsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PutEnvironmentTemplatesTemplateIdLabelsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutEnvironmentTemplatesTemplateIdLabelsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PutEnvironmentTemplatesTemplateIdLabelsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // GetEnvironmentTemplatesTemplateIdRevisionsResponse200Headers the declared response headers of an HTTP 200 response for GetEnvironmentTemplatesTemplateIdRevisions
 type GetEnvironmentTemplatesTemplateIdRevisionsResponse200Headers struct {
 	XRequestID *string
@@ -40809,6 +42705,160 @@ func (r PostEnvironmentsEnvironmentIdDeleteResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r PostEnvironmentsEnvironmentIdDeleteResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetEnvironmentsEnvironmentIdLabelsResponse200Headers the declared response headers of an HTTP 200 response for GetEnvironmentsEnvironmentIdLabels
+type GetEnvironmentsEnvironmentIdLabelsResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetEnvironmentsEnvironmentIdLabelsResponse400Headers the declared response headers of an HTTP 400 response for GetEnvironmentsEnvironmentIdLabels
+type GetEnvironmentsEnvironmentIdLabelsResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetEnvironmentsEnvironmentIdLabelsResponseDefaultHeaders the declared response headers of an HTTP default response for GetEnvironmentsEnvironmentIdLabels
+type GetEnvironmentsEnvironmentIdLabelsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetEnvironmentsEnvironmentIdLabelsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *LabelsBody
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetEnvironmentsEnvironmentIdLabelsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetEnvironmentsEnvironmentIdLabelsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetEnvironmentsEnvironmentIdLabelsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetEnvironmentsEnvironmentIdLabelsResponse) GetJSON200() *LabelsBody {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetEnvironmentsEnvironmentIdLabelsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetEnvironmentsEnvironmentIdLabelsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetEnvironmentsEnvironmentIdLabelsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetEnvironmentsEnvironmentIdLabelsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetEnvironmentsEnvironmentIdLabelsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetEnvironmentsEnvironmentIdLabelsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PutEnvironmentsEnvironmentIdLabelsResponse200Headers the declared response headers of an HTTP 200 response for PutEnvironmentsEnvironmentIdLabels
+type PutEnvironmentsEnvironmentIdLabelsResponse200Headers struct {
+	XRequestID *string
+}
+
+// PutEnvironmentsEnvironmentIdLabelsResponse400Headers the declared response headers of an HTTP 400 response for PutEnvironmentsEnvironmentIdLabels
+type PutEnvironmentsEnvironmentIdLabelsResponse400Headers struct {
+	XRequestID *string
+}
+
+// PutEnvironmentsEnvironmentIdLabelsResponseDefaultHeaders the declared response headers of an HTTP default response for PutEnvironmentsEnvironmentIdLabels
+type PutEnvironmentsEnvironmentIdLabelsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PutEnvironmentsEnvironmentIdLabelsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *LabelsBody
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PutEnvironmentsEnvironmentIdLabelsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PutEnvironmentsEnvironmentIdLabelsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PutEnvironmentsEnvironmentIdLabelsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PutEnvironmentsEnvironmentIdLabelsResponse) GetJSON200() *LabelsBody {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PutEnvironmentsEnvironmentIdLabelsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PutEnvironmentsEnvironmentIdLabelsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PutEnvironmentsEnvironmentIdLabelsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PutEnvironmentsEnvironmentIdLabelsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutEnvironmentsEnvironmentIdLabelsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PutEnvironmentsEnvironmentIdLabelsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -45921,6 +47971,160 @@ func (r GetRunsRunIdItemsResponse) ContentType() string {
 	return ""
 }
 
+// GetRunsRunIdLabelsResponse200Headers the declared response headers of an HTTP 200 response for GetRunsRunIdLabels
+type GetRunsRunIdLabelsResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetRunsRunIdLabelsResponse400Headers the declared response headers of an HTTP 400 response for GetRunsRunIdLabels
+type GetRunsRunIdLabelsResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetRunsRunIdLabelsResponseDefaultHeaders the declared response headers of an HTTP default response for GetRunsRunIdLabels
+type GetRunsRunIdLabelsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetRunsRunIdLabelsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *LabelsBody
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetRunsRunIdLabelsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetRunsRunIdLabelsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetRunsRunIdLabelsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetRunsRunIdLabelsResponse) GetJSON200() *LabelsBody {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetRunsRunIdLabelsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetRunsRunIdLabelsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetRunsRunIdLabelsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetRunsRunIdLabelsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetRunsRunIdLabelsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetRunsRunIdLabelsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PutRunsRunIdLabelsResponse200Headers the declared response headers of an HTTP 200 response for PutRunsRunIdLabels
+type PutRunsRunIdLabelsResponse200Headers struct {
+	XRequestID *string
+}
+
+// PutRunsRunIdLabelsResponse400Headers the declared response headers of an HTTP 400 response for PutRunsRunIdLabels
+type PutRunsRunIdLabelsResponse400Headers struct {
+	XRequestID *string
+}
+
+// PutRunsRunIdLabelsResponseDefaultHeaders the declared response headers of an HTTP default response for PutRunsRunIdLabels
+type PutRunsRunIdLabelsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PutRunsRunIdLabelsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *LabelsBody
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PutRunsRunIdLabelsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PutRunsRunIdLabelsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PutRunsRunIdLabelsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PutRunsRunIdLabelsResponse) GetJSON200() *LabelsBody {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PutRunsRunIdLabelsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PutRunsRunIdLabelsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PutRunsRunIdLabelsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PutRunsRunIdLabelsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutRunsRunIdLabelsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PutRunsRunIdLabelsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // GetRunsRunIdLineageResponse200Headers the declared response headers of an HTTP 200 response for GetRunsRunIdLineage
 type GetRunsRunIdLineageResponse200Headers struct {
 	XRequestID *string
@@ -46971,6 +49175,160 @@ func (r PostServiceAccountsAccountIdApiKeysResponse) ContentType() string {
 	return ""
 }
 
+// GetSessionsSessionIdLabelsResponse200Headers the declared response headers of an HTTP 200 response for GetSessionsSessionIdLabels
+type GetSessionsSessionIdLabelsResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetSessionsSessionIdLabelsResponse400Headers the declared response headers of an HTTP 400 response for GetSessionsSessionIdLabels
+type GetSessionsSessionIdLabelsResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetSessionsSessionIdLabelsResponseDefaultHeaders the declared response headers of an HTTP default response for GetSessionsSessionIdLabels
+type GetSessionsSessionIdLabelsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetSessionsSessionIdLabelsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *LabelsBody
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetSessionsSessionIdLabelsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetSessionsSessionIdLabelsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetSessionsSessionIdLabelsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetSessionsSessionIdLabelsResponse) GetJSON200() *LabelsBody {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetSessionsSessionIdLabelsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetSessionsSessionIdLabelsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetSessionsSessionIdLabelsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSessionsSessionIdLabelsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSessionsSessionIdLabelsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSessionsSessionIdLabelsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PutSessionsSessionIdLabelsResponse200Headers the declared response headers of an HTTP 200 response for PutSessionsSessionIdLabels
+type PutSessionsSessionIdLabelsResponse200Headers struct {
+	XRequestID *string
+}
+
+// PutSessionsSessionIdLabelsResponse400Headers the declared response headers of an HTTP 400 response for PutSessionsSessionIdLabels
+type PutSessionsSessionIdLabelsResponse400Headers struct {
+	XRequestID *string
+}
+
+// PutSessionsSessionIdLabelsResponseDefaultHeaders the declared response headers of an HTTP default response for PutSessionsSessionIdLabels
+type PutSessionsSessionIdLabelsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PutSessionsSessionIdLabelsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *LabelsBody
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PutSessionsSessionIdLabelsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PutSessionsSessionIdLabelsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PutSessionsSessionIdLabelsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PutSessionsSessionIdLabelsResponse) GetJSON200() *LabelsBody {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PutSessionsSessionIdLabelsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PutSessionsSessionIdLabelsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PutSessionsSessionIdLabelsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PutSessionsSessionIdLabelsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutSessionsSessionIdLabelsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PutSessionsSessionIdLabelsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // GetSessionsSessionIdThreadsResponse200Headers the declared response headers of an HTTP 200 response for GetSessionsSessionIdThreads
 type GetSessionsSessionIdThreadsResponse200Headers struct {
 	XRequestID *string
@@ -47573,6 +49931,160 @@ func (r PatchSkillsSkillIdResponse) ContentType() string {
 	return ""
 }
 
+// GetSkillsSkillIdLabelsResponse200Headers the declared response headers of an HTTP 200 response for GetSkillsSkillIdLabels
+type GetSkillsSkillIdLabelsResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetSkillsSkillIdLabelsResponse400Headers the declared response headers of an HTTP 400 response for GetSkillsSkillIdLabels
+type GetSkillsSkillIdLabelsResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetSkillsSkillIdLabelsResponseDefaultHeaders the declared response headers of an HTTP default response for GetSkillsSkillIdLabels
+type GetSkillsSkillIdLabelsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetSkillsSkillIdLabelsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *LabelsBody
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetSkillsSkillIdLabelsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetSkillsSkillIdLabelsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetSkillsSkillIdLabelsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetSkillsSkillIdLabelsResponse) GetJSON200() *LabelsBody {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetSkillsSkillIdLabelsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetSkillsSkillIdLabelsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetSkillsSkillIdLabelsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSkillsSkillIdLabelsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSkillsSkillIdLabelsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSkillsSkillIdLabelsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PutSkillsSkillIdLabelsResponse200Headers the declared response headers of an HTTP 200 response for PutSkillsSkillIdLabels
+type PutSkillsSkillIdLabelsResponse200Headers struct {
+	XRequestID *string
+}
+
+// PutSkillsSkillIdLabelsResponse400Headers the declared response headers of an HTTP 400 response for PutSkillsSkillIdLabels
+type PutSkillsSkillIdLabelsResponse400Headers struct {
+	XRequestID *string
+}
+
+// PutSkillsSkillIdLabelsResponseDefaultHeaders the declared response headers of an HTTP default response for PutSkillsSkillIdLabels
+type PutSkillsSkillIdLabelsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PutSkillsSkillIdLabelsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *LabelsBody
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PutSkillsSkillIdLabelsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PutSkillsSkillIdLabelsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PutSkillsSkillIdLabelsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PutSkillsSkillIdLabelsResponse) GetJSON200() *LabelsBody {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PutSkillsSkillIdLabelsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PutSkillsSkillIdLabelsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PutSkillsSkillIdLabelsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PutSkillsSkillIdLabelsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutSkillsSkillIdLabelsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PutSkillsSkillIdLabelsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // GetSkillsSkillIdReferencesResponse200Headers the declared response headers of an HTTP 200 response for GetSkillsSkillIdReferences
 type GetSkillsSkillIdReferencesResponse200Headers struct {
 	XRequestID *string
@@ -47875,6 +50387,160 @@ func (r GetThreadsThreadIdResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetThreadsThreadIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetThreadsThreadIdLabelsResponse200Headers the declared response headers of an HTTP 200 response for GetThreadsThreadIdLabels
+type GetThreadsThreadIdLabelsResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetThreadsThreadIdLabelsResponse400Headers the declared response headers of an HTTP 400 response for GetThreadsThreadIdLabels
+type GetThreadsThreadIdLabelsResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetThreadsThreadIdLabelsResponseDefaultHeaders the declared response headers of an HTTP default response for GetThreadsThreadIdLabels
+type GetThreadsThreadIdLabelsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetThreadsThreadIdLabelsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *LabelsBody
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetThreadsThreadIdLabelsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetThreadsThreadIdLabelsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetThreadsThreadIdLabelsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetThreadsThreadIdLabelsResponse) GetJSON200() *LabelsBody {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetThreadsThreadIdLabelsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetThreadsThreadIdLabelsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetThreadsThreadIdLabelsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetThreadsThreadIdLabelsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetThreadsThreadIdLabelsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetThreadsThreadIdLabelsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PutThreadsThreadIdLabelsResponse200Headers the declared response headers of an HTTP 200 response for PutThreadsThreadIdLabels
+type PutThreadsThreadIdLabelsResponse200Headers struct {
+	XRequestID *string
+}
+
+// PutThreadsThreadIdLabelsResponse400Headers the declared response headers of an HTTP 400 response for PutThreadsThreadIdLabels
+type PutThreadsThreadIdLabelsResponse400Headers struct {
+	XRequestID *string
+}
+
+// PutThreadsThreadIdLabelsResponseDefaultHeaders the declared response headers of an HTTP default response for PutThreadsThreadIdLabels
+type PutThreadsThreadIdLabelsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PutThreadsThreadIdLabelsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *LabelsBody
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PutThreadsThreadIdLabelsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PutThreadsThreadIdLabelsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PutThreadsThreadIdLabelsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PutThreadsThreadIdLabelsResponse) GetJSON200() *LabelsBody {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PutThreadsThreadIdLabelsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PutThreadsThreadIdLabelsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PutThreadsThreadIdLabelsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PutThreadsThreadIdLabelsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutThreadsThreadIdLabelsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PutThreadsThreadIdLabelsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -49905,6 +52571,160 @@ func (r PostWorkspacesWorkspaceAgentsAgentDuplicateResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r PostWorkspacesWorkspaceAgentsAgentDuplicateResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetWorkspacesWorkspaceAgentsAgentLabelsResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceAgentsAgentLabels
+type GetWorkspacesWorkspaceAgentsAgentLabelsResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceAgentsAgentLabelsResponse400Headers the declared response headers of an HTTP 400 response for GetWorkspacesWorkspaceAgentsAgentLabels
+type GetWorkspacesWorkspaceAgentsAgentLabelsResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceAgentsAgentLabelsResponseDefaultHeaders the declared response headers of an HTTP default response for GetWorkspacesWorkspaceAgentsAgentLabels
+type GetWorkspacesWorkspaceAgentsAgentLabelsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetWorkspacesWorkspaceAgentsAgentLabelsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *LabelsBody
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetWorkspacesWorkspaceAgentsAgentLabelsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetWorkspacesWorkspaceAgentsAgentLabelsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetWorkspacesWorkspaceAgentsAgentLabelsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetWorkspacesWorkspaceAgentsAgentLabelsResponse) GetJSON200() *LabelsBody {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetWorkspacesWorkspaceAgentsAgentLabelsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetWorkspacesWorkspaceAgentsAgentLabelsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetWorkspacesWorkspaceAgentsAgentLabelsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkspacesWorkspaceAgentsAgentLabelsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkspacesWorkspaceAgentsAgentLabelsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetWorkspacesWorkspaceAgentsAgentLabelsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PutWorkspacesWorkspaceAgentsAgentLabelsResponse200Headers the declared response headers of an HTTP 200 response for PutWorkspacesWorkspaceAgentsAgentLabels
+type PutWorkspacesWorkspaceAgentsAgentLabelsResponse200Headers struct {
+	XRequestID *string
+}
+
+// PutWorkspacesWorkspaceAgentsAgentLabelsResponse400Headers the declared response headers of an HTTP 400 response for PutWorkspacesWorkspaceAgentsAgentLabels
+type PutWorkspacesWorkspaceAgentsAgentLabelsResponse400Headers struct {
+	XRequestID *string
+}
+
+// PutWorkspacesWorkspaceAgentsAgentLabelsResponseDefaultHeaders the declared response headers of an HTTP default response for PutWorkspacesWorkspaceAgentsAgentLabels
+type PutWorkspacesWorkspaceAgentsAgentLabelsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PutWorkspacesWorkspaceAgentsAgentLabelsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *LabelsBody
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PutWorkspacesWorkspaceAgentsAgentLabelsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PutWorkspacesWorkspaceAgentsAgentLabelsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PutWorkspacesWorkspaceAgentsAgentLabelsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PutWorkspacesWorkspaceAgentsAgentLabelsResponse) GetJSON200() *LabelsBody {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PutWorkspacesWorkspaceAgentsAgentLabelsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PutWorkspacesWorkspaceAgentsAgentLabelsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PutWorkspacesWorkspaceAgentsAgentLabelsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PutWorkspacesWorkspaceAgentsAgentLabelsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutWorkspacesWorkspaceAgentsAgentLabelsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PutWorkspacesWorkspaceAgentsAgentLabelsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -56197,6 +59017,45 @@ func (c *ClientWithResponses) PatchEnvironmentTemplatesTemplateIdWithResponse(ct
 	return ParsePatchEnvironmentTemplatesTemplateIdResponse(rsp)
 }
 
+// GetEnvironmentTemplatesTemplateIdLabelsWithResponse Get Template Labels
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/environment-templates/{template_id}/labels (the `GetEnvironmentTemplatesTemplateIdLabels` operationId).
+func (c *ClientWithResponses) GetEnvironmentTemplatesTemplateIdLabelsWithResponse(ctx context.Context, templateId string, reqEditors ...RequestEditorFn) (*GetEnvironmentTemplatesTemplateIdLabelsResponse, error) {
+	rsp, err := c.GetEnvironmentTemplatesTemplateIdLabels(ctx, templateId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetEnvironmentTemplatesTemplateIdLabelsResponse(rsp)
+}
+
+// PutEnvironmentTemplatesTemplateIdLabelsWithBodyWithResponse Put Template Labels
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v1/environment-templates/{template_id}/labels (the `PutEnvironmentTemplatesTemplateIdLabels` operationId).
+func (c *ClientWithResponses) PutEnvironmentTemplatesTemplateIdLabelsWithBodyWithResponse(ctx context.Context, templateId string, params *PutEnvironmentTemplatesTemplateIdLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutEnvironmentTemplatesTemplateIdLabelsResponse, error) {
+	rsp, err := c.PutEnvironmentTemplatesTemplateIdLabelsWithBody(ctx, templateId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutEnvironmentTemplatesTemplateIdLabelsResponse(rsp)
+}
+
+// PutEnvironmentTemplatesTemplateIdLabelsWithResponse Put Template Labels
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v1/environment-templates/{template_id}/labels (the `PutEnvironmentTemplatesTemplateIdLabels` operationId).
+func (c *ClientWithResponses) PutEnvironmentTemplatesTemplateIdLabelsWithResponse(ctx context.Context, templateId string, params *PutEnvironmentTemplatesTemplateIdLabelsParams, body PutEnvironmentTemplatesTemplateIdLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*PutEnvironmentTemplatesTemplateIdLabelsResponse, error) {
+	rsp, err := c.PutEnvironmentTemplatesTemplateIdLabels(ctx, templateId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutEnvironmentTemplatesTemplateIdLabelsResponse(rsp)
+}
+
 // GetEnvironmentTemplatesTemplateIdRevisionsWithResponse List Revisions
 //
 // Returns a wrapper object for the known response body format(s).
@@ -56273,6 +59132,45 @@ func (c *ClientWithResponses) PostEnvironmentsEnvironmentIdDeleteWithResponse(ct
 		return nil, err
 	}
 	return ParsePostEnvironmentsEnvironmentIdDeleteResponse(rsp)
+}
+
+// GetEnvironmentsEnvironmentIdLabelsWithResponse Get Environment Labels
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/environments/{environment_id}/labels (the `GetEnvironmentsEnvironmentIdLabels` operationId).
+func (c *ClientWithResponses) GetEnvironmentsEnvironmentIdLabelsWithResponse(ctx context.Context, environmentId string, reqEditors ...RequestEditorFn) (*GetEnvironmentsEnvironmentIdLabelsResponse, error) {
+	rsp, err := c.GetEnvironmentsEnvironmentIdLabels(ctx, environmentId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetEnvironmentsEnvironmentIdLabelsResponse(rsp)
+}
+
+// PutEnvironmentsEnvironmentIdLabelsWithBodyWithResponse Put Environment Labels
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v1/environments/{environment_id}/labels (the `PutEnvironmentsEnvironmentIdLabels` operationId).
+func (c *ClientWithResponses) PutEnvironmentsEnvironmentIdLabelsWithBodyWithResponse(ctx context.Context, environmentId string, params *PutEnvironmentsEnvironmentIdLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutEnvironmentsEnvironmentIdLabelsResponse, error) {
+	rsp, err := c.PutEnvironmentsEnvironmentIdLabelsWithBody(ctx, environmentId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutEnvironmentsEnvironmentIdLabelsResponse(rsp)
+}
+
+// PutEnvironmentsEnvironmentIdLabelsWithResponse Put Environment Labels
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v1/environments/{environment_id}/labels (the `PutEnvironmentsEnvironmentIdLabels` operationId).
+func (c *ClientWithResponses) PutEnvironmentsEnvironmentIdLabelsWithResponse(ctx context.Context, environmentId string, params *PutEnvironmentsEnvironmentIdLabelsParams, body PutEnvironmentsEnvironmentIdLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*PutEnvironmentsEnvironmentIdLabelsResponse, error) {
+	rsp, err := c.PutEnvironmentsEnvironmentIdLabels(ctx, environmentId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutEnvironmentsEnvironmentIdLabelsResponse(rsp)
 }
 
 // PostEnvironmentsEnvironmentIdStopWithResponse Stop Environment
@@ -57497,6 +60395,45 @@ func (c *ClientWithResponses) GetRunsRunIdItemsWithResponse(ctx context.Context,
 	return ParseGetRunsRunIdItemsResponse(rsp)
 }
 
+// GetRunsRunIdLabelsWithResponse Get Run Labels
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/runs/{run_id}/labels (the `GetRunsRunIdLabels` operationId).
+func (c *ClientWithResponses) GetRunsRunIdLabelsWithResponse(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*GetRunsRunIdLabelsResponse, error) {
+	rsp, err := c.GetRunsRunIdLabels(ctx, runId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetRunsRunIdLabelsResponse(rsp)
+}
+
+// PutRunsRunIdLabelsWithBodyWithResponse Put Run Labels
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v1/runs/{run_id}/labels (the `PutRunsRunIdLabels` operationId).
+func (c *ClientWithResponses) PutRunsRunIdLabelsWithBodyWithResponse(ctx context.Context, runId string, params *PutRunsRunIdLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutRunsRunIdLabelsResponse, error) {
+	rsp, err := c.PutRunsRunIdLabelsWithBody(ctx, runId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutRunsRunIdLabelsResponse(rsp)
+}
+
+// PutRunsRunIdLabelsWithResponse Put Run Labels
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v1/runs/{run_id}/labels (the `PutRunsRunIdLabels` operationId).
+func (c *ClientWithResponses) PutRunsRunIdLabelsWithResponse(ctx context.Context, runId string, params *PutRunsRunIdLabelsParams, body PutRunsRunIdLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*PutRunsRunIdLabelsResponse, error) {
+	rsp, err := c.PutRunsRunIdLabels(ctx, runId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutRunsRunIdLabelsResponse(rsp)
+}
+
 // GetRunsRunIdLineageWithResponse Get Run Lineage
 //
 // Returns a wrapper object for the known response body format(s).
@@ -57757,6 +60694,45 @@ func (c *ClientWithResponses) PostServiceAccountsAccountIdApiKeysWithResponse(ct
 	return ParsePostServiceAccountsAccountIdApiKeysResponse(rsp)
 }
 
+// GetSessionsSessionIdLabelsWithResponse Get Session Labels
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/sessions/{session_id}/labels (the `GetSessionsSessionIdLabels` operationId).
+func (c *ClientWithResponses) GetSessionsSessionIdLabelsWithResponse(ctx context.Context, sessionId string, reqEditors ...RequestEditorFn) (*GetSessionsSessionIdLabelsResponse, error) {
+	rsp, err := c.GetSessionsSessionIdLabels(ctx, sessionId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSessionsSessionIdLabelsResponse(rsp)
+}
+
+// PutSessionsSessionIdLabelsWithBodyWithResponse Put Session Labels
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v1/sessions/{session_id}/labels (the `PutSessionsSessionIdLabels` operationId).
+func (c *ClientWithResponses) PutSessionsSessionIdLabelsWithBodyWithResponse(ctx context.Context, sessionId string, params *PutSessionsSessionIdLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutSessionsSessionIdLabelsResponse, error) {
+	rsp, err := c.PutSessionsSessionIdLabelsWithBody(ctx, sessionId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutSessionsSessionIdLabelsResponse(rsp)
+}
+
+// PutSessionsSessionIdLabelsWithResponse Put Session Labels
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v1/sessions/{session_id}/labels (the `PutSessionsSessionIdLabels` operationId).
+func (c *ClientWithResponses) PutSessionsSessionIdLabelsWithResponse(ctx context.Context, sessionId string, params *PutSessionsSessionIdLabelsParams, body PutSessionsSessionIdLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*PutSessionsSessionIdLabelsResponse, error) {
+	rsp, err := c.PutSessionsSessionIdLabels(ctx, sessionId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutSessionsSessionIdLabelsResponse(rsp)
+}
+
 // GetSessionsSessionIdThreadsWithResponse List Threads
 //
 // Returns a wrapper object for the known response body format(s).
@@ -57874,6 +60850,45 @@ func (c *ClientWithResponses) PatchSkillsSkillIdWithResponse(ctx context.Context
 	return ParsePatchSkillsSkillIdResponse(rsp)
 }
 
+// GetSkillsSkillIdLabelsWithResponse Get Skill Labels
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/skills/{skill_id}/labels (the `GetSkillsSkillIdLabels` operationId).
+func (c *ClientWithResponses) GetSkillsSkillIdLabelsWithResponse(ctx context.Context, skillId string, reqEditors ...RequestEditorFn) (*GetSkillsSkillIdLabelsResponse, error) {
+	rsp, err := c.GetSkillsSkillIdLabels(ctx, skillId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSkillsSkillIdLabelsResponse(rsp)
+}
+
+// PutSkillsSkillIdLabelsWithBodyWithResponse Put Skill Labels
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v1/skills/{skill_id}/labels (the `PutSkillsSkillIdLabels` operationId).
+func (c *ClientWithResponses) PutSkillsSkillIdLabelsWithBodyWithResponse(ctx context.Context, skillId string, params *PutSkillsSkillIdLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutSkillsSkillIdLabelsResponse, error) {
+	rsp, err := c.PutSkillsSkillIdLabelsWithBody(ctx, skillId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutSkillsSkillIdLabelsResponse(rsp)
+}
+
+// PutSkillsSkillIdLabelsWithResponse Put Skill Labels
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v1/skills/{skill_id}/labels (the `PutSkillsSkillIdLabels` operationId).
+func (c *ClientWithResponses) PutSkillsSkillIdLabelsWithResponse(ctx context.Context, skillId string, params *PutSkillsSkillIdLabelsParams, body PutSkillsSkillIdLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*PutSkillsSkillIdLabelsResponse, error) {
+	rsp, err := c.PutSkillsSkillIdLabels(ctx, skillId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutSkillsSkillIdLabelsResponse(rsp)
+}
+
 // GetSkillsSkillIdReferencesWithResponse List Skill References
 //
 // Returns a wrapper object for the known response body format(s).
@@ -57937,6 +60952,45 @@ func (c *ClientWithResponses) GetThreadsThreadIdWithResponse(ctx context.Context
 		return nil, err
 	}
 	return ParseGetThreadsThreadIdResponse(rsp)
+}
+
+// GetThreadsThreadIdLabelsWithResponse Get Thread Labels
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/threads/{thread_id}/labels (the `GetThreadsThreadIdLabels` operationId).
+func (c *ClientWithResponses) GetThreadsThreadIdLabelsWithResponse(ctx context.Context, threadId string, reqEditors ...RequestEditorFn) (*GetThreadsThreadIdLabelsResponse, error) {
+	rsp, err := c.GetThreadsThreadIdLabels(ctx, threadId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetThreadsThreadIdLabelsResponse(rsp)
+}
+
+// PutThreadsThreadIdLabelsWithBodyWithResponse Put Thread Labels
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v1/threads/{thread_id}/labels (the `PutThreadsThreadIdLabels` operationId).
+func (c *ClientWithResponses) PutThreadsThreadIdLabelsWithBodyWithResponse(ctx context.Context, threadId string, params *PutThreadsThreadIdLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutThreadsThreadIdLabelsResponse, error) {
+	rsp, err := c.PutThreadsThreadIdLabelsWithBody(ctx, threadId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutThreadsThreadIdLabelsResponse(rsp)
+}
+
+// PutThreadsThreadIdLabelsWithResponse Put Thread Labels
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v1/threads/{thread_id}/labels (the `PutThreadsThreadIdLabels` operationId).
+func (c *ClientWithResponses) PutThreadsThreadIdLabelsWithResponse(ctx context.Context, threadId string, params *PutThreadsThreadIdLabelsParams, body PutThreadsThreadIdLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*PutThreadsThreadIdLabelsResponse, error) {
+	rsp, err := c.PutThreadsThreadIdLabels(ctx, threadId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutThreadsThreadIdLabelsResponse(rsp)
 }
 
 // GetThreadsThreadIdQueuedSubmissionsWithResponse List Queued Submissions
@@ -58431,6 +61485,45 @@ func (c *ClientWithResponses) PostWorkspacesWorkspaceAgentsAgentDuplicateWithRes
 		return nil, err
 	}
 	return ParsePostWorkspacesWorkspaceAgentsAgentDuplicateResponse(rsp)
+}
+
+// GetWorkspacesWorkspaceAgentsAgentLabelsWithResponse Get Agent Labels
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/agents/{agent}/labels (the `GetWorkspacesWorkspaceAgentsAgentLabels` operationId).
+func (c *ClientWithResponses) GetWorkspacesWorkspaceAgentsAgentLabelsWithResponse(ctx context.Context, workspace string, agent string, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceAgentsAgentLabelsResponse, error) {
+	rsp, err := c.GetWorkspacesWorkspaceAgentsAgentLabels(ctx, workspace, agent, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkspacesWorkspaceAgentsAgentLabelsResponse(rsp)
+}
+
+// PutWorkspacesWorkspaceAgentsAgentLabelsWithBodyWithResponse Put Agent Labels
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v1/workspaces/{workspace}/agents/{agent}/labels (the `PutWorkspacesWorkspaceAgentsAgentLabels` operationId).
+func (c *ClientWithResponses) PutWorkspacesWorkspaceAgentsAgentLabelsWithBodyWithResponse(ctx context.Context, workspace string, agent string, params *PutWorkspacesWorkspaceAgentsAgentLabelsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutWorkspacesWorkspaceAgentsAgentLabelsResponse, error) {
+	rsp, err := c.PutWorkspacesWorkspaceAgentsAgentLabelsWithBody(ctx, workspace, agent, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutWorkspacesWorkspaceAgentsAgentLabelsResponse(rsp)
+}
+
+// PutWorkspacesWorkspaceAgentsAgentLabelsWithResponse Put Agent Labels
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v1/workspaces/{workspace}/agents/{agent}/labels (the `PutWorkspacesWorkspaceAgentsAgentLabels` operationId).
+func (c *ClientWithResponses) PutWorkspacesWorkspaceAgentsAgentLabelsWithResponse(ctx context.Context, workspace string, agent string, params *PutWorkspacesWorkspaceAgentsAgentLabelsParams, body PutWorkspacesWorkspaceAgentsAgentLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*PutWorkspacesWorkspaceAgentsAgentLabelsResponse, error) {
+	rsp, err := c.PutWorkspacesWorkspaceAgentsAgentLabels(ctx, workspace, agent, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutWorkspacesWorkspaceAgentsAgentLabelsResponse(rsp)
 }
 
 // GetWorkspacesWorkspaceAgentsAgentRevisionsWithResponse List Agent Revisions
@@ -64227,6 +67320,166 @@ func ParsePatchEnvironmentTemplatesTemplateIdResponse(rsp *http.Response) (*Patc
 	return response, nil
 }
 
+// ParseGetEnvironmentTemplatesTemplateIdLabelsResponse parses an HTTP response from a GetEnvironmentTemplatesTemplateIdLabelsWithResponse call
+func ParseGetEnvironmentTemplatesTemplateIdLabelsResponse(rsp *http.Response) (*GetEnvironmentTemplatesTemplateIdLabelsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetEnvironmentTemplatesTemplateIdLabelsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest LabelsBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetEnvironmentTemplatesTemplateIdLabelsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetEnvironmentTemplatesTemplateIdLabelsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetEnvironmentTemplatesTemplateIdLabelsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePutEnvironmentTemplatesTemplateIdLabelsResponse parses an HTTP response from a PutEnvironmentTemplatesTemplateIdLabelsWithResponse call
+func ParsePutEnvironmentTemplatesTemplateIdLabelsResponse(rsp *http.Response) (*PutEnvironmentTemplatesTemplateIdLabelsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutEnvironmentTemplatesTemplateIdLabelsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest LabelsBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PutEnvironmentTemplatesTemplateIdLabelsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PutEnvironmentTemplatesTemplateIdLabelsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PutEnvironmentTemplatesTemplateIdLabelsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
 // ParseGetEnvironmentTemplatesTemplateIdRevisionsResponse parses an HTTP response from a GetEnvironmentTemplatesTemplateIdRevisionsWithResponse call
 func ParseGetEnvironmentTemplatesTemplateIdRevisionsResponse(rsp *http.Response) (*GetEnvironmentTemplatesTemplateIdRevisionsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -64527,6 +67780,166 @@ func ParsePostEnvironmentsEnvironmentIdDeleteResponse(rsp *http.Response) (*Post
 		response.Headers400 = &headers
 	case true:
 		var headers PostEnvironmentsEnvironmentIdDeleteResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetEnvironmentsEnvironmentIdLabelsResponse parses an HTTP response from a GetEnvironmentsEnvironmentIdLabelsWithResponse call
+func ParseGetEnvironmentsEnvironmentIdLabelsResponse(rsp *http.Response) (*GetEnvironmentsEnvironmentIdLabelsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetEnvironmentsEnvironmentIdLabelsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest LabelsBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetEnvironmentsEnvironmentIdLabelsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetEnvironmentsEnvironmentIdLabelsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetEnvironmentsEnvironmentIdLabelsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePutEnvironmentsEnvironmentIdLabelsResponse parses an HTTP response from a PutEnvironmentsEnvironmentIdLabelsWithResponse call
+func ParsePutEnvironmentsEnvironmentIdLabelsResponse(rsp *http.Response) (*PutEnvironmentsEnvironmentIdLabelsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutEnvironmentsEnvironmentIdLabelsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest LabelsBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PutEnvironmentsEnvironmentIdLabelsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PutEnvironmentsEnvironmentIdLabelsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PutEnvironmentsEnvironmentIdLabelsResponseDefaultHeaders
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
@@ -69875,6 +73288,166 @@ func ParseGetRunsRunIdItemsResponse(rsp *http.Response) (*GetRunsRunIdItemsRespo
 	return response, nil
 }
 
+// ParseGetRunsRunIdLabelsResponse parses an HTTP response from a GetRunsRunIdLabelsWithResponse call
+func ParseGetRunsRunIdLabelsResponse(rsp *http.Response) (*GetRunsRunIdLabelsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetRunsRunIdLabelsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest LabelsBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetRunsRunIdLabelsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetRunsRunIdLabelsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetRunsRunIdLabelsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePutRunsRunIdLabelsResponse parses an HTTP response from a PutRunsRunIdLabelsWithResponse call
+func ParsePutRunsRunIdLabelsResponse(rsp *http.Response) (*PutRunsRunIdLabelsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutRunsRunIdLabelsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest LabelsBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PutRunsRunIdLabelsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PutRunsRunIdLabelsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PutRunsRunIdLabelsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
 // ParseGetRunsRunIdLineageResponse parses an HTTP response from a GetRunsRunIdLineageWithResponse call
 func ParseGetRunsRunIdLineageResponse(rsp *http.Response) (*GetRunsRunIdLineageResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -70967,6 +74540,166 @@ func ParsePostServiceAccountsAccountIdApiKeysResponse(rsp *http.Response) (*Post
 	return response, nil
 }
 
+// ParseGetSessionsSessionIdLabelsResponse parses an HTTP response from a GetSessionsSessionIdLabelsWithResponse call
+func ParseGetSessionsSessionIdLabelsResponse(rsp *http.Response) (*GetSessionsSessionIdLabelsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSessionsSessionIdLabelsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest LabelsBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetSessionsSessionIdLabelsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetSessionsSessionIdLabelsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetSessionsSessionIdLabelsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePutSessionsSessionIdLabelsResponse parses an HTTP response from a PutSessionsSessionIdLabelsWithResponse call
+func ParsePutSessionsSessionIdLabelsResponse(rsp *http.Response) (*PutSessionsSessionIdLabelsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutSessionsSessionIdLabelsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest LabelsBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PutSessionsSessionIdLabelsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PutSessionsSessionIdLabelsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PutSessionsSessionIdLabelsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
 // ParseGetSessionsSessionIdThreadsResponse parses an HTTP response from a GetSessionsSessionIdThreadsWithResponse call
 func ParseGetSessionsSessionIdThreadsResponse(rsp *http.Response) (*GetSessionsSessionIdThreadsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -71599,6 +75332,166 @@ func ParsePatchSkillsSkillIdResponse(rsp *http.Response) (*PatchSkillsSkillIdRes
 	return response, nil
 }
 
+// ParseGetSkillsSkillIdLabelsResponse parses an HTTP response from a GetSkillsSkillIdLabelsWithResponse call
+func ParseGetSkillsSkillIdLabelsResponse(rsp *http.Response) (*GetSkillsSkillIdLabelsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSkillsSkillIdLabelsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest LabelsBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetSkillsSkillIdLabelsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetSkillsSkillIdLabelsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetSkillsSkillIdLabelsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePutSkillsSkillIdLabelsResponse parses an HTTP response from a PutSkillsSkillIdLabelsWithResponse call
+func ParsePutSkillsSkillIdLabelsResponse(rsp *http.Response) (*PutSkillsSkillIdLabelsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutSkillsSkillIdLabelsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest LabelsBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PutSkillsSkillIdLabelsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PutSkillsSkillIdLabelsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PutSkillsSkillIdLabelsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
 // ParseGetSkillsSkillIdReferencesResponse parses an HTTP response from a GetSkillsSkillIdReferencesWithResponse call
 func ParseGetSkillsSkillIdReferencesResponse(rsp *http.Response) (*GetSkillsSkillIdReferencesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -71899,6 +75792,166 @@ func ParseGetThreadsThreadIdResponse(rsp *http.Response) (*GetThreadsThreadIdRes
 		response.Headers400 = &headers
 	case true:
 		var headers GetThreadsThreadIdResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetThreadsThreadIdLabelsResponse parses an HTTP response from a GetThreadsThreadIdLabelsWithResponse call
+func ParseGetThreadsThreadIdLabelsResponse(rsp *http.Response) (*GetThreadsThreadIdLabelsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetThreadsThreadIdLabelsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest LabelsBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetThreadsThreadIdLabelsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetThreadsThreadIdLabelsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetThreadsThreadIdLabelsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePutThreadsThreadIdLabelsResponse parses an HTTP response from a PutThreadsThreadIdLabelsWithResponse call
+func ParsePutThreadsThreadIdLabelsResponse(rsp *http.Response) (*PutThreadsThreadIdLabelsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutThreadsThreadIdLabelsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest LabelsBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PutThreadsThreadIdLabelsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PutThreadsThreadIdLabelsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PutThreadsThreadIdLabelsResponseDefaultHeaders
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
@@ -74019,6 +78072,166 @@ func ParsePostWorkspacesWorkspaceAgentsAgentDuplicateResponse(rsp *http.Response
 		response.Headers400 = &headers
 	case true:
 		var headers PostWorkspacesWorkspaceAgentsAgentDuplicateResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkspacesWorkspaceAgentsAgentLabelsResponse parses an HTTP response from a GetWorkspacesWorkspaceAgentsAgentLabelsWithResponse call
+func ParseGetWorkspacesWorkspaceAgentsAgentLabelsResponse(rsp *http.Response) (*GetWorkspacesWorkspaceAgentsAgentLabelsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkspacesWorkspaceAgentsAgentLabelsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest LabelsBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetWorkspacesWorkspaceAgentsAgentLabelsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetWorkspacesWorkspaceAgentsAgentLabelsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetWorkspacesWorkspaceAgentsAgentLabelsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePutWorkspacesWorkspaceAgentsAgentLabelsResponse parses an HTTP response from a PutWorkspacesWorkspaceAgentsAgentLabelsWithResponse call
+func ParsePutWorkspacesWorkspaceAgentsAgentLabelsResponse(rsp *http.Response) (*PutWorkspacesWorkspaceAgentsAgentLabelsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutWorkspacesWorkspaceAgentsAgentLabelsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest LabelsBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PutWorkspacesWorkspaceAgentsAgentLabelsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PutWorkspacesWorkspaceAgentsAgentLabelsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PutWorkspacesWorkspaceAgentsAgentLabelsResponseDefaultHeaders
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {

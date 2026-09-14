@@ -21,6 +21,7 @@ from a13n_harness.toolsets.web import (
     WEB_SEARCH_MODE_ENV,
     WebClient,
     WebConfiguration,
+    WebDomainPolicy,
     WebPolicy,
     WebProviderError,
     WebRequest,
@@ -99,7 +100,7 @@ class WebCapability(AbstractCapability[AgentContext]):
 
     def get_native_tools(self) -> list[WebSearchTool]:
         search = self.configuration.search
-        if search.mode not in {"native", "auto"}:
+        if search.mode not in {"native", "auto"} or search.restricted:
             return []
         return [WebSearchTool(search_context_size=search.search_context_size)]
 
@@ -192,6 +193,7 @@ __all__ = [
     "WebCapability",
     "WebClient",
     "WebConfiguration",
+    "WebDomainPolicy",
     "WebPolicy",
     "WebProviderError",
     "WebRequest",

@@ -13,6 +13,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CreateSkillRequest {
+    #[serde(rename = "labels", skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Value>,
+
     #[serde(
         rename = "name",
         default,
@@ -28,6 +31,7 @@ pub struct CreateSkillRequest {
 impl CreateSkillRequest {
     pub fn new(source: models::Source4) -> CreateSkillRequest {
         CreateSkillRequest {
+            labels: None,
             name: None,
             source: Box::new(source),
         }

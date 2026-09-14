@@ -334,7 +334,6 @@ async def run_setup(
         model_choices=tuple(Choice(model.id, model.name, model.route) for model in models.values()),
         model_resources=dict(models),
         values={"model_source": existing_model_id} if existing_model_id is not None else {},
-        subscription_models=frozenset(model.id for model in models.values() if model.authentication.kind != "api_key"),
         advanced=advanced,
         default_provider=next((item.provider for item in status.providers if item.available), "codex"),
         default_environment="sandbox"

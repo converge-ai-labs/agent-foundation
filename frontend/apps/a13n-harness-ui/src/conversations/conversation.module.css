@@ -33,11 +33,21 @@
   align-items: center;
   border-radius: 6px;
 }
-.threadRow:has(.selected) {
-  background: var(--a13n-elevated);
+.threadRow:hover,
+.threadRow:has(.selected),
+.threadRow:has([data-popup-open]) {
+  background: var(--a13n-surface);
 }
-.threadRow > button {
+.threadActions {
   flex-shrink: 0;
+  margin-inline-end: 4px;
+  color: var(--a13n-secondary);
+  background: transparent;
+}
+.threadActions:hover,
+.threadActions[data-popup-open] {
+  color: var(--a13n-text);
+  background: var(--accent);
 }
 .threadLink {
   flex: 1;
@@ -53,7 +63,11 @@
 }
 .threadLink:hover,
 .selected {
-  background: var(--a13n-surface);
+  color: var(--a13n-text);
+}
+.threadLink:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: -2px;
 }
 .threadLink > svg {
   flex-shrink: 0;
@@ -130,6 +144,7 @@
   margin-bottom: 24px;
 }
 .userMessage {
+  color: var(--a13n-text);
   margin: 12px 0 24px auto;
   padding: 14px 18px;
   background: var(--a13n-surface);
@@ -600,4 +615,173 @@
 .markdown li {
   font-size: 14px;
   line-height: 1.75;
+}
+
+.commentsPanel {
+  gap: 14px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.commentToolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.commentToolbar > span {
+  margin-inline-end: auto;
+}
+.commentEmpty {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 20px 16px 28px;
+  text-align: center;
+}
+.commentEmpty > svg,
+.commentEmpty p {
+  color: var(--a13n-secondary);
+}
+.commentEmpty strong {
+  color: var(--a13n-text);
+  font-size: 14px;
+  font-weight: 500;
+}
+.commentEmpty p {
+  max-width: 32ch;
+  margin: 0;
+}
+.commentsPanel .commentCard,
+.commentsPanel .commentDraft {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+.commentsPanel .commentCard + .commentCard {
+  padding-top: 16px;
+  border-top: 1px solid var(--a13n-border);
+}
+.commentsPanel h3,
+.commentCard strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Attachment identities live in the editor text; widgets are their presentation. */
+.inlineAttachment {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  max-width: min(280px, 100%);
+  margin: 2px 3px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 7px;
+  background: var(--a13n-surface);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow: hidden;
+}
+.inlineAttachmentOpen,
+.inlineAttachmentRemove {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 6px 8px;
+  min-width: 0;
+}
+.inlineAttachmentOpen span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.inlineAttachmentRemove {
+  align-self: stretch;
+  color: var(--a13n-secondary);
+  border-left: 1px solid var(--a13n-border);
+  flex-shrink: 0;
+}
+.inlineAttachment button:hover {
+  background: var(--a13n-hover);
+}
+.inlineAttachment button:focus-visible {
+  outline: 2px solid var(--a13n-secondary);
+  outline-offset: -2px;
+}
+.attachmentThumbnail {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.attachmentThumbnail[hidden] {
+  display: none;
+}
+.attachmentPreview {
+  display: block;
+  max-width: 100%;
+  max-height: 65dvh;
+  object-fit: contain;
+  margin: 12px auto;
+}
+.inputText {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.8;
+}
+.inputAttachment {
+  display: inline-block;
+  vertical-align: middle;
+  max-width: 100%;
+  margin: 3px 4px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 8px;
+  background: var(--a13n-surface);
+  font-size: 12px;
+}
+.inputAttachment > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+  list-style: none;
+}
+.inputAttachment > summary::-webkit-details-marker {
+  display: none;
+}
+.inputAttachment > summary::after {
+  content: "+";
+  color: var(--a13n-secondary);
+  margin-left: 8px;
+}
+.inputAttachment[open] > summary::after {
+  content: "−";
+}
+.inputAttachment strong {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.inputAttachmentDetails {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--a13n-border);
+  max-width: min(620px, 100%);
+  overflow-wrap: anywhere;
+}
+.inputAttachmentDetails small {
+  color: var(--a13n-secondary);
+}
+.inputAttachment[open] .attachmentThumbnail {
+  width: 96px;
+  height: 72px;
+  object-fit: contain;
 }

@@ -73,6 +73,10 @@ export function joinPath(directory: string, name: string) {
   const sep = separator(directory);
   return `${directory}${directory.endsWith(sep) ? "" : sep}${name}`;
 }
+// Navigation grouping only; native filesystem authority remains server-owned.
+export function withinRoot(path: string, root: string) {
+  return !!root && (path === root || path.startsWith(joinPath(root, "")));
+}
 export function breadcrumbs(path: string): string[] {
   const result = [path];
   while (result.length < 128) {

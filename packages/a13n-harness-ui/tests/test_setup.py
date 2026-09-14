@@ -36,7 +36,7 @@ async def test_setup_previews_without_publication_and_seeds_both_providers(tmp_p
     assert root["schema_version"] == "1"
     assert root["tools"] == {
         "enable_ask_user_question": True,
-        "ask_user_question_timeout_seconds": 120,
+        "interaction_timeout_seconds": 120,
         "enable_codeact": True,
     }
     assert "gpt-5.6-luna" in preview.files["models/codex-review.yaml"]
@@ -83,8 +83,8 @@ async def test_setup_writes_native_codex_service_tier(tmp_path: Path, tier: str 
     [
         {},
         {"enable_codeact": False},
-        {"enable_ask_user_question": False, "ask_user_question_timeout_seconds": 45},
-        {"enable_ask_user_question": False, "ask_user_question_timeout_seconds": 30, "enable_codeact": False},
+        {"enable_ask_user_question": False, "interaction_timeout_seconds": 45},
+        {"enable_ask_user_question": False, "interaction_timeout_seconds": 30, "enable_codeact": False},
     ],
 )
 async def test_setup_materializes_missing_tool_defaults_and_preserves_authored_values(
@@ -94,7 +94,7 @@ async def test_setup_materializes_missing_tool_defaults_and_preserves_authored_v
     path.write_text(yaml.safe_dump({"schema_version": "1", "tools": authored_tools}))
     expected = {
         "enable_ask_user_question": True,
-        "ask_user_question_timeout_seconds": 120,
+        "interaction_timeout_seconds": 120,
         "enable_codeact": True,
         **authored_tools,
     }
@@ -915,3 +915,67 @@ async def test_setup_new_subscription_model_does_not_rewrite_shared_model(tmp_pa
     source = await load_harness_ui_configuration(path)
     assert source.models[source.agents["agent-codex"].model].route == "openai-codex:gpt-6-astra"
     assert (tmp_path / "models/codex.yaml").read_bytes() == model
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("enabled", [True, False])
+async def test_api_key_setup_publishes_root_shell_review_not_agent_capabilities(tmp_path: Path, enabled: bool) -> None:
+    path = tmp_path / "config.yaml"
+    selection = _selection(
+        tmp_path,
+        providers=(),
+        default_agent="agent-api-key",
+        shell_review=enabled,
+        api_key_model={"route": "openai:gpt-5", "authentication": {"kind": "api_key", "env": "TEST_KEY"}},
+    )
+    preview = await preview_setup(path, selection, validate_candidate=_validate())
+    shortcut = yaml.safe_load(preview.files[path.name])["security"]["shell_review"]
+    assert shortcut["enable"] is enabled
+    assert shortcut["risk_threshold"] == "extra_high"
+    if enabled:
+        assert shortcut["model"] == "model-api-key"
+    agent = yaml.safe_load(preview.files["agents/api-key.yaml"])
+    assert not any(c["capability"] in {"ToolPermissionsCapability"} for c in agent["capabilities"])
+    assert set(p for p in preview.files if p.startswith("models/")) == {"models/api-key.yaml"}
+    assert (await publish_setup(path, selection, validate_candidate=_validate())).completed
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "shortcut", [{"enable": False}, {"enable": True, "risk_threshold": "high", "model": "model-codex"}]
+)
+async def test_setup_and_add_agent_preserve_authored_root_shortcut(tmp_path: Path, shortcut: dict[str, object]) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text(yaml.safe_dump({"schema_version": "1", "security": {"shell_review": shortcut}}))
+    selection = _selection(tmp_path, providers=("codex",))
+    preview = await preview_setup(path, selection, validate_candidate=_validate())
+    assert yaml.safe_load(preview.files[path.name])["security"]["shell_review"] == shortcut
+    assert "models/codex-review.yaml" not in preview.files
+    assert (await publish_setup(path, selection, validate_candidate=_validate())).completed
+    baseline = path.read_bytes()
+    addition = _selection(
+        tmp_path, providers=(), new_agent_id="agent-second", new_agent_name="Second", existing_model_id="model-codex"
+    )
+    preview = await preview_setup(path, addition, validate_candidate=_validate())
+    assert set(preview.files) == {"agents/second.yaml"}
+    assert (await publish_setup(path, addition, validate_candidate=_validate())).completed
+    assert path.read_bytes() == baseline
+
+
+@pytest.mark.anyio
+async def test_add_agent_initializes_absent_root_shortcut_without_mutating_existing_agent(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    selection = _selection(tmp_path, providers=("codex",))
+    assert (await publish_setup(path, selection, validate_candidate=_validate())).completed
+    root = yaml.safe_load(path.read_text())
+    del root["security"]
+    path.write_text(yaml.safe_dump(root))
+    agent = tmp_path / "agents" / "codex.yaml"
+    baseline = agent.read_bytes()
+    addition = _selection(
+        tmp_path, providers=(), new_agent_id="agent-second", new_agent_name="Second", existing_model_id="model-codex"
+    )
+    preview = await preview_setup(path, addition, validate_candidate=_validate())
+    assert yaml.safe_load(preview.files[path.name])["security"]["shell_review"]["model"] == "model-codex-review"
+    assert (await publish_setup(path, addition, validate_candidate=_validate())).completed
+    assert agent.read_bytes() == baseline

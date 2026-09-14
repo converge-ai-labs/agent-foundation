@@ -271,3 +271,26 @@ async def test_revision_content_is_emitted_in_bounded_chunks() -> None:
 
     assert tuple(map(len, chunks)) == (1024 * 1024, 1024 * 1024, 1)
     assert b"".join(chunks) == content
+
+
+@pytest.mark.anyio
+async def test_skill_labels_http_contract(api_client):
+    from tests.labels_support import assert_labels_http_contract
+
+    upload = await stage(api_client, key="label-upload", content=archive())
+    collection = f"/api/v1/workspaces/{WORKSPACE_ID}/skills"
+    created = await api_client.post(
+        collection,
+        headers={"Idempotency-Key": "label-skill"},
+        json={
+            "name": "Label skill",
+            "source": {"kind": "zip_upload", "upload_id": upload["upload_id"]},
+            "labels": {"initial": "yes"},
+        },
+    )
+    assert created.status_code == 201, created.text
+    skill = created.json()["skill"]
+    assert skill["labels"] == {"initial": "yes"}
+    await assert_labels_http_contract(
+        api_client, f"/api/v1/skills/{skill['id']}", collection, immutable_fields=["version", "current_revision_id"]
+    )

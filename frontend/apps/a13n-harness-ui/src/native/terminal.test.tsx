@@ -66,7 +66,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
-function setup() {
+function setup(sessions: Schema<"TerminalView">[] = [view]) {
   Socket.all = [];
   // jsdom has no Web Animations implementation used by the shared modal viewport.
   Object.defineProperty(Element.prototype, "getAnimations", {
@@ -82,7 +82,7 @@ function setup() {
     },
   );
   const get = vi.fn(async (url: string) => ({
-    data: url === "/api/projects" ? [] : [view],
+    data: url === "/api/projects" ? [] : sessions,
   }));
   const post = vi.fn();
   const remove = vi.fn();
@@ -105,7 +105,7 @@ function setup() {
 const view: Schema<"TerminalView"> = {
   terminal_id: "terminal-one",
   cwd: "/native/code",
-  project_id: null,
+  project_id: "project-one",
   shell: "/bin/sh",
   state: "running",
   exit_code: null,
@@ -187,6 +187,7 @@ it("creation uses the reviewed native cwd, uncertain create cannot be repeated, 
   const props = {
     visible: true,
     directory: "/native/start",
+    projectId: "project-one",
     selected: "",
     select: selected,
     collapse,
@@ -195,23 +196,22 @@ it("creation uses the reviewed native cwd, uncertain create cannot be repeated, 
   const component = render(<TerminalPanel {...props} />, {
     wrapper: f.Wrapper,
   });
-  fireEvent.click(screen.getByRole("button", { name: "Choose folder…" }));
-  expect(
-    (screen.getByLabelText("Starting folder") as HTMLInputElement).value,
-  ).toBe("/native/start");
-  fireEvent.click(screen.getByRole("button", { name: "Start terminal" }));
+  expect(screen.queryByRole("button", { name: "Choose folder…" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "New terminal" }));
   await screen.findByText("Response lost");
   expect(
     screen
-      .getByRole("button", { name: "Start terminal" })
+      .getByRole("button", { name: "New terminal" })
       .hasAttribute("disabled"),
   ).toBe(true);
   expect(f.post.mock.calls[0]).toEqual([
     "/api/host/terminals",
-    { body: { cwd: "/native/start", project_id: null } },
+    { body: { cwd: "/native/start", project_id: "project-one" } },
   ]);
   expect(selected).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Refresh terminal sessions" }),
+  );
   component.rerender(<TerminalPanel {...props} selected="terminal-one" />);
   fireEvent.click(await screen.findByRole("button", { name: "End session" }));
   expect(f.remove).not.toHaveBeenCalled();
@@ -224,6 +224,16 @@ it("creation uses the reviewed native cwd, uncertain create cannot be repeated, 
     "/api/host/terminals/{terminal_id}",
     { params: { path: { terminal_id: "terminal-one" } } },
   ]);
+  await waitFor(() =>
+    expect(
+      screen
+        .getByRole("button", { name: "New terminal" })
+        .hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  f.post.mockResolvedValue({ data: view });
+  fireEvent.click(screen.getByRole("button", { name: "New terminal" }));
+  await waitFor(() => expect(f.post).toHaveBeenCalledTimes(2));
 });
 
 it("the creator claims input once after attachment, waits for acknowledgement and never reclaims on reconnect", async () => {
@@ -236,6 +246,7 @@ it("the creator claims input once after attachment, waits for acknowledgement an
       <TerminalPanel
         visible
         directory="/native/start"
+        projectId="project-one"
         selected={selected}
         select={select}
         collapse={() => {}}
@@ -286,3 +297,121 @@ it("a creator attachment does not take over from someone who already claimed the
   expect(claimCreated).toHaveBeenCalledTimes(1);
   expect(Socket.all[0].send).not.toHaveBeenCalled();
 });
+
+it("only shows the current Project's terminals and never ends another Project's sessions on navigation", async () => {
+  const other = {
+    ...view,
+    terminal_id: "terminal-other",
+    project_id: "project-two",
+    cwd: "/other/work",
+  };
+  const f = setup([
+    view,
+    other,
+    {
+      ...view,
+      terminal_id: "terminal-unassigned",
+      project_id: null,
+      cwd: "/unassigned",
+    },
+  ]);
+  const props = {
+    visible: true,
+    directory: "/native",
+    projectId: "project-one",
+    selected: "",
+    select: vi.fn(),
+    collapse: vi.fn(),
+    unauthorized: vi.fn(),
+  };
+  const component = render(<TerminalPanel {...props} />, {
+    wrapper: f.Wrapper,
+  });
+  await screen.findByRole("button", { name: "code" });
+  expect(screen.queryByRole("button", { name: "work" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "unassigned" })).toBeNull();
+  component.rerender(
+    <TerminalPanel
+      {...props}
+      projectId="project-two"
+      directory="/other"
+      selected="terminal-one"
+    />,
+  );
+  await screen.findByRole("button", { name: "work" });
+  expect(screen.queryByRole("button", { name: "code" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "End session" })).toBeNull();
+  expect(f.remove).not.toHaveBeenCalled();
+  expect(f.post).not.toHaveBeenCalled();
+  component.rerender(<TerminalPanel {...props} projectId="" directory="" />);
+  expect(
+    screen
+      .getByRole("button", { name: "New terminal" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+});
+
+it("a terminal creation completing after a Project switch cannot select a terminal in the new Project", async () => {
+  const f = setup();
+  let finish!: (value: { data: Schema<"TerminalView"> }) => void;
+  f.post.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const props = {
+    visible: true,
+    directory: "/native",
+    projectId: "project-one",
+    selected: "",
+    select: vi.fn(),
+    collapse: vi.fn(),
+    unauthorized: vi.fn(),
+  };
+  const component = render(<TerminalPanel {...props} />, {
+    wrapper: f.Wrapper,
+  });
+  fireEvent.click(screen.getByRole("button", { name: "New terminal" }));
+  component.rerender(
+    <TerminalPanel {...props} projectId="project-two" directory="/other" />,
+  );
+  finish({ data: view });
+  await waitFor(() =>
+    expect(
+      screen
+        .getByRole("button", { name: "New terminal" })
+        .hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  expect(props.select).not.toHaveBeenCalled();
+  expect(f.remove).not.toHaveBeenCalled();
+});
+
+it.each(["project-two", ""])(
+  "a terminal link outside Project %s cannot attach or report active focus",
+  async (projectId) => {
+    const f = setup();
+    const onActive = vi.fn();
+    render(
+      <TerminalPanel
+        visible
+        directory="/other"
+        projectId={projectId}
+        selected="terminal-one"
+        select={vi.fn()}
+        onActive={onActive}
+        collapse={vi.fn()}
+        unauthorized={vi.fn()}
+      />,
+      { wrapper: f.Wrapper },
+    );
+    await screen.findByText(
+      "This terminal is not available in the current project. Open a conversation in its project to view it.",
+    );
+    expect(onActive).toHaveBeenLastCalledWith("");
+    expect(onActive.mock.calls.some(([id]) => id)).toBe(false);
+    expect(Socket.all).toHaveLength(0);
+    expect(f.post).not.toHaveBeenCalled();
+  },
+);

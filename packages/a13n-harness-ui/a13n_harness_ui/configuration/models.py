@@ -14,6 +14,7 @@ from a13n_harness.capabilities import ToolProxyConfig
 from a13n_harness.spec import HarnessModelCharacteristics
 from a13n_harness.tools.tool_proxy import validate_group
 from pydantic import (
+    AliasChoices,
     BaseModel,
     BeforeValidator,
     ConfigDict,
@@ -119,10 +120,15 @@ class TerminalDisplayConfiguration(ConfigurationModel):
 
 
 class ToolsConfiguration(ConfigurationModel):
-    """Application-owned built-in tool switches and terminal question waiting policy."""
+    """Application-owned tool switches and uniform interactive waiting policy."""
 
     enable_ask_user_question: bool = True
-    ask_user_question_timeout_seconds: float = Field(default=120.0, gt=0, allow_inf_nan=False)
+    interaction_timeout_seconds: float = Field(
+        default=120.0,
+        gt=0,
+        allow_inf_nan=False,
+        validation_alias=AliasChoices("interaction_timeout_seconds", "ask_user_question_timeout_seconds"),
+    )
     enable_codeact: bool = True
 
     @model_validator(mode="before")
@@ -152,6 +158,38 @@ class InputConfiguration(ConfigurationModel):
     long_text_threshold_chars: int | None = Field(default=8000, ge=1)
 
 
+class ShellReviewConfiguration(ConfigurationModel):
+    """Optional Host shortcut; disabled leaves Agent capability policy untouched."""
+
+    enable: bool = False
+    risk_threshold: Literal["low", "medium", "high", "extra_high"] | None = None
+    model: ResourceId | None = None
+    on_flagged: Literal["deny", "approval_required"] | None = None
+    on_error: Literal["deny", "approval_required", "allow"] | None = None
+
+    @field_validator("model")
+    @classmethod
+    def _model_id(cls, value: str | None) -> str | None:
+        if value is not None:
+            _require_id_prefix(value, "model-")
+        return value
+
+
+class SecurityConfiguration(ConfigurationModel):
+    shell_review: ShellReviewConfiguration = Field(default_factory=ShellReviewConfiguration)
+
+
+class SidekickConfiguration(ConfigurationModel):
+    """Instruction-guided collaboration; omitted Agent inherits the calling Agent."""
+
+    agent: ResourceId | None = None
+    model: ResourceId | None = None
+
+
+class WebUiConfiguration(ConfigurationModel):
+    sidekick: SidekickConfiguration | None = None
+
+
 class HarnessUiDocument(ConfigurationModel):
     """Root ``a13n-harness-ui.yaml`` document."""
 
@@ -161,7 +199,9 @@ class HarnessUiDocument(ConfigurationModel):
     defaults: GlobalDefaults = Field(default_factory=GlobalDefaults)
     display: TerminalDisplayConfiguration = Field(default_factory=TerminalDisplayConfiguration)
     tools: ToolsConfiguration = Field(default_factory=ToolsConfiguration)
+    security: SecurityConfiguration = Field(default_factory=SecurityConfiguration)
     subagents: SubagentsConfiguration = Field(default_factory=SubagentsConfiguration)
+    webui: WebUiConfiguration = Field(default_factory=WebUiConfiguration)
 
 
 class EnvironmentVariableSource(StrictModel):
@@ -382,6 +422,16 @@ class AgentSubagentSelection(StrictModel):
 type SubagentSelection = MarkdownSubagentSelection | AgentSubagentSelection
 
 
+class _MissingModelReferenceError(ValueError):
+    """A graph diagnostic containing only the authored reference and its location."""
+
+    def __init__(self, *, path: str, field: str, model_id: str) -> None:
+        self.path = path
+        self.field = field
+        self.model_id = model_id
+        super().__init__(f"{path}: {field} references unavailable Model {model_id!r}.")
+
+
 class _ToolProxyConfigurationError(ValueError):
     """Authored source/group diagnostic safe to expose without resource inputs."""
 
@@ -595,6 +645,12 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
         defaults = self.document.defaults
         _require_reference(defaults.project, self.projects, "defaults.project")
         _require_reference(defaults.agent, self.agents, "defaults.agent")
+        sidekick = self.document.webui.sidekick
+        if sidekick is not None:
+            _require_reference(sidekick.agent, self.agents, "webui.sidekick.agent")
+            _require_reference(sidekick.model, self.models, "webui.sidekick.model")
+            if sidekick.agent is not None and sidekick.model is None and self.agents[sidekick.agent].model is None:
+                raise ValueError("Sidekick requires an Agent Model or a webui.sidekick.model override")
         if (
             defaults.environment_profile is not None
             and built_in_environment_profile(defaults.environment_profile) is None
@@ -628,8 +684,12 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
                     _require_reference(item, resources, f"{project.id}.defaults.{name}")
 
         for agent in self.agents.values():
-            if agent.model is not None:
-                _require_reference(agent.model, self.models, f"{agent.id}.model")
+            if agent.model is not None and agent.model not in self.models:
+                path = next(
+                    (item.relative_path for item in self.sources if agent.id in item.indexed_resource_ids),
+                    agent.id,
+                )
+                raise _MissingModelReferenceError(path=path, field="model", model_id=agent.model)
             for item in agent.harness_plugins or ():
                 _require_reference(item, self.harness_plugins, f"{agent.id}.harness_plugins")
             for item in agent.mcp_servers or ():

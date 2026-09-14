@@ -8,6 +8,7 @@ from attrs import define as _attrs_define
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.agent_reviewer import AgentReviewer
     from ..models.agent_run_override_input_subagents_type_0 import AgentRunOverrideInputSubagentsType0
     from ..models.client_tool_definition import ClientToolDefinition
     from ..models.connection_tool_selection import ConnectionToolSelection
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
     from ..models.retry_override import RetryOverride
     from ..models.search_selection import SearchSelection
     from ..models.skill_selection import SkillSelection
+    from ..models.tool_permissions import ToolPermissions
 
 
 T = TypeVar("T", bound="AgentRunOverrideInput")
@@ -31,8 +33,10 @@ class AgentRunOverrideInput:
         instructions (None | str | Unset):
         model (ModelOverride | None | Unset):
         output_spec (None | OutputSpec | Unset):
+        permissions (None | ToolPermissions | Unset):
         plugins (list[PluginSelection] | None | Unset):
         retries (None | RetryOverride | Unset):
+        reviewer (AgentReviewer | None | Unset):
         search (None | SearchSelection | Unset):
         skills (list[SkillSelection] | None | Unset):
         subagents (AgentRunOverrideInputSubagentsType0 | None | Unset):
@@ -43,13 +47,16 @@ class AgentRunOverrideInput:
     instructions: str | Unset | None = UNSET
     model: ModelOverride | Unset | None = UNSET
     output_spec: OutputSpec | Unset | None = UNSET
+    permissions: ToolPermissions | Unset | None = UNSET
     plugins: list[PluginSelection] | Unset | None = UNSET
     retries: RetryOverride | Unset | None = UNSET
+    reviewer: AgentReviewer | Unset | None = UNSET
     search: SearchSelection | Unset | None = UNSET
     skills: list[SkillSelection] | Unset | None = UNSET
     subagents: AgentRunOverrideInputSubagentsType0 | Unset | None = UNSET
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.agent_reviewer import AgentReviewer
         from ..models.agent_run_override_input_subagents_type_0 import (
             AgentRunOverrideInputSubagentsType0,
         )
@@ -57,6 +64,7 @@ class AgentRunOverrideInput:
         from ..models.output_spec import OutputSpec
         from ..models.retry_override import RetryOverride
         from ..models.search_selection import SearchSelection
+        from ..models.tool_permissions import ToolPermissions
 
         client_tools: list[dict[str, Any]] | Unset | None
         if isinstance(self.client_tools, Unset):
@@ -104,6 +112,14 @@ class AgentRunOverrideInput:
         else:
             output_spec = self.output_spec
 
+        permissions: dict[str, Any] | Unset | None
+        if isinstance(self.permissions, Unset):
+            permissions = UNSET
+        elif isinstance(self.permissions, ToolPermissions):
+            permissions = self.permissions.to_dict()
+        else:
+            permissions = self.permissions
+
         plugins: list[dict[str, Any]] | Unset | None
         if isinstance(self.plugins, Unset):
             plugins = UNSET
@@ -123,6 +139,14 @@ class AgentRunOverrideInput:
             retries = self.retries.to_dict()
         else:
             retries = self.retries
+
+        reviewer: dict[str, Any] | Unset | None
+        if isinstance(self.reviewer, Unset):
+            reviewer = UNSET
+        elif isinstance(self.reviewer, AgentReviewer):
+            reviewer = self.reviewer.to_dict()
+        else:
+            reviewer = self.reviewer
 
         search: dict[str, Any] | Unset | None
         if isinstance(self.search, Unset):
@@ -165,10 +189,14 @@ class AgentRunOverrideInput:
             field_dict["model"] = model
         if output_spec is not UNSET:
             field_dict["output_spec"] = output_spec
+        if permissions is not UNSET:
+            field_dict["permissions"] = permissions
         if plugins is not UNSET:
             field_dict["plugins"] = plugins
         if retries is not UNSET:
             field_dict["retries"] = retries
+        if reviewer is not UNSET:
+            field_dict["reviewer"] = reviewer
         if search is not UNSET:
             field_dict["search"] = search
         if skills is not UNSET:
@@ -180,6 +208,7 @@ class AgentRunOverrideInput:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        from ..models.agent_reviewer import AgentReviewer
         from ..models.agent_run_override_input_subagents_type_0 import (
             AgentRunOverrideInputSubagentsType0,
         )
@@ -191,6 +220,7 @@ class AgentRunOverrideInput:
         from ..models.retry_override import RetryOverride
         from ..models.search_selection import SearchSelection
         from ..models.skill_selection import SkillSelection
+        from ..models.tool_permissions import ToolPermissions
 
         d = dict(src_dict)
 
@@ -281,6 +311,23 @@ class AgentRunOverrideInput:
 
         output_spec = _parse_output_spec(d.pop("output_spec", UNSET))
 
+        def _parse_permissions(data: object) -> ToolPermissions | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                permissions_type_0 = ToolPermissions.from_dict(data)
+
+                return permissions_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(ToolPermissions | Unset | None, data)
+
+        permissions = _parse_permissions(d.pop("permissions", UNSET))
+
         def _parse_plugins(data: object) -> list[PluginSelection] | Unset | None:
             if data is None:
                 return data
@@ -319,6 +366,23 @@ class AgentRunOverrideInput:
             return cast(RetryOverride | Unset | None, data)
 
         retries = _parse_retries(d.pop("retries", UNSET))
+
+        def _parse_reviewer(data: object) -> AgentReviewer | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                reviewer_type_0 = AgentReviewer.from_dict(data)
+
+                return reviewer_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(AgentReviewer | Unset | None, data)
+
+        reviewer = _parse_reviewer(d.pop("reviewer", UNSET))
 
         def _parse_search(data: object) -> SearchSelection | Unset | None:
             if data is None:
@@ -382,8 +446,10 @@ class AgentRunOverrideInput:
             instructions=instructions,
             model=model,
             output_spec=output_spec,
+            permissions=permissions,
             plugins=plugins,
             retries=retries,
+            reviewer=reviewer,
             search=search,
             skills=skills,
             subagents=subagents,

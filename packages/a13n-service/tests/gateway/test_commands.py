@@ -524,6 +524,7 @@ async def test_retry_copies_cancelled_root_intent_and_replays(
     async with transaction(lifecycle_interaction_sessions) as database:
         terminal = await database.get(RunRecord, source_receipt.run_id)
         assert terminal is not None
+        terminal.labels = {"batch": "source", "source-only": "yes"}
         terminal.attempts_started = 2
         terminal.attempts_charged = 1
         terminal.handoffs_completed = 1
@@ -536,7 +537,7 @@ async def test_retry_copies_cancelled_root_intent_and_replays(
         _Preparation(),
         _Freezing([_frozen()]),
     )
-    request = RetryRunCommand(expected_thread_version=2)
+    request = RetryRunCommand(expected_thread_version=2, labels={"batch": "retry"})
     first = await commands.continuations.retry(
         actor=_actor(),
         run_id=source_receipt.run_id,
@@ -559,6 +560,7 @@ async def test_retry_copies_cancelled_root_intent_and_replays(
         thread = await database.scalar(select(ThreadRecord).where(ThreadRecord.id == first.thread_id))
     assert source is not None and retried is not None and thread is not None
     assert retried.retry_of_run_id == source.id
+    assert retried.labels == {"batch": "retry", "source-only": "yes"}
     assert retried.queue_name == source.queue_name == "accepted-queue"
     assert retried.priority == source.priority == 7
     assert retried.execution_policy_version == source.execution_policy_version == "1"
@@ -734,7 +736,12 @@ async def test_fork_creates_child_thread_and_replays(
         interaction_object_store,
         run_id=source.run_id,
     )
-    request = ForkRunCommand(input=_request("fork input").input)
+    async with transaction(lifecycle_interaction_sessions) as database:
+        source_thread = await database.get(ThreadRecord, source.thread_id)
+        source_thread.labels = {"team": "source", "stage": "dev"}
+    request = ForkRunCommand(
+        input=_request("fork input").input, thread_labels={"stage": "fork"}, labels={"batch": "one"}
+    )
 
     first = await commands.runs.fork(
         actor=_actor(),
@@ -769,6 +776,8 @@ async def test_fork_creates_child_thread_and_replays(
     assert forked_run.parent_run_id == source.run_id
     assert forked_run.lineage_kind == "fork"
     assert forked_thread.role == "child"
+    assert forked_thread.labels == {"team": "source", "stage": "fork"}
+    assert forked_run.labels == {"team": "source", "stage": "fork", "batch": "one"}
     assert forked_thread.origin_kind == "fork"
     assert forked_thread.origin_thread_id == source.thread_id
     assert forked_thread.origin_run_id == source.run_id

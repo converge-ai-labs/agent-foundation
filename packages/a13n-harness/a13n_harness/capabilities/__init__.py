@@ -46,17 +46,6 @@ from .media import (
     MediaRunCapability,
 )
 from .native_image_generation import NativeImageGenerationCapability, NativeImageSaver
-from .shell_review import (
-    AgentShellCommandReviewer,
-    ShellCommandReviewer,
-    ShellReviewAction,
-    ShellReviewAssessment,
-    ShellReviewCapability,
-    ShellReviewError,
-    ShellReviewRequest,
-    ShellReviewResult,
-    ShellRiskLevel,
-)
 from .skills import (
     BoundSkillCatalog,
     BoundSkillCatalogItem,
@@ -97,6 +86,18 @@ from .subagents import (
     SubagentWaitResult,
 )
 from .tool_proxy import ToolProxyCapability, ToolProxyConfig, ToolProxyGroup, ToolProxyPlan, ToolProxySelection
+from .tool_review import (
+    AgentToolReviewer,
+    ToolReviewAssessment,
+    ToolReviewConfig,
+    ToolReviewer,
+    ToolReviewError,
+    ToolReviewPolicy,
+    ToolReviewRequest,
+    ToolReviewResult,
+    ToolReviewRule,
+    ToolRiskLevel,
+)
 from .web import (
     WEB_SCRAPE_BACKEND_ENV,
     WEB_SCRAPE_BACKEND_PRIORITY_ENV,
@@ -165,7 +166,7 @@ __all__ = [
     "WEB_SEARCH_BACKEND_PRIORITY_ENV",
     "WEB_SEARCH_CONTEXT_SIZE_ENV",
     "WEB_SEARCH_MODE_ENV",
-    "AgentShellCommandReviewer",
+    "AgentToolReviewer",
     "AskUserQuestionRequest",
     "AsyncDelegateRequest",
     "AsyncExecutionView",
@@ -211,14 +212,6 @@ __all__ = [
     "ResolvedDelegationContext",
     "RuntimeContextCapability",
     "RuntimeContextConfiguration",
-    "ShellCommandReviewer",
-    "ShellReviewAction",
-    "ShellReviewAssessment",
-    "ShellReviewCapability",
-    "ShellReviewError",
-    "ShellReviewRequest",
-    "ShellReviewResult",
-    "ShellRiskLevel",
     "SkillCatalogItem",
     "SkillManager",
     "SkillMaterializer",
@@ -255,6 +248,15 @@ __all__ = [
     "ToolProxyGroup",
     "ToolProxyPlan",
     "ToolProxySelection",
+    "ToolReviewAssessment",
+    "ToolReviewConfig",
+    "ToolReviewError",
+    "ToolReviewPolicy",
+    "ToolReviewRequest",
+    "ToolReviewResult",
+    "ToolReviewRule",
+    "ToolReviewer",
+    "ToolRiskLevel",
     "UserInteractionCapability",
     "UserQuestion",
     "UserQuestionAnswers",

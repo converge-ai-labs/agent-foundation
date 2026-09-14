@@ -37,7 +37,9 @@ if TYPE_CHECKING:
     from a13n_harness.pricing import AbstractModelCostCapability
     from a13n_harness.recovery import ToolRecoveryPlan
     from a13n_harness.spec import HarnessModelCharacteristics
+    from a13n_harness.tools.approval import ToolApprovalContext
     from a13n_harness.tools.deferred import DeferredToolResume
+    from a13n_harness.tools.permission_gate import PermissionCheck
     from a13n_harness.usage import ProviderUsage, ProviderUsageRecord, RunUsageLedger, UsageRecord
 
 
@@ -318,6 +320,17 @@ class AgentContext:
         repr=False,
         compare=False,
     )
+
+    _review_history_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)
+    _tool_permission_checks: dict[str, PermissionCheck] = field(default_factory=dict, repr=False, compare=False)
+    _tool_pending_approvals: dict[str, dict[str, JsonValue]] = field(default_factory=dict, repr=False, compare=False)
+
+    @property
+    def tool_approval(self) -> ToolApprovalContext | None:
+        """Return this task's current tool approvals, or None outside a tool call."""
+        from a13n_harness.tools.approval import current_tool_approval
+
+        return current_tool_approval(self)
 
     def _record_managed_tool_surface(self, tool_ids: Mapping[str, str]) -> None:
         object.__setattr__(self, "_managed_tool_ids", MappingProxyType(dict(tool_ids)))

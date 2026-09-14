@@ -232,6 +232,7 @@ class QueuedRunCommands:
                     next_head_run_id=None if head is None else head.id,
                     final_validator=candidate.validate,
                     transaction_hook=record_receipt,
+                    label_overrides=queued.submission.labels,
                 )
             except RunAcceptanceError as error:
                 if stored_key is None:

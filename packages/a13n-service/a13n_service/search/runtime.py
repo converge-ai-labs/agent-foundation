@@ -40,7 +40,14 @@ def graph_uses_search(config: EffectiveAgentConfig) -> bool:
 def search_capability(selection: SearchSelection) -> WebCapability:
     return WebCapability(
         WebConfiguration(
-            search=WebSearchConfiguration(mode="host", backend=selection.provider_id),
+            search=WebSearchConfiguration(
+                mode="host",
+                backend=selection.provider_id,
+                allow_domains=selection.allow_domains,
+                deny_domains=selection.deny_domains,
+            ),
+            allow_domains=selection.allow_domains,
+            deny_domains=selection.deny_domains,
             scrape=WebScrapeConfiguration(mode="off"),
             max_search_results=selection.max_results,
             deadline_seconds=30,

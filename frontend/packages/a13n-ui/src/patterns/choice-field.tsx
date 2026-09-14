@@ -128,6 +128,7 @@ function ChoiceControl({
             {inlineLabel}
           </span>
         )}
+        {options.find((option) => option.value === value)?.icon}
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectPopup>

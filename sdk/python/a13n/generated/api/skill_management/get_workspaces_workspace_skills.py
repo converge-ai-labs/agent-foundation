@@ -18,6 +18,7 @@ def build_request(
     cursor: str | Unset | None = UNSET,
     q: str | Unset | None = UNSET,
     source_kind: GetWorkspacesWorkspaceSkillsSourceKindType0 | Unset | None = UNSET,
+    label: list[str] | Unset = UNSET,
 ) -> dict[str, Any]:
 
     params: dict[str, Any] = {}
@@ -46,6 +47,12 @@ def build_request(
     else:
         json_source_kind = source_kind
     params["source_kind"] = json_source_kind
+
+    json_label: list[str] | Unset = UNSET
+    if not isinstance(label, Unset):
+        json_label = label
+
+    params["label"] = json_label
 
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
@@ -97,6 +104,7 @@ def sync_detailed(
     cursor: str | Unset | None = UNSET,
     q: str | Unset | None = UNSET,
     source_kind: GetWorkspacesWorkspaceSkillsSourceKindType0 | Unset | None = UNSET,
+    label: list[str] | Unset = UNSET,
 ) -> Response[ErrorResponse | SkillCollection]:
     """List Skills
 
@@ -106,6 +114,7 @@ def sync_detailed(
         cursor (None | str | Unset):
         q (None | str | Unset):
         source_kind (GetWorkspacesWorkspaceSkillsSourceKindType0 | None | Unset):
+        label (list[str] | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -121,6 +130,7 @@ def sync_detailed(
         cursor=cursor,
         q=q,
         source_kind=source_kind,
+        label=label,
     )
 
     response = client.get_httpx_client().request(
@@ -138,6 +148,7 @@ def sync(
     cursor: str | Unset | None = UNSET,
     q: str | Unset | None = UNSET,
     source_kind: GetWorkspacesWorkspaceSkillsSourceKindType0 | Unset | None = UNSET,
+    label: list[str] | Unset = UNSET,
 ) -> ErrorResponse | SkillCollection | None:
     """List Skills
 
@@ -147,6 +158,7 @@ def sync(
         cursor (None | str | Unset):
         q (None | str | Unset):
         source_kind (GetWorkspacesWorkspaceSkillsSourceKindType0 | None | Unset):
+        label (list[str] | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -163,6 +175,7 @@ def sync(
         cursor=cursor,
         q=q,
         source_kind=source_kind,
+        label=label,
     ).parsed
 
 
@@ -174,6 +187,7 @@ async def asyncio_detailed(
     cursor: str | Unset | None = UNSET,
     q: str | Unset | None = UNSET,
     source_kind: GetWorkspacesWorkspaceSkillsSourceKindType0 | Unset | None = UNSET,
+    label: list[str] | Unset = UNSET,
 ) -> Response[ErrorResponse | SkillCollection]:
     """List Skills
 
@@ -183,6 +197,7 @@ async def asyncio_detailed(
         cursor (None | str | Unset):
         q (None | str | Unset):
         source_kind (GetWorkspacesWorkspaceSkillsSourceKindType0 | None | Unset):
+        label (list[str] | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -198,6 +213,7 @@ async def asyncio_detailed(
         cursor=cursor,
         q=q,
         source_kind=source_kind,
+        label=label,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -213,6 +229,7 @@ async def asyncio(
     cursor: str | Unset | None = UNSET,
     q: str | Unset | None = UNSET,
     source_kind: GetWorkspacesWorkspaceSkillsSourceKindType0 | Unset | None = UNSET,
+    label: list[str] | Unset = UNSET,
 ) -> ErrorResponse | SkillCollection | None:
     """List Skills
 
@@ -222,6 +239,7 @@ async def asyncio(
         cursor (None | str | Unset):
         q (None | str | Unset):
         source_kind (GetWorkspacesWorkspaceSkillsSourceKindType0 | None | Unset):
+        label (list[str] | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -239,5 +257,6 @@ async def asyncio(
             cursor=cursor,
             q=q,
             source_kind=source_kind,
+            label=label,
         )
     ).parsed

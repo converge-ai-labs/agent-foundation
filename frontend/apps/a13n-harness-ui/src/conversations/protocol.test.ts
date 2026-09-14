@@ -108,7 +108,10 @@ it("real JS Yjs replicas interoperate with App admission, HTTP metadata and focu
       { method: "POST", body: "retained attachment" },
     );
     const attachment = await response.json();
-    a.doc.getMap("attachments").set("upload", attachment.attachment_id);
+    const selected = a.addAttachment("pending", 3);
+    await until(() => a.synchronized && b.synchronized);
+    expect(() => a.capture()).toThrow("incomplete attachments");
+    a.doc.getMap("attachments").set(selected, attachment.attachment_id);
     await until(
       () => a.synchronized && values(b.doc).attachment_ids.length === 1,
     );
@@ -127,11 +130,22 @@ it("real JS Yjs replicas interoperate with App admission, HTTP metadata and focu
     );
     expect(metadata.name).toBe("example.txt");
     expect(metadata.source).toBeNull();
+    a.undo.undo();
+    await until(
+      () => a.synchronized && values(b.doc).attachment_ids.length === 0,
+    );
+    a.undo.redo();
+    await until(
+      () => a.synchronized && values(b.doc).attachment_ids.length === 1,
+    );
     const captured = a.capture();
+    expect(captured.parts[1]).toEqual({
+      attachment_id: attachment.attachment_id,
+    });
     const receipt = await result(
       transport.client.POST("/api/threads/{thread_id}/submit", {
         params: { path: { thread_id: thread } },
-        body: captured.input,
+        body: { parts: captured.parts },
       }),
     );
     b.doc.getText("text").insert(0, "NEXT");

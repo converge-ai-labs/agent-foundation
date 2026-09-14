@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from a13n_harness import HarnessModelCharacteristics
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.connectivity.selection_resolution import (
@@ -105,6 +106,11 @@ class AgentInvocationFreezer:
             )
             try:
                 execution = await self._model_selector.freeze_in_transaction(session, prepared=prepared.model)
+                reviewer_execution = (
+                    await self._model_selector.freeze_in_transaction(session, prepared=prepared.reviewer_model)
+                    if prepared.reviewer_model is not None
+                    else None
+                )
             except ModelError as error:
                 raise map_model_error(error) from error
             if prepared.merged.search is not None:
@@ -154,6 +160,23 @@ class AgentInvocationFreezer:
                     execution.model_api, prepared.model.resource.settings, prepared.merged.model.settings
                 ),
                 characteristics=prepared.merged.model.characteristics,
+            ),
+            "permissions": prepared.merged.permissions,
+            "reviewer": prepared.merged.reviewer,
+            "resolved_reviewer_model": (
+                EffectiveAgentModel(
+                    execution=reviewer_execution,
+                    settings=effective_settings(
+                        reviewer_execution.model_api,
+                        prepared.reviewer_model.resource.settings,
+                        prepared.merged.reviewer.model_settings or {},
+                    ),
+                    characteristics=HarnessModelCharacteristics(),
+                )
+                if reviewer_execution is not None
+                and prepared.reviewer_model is not None
+                and prepared.merged.reviewer is not None
+                else None
             ),
             "plugins": prepared.merged.plugins,
             "skills": skills,

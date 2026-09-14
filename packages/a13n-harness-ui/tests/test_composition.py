@@ -461,7 +461,7 @@ async def test_builtin_tool_switches_are_captured_and_reconstructed(
     path.write_text(
         path.read_text()
         + f"\ntools:\n  enable_ask_user_question: {str(enable_ask_user_question).lower()}\n"
-        + f"  enable_codeact: {str(enable_codeact).lower()}\n  ask_user_question_timeout_seconds: 30\n"
+        + f"  enable_codeact: {str(enable_codeact).lower()}\n  interaction_timeout_seconds: 30\n"
     )
     agent = tmp_path / "agents/assistant.yaml"
     agent.write_text(
@@ -474,7 +474,7 @@ async def test_builtin_tool_switches_are_captured_and_reconstructed(
     source = await load_harness_ui_configuration(path)
     catalog = _catalog()
     composition = AgentCompositionResolver(catalog).resolve_run(source, _selection())
-    assert source.document.tools.ask_user_question_timeout_seconds == 30
+    assert source.document.tools.interaction_timeout_seconds == 30
     for node in (composition.root, *(child.definition for child in composition.root.children)):
         names = [item.capability for item in node.capabilities]
         assert names.count("user_interaction") == int(enable_ask_user_question)
@@ -777,9 +777,9 @@ async def test_missing_markdown_only_blocks_the_agent_that_selects_it(tmp_path: 
     assert composition.root.source_id == "agent-reviewer"
 
 
-@pytest.mark.parametrize("on_error", ["approval_required", "deny", "skip"])
+@pytest.mark.parametrize("on_error", ["approval_required", "deny", "allow"])
 async def test_shell_review_captures_and_registers_its_subscription_model(tmp_path: Path, on_error: str) -> None:
-    from a13n_harness.capabilities.shell_review import ShellReviewAction, ShellReviewCapability
+    from a13n_harness.tools import ToolPermissionsCapability
     from a13n_harness_ui.model_runtime import model_recipe_id
 
     path = _write_source(tmp_path)
@@ -796,13 +796,15 @@ settings: {thinking: low, openai_store: false, openai_reasoning_summary: detaile
     agent.write_text(
         agent.read_text().replace(
             "harness_plugins: null",
-            f"""  - capability: ShellReviewCapability
+            f"""  - capability: ToolPermissionsCapability
     configuration:
-      model: model-review
-      risk_threshold: high
-      on_flagged: approval_required
-      on_error: {on_error}
-      model_settings: {{openai_reasoning_summary: concise}}
+      rules: {{environment.shell_exec: review}}
+      review:
+        model: model-review
+        risk_threshold: high
+        on_flagged: approval_required
+        on_error: {on_error}
+        model_settings: {{openai_reasoning_summary: concise}}
 harness_plugins: null""",
         )
     )
@@ -810,19 +812,19 @@ harness_plugins: null""",
     resolver = AgentCompositionResolver(_catalog())
     resolver.validate_generation(source)
     composition = resolver.resolve_run(source, _selection())
-    recipe = next(item for item in composition.root.capabilities if item.capability == "ShellReviewCapability")
+    recipe = next(item for item in composition.root.capabilities if item.capability == "ToolPermissionsCapability")
     assert recipe.model is not None
     assert recipe.model.route == "openai-codex:gpt-5.6-luna"
     assert recipe.model.authentication.kind == "codex_subscription"
     review_model.unlink()
     reconstructed = AgentReconstructor(_catalog()).reconstruct(composition, subagent_operator=_UnusedOperator())
     capability = next(
-        item for item in reconstructed.executable.definition.capabilities if isinstance(item, ShellReviewCapability)
+        item for item in reconstructed.executable.definition.capabilities if isinstance(item, ToolPermissionsCapability)
     )
-    assert capability.model == model_recipe_id(recipe.model)
-    assert capability.on_error is ShellReviewAction(on_error)
-    assert capability.on_flagged is ShellReviewAction.APPROVAL_REQUIRED
-    assert capability.model_settings == {
+    assert capability.config.model == model_recipe_id(recipe.model)
+    assert capability.config.on_error == on_error
+    assert capability.policy.on_flagged == "approval_required"
+    assert capability.config.model_settings == {
         "thinking": "low",
         "openai_store": False,
         "openai_reasoning_summary": "concise",
@@ -835,26 +837,41 @@ harness_plugins: null""",
     assert recipe.model in reconstructed.model_resolver._recipes.values()
 
 
-async def test_shell_review_skips_missing_model_resource(tmp_path: Path) -> None:
+@pytest.mark.parametrize("enabled", [None, False, True])
+@pytest.mark.parametrize("mode", ["deny", "ask"])
+async def test_invalid_reviewer_never_discards_authored_permissions(
+    tmp_path: Path, enabled: bool | None, mode: str
+) -> None:
+    import yaml
+
     path = _write_source(tmp_path)
-    agent = tmp_path / "agents" / "assistant.yaml"
-    agent.write_text(
-        agent.read_text().replace(
-            "harness_plugins: null",
-            """  - capability: ShellReviewCapability
-    configuration: {model: model-missing}
-harness_plugins: null""",
-        )
+    if enabled is not None:
+        root = yaml.safe_load(path.read_text())
+        root["security"] = {"shell_review": {"enable": enabled}}
+        path.write_text(yaml.safe_dump(root))
+    agent_path = tmp_path / "agents/assistant.yaml"
+    agent = yaml.safe_load(agent_path.read_text())
+    agent["capabilities"].append(
+        {
+            "capability": "ToolPermissionsCapability",
+            "configuration": {
+                "default": mode,
+                "rules": {"environment.read": mode},
+                "review": {"model": "model-missing"},
+            },
+        }
     )
+    agent_path.write_text(yaml.safe_dump(agent))
     source = await load_harness_ui_configuration(path)
     resolver = AgentCompositionResolver(_catalog())
     warnings: list[str] = []
-    resolver.validate_generation(source, warnings=warnings)
-    assert len(warnings) == 1
-    assert "ShellReviewCapability" in warnings[0]
-    assert "capability_model_missing" in warnings[0]
-    composition = resolver.resolve_run(source, _selection())
-    assert all(item.capability != "ShellReviewCapability" for item in composition.root.capabilities)
+    with pytest.raises(CompositionError) as validation:
+        resolver.validate_generation(source, warnings=warnings)
+    assert validation.value.code == "capability_model_missing"
+    assert not warnings
+    with pytest.raises(CompositionError) as resolution:
+        resolver.resolve_run(source, _selection())
+    assert resolution.value.code == "capability_model_missing"
 
 
 async def test_webui_collaboration_is_absent_from_reconstructed_children(tmp_path: Path) -> None:
@@ -1071,3 +1088,235 @@ async def test_legacy_composition_missing_proxy_roundtrips_without_changing_payl
     restored = type(composition).model_validate_json(payload)
     assert restored.root.tool_proxy is None
     assert restored.model_dump_json() == payload
+
+
+@pytest.mark.parametrize("agent_mode", ["allow", "deny", "ask", "review"])
+async def test_root_shell_review_merges_before_capture_and_preserves_other_rules(
+    tmp_path: Path, agent_mode: str
+) -> None:
+    import yaml
+    from a13n_harness.tools import ToolIdentity, ToolPermissionsCapability
+    from a13n_harness_ui.composition.models import ResolvedRunComposition
+
+    path = _write_source(tmp_path)
+    path.write_text(
+        path.read_text()
+        + "security:\n  shell_review: {enable: true, model: model-primary, risk_threshold: extra_high}\n"
+    )
+    agent_path = tmp_path / "agents" / "assistant.yaml"
+    authored = yaml.safe_load(agent_path.read_text())
+    authored["capabilities"].extend(
+        [
+            {
+                "capability": "ToolPermissionsCapability",
+                "configuration": {
+                    "default": "allow",
+                    "rules": {"environment.shell_exec": agent_mode, "environment.read": "deny", "mcp/docs/*": "ask"},
+                    "review": {
+                        "model": "model-missing",
+                        "risk_threshold": "low",
+                        "on_error": "deny",
+                        "rules": {
+                            "environment.*": {"risk_threshold": "medium", "on_flagged": "deny"},
+                            "environment.shell_exec": {"risk_threshold": "high", "on_flagged": "approval_required"},
+                            "mcp/docs/*": {"risk_threshold": "medium"},
+                        },
+                    },
+                },
+            },
+        ]
+    )
+    agent_path.write_text(yaml.safe_dump(authored))
+    source = await load_harness_ui_configuration(path)
+    resolver = AgentCompositionResolver(_catalog())
+    resolver.validate_generation(source)
+    captured = resolver.resolve_run(source, _selection())
+    composition = ResolvedRunComposition.model_validate_json(captured.model_dump_json())
+    reconstructed = AgentReconstructor(_catalog()).reconstruct(composition, subagent_operator=_UnusedOperator())
+    caps = reconstructed.executable.definition.capabilities
+    permissions = next(c.permissions for c in caps if isinstance(c, ToolPermissionsCapability))
+    review = next(c for c in caps if isinstance(c, ToolPermissionsCapability))
+    assert permissions.resolve(ToolIdentity("environment.shell_exec")) == "review"
+    assert permissions.resolve(ToolIdentity("environment.read")) == "deny"
+    assert permissions.resolve(ToolIdentity("mcp/docs/find")) == "ask"
+    assert permissions.resolve(ToolIdentity("web.search")) == "allow"
+    assert review.policy.risk_threshold == "low"
+    assert review.policy.rules["environment.shell_exec"].risk_threshold == "extra_high"
+    assert review.policy.rules["environment.shell_exec"].on_flagged == "approval_required"
+    assert review.policy.rules["mcp/docs/*"].risk_threshold == "medium"
+    assert review.config.on_error == "deny"
+    for child in composition.root.children:
+        assert sum(c.capability == "ToolPermissionsCapability" for c in child.definition.capabilities) == 1
+    assert source.agents["agent-assistant"].capabilities[-1].configuration["review"]["model"] == "model-missing"
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_shell_shortcut_omitted_fields_preserve_agent_policy(tmp_path: Path, enabled: bool) -> None:
+    import yaml
+
+    path = _write_source(tmp_path)
+    path.write_text(path.read_text() + f"security:\n  shell_review: {{enable: {str(enabled).lower()}}}\n")
+    agent_path = tmp_path / "agents" / "assistant.yaml"
+    authored = yaml.safe_load(agent_path.read_text())
+    authored["capabilities"].extend(
+        [
+            {
+                "capability": "ToolPermissionsCapability",
+                "configuration": {
+                    "rules": {"environment.shell_exec": "review"},
+                    "review": {
+                        "model": "model-primary",
+                        "risk_threshold": "high",
+                        "on_error": "deny",
+                        "rules": {"environment.shell_exec": {"risk_threshold": "low", "on_flagged": "deny"}},
+                    },
+                },
+            },
+        ]
+    )
+    agent_path.write_text(yaml.safe_dump(authored))
+    source = await load_harness_ui_configuration(path)
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    review = next(c for c in composition.root.capabilities if c.capability == "ToolPermissionsCapability")
+    assert review.configuration["review"]["model"] == "model-primary"
+    assert review.configuration["review"]["risk_threshold"] == "high"
+    assert review.configuration["review"]["rules"] == {
+        "environment.shell_exec": {"risk_threshold": "low", "on_flagged": "deny"}
+    }
+    assert review.configuration["review"]["on_error"] == "deny"
+    assert any(c.capability == "ToolPermissionsCapability" for c in composition.root.capabilities)
+
+
+async def test_enabled_shell_shortcut_rejects_missing_model_and_disabled_does_not_inject(tmp_path: Path) -> None:
+    path = _write_source(tmp_path)
+    original = path.read_text()
+    path.write_text(original + "security:\n  shell_review: {enable: true, model: model-missing}\n")
+    source = await load_harness_ui_configuration(path)
+    with pytest.raises(CompositionError, match="available Model"):
+        AgentCompositionResolver(_catalog()).validate_generation(source)
+    path.write_text(original + "security:\n  shell_review: {enable: false, model: model-missing}\n")
+    source = await load_harness_ui_configuration(path)
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    assert not any(c.capability in {"ToolPermissionsCapability"} for c in composition.root.capabilities)
+
+
+def test_tool_policy_capabilities_are_not_authoring_catalog_choices() -> None:
+    catalog = _catalog()
+    assert not {"ToolPermissionsCapability"} & {ref.key for ref in catalog.references if ref.kind == "capability"}
+    selected = catalog.capabilities((("ToolPermissionsCapability", {"review": {"model": "model-primary"}}),))
+    assert len(selected) == 1
+
+
+async def test_shell_shortcut_fallback_uses_effective_model_and_freezes_it(tmp_path: Path) -> None:
+    from a13n_harness_ui.configuration.models import LoadedHarnessUiConfiguration
+    from a13n_harness_ui.surfaces import RunModelOverrides
+
+    path = _write_source(tmp_path)
+    path.write_text(path.read_text() + "security:\n  shell_review: {enable: true}\n")
+    source = await load_harness_ui_configuration(path)
+    source = LoadedHarnessUiConfiguration.model_validate_json(source.model_dump_json())
+    resolver = AgentCompositionResolver(_catalog())
+    resolver.validate_generation(source)
+    composition = resolver.resolve_run(source, _selection(), model_overrides=RunModelOverrides(thinking="low"))
+    review = next(c for c in composition.root.capabilities if c.capability == "ToolPermissionsCapability")
+    assert review.model == composition.root.model
+    assert review.model.settings["thinking"] == "low"
+    assert review.configuration["review"]["on_flagged"] == "approval_required"
+    assert review.configuration["review"]["on_error"] == "allow"
+    # Source/Model edits do not affect the captured recipe.
+    path.write_text('schema_version: "1"\n')
+    assert review.model.settings["thinking"] == "low"
+
+
+@pytest.mark.parametrize("selector", ["*", "environment.*", "environment.shell_exec"])
+async def test_root_shell_threshold_preserves_effective_rule_action(tmp_path: Path, selector: str) -> None:
+    import yaml
+
+    path = _write_source(tmp_path)
+    path.write_text(path.read_text() + "security:\n  shell_review: {enable: true, risk_threshold: extra_high}\n")
+    agent_path = tmp_path / "agents" / "assistant.yaml"
+    agent = yaml.safe_load(agent_path.read_text())
+    agent["capabilities"].append(
+        {
+            "capability": "ToolPermissionsCapability",
+            "configuration": {
+                "review": {
+                    "model": "model-primary",
+                    "rules": {selector: {"on_flagged": "deny", "risk_threshold": "low"}},
+                }
+            },
+        }
+    )
+    agent_path.write_text(yaml.safe_dump(agent))
+    source = await load_harness_ui_configuration(path)
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    review = next(c for c in composition.root.capabilities if c.capability == "ToolPermissionsCapability")
+    assert review.configuration["review"]["rules"]["environment.shell_exec"] == {
+        "on_flagged": "deny",
+        "risk_threshold": "extra_high",
+    }
+
+
+@pytest.mark.parametrize(
+    "shortcut",
+    [{"enable": "true"}, {"enable": True, "risk_threshold": "critical"}, {"enable": True, "model": "agent-review"}],
+)
+def test_shell_shortcut_validates_known_fields(shortcut: dict[str, object]) -> None:
+    from a13n_harness_ui.configuration.models import HarnessUiDocument
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        HarnessUiDocument.model_validate({"security": {"shell_review": shortcut}})
+
+
+@pytest.mark.parametrize("on_error", ["allow", "deny", "approval_required"])
+@pytest.mark.parametrize("on_flagged", ["deny", "approval_required"])
+async def test_shell_shortcut_actions_override_shell_rule_and_preserve_other_tools(
+    tmp_path: Path, on_error: str, on_flagged: str
+) -> None:
+    import yaml
+
+    path = _write_source(tmp_path)
+    root = yaml.safe_load(path.read_text())
+    root["security"] = {"shell_review": {"enable": True, "on_error": on_error, "on_flagged": on_flagged}}
+    path.write_text(yaml.safe_dump(root))
+    agent_path = tmp_path / "agents/assistant.yaml"
+    agent = yaml.safe_load(agent_path.read_text())
+    agent["capabilities"].append(
+        {
+            "capability": "ToolPermissionsCapability",
+            "configuration": {
+                "rules": {"environment.read": "deny"},
+                "review": {
+                    "model": "model-primary",
+                    "on_error": "deny",
+                    "on_flagged": "deny",
+                    "rules": {
+                        "environment.*": {"risk_threshold": "high", "on_flagged": "deny"},
+                        "mcp/docs/*": {"risk_threshold": "low", "on_flagged": "approval_required"},
+                    },
+                },
+            },
+        }
+    )
+    agent_path.write_text(yaml.safe_dump(agent))
+    source = await load_harness_ui_configuration(path)
+    captured = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    policies = [c for c in captured.root.capabilities if c.capability == "ToolPermissionsCapability"]
+    assert len(policies) == 1
+    config = policies[0].configuration
+    assert config["rules"] == {"environment.read": "deny", "environment.shell_exec": "review"}
+    review = config["review"]
+    assert review["on_error"] == on_error
+    assert review["on_flagged"] == "deny"  # The root shortcut changes the shell action, not the global action.
+    assert review["rules"]["environment.shell_exec"] == {"risk_threshold": "high", "on_flagged": on_flagged}
+    assert review["rules"]["mcp/docs/*"] == {"risk_threshold": "low", "on_flagged": "approval_required"}
+
+
+@pytest.mark.parametrize("field,value", [("on_flagged", "allow"), ("on_flagged", "skip"), ("on_error", "skip")])
+def test_shell_shortcut_rejects_unsupported_actions(field: str, value: str) -> None:
+    from a13n_harness_ui.configuration.models import HarnessUiDocument
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        HarnessUiDocument.model_validate({"security": {"shell_review": {"enable": True, field: value}}})

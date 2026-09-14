@@ -18,7 +18,7 @@ from a13n_harness import (
 from a13n_harness import (
     DelegationContextPolicy as HarnessDelegationContextPolicy,
 )
-from a13n_harness.capabilities import SubagentCapability
+from a13n_harness.capabilities import SubagentCapability, ToolReviewConfig
 from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
 from a13n_harness.errors import HarnessError
 from a13n_harness.output_schema import structured_output_type
@@ -27,6 +27,7 @@ from a13n_harness.plugin_factories import (
     HarnessPluginFactoryContext,
 )
 from a13n_harness.plugins import AbstractHarnessPlugin
+from a13n_harness.tools import ToolPermissionsCapability
 from a13n_harness.tools.client import (
     ClientToolsCapability,
     ClientToolsetDefinition,
@@ -239,6 +240,19 @@ class AgentReconstructor:
             DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),
             *self._provided_capabilities(node),
         ]
+        review = None
+        if config.reviewer is not None:
+            if config.resolved_reviewer_model is None:
+                raise AgentDefinitionReconstructionError("reviewer_model_missing", path="reviewer")
+            review = ToolReviewConfig.model_validate(
+                {
+                    **config.reviewer.model_dump(),
+                    "model": config.resolved_reviewer_model.execution.model_id,
+                    "model_settings": dict(config.resolved_reviewer_model.settings),
+                }
+            )
+        if config.permissions is not None or review is not None:
+            capabilities.append(ToolPermissionsCapability(config.permissions, review=review))
         if config.search is not None:
             capabilities.append(search_capability(config.search))
         if config.client_tools:

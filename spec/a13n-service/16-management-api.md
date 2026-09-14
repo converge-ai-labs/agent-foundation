@@ -191,6 +191,7 @@ The exact read and each collection item have this conceptual wire shape:
 
 ```python
 class Thread:
+    labels: dict[str, str]
     thread_id: str
     version: int
     queue_version: int
@@ -340,3 +341,13 @@ The API uses the shared bounded errors and stable codes enforced by the [HTTP in
 ## Shared configuration scopes
 
 ModelProvider, Model, ConnectorProvider, EnvironmentProvider, and EnvironmentTemplate collections support Organization ownership through `/organizations/{organization}/...` alongside their Workspace collections. [Organization-owned configuration](33-identity-and-access-management.md#organization-owned-configuration) owns visibility, management, and credential-boundary rules. The [Model](30-model-management.md#management-api), [Environment](29-environment-management.md), and [Connector](40-connectivity/03-connectors-and-connections.md) contracts own exact routes. Organization collections contain Organization resources; Workspace configuration collections include local and parent resources. Actual Environments and Connections remain Workspace collections.
+
+## Resource labels
+
+Agent, Skill, EnvironmentTemplate, Environment, Session, Thread, and Run expose a non-null `labels` map on create, detail, and list representations. A map has at most 32 case-sensitive string pairs. Keys are 1 to 63 ASCII characters, begin with an alphanumeric character, and otherwise contain only alphanumerics, `_`, `-`, or `.`. Values are at most 256 Unicode scalar characters and contain no control characters. Labels classify resources only; they grant no authority and enter neither Revision content nor Agent execution context.
+
+Each canonical resource route has `GET /labels` and `PUT /labels`. PUT requires `{"labels": {...}}`, replaces the complete map, and requires an exact strong `If-Match` tag derived only from resource identity and canonical label content. A no-op changes no timestamp, version, generation, or audit record. A real replacement advances the resource's own `updated_at` and records a security audit event without label values; it never changes an execution, queue, revision, or generation counter.
+
+Collections accept repeated `label=key=value` query parameters. The first equals sign separates key and value, repeated equal pairs collapse, conflicting values for one key are invalid, and all pairs combine with exact AND containment. Authorization and label predicates precede pagination. Canonical label filters are part of cursor scope, and a cursor cannot be reused with a different filter.
+
+Creation copies the current parent's labels once and then applies explicit overrides. Omission and an empty override both mean inheritance; later changes do not propagate. Thread copies Session, Run copies Thread, Environment copies the current EnvironmentTemplate head even when a historical Revision is selected, Agent duplication copies Agent, forked Thread copies its source Thread, and retry Run copies its source Run. Queued intent stores only explicit Run overrides and merges them with current Thread labels in the atomic acceptance transaction. Ordinary Continue, waiting feedback, and automatic asynchronous-result successors inherit their Thread; retry copies only the source Run. Source-copy operations never additionally merge current ancestor labels. Creation overrides are part of canonical idempotency input; parent changes after acceptance neither alter the saved labels nor change replay results. An empty replacement deletes all saved labels and does not cause inheritance to run again.

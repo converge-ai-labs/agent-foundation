@@ -7,9 +7,9 @@ import pytest
 from a13n_harness_ui.cli import CliRequest
 from a13n_harness_ui.interactive.attachments import image_bytes
 from a13n_harness_ui.interactive.shell import CliShell
+from a13n_harness_ui.thread_files import ComposerInput
 from PIL import Image
 from prompt_toolkit.application import create_app_session
-from prompt_toolkit.document import Document
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
@@ -23,7 +23,12 @@ async def _until(predicate) -> None:
 @pytest.mark.anyio
 @pytest.mark.parametrize("reject", [False, True])
 @pytest.mark.parametrize("new_draft", [False, True])
-async def test_enter_targets_exact_run_and_preserves_rejected_guidance(reject: bool, new_draft: bool) -> None:
+@pytest.mark.parametrize("guidance,with_image", [("change direction", False), ("change direction", True), ("", True)])
+@pytest.mark.parametrize("explicit", [False, True])
+@pytest.mark.parametrize("local_command", [False, True])
+async def test_enter_targets_exact_run_and_preserves_rejected_guidance(
+    reject: bool, new_draft: bool, guidance: str, with_image: bool, explicit: bool, local_command: bool
+) -> None:
     entered, release = asyncio.Event(), asyncio.Event()
     received = []
 
@@ -50,23 +55,50 @@ async def test_enter_targets_exact_run_and_preserves_rejected_guidance(reject: b
         shell.job_kind = "run"
         shell.status.state = "working"
         shell.job = asyncio.create_task(asyncio.Event().wait())
+        if with_image:
+            data = BytesIO()
+            Image.new("RGB", (1, 1)).save(data, format="PNG")
+            shell.insert_attachments((image_bytes("draft.png", data.getvalue()),))
+        images = shell.images
+        if explicit:
+            shell.composer.buffer.cursor_position = 0
+            shell.composer.buffer.insert_text("/steer ")
+            shell.composer.buffer.cursor_position = len(shell.composer.text)
+        draft_text = ("/steer " if explicit else "") + guidance
         terminal = asyncio.create_task(shell.app.run_async())
         try:
             await _until(lambda: shell.app.is_running)
-            pipe.send_text("change direction\r")
+            pipe.send_text(guidance + "\r")
             await asyncio.wait_for(entered.wait(), 3)
             backend.receipt_id = "receipt-replacement"
+            if local_command:
+                pipe.send_text("/help\r")
+                await _until(
+                    lambda: any("## Commands" in block.source for block in shell.renderer.transcript.blocks.values())
+                )
+                assert shell._sending_draft is not None
+                assert shell.inline.compile(shell._sending_draft.text).attachments == images
             if new_draft:
                 pipe.send_text("next draft")
                 await _until(lambda: shell.composer.text == "next draft")
             release.set()
             await _until(lambda: shell._input_task.done())
-            assert received == [("receipt-original", "change direction")]
+            assert len(received) == 1
+            receipt, prompt = received[0]
+            assert receipt == "receipt-original"
+            assert isinstance(prompt, ComposerInput)
+            assert prompt.text == guidance
+            assert prompt.attachments == images
             if reject and new_draft:
                 assert shell.composer.text == "next draft"
-                assert shell._recoverable == (Document("change direction", 16), ())
+                assert shell._recoverable is not None
+                recovered = shell.inline.compile(shell._recoverable.text)
+                assert recovered.text == draft_text
+                assert recovered.attachments == images
             elif reject:
-                assert shell.composer.text == "change direction"
+                restored = shell.inline.compile(shell.composer.text)
+                assert restored.text == draft_text
+                assert restored.attachments == images
             else:
                 assert shell.composer.text == ("next draft" if new_draft else "")
                 assert any("Guidance sent" in item.source for item in shell.renderer.transcript.blocks.values())
@@ -81,7 +113,7 @@ async def test_enter_targets_exact_run_and_preserves_rejected_guidance(reject: b
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("blocked", ["preparing", "cancelling", "login", "images"])
+@pytest.mark.parametrize("blocked", ["preparing", "cancelling", "login"])
 async def test_enter_preserves_draft_when_operation_cannot_accept_it(blocked: str) -> None:
     class Backend:
         thread_id = "thread-one"
@@ -97,17 +129,16 @@ async def test_enter_preserves_draft_when_operation_cannot_accept_it(blocked: st
         shell.job_kind = "login" if blocked == "login" else "run"
         shell.status.state = "cancelling" if blocked == "cancelling" else "working"
         shell.job = asyncio.create_task(asyncio.Event().wait())
-        if blocked == "images":
-            data = BytesIO()
-            Image.new("RGB", (1, 1)).save(data, format="PNG")
-            shell.images = (image_bytes("draft.png", data.getvalue()),)
+        data = BytesIO()
+        Image.new("RGB", (1, 1)).save(data, format="PNG")
+        shell.insert_attachments((image_bytes("draft.png", data.getvalue()),))
         images = shell.images
         terminal = asyncio.create_task(shell.app.run_async())
         try:
             await _until(lambda: shell.app.is_running)
             pipe.send_text("keep this\r")
             await _until(lambda: bool(shell.renderer.transcript.blocks))
-            assert shell.composer.text == "keep this"
+            assert shell.inline.compile(shell.composer.text).text == "keep this"
             assert shell.images == images
             assert shell._input_task is None
         finally:

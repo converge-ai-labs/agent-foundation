@@ -172,6 +172,16 @@ class AgentInvocationPreparer:
                     ),
                     settings=merged.model.settings,
                 )
+                reviewer_model = (
+                    await self._model_selector.prepare(
+                        organization_id=authorized.organization_id,
+                        workspace_id=workspace_id,
+                        model_id=merged.reviewer.model,
+                        settings=merged.reviewer.model_settings or {},
+                    )
+                    if merged.reviewer is not None
+                    else None
+                )
             except ModelError as error:
                 raise map_model_error(error) from error
             connectivity = await prepare_invocation_connectivity(
@@ -214,6 +224,7 @@ class AgentInvocationPreparer:
             skills=skills,
             subagents=children,
             connectivity=connectivity,
+            reviewer_model=reviewer_model,
         )
 
     async def _prepare_subagents(

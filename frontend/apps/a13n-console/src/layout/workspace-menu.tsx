@@ -18,7 +18,13 @@ import { UserAvatar } from "./avatar";
 import { workspacePath } from "../shared/paths";
 import { useWorkspace } from "./workspace";
 
-export function WorkspaceMenu({ onNavigate }: { onNavigate: () => void }) {
+export function WorkspaceMenu({
+  onNavigate,
+  compact = false,
+}: {
+  onNavigate: () => void;
+  compact?: boolean;
+}) {
   const { t } = useTranslation(),
     context = useWorkspace(),
     navigate = useNavigate(),
@@ -30,19 +36,35 @@ export function WorkspaceMenu({ onNavigate }: { onNavigate: () => void }) {
         delay={100}
         closeDelay={150}
         aria-label={t("Workspace menu")}
-        render={<Button variant="ghost" className="w-full justify-start" />}
+        render={
+          compact ? (
+            <Button variant="ghost" size="icon-sm" className="mx-auto" />
+          ) : (
+            <Button variant="ghost" className="w-full justify-start" />
+          )
+        }
       >
         <UserAvatar
           name={context.workspace.name}
           url={context.workspace.image_url}
           className="size-5 rounded-md text-[10px]"
         />
-        <span className="min-w-0 flex-1 truncate text-left">
-          {context.workspace.name}
-        </span>
-        <CaretDownIcon aria-hidden="true" />
+        {compact ? (
+          <span className="sr-only">{context.workspace.name}</span>
+        ) : (
+          <>
+            <span className="min-w-0 flex-1 truncate text-left">
+              {context.workspace.name}
+            </span>
+            <CaretDownIcon aria-hidden="true" />
+          </>
+        )}
       </MenuTrigger>
-      <MenuPopup align="start" className="w-(--anchor-width)">
+      <MenuPopup
+        align="start"
+        side={compact ? "right" : "bottom"}
+        className={compact ? "min-w-48" : "w-(--anchor-width)"}
+      >
         <MenuGroup>
           <MenuItem
             onClick={() => {

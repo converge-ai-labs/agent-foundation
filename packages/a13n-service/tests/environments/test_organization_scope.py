@@ -66,7 +66,7 @@ async def test_org_template_allocates_independent_workspace_environments(
         actor=admin,
         template_id=template.id,
         request=CreateTemplateRevisionRequest(
-            **recipe.model_dump(exclude={"name", "description"}),
+            **recipe.model_dump(exclude={"name", "description", "labels"}),
             expected_version=1,
         ),
     )

@@ -65,6 +65,9 @@ pub struct Agent {
     #[serde(rename = "key")]
     pub key: String,
 
+    #[serde(rename = "labels", skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Value>,
+
     #[serde(rename = "name")]
     pub name: String,
 
@@ -120,6 +123,7 @@ impl Agent {
             id,
             image_url: None,
             key,
+            labels: None,
             name,
             organization_id,
             source,
