@@ -180,7 +180,6 @@ class OAuthConfiguration:
         oauth: MCPOAuthClient,
         protector: SecretProtector,
         *,
-        public_origin: str | None,
         redirect_uris: tuple[str, ...],
         documentation_urls: dict[str, str],
         clock: Clock,
@@ -188,7 +187,6 @@ class OAuthConfiguration:
         self._sessions = sessions
         self._oauth = oauth
         self._protector = protector
-        self._public_origin = public_origin
         self._redirect_uris = redirect_uris
         self._documentation_urls = documentation_urls
         self._clock = clock
@@ -257,12 +255,9 @@ class OAuthConfiguration:
                 )
         discovered = await self._discover(actor=actor, connection_id=connection_id)
         projection = self._discovery_projection(discovered, request.redirect_uri)
-        automatic = projection.client_registration == "dynamic" or (
-            projection.client_registration == "metadata_document" and self._public_origin is not None
-        )
         action = (
             "start_authorization"
-            if automatic
+            if projection.client_registration == "dynamic"
             and request.redirect_uri is not None
             and "authorization_code" in projection.grant_types_supported
             else "configure_oauth_client"

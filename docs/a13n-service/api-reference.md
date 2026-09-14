@@ -1025,21 +1025,6 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
-### `GET /api/v1/oauth/mcp/client-metadata/{issuer_key}/{redirect_key}.json`
-
-Mcp Client Metadata.
-
-| Parameter      | Location | Required | Type / schema | Constraints and default  |
-| -------------- | -------- | -------- | ------------- | ------------------------ |
-| `issuer_key`   | path     | true     | string        | pattern="^[0-9a-f]{64}$" |
-| `redirect_key` | path     | true     | string        | pattern="^[0-9a-f]{64}$" |
-
-Responses:
-
-- **200** — Successful Response (`application/json: MCPClientMetadata`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
 ### `GET /api/v1/organizations/{organization}/connector-providers`
 
 Organization List Connector Providers.

@@ -4,7 +4,7 @@
 
 `POST /api/v1/threads/{thread_id}/runs` carries one complete existing-Thread Run submission with queue-if-busy semantics. When the current Run is not `failed` or `cancelled` and the command cannot accept that intent immediately because work or earlier queued intent has precedence, Service creates an editable `QueuedSubmission`; when the current Run is `failed` or `cancelled`, the command must accept an eligible successor immediately or reject without creating a new queued submission. The explicit `waiting_resolution.mode="defaults"` branch is different: it resolves the selected waiting head and accepts one successor without consuming or reordering existing queued submissions. A queued submission is not a Run, RunAttempt, Thread inbox entry, execution lease, or lifecycle outcome. Enqueue, edit, delete, and reorder operations never create a Run. Consumption atomically changes one queued submission to `consumed` and accepts exactly one new Run; a queue-owned permanent invalidity instead changes it to `failed` without creating a Run. Only an accepted Run and its later RunAttempts own scheduling, execution, recovery, and outcome.
 
-When a running Run produces a completed outcome while the queue is non-empty, Service uses a state-first combined handoff when preparation succeeds. It publishes both the completed source state and the successor's complete initial state before one short relational transaction seals the source Run, consumes the first queued submission, accepts the successor, and advances the Thread. If preparation or final validation cannot complete promptly, the source Run seals independently and the durable terminal-Run-plus-queue condition is handled by the recovery scan.
+When a running Run produces a completed outcome, Service first commits that Run's ordinary completion. The same Worker instance then attempts to consume the first eligible queued submission in an independent transaction, using fresh committed Thread state. A bounded periodic scan uses the same consumption path. Successor preparation, validation, consumption failure, or Worker interruption cannot delay or roll back the already committed source outcome.
 
 This contract keeps the queue intentionally small. A queued submission has `queued`, `consumed`, or `failed` state and has no lease, preparing, starting, blocked, cancelled, or retry state. A recoverable intent blocker leaves it queued and editable; a transient service failure or stale snapshot changes no queue fact and is retried. `failed` is terminal and is used only when a durable queue-owned fact proves that the submission can never become acceptable again under its stored identity, intent, and immutable authority Principal. A historical source is never stored in the queue; a caller that needs one uses [Continue From](18-agent-control-input-and-continuation.md#continue-from-an-explicit-run). Pending ordinary steer and asynchronous-subagent results are Thread-inbox delivery rather than queued intent. They drain before the current Run can complete and therefore before queue consumption; an eligible async result accepted after an inactive terminal outcome still cannot bypass an earlier queued submission, while a result from a failed or cancelled origin is suppressed instead.
 
@@ -72,7 +72,7 @@ POST   /api/v1/threads/{thread_id}/queued-submissions/consume
 
 List and Get authorize `queued_submission.read`; queue admission authorizes `queued_submission.create` plus the selected Agent invocation; PATCH authorizes `queued_submission.update` and exact equality with the stored authority Principal; DELETE authorizes `queued_submission.delete`; Reorder authorizes `queued_submission.reorder`; and explicit Consume authorizes `queued_submission.consume`. Consumption also reauthorizes the stored authority Principal for the accepted Run. The IAM [stable action registry](33-identity-and-access-management.md#stable-action-registry) owns built-in grants; this contract owns queue state, ordering, identity, and the additional stored-Principal checks.
 
-Every mutating route requires an `Idempotency-Key`. Same-key replay of a committed canonical request returns its original response before evaluating entry, queue, or Thread versions.
+Every mutating route requires an `Idempotency-Key`. Same-key replay of a committed canonical request returns its original response before evaluating entry, queue, or Thread versions. The existing-Thread submission command owns one `thread.submit` evidence record for either outcome, including ordinary, root-like, and waiting successor acceptance. Reusing Run preparation or acceptance does not create a second public Run-command record. The evidence preserves the original complete response and commit-time queue generation. Explicit Run and queue commands retain their own operation scopes; automatic queue consumption relies on the queue row instead of synthetic HTTP replay evidence.
 
 Their mutation bodies are:
 
@@ -157,11 +157,11 @@ Consumption is Run acceptance delayed until the queue chooses an intent. Service
 
 ### Consumption Failure Classification
 
-| Class                                     | Meaning                                                                                                                                  | Required behavior                                                                                                                                        |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Permanent queued-intent invalidity        | Locked durable facts prove that the submission cannot become acceptable again with its stored identity, intent, and immutable authority. | Mark the submission `failed`, record bounded failure evidence, remove it from live order, and create no Run or HookSubscription.                         |
-| Recoverable queued-intent blocker         | The same stored intent may become eligible after an authoritative dependency, policy, or Thread state change.                            | Leave the submission `queued` and editable; complete an active source independently and revalidate the entry on a later explicit or recovery attempt.    |
-| Transient service failure or control race | Timeout, unavailable storage or dependency service, process loss, or a stale snapshot does not prove the stored intent invalid.          | Change no queue fact; boundedly reread or retry, then complete an active source independently and leave the entry queued for durable recovery if needed. |
+| Class                                     | Meaning                                                                                                                                  | Required behavior                                                                                                                          |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Permanent queued-intent invalidity        | Locked durable facts prove that the submission cannot become acceptable again with its stored identity, intent, and immutable authority. | Mark the submission `failed`, record bounded failure evidence, remove it from live order, and create no Run or HookSubscription.           |
+| Recoverable queued-intent blocker         | The same stored intent may become eligible after an authoritative dependency, policy, or Thread state change.                            | Leave the submission `queued` and editable; preserve the terminal source and revalidate the entry on a later explicit or recovery attempt. |
+| Transient service failure or control race | Timeout, unavailable storage or dependency service, process loss, or a stale snapshot does not prove the stored intent invalid.          | Change no queue fact or source outcome; boundedly reread or retry and leave the entry queued for durable recovery if needed.               |
 
 Only the first class may produce `failed`. Absence observed through an unavailable service, unsuccessful object publication, and a losing control race are not permanent-invalidity evidence. A race whose competing durable transition already won is reconciled from that transition rather than being reported as queue failure.
 
@@ -181,86 +181,40 @@ These writes commit or roll back together. No observer can see a consumed queue 
 
 If locked revalidation instead proves permanent queued-intent invalidity, an already-terminal drain transaction records `failure` and `failed_at`, clears `position`, increments the entry `version`, compacts later positions, and advances `Thread.queue_version`; it creates no Run or HookSubscription and does not change Thread current/head or `Thread.version`. The failed first entry no longer blocks later entries, which a subsequent bounded drain iteration handles.
 
-### Completion-Time Combined Handoff
+### Post-Completion Consumption
 
-When the current running Run has prepared a `completed` outcome candidate and the Thread has queued intent, the owning fenced Worker can combine source sealing with consumption of the first queued submission. This path never creates an accepted Run without its complete initial state and never holds a relational transaction across object storage or other external I/O. Successor-only preparation is skipped when authoritative preflight already identifies candidate permanent invalidity; the final transaction still revalidates that fact under the canonical locks.
+The owning fenced Worker publishes and seals the completed source through the ordinary outcome boundary, including its RunAttempt, usage, lifecycle events, inline Hook expiry, and Thread head selection. Pending inbox delivery still prevents source completion under the active-control contract. Queue preparation begins only after completion commits and the source execution resources and local lease monitoring are released.
+
+The same Worker instance then makes one best-effort attempt to consume the Thread's first eligible queued entry. It rereads committed Thread, current Run, selected head, and queue state, and uses the same detached preparation and atomic consumption or permanent-failure transaction as the periodic scanner. This step is interruptible and bounded to at most five seconds, also capped by the Worker's reconciliation timeout. It does not retain the source RunAttempt's authority or transaction and does not start successor execution inline. Only a later ordinary Worker claim starts that Run.
 
 ```mermaid
 sequenceDiagram
-    participant Harness
-    participant Worker as Current fenced Worker
+    participant Worker as Current Worker instance
     participant Objects as Object storage
     participant DB as PostgreSQL
-    participant NextWorker as Worker scheduler
-
-    Harness-->>Worker: completed output and complete state
-    Worker->>Objects: CAS publish source completed state candidate
-    Objects-->>Worker: source object version and digest
-    Worker->>DB: detached read Thread, source Run, first queued row, versions, and policy references
-    DB-->>Worker: current/head, Run fence, queue order, and detached versions
-    Worker->>Worker: allocate successor ID and freeze exact accepted selections
-    Worker->>Worker: resolve queued intent and build successor state
-    Worker->>Objects: create successor state.json and optional input payload
-    Objects-->>Worker: successor object metadata and digests
-
-    Worker->>DB: BEGIN short combined transaction
-    activate DB
-    Worker->>DB: TX1 lock Thread and verify version, current source, and selected head
-    Worker->>DB: TX2 lock source and relevant origin Runs in stable ID order, then current RunAttempt; verify authority
-    Worker->>DB: TX3 lock Workspace/Environments when required, target inbox rows, and first queued row
-    Worker->>DB: TX4 verify no pending delivery, queue order/version, stored Principal, selections, objects, and policy
-    alt consumption remains eligible
-        Worker->>DB: TX5 seal source Run completed and select exact sealed state/output
-        Worker->>DB: TX6 terminalize source RunAttempt, disable lease, and charge usage
-        Worker->>DB: TX7 insert successor Run with queue authority Principal and parent_run_id=source Run
-        Worker->>DB: TX8 mark queue row consumed with consumed_run_id=successor Run
-        Worker->>DB: TX9 set Thread head/current and advance version by 2 and queue_version by 1
-        Worker->>DB: TX10 append completion, acceptance, idempotency, and ordinary publication facts
-        Worker->>DB: COMMIT transaction
-        DB-->>Worker: source completed, queue consumed, successor accepted
-    else locked facts prove permanent queued-intent invalidity
-        Worker->>DB: TX5 seal source Run completed and terminalize its RunAttempt
-        Worker->>DB: TX6 mark queue row failed and compact later positions
-        Worker->>DB: TX7 retain source as head/current and advance version and queue_version once
-        Worker->>DB: TX8 append completion, queue-failure, and idempotency facts
-        Worker->>DB: COMMIT transaction
-        DB-->>Worker: source completed, queue failed, no successor
-    else recoverable blocker, transient failure, or stale control/version
-        Worker->>DB: ROLLBACK all combined writes
-        DB-->>Worker: no source seal, queue consumption, or successor acceptance
-    end
-    deactivate DB
-
-    opt combined transaction rolled back while source completion remains eligible
-        Worker->>DB: retry ordinary source completion under current control-race rules
-        Note over Worker,Objects: Prepared successor objects remain non-authoritative cleanup candidates
-    end
-    opt consumption outcome committed
-        NextWorker->>DB: later scan and claim accepted successor
+    participant Scanner as Periodic Control scan
+    Worker->>Objects: Publish completed source state
+    Worker->>DB: Commit ordinary source completion and Thread head
+    DB-->>Worker: Source completed, Attempt succeeded, Thread version +1
+    Note over Worker: Release source execution resources and lease monitoring
+    Worker->>DB: Read committed Thread and first queued entry
+    Worker->>Worker: Resolve queued intent and freeze selections
+    Worker->>Objects: Publish complete successor state and optional input
+    Worker->>DB: Revalidate and atomically consume queue + accept successor
+    DB-->>Worker: Thread version +1, queue_version +1
+    opt Worker interrupted or consumption deferred
+        Scanner->>DB: Find terminal current Run with queued head
+        Note over Scanner,DB: Repeat the same independent consumption boundary
     end
 ```
 
-Before the final transaction, Service has only detached relational facts and non-authoritative prepared objects. The transaction follows the [canonical control lock order](19-agent-control-active-execution.md#completion-and-control-races): Thread; the source Run and all relevant async-result spawning Runs in stable ID order; current RunAttempt; consuming Workspace and affected Environments when required; target inbox entries in `delivery_sequence`; then the first queued row. The locked Thread also owns all inbox accounting in that transaction. It repeats every condition needed by both source completion and successor acceptance only after those canonical locks are held, including proof that no eligible pending ordinary steer or async result remains bound to the source. Its successful writes are:
-
-1. select the exact completed candidate as the source Run's `sealed_state`, copy its output, set `status="completed"`, clear its current-attempt selection, and set completion timestamps;
-2. terminalize the exact current RunAttempt as `succeeded`, disable its lease, and charge known usage;
-3. append the source completion lifecycle facts and ordinary publication intents required by their owning contracts; no queue-drain intent is created;
-4. insert one `accepted` successor Run whose complete initial state already exists, whose `authority_principal` is copied from the queued submission, whose `lineage_kind="continue"`, `input_kind="agent_input"`, and `parent_run_id` name the completed source, and whose exact Agent Revision, `EffectiveAgentConfig`, recovery policy, and other accepted fields are frozen;
-5. set the first queued row's `consumed_run_id` to that successor, clear its position, set `consumed_at`, and increment its `version`;
-6. set `Thread.head_run_id` to the completed source and `Thread.current_run_id` to the accepted successor, increment `Thread.version` by two for the logically ordered seal and advancement, and advance `Thread.queue_version` by one; and
-7. append the successor acceptance lifecycle and ordinary publication facts.
-
-The old Run seal, old RunAttempt terminalization, queue consumption, successor Run insertion, Thread selection, version changes, and their required relational facts commit or roll back together. The queue row's unique `consumed_run_id` is the exact source correlation; the successor needs no duplicate queue-source column.
-
-If completion-time locked revalidation proves permanent queued-intent invalidity, a failure handoff atomically seals the source as `completed`, terminalizes its current RunAttempt, marks the first submission `failed`, compacts later positions, advances `Thread.version` once and `Thread.queue_version` once, and appends the required completion and queue-failure facts. It creates no successor Run or HookSubscription; a later recovery iteration considers the new first entry.
-
-Completion-time preparation is bounded and never makes successful source completion depend on queued intent. A recoverable blocker leaves the entry queued and editable. A transient failure or stale control snapshot triggers bounded reread or retry; if combined handoff still cannot finish promptly, Service follows the ordinary source-completion path and leaves the entry queued for recovery. An empty queue also uses ordinary completion. A prepared but unselected successor object is not an accepted Run and is eligible for ownership-proven cleanup.
+Source completion and queue consumption commit independently. Successful source completion selects the source as Thread head and increments `Thread.version` once. Successful consumption selects the accepted successor as current and increments `Thread.version` and `Thread.queue_version` once each. Permanent queue failure changes only the queue and its generation. A failed consumption transaction cannot undo the source seal, charge its usage again, reopen its Attempt, or change its final lifecycle facts. Prepared but unselected successor objects remain non-authoritative cleanup candidates.
 
 ## Post-Terminal Drain and Recovery
 
-A completed Run that did not use the combined handoff, and every eligible `failed` or `cancelled` outcome, can coexist with queued submissions. A bounded periodic recovery scan treats the relational combination of Thread selection, current terminal Run, and first queued row as the complete drain authority. It performs the same detached state-first preparation and atomic consumption or failure boundary described above. No queue-drain outbox, queue lease, preparing state, or resumable RunAttempt is required. An implementation can use a best-effort process-local wakeup for latency, but losing it does not affect correctness.
+Every eligible `completed`, `failed`, or `cancelled` outcome can coexist with queued submissions. A bounded periodic recovery scan treats the relational combination of Thread selection, current terminal Run, and first queued row as the complete drain authority. It uses the same independent consumption or failure boundary as the Worker's post-completion attempt. No queue-drain outbox, queue lease, preparing state, or resumable RunAttempt is required. Losing the immediate Worker attempt does not affect correctness.
 
-The scan is a required control-role responsibility under [Control Background Tasks](07-control-background-tasks.md#task-catalogue). It continues independently of request traffic and completion-time wakeups.
+The scan is a required control-role responsibility under [Control Background Tasks](07-control-background-tasks.md#task-catalogue). It continues independently of request traffic and post-completion attempts.
 
 The consumer applies these rules to the first queued entry:
 
@@ -272,11 +226,11 @@ The consumer applies these rules to the first queued entry:
 | `failed`/`cancelled` | waiting       | Do not consume; Retry or explicit branch selection must progress    |
 | `waiting`            | waiting       | Do not consume; Feedback or explicit waiting Continue must progress |
 
-When combined handoff is unavailable, terminal commit and later queue resolution are independent transactions, so a terminal Thread can temporarily retain queued entries. While the current Run is `completed`, a new submission during that window appends behind them rather than accepting a Run out of order. While it is `failed` or `cancelled`, a new submission is rejected and the existing queue remains unchanged. Recovery applies the same three-way classification: permanent invalidity fails and removes the first entry from live order, a recoverable blocker leaves it queued and editable, and a transient failure leaves it queued for another bounded attempt.
+Terminal commit and later queue resolution are independent transactions, so a terminal Thread can temporarily retain queued entries. While the current Run is `completed`, a new submission during that window appends behind them rather than accepting a Run out of order. While it is `failed` or `cancelled`, a new submission is rejected and the existing queue remains unchanged. Recovery applies the same three-way classification: permanent invalidity fails and removes the first entry from live order, a recoverable blocker leaves it queued and editable, and a transient failure leaves it queued for another bounded attempt.
 
 Continue From, Feedback, and waiting Continue do not alter the queue. Once any accepts an active successor, the queue waits for that successor's terminal outcome; the drain then uses the newly selected completed head, a preserved completed head, or the root-like null-head rule above.
 
-Pending delivery and queued submissions use separate orders. Delivery already bound to the current Run must drain before that Run can complete and therefore before combined queue handoff. Once a Run has completed with an empty bound inbox, any eligible async result accepted for the inactive Thread does not bypass a queued submission: ordinary queue consumption proceeds first, then the result binds to the accepted successor and enters through the unified FIFO. Queue consumption first suppresses any result whose own spawning Run failed or was cancelled. A race between queue consumption and async-result reconciliation serializes on the Thread, origin-Run, inbox, and queue locks, and the async-result path rechecks that no queued row remains before accepting its own successor Run.
+Pending delivery and queued submissions use separate orders. Delivery already bound to the current Run must drain before that Run can complete and therefore before queue consumption. Once a Run has completed with an empty bound inbox, any eligible async result accepted for the inactive Thread does not bypass a queued submission: ordinary queue consumption proceeds first, then the result binds to the accepted successor and enters through the unified FIFO. Queue consumption first suppresses any result whose own spawning Run failed or was cancelled. A race between queue consumption and async-result reconciliation serializes on the Thread, origin-Run, inbox, and queue locks, and the async-result path rechecks that no queued row remains before accepting its own successor Run.
 
 ## Relational Persistence
 
@@ -305,46 +259,46 @@ The submitted intent remains relational because `AgentInput` contains no inline 
 
 ## Failure Semantics
 
-| Condition                                                                             | Durable outcome                                                                                                                         |
-| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Queue admission or edit validation fails                                              | No row or row mutation commits                                                                                                          |
-| Queue capacity is exhausted                                                           | Admission is rejected without creating a Run                                                                                            |
-| Current Run is failed or cancelled and admission cannot accept an immediate successor | Submission is rejected without creating a queued row or Run; any existing queue remains unchanged                                       |
-| Submission state changes between detached preflight and commit                        | No mutation commits on the stale branch; bounded preflight restarts or returns a conflict                                               |
-| Entry state, queue generation, or Thread state version is stale                       | The command conflicts and changes neither queue nor Thread                                                                              |
-| PATCH or DELETE targets a consumed or failed entry                                    | The command conflicts; terminal queue evidence and any accepted Run remain immutable                                                    |
-| Idle consumption finds active work or a waiting selected head                         | The selected entry remains queued and editable                                                                                          |
-| Locked durable facts prove permanent queued-intent invalidity                         | The entry becomes failed with bounded evidence; no Run or HookSubscription is accepted; active source completion commits atomically     |
-| Input, option, Hook, authority, or dependency validation finds a recoverable blocker  | The selected entry remains queued and editable; no consumer or administrator is substituted                                             |
-| Detached preparation or an external dependency fails transiently                      | Bounded retry changes no queue fact; after the budget, the source completes independently and recovery retries the queued entry         |
-| Prepared successor objects exist but the combined transaction rolls back              | The source is not sealed by that transaction, the entry remains queued, no successor is accepted, and unowned objects can be cleaned up |
-| Worker disappears before the combined transaction commits                             | Existing RunAttempt recovery owns the still-active source Run; the queue remains queued                                                 |
-| Worker disappears after the combined transaction commits                              | The entry's consumed or failed outcome remains committed; a successor exists and is scanned only for the consumed outcome               |
-| Commit acknowledgement is lost after consumption                                      | Reconcile the queue's `consumed_run_id` and Thread current/head selection before retrying                                               |
-| Commit acknowledgement is lost after terminal queue failure                           | Reconcile `failure`, `failed_at`, queue order, and Thread selection before retrying                                                     |
-| The consumed Run later fails or is cancelled                                          | Entry remains consumed; Run retry or another queue entry expresses later work                                                           |
-| A process-local drain wakeup is lost                                                  | Terminal Run plus queued row remains authoritative; periodic recovery scanning retries the same state-first boundary                    |
+| Condition                                                                             | Durable outcome                                                                                                                   |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Queue admission or edit validation fails                                              | No row or row mutation commits                                                                                                    |
+| Queue capacity is exhausted                                                           | Admission is rejected without creating a Run                                                                                      |
+| Current Run is failed or cancelled and admission cannot accept an immediate successor | Submission is rejected without creating a queued row or Run; any existing queue remains unchanged                                 |
+| Submission state changes between detached preflight and commit                        | No mutation commits on the stale branch; bounded preflight restarts or returns a conflict                                         |
+| Entry state, queue generation, or Thread state version is stale                       | The command conflicts and changes neither queue nor Thread                                                                        |
+| PATCH or DELETE targets a consumed or failed entry                                    | The command conflicts; terminal queue evidence and any accepted Run remain immutable                                              |
+| Idle consumption finds active work or a waiting selected head                         | The selected entry remains queued and editable                                                                                    |
+| Locked durable facts prove permanent queued-intent invalidity                         | The entry becomes failed with bounded evidence; no Run or HookSubscription is accepted; the source outcome remains unchanged      |
+| Input, option, Hook, authority, or dependency validation finds a recoverable blocker  | The selected entry remains queued and editable; no consumer or administrator is substituted                                       |
+| Detached preparation or an external dependency fails transiently                      | No queue fact changes; the source remains terminal and periodic recovery retries the queued entry                                 |
+| Prepared successor objects exist but acceptance rolls back                            | The source remains terminal, the entry remains queued, no successor is accepted, and ownership-proven cleanup can reclaim objects |
+| Worker disappears before source completion commits                                    | Existing RunAttempt recovery owns the still-active source Run; the queue remains queued                                           |
+| Worker disappears after source completion but before queue consumption                | The source remains completed; periodic scanning consumes the queued entry independently                                           |
+| Commit acknowledgement is lost after consumption                                      | Reconcile the queue's `consumed_run_id` and Thread current/head selection before retrying                                         |
+| Commit acknowledgement is lost after terminal queue failure                           | Reconcile `failure`, `failed_at`, queue order, and Thread selection before retrying                                               |
+| The consumed Run later fails or is cancelled                                          | Entry remains consumed; Run retry or another queue entry expresses later work                                                     |
+| The immediate post-completion attempt is lost                                         | Terminal Run plus queued row remains authoritative; periodic recovery scanning retries the same consumption boundary              |
 
 ## Compatibility and Trade-offs
 
 Queued-submission identity, the three-state lifecycle, submitted-intent meaning, ordering, editability, admission status eligibility, consumption correlation, permanent-failure classification, and the atomic Run-creation boundary are compatibility facts. Adding a durable intermediate state, broadening `failed` to recoverable or transient conditions, or moving Run creation before consumption would change lifecycle meaning and requires an incompatible contract.
 
-Keeping submitted intent separate from a Run makes queue edits and deletion honest and keeps the Run DAG free of work that has not been selected. The state-first combined path removes the ordinary completed-to-next-Run gap when all preparation succeeds, while its fallback allows terminal state and a non-empty queue to coexist until recovery drain succeeds. Those conditions remain ordinary queue facts and diagnostics rather than expanding the queue state machine.
+Keeping submitted intent separate from a Run makes queue edits and deletion honest and keeps the Run DAG free of work that has not been selected. Independent source completion and queue consumption allow a visible completed-to-next-Run gap. The same-instance attempt reduces its latency, while periodic scanning ensures progress after interruption. Those conditions remain ordinary queue facts and diagnostics rather than expanding the queue state machine.
 
 ## Invariants
 
 01. A queued submission is editable Run intent, not accepted Agent work; enqueue, edit, delete, and reorder create no Run or RunAttempt.
 02. Public queue state is exactly `queued`, `consumed`, or `failed` and is derived from mutually exclusive consumption and failure fields; persistence has no separate status or lease column.
-03. Consumption and Run acceptance are one atomic relational commit, and the consumed queue row records the exact resulting Run through its unique correlation; permanent invalidation creates no Run and records bounded failure evidence instead. A completion-time combined handoff includes source sealing in the same commit for either outcome.
+03. Consumption and Run acceptance are one atomic relational commit, and the consumed queue row records the exact resulting Run through its unique correlation; permanent invalidation creates no Run and records bounded failure evidence instead. Source sealing always commits independently before queue consumption.
 04. Queue consumption creates an ordinary continuation from the consumption-time completed head or, when the head is null after a failed or cancelled current Run, a root-like Run in the same Thread; a historical source requires Continue From.
 05. Execution ownership, scheduling, leases, recovery, and outcome begin with the accepted Run and its later RunAttempts, never with the queue row.
-06. Queue-only mutation or post-terminal failure advances `Thread.queue_version` without changing Thread `version` or Run references; ordinary consumption advances both once, while completion-time combined consumption applies the additional source-seal advancement defined below.
+06. Queue-only mutation or post-terminal failure advances `Thread.queue_version` without changing Thread `version` or Run references; consumption advances both once.
 07. Only locked durable proof that the submission can never become acceptable again with its stored identity, intent, and immutable authority produces `failed`. A recoverable blocker leaves the entry queued and editable; a transient service failure or race changes no queue fact and is boundedly retried.
 08. Continue From, waiting Feedback or Continue, and active Agent control do not mutate queued submissions; later consumption uses the then-selected completed head or null-head rule.
-09. An existing-Thread Run submission never bypasses an existing queued submission. State-first handoff can combine completed sealing with first-entry consumption or permanent failure; otherwise terminal state with queued entries is a valid transient or recoverably blocked condition handled by relational scanning. A completed current Run can admit another submission behind that queue, while a failed or cancelled current Run rejects it.
+09. An ordinary existing-Thread Run submission never bypasses an existing queued submission. Terminal state with queued entries is a valid transient or recoverably blocked condition handled by relational scanning. A completed current Run can admit another submission behind that queue, while a failed or cancelled current Run rejects it.
 10. Waiting state blocks queue drain. A failed or cancelled feedback successor whose selected head remains waiting must be retried or explicitly redirected before queued intent can run, and a new submission is rejected rather than added to that queue.
 11. No accepted successor exists before its complete initial state and any object-backed input are durable; missing state is never an implicit queue-preparation status.
-12. A completion-time successful-consumption handoff advances `Thread.version` once for source sealing and once for successor acceptance, and advances `Thread.queue_version` once. A permanent-invalidity handoff advances `Thread.version` once for source sealing and `Thread.queue_version` once for failure.
+12. Source sealing advances `Thread.version` once in its own transaction. Later consumption advances `Thread.version` and `Thread.queue_version` once each; permanent queue failure advances only `Thread.queue_version`.
 13. Eligible inbox delivery bound to the current Run drains before that Run can complete and before queue consumption. An unbound asynchronous result for an already inactive Thread never bypasses a queued submission; it remains pending until queue consumption creates an active Run or the queue becomes empty, unless its spawning Run fails or is cancelled and terminally suppresses it first.
 14. Supplying `waiting_resolution.mode="defaults"` is an explicit waiting-head advancement, not queue consumption: it accepts one composite successor while preserving every queued row and its order.
 15. Every queued submission persists one immutable authority Principal. Consumption reauthorizes and copies that Principal to the accepted Run; the command actor, automatic drain process, and Worker never replace it.

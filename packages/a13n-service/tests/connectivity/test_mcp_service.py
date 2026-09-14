@@ -24,7 +24,7 @@ from a13n_service.connectivity.mcp.models import (
     MCPConnectionOAuthClientRecord,
     MCPConnectionRecord,
 )
-from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient, issuer_key, redirect_key
+from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient
 from a13n_service.connectivity.mcp.oauth_service import MCPOAuthService
 from a13n_service.connectivity.mcp.refresh import OAuthCredentialRefresh
 from a13n_service.connectivity.mcp.service import MCPConnectionService
@@ -42,7 +42,6 @@ from .connection_helpers import management, mcp_checks
 
 MCP_ENDPOINT = "https://8.8.8.8/mcp"
 ISSUER = "https://8.8.4.4"
-PUBLIC_ORIGIN = "https://1.1.1.1"
 APP_CALLBACK = "https://app.example/callback"
 
 
@@ -57,7 +56,7 @@ class RemoteServer:
         self.requests: list[httpx2.Request] = []
         self.allow_anonymous = False
         self.tool_name = "search"
-        self.use_dcr = False
+        self.use_dcr = True
         self.registration_deleted = False
         self.refresh_error: str | None = None
         self.machine_error: str | None = None
@@ -75,11 +74,7 @@ class RemoteServer:
                 json={"resource": MCP_ENDPOINT, "authorization_servers": [ISSUER], "scopes_supported": ["tools"]},
             )
         if request.method == "GET" and path == "/.well-known/oauth-authorization-server":
-            client_registration = (
-                {"registration_endpoint": f"{ISSUER}/register"}
-                if self.use_dcr
-                else {"client_id_metadata_document_supported": True}
-            )
+            client_registration = {"registration_endpoint": f"{ISSUER}/register"} if self.use_dcr else {}
             return httpx2.Response(
                 200,
                 headers={"content-type": "application/json"},
@@ -247,7 +242,6 @@ async def service_bundle(connectivity_sessions, credential_protector):
             oauth_client,
             credential_protector,
             discovery,
-            public_origin=PUBLIC_ORIGIN,
             redirect_uris=(APP_CALLBACK,),
             client_name="Service Test",
             instance_id="mcp-test",
@@ -455,9 +449,7 @@ async def test_oauth_state_is_bound_single_use_and_callback_validates_connection
     query = parse_qs(urlsplit(launch.authorization_url).query)
     assert query["resource"] == [MCP_ENDPOINT]
     assert query["code_challenge_method"] == ["S256"]
-    assert query["client_id"] == [
-        f"{PUBLIC_ORIGIN}/api/v1/oauth/mcp/client-metadata/{issuer_key(ISSUER)}/{redirect_key(APP_CALLBACK)}.json"
-    ]
+    assert query["client_id"] == ["dynamic-client"]
 
     other_user = AuthenticatedActor(
         principal=PrincipalRef(principal_type="user", principal_id="usr_0123456789abcdef"),
@@ -690,7 +682,6 @@ async def test_client_credentials_acquires_and_renews_without_browser_authorizat
         oauth._oauth,
         credential_protector,
         oauth._discovery,
-        public_origin=None,
         redirect_uris=(),
         client_name="Service Test",
         instance_id="machine-test",
@@ -978,7 +969,6 @@ async def test_postgresql_cross_pod_authorization_and_single_refresh(
             pod_a._oauth,
             credential_protector,
             pod_a._discovery,
-            public_origin=PUBLIC_ORIGIN,
             redirect_uris=(APP_CALLBACK,),
             client_name="Service Test",
             instance_id="pod-b",

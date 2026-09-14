@@ -54,8 +54,6 @@ impl McpoAuthDiscovery {
 ///
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum ClientRegistration {
-    #[serde(rename = "metadata_document")]
-    MetadataDocument,
     #[serde(rename = "dynamic")]
     Dynamic,
     #[serde(rename = "manual")]
@@ -64,7 +62,7 @@ pub enum ClientRegistration {
 
 impl Default for ClientRegistration {
     fn default() -> ClientRegistration {
-        Self::MetadataDocument
+        Self::Dynamic
     }
 }
 ///

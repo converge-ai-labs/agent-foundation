@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from a13n_environment import EnvironmentError
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.iam.models import WorkspaceRecord
@@ -31,16 +31,25 @@ class CapacityLimits:
             raise ValueError("Environment Workspace is unavailable")
 
     async def admit(self, session: AsyncSession, environment: EnvironmentRecord) -> None:
-        """Reserve only new target/use slots; recovery and shared users reuse their slots."""
+        """Check new slots before recording prepare/use in the same locked transaction."""
         await session.flush()
-        if environment.ownership == "managed" and environment.status in {"unprepared", "deleted"}:
+        if (
+            environment.ownership == "managed"
+            and environment.status in {"unprepared", "deleted"}
+            and not (environment.operation_id is not None and environment.operation_action == "prepare")
+        ):
             targets = await session.scalar(
                 select(func.count())
                 .select_from(EnvironmentRecord)
                 .where(
                     EnvironmentRecord.workspace_id == environment.workspace_id,
                     EnvironmentRecord.ownership == "managed",
-                    EnvironmentRecord.status.not_in(("unprepared", "deleted")),
+                    or_(
+                        EnvironmentRecord.status.not_in(("unprepared", "deleted")),
+                        and_(
+                            EnvironmentRecord.operation_id.is_not(None), EnvironmentRecord.operation_action == "prepare"
+                        ),
+                    ),
                 )
             )
             if targets is not None and targets >= self.max_targets:
@@ -55,8 +64,6 @@ class CapacityLimits:
             )
             if active is not None and active >= self.max_active:
                 raise _exceeded("active", self.max_active)
-        if environment.status in {"unprepared", "deleted"}:
-            environment.status = "unavailable"
 
 
 def _exceeded(kind: str, limit: int) -> EnvironmentError:

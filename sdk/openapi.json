@@ -7121,58 +7121,6 @@
         "title": "LoginResult",
         "type": "object"
       },
-      "MCPClientMetadata": {
-        "additionalProperties": false,
-        "properties": {
-          "client_id": {
-            "title": "Client Id",
-            "type": "string"
-          },
-          "client_name": {
-            "title": "Client Name",
-            "type": "string"
-          },
-          "grant_types": {
-            "default": [
-              "authorization_code"
-            ],
-            "items": {
-              "type": "string"
-            },
-            "title": "Grant Types",
-            "type": "array"
-          },
-          "redirect_uris": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Redirect Uris",
-            "type": "array"
-          },
-          "response_types": {
-            "default": [
-              "code"
-            ],
-            "items": {
-              "type": "string"
-            },
-            "title": "Response Types",
-            "type": "array"
-          },
-          "token_endpoint_auth_method": {
-            "default": "none",
-            "title": "Token Endpoint Auth Method",
-            "type": "string"
-          }
-        },
-        "required": [
-          "client_id",
-          "client_name",
-          "redirect_uris"
-        ],
-        "title": "MCPClientMetadata",
-        "type": "object"
-      },
       "MCPOAuthClientConfiguration": {
         "additionalProperties": false,
         "properties": {
@@ -7212,8 +7160,7 @@
           "source": {
             "enum": [
               "pre_registered",
-              "dynamic",
-              "metadata_document"
+              "dynamic"
             ],
             "title": "Source",
             "type": "string"
@@ -7317,7 +7264,6 @@
           },
           "client_registration": {
             "enum": [
-              "metadata_document",
               "dynamic",
               "manual"
             ],
@@ -7408,7 +7354,6 @@
             "anyOf": [
               {
                 "enum": [
-                  "metadata_document",
                   "dynamic",
                   "manual"
                 ],
@@ -23044,95 +22989,6 @@
         "summary": "List Model Provider Types",
         "tags": [
           "model-management"
-        ]
-      }
-    },
-    "/api/v1/oauth/mcp/client-metadata/{issuer_key}/{redirect_key}.json": {
-      "get": {
-        "operationId": "get_oauth_mcp_client_metadata_issuer_key_redirect_key_json",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "issuer_key",
-            "required": true,
-            "schema": {
-              "pattern": "^[0-9a-f]{64}$",
-              "title": "Issuer Key",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "redirect_key",
-            "required": true,
-            "schema": {
-              "pattern": "^[0-9a-f]{64}$",
-              "title": "Redirect Key",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MCPClientMetadata"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid request.",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service error.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Mcp Client Metadata",
-        "tags": [
-          "connectivity-management"
         ]
       }
     },
