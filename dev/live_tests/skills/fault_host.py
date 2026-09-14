@@ -92,6 +92,31 @@ def install(faults):
         import traceback
 
         from a13n_service.process.attempts import WorkerAttempts
+        from a13n_service.run_stream.attempt_projection import AttemptRunStreamProjector
+
+        original_observation = AttemptRunStreamProjector.project_environment
+
+        @wraps(original_observation)
+        def environment_observation(self, observation):
+            if (faults.root / "observe-environment").exists():
+                path = faults.root / ("environment-" + self._context.run_attempt_id + ".jsonl")
+                # Correlation only; never serialize Environment configuration or credentials.
+                with path.open("a") as output:
+                    output.write(
+                        json.dumps(
+                            {
+                                "event_type": observation.event_type,
+                                "mount_id": observation.mount_id,
+                                "harness_run_id": observation.harness_run_id,
+                                "occurred_at": observation.occurred_at.isoformat(),
+                            }
+                        )
+                        + "\n"
+                    )
+                path.chmod(0o600)
+            return original_observation(self, observation)
+
+        AttemptRunStreamProjector.project_environment = environment_observation
 
         original_attempt = WorkerAttempts.run
 

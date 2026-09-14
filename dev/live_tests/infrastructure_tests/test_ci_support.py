@@ -45,8 +45,8 @@ def test_reviewed_ci_journeys_collect_once_without_external_or_stress_cases(coll
             for token in ("/model/", "/providers/", "/performance/", "/infrastructure_tests/", "e2b")
         )
     assert len(collected_suites["core"]) == 21
-    assert len(collected_suites["functional"]) == 116
-    assert len(seen) == 479
+    assert len(collected_suites["functional"]) == 121
+    assert len(seen) == 490
     files = {case.split("::")[0] for case in seen}
     root = ci.TEST_ROOT
     # All requested control/fault files and every non-cloud Environment module

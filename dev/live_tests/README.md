@@ -25,7 +25,7 @@ Tests are grouped by their primary feature, independently of their execution opt
 | `control/`              | Run commands, waiting, inbox, queue, branches and acceptance races               |      25 |             217 |
 | `run_recovery/`         | Worker ownership, persistence, budgets, dependency failures and drain            |       9 |             657 |
 | `harness_integration/`  | Service configuration and resources reaching real Harness execution              |      13 |              34 |
-| `skills/`               | Skill authority, publication, retention, lifecycle and materialization           |       8 |              77 |
+| `skills/`               | Skill authority, publication, retention, lifecycle and materialization           |      10 |              88 |
 | `model/`                | Management, IAM, native protocols, settings, usage faults and optional Console   |      10 |              74 |
 | `protocol/`             | Native and Hosted streams, reconnect and recovery projection                     |       3 |              13 |
 | `iam/`                  | Workspace isolation, current authority and revocation                            |       3 |              10 |
@@ -34,7 +34,7 @@ Tests are grouped by their primary feature, independently of their execution opt
 | `performance/`          | Concurrent PG/S3 calls and bounded Service operations                            |       2 |               2 |
 | `infrastructure_tests/` | Offline tests of fixtures, configuration, parsers and cleanup                    |      19 |             310 |
 
-Counts are a collection snapshot: 119 modules and 1,793 parameterized cases, including inherited lifecycle cases and cases skipped unless explicitly enabled. A category does not enable infrastructure: the existing `--live*` fixture gates still apply. Mixed modules remain intact: `test_26_output_and_client_tools.py` and `test_32_multiworker_resources.py` live under `harness_integration/`, while `providers/test_31_real_providers.py` retains its real-account matrix.
+Counts are a collection snapshot: 121 modules and 1,804 parameterized cases, including inherited lifecycle cases and cases skipped unless explicitly enabled. A category does not enable infrastructure: the existing `--live*` fixture gates still apply. Mixed modules remain intact: `test_26_output_and_client_tools.py` and `test_32_multiworker_resources.py` live under `harness_integration/`, while `providers/test_31_real_providers.py` retains its real-account matrix.
 
 Subpackages inherit the root `conftest.py`. Feature-owned helpers live beside their tests; shared lab infrastructure lives in `infrastructure/`. The isolated launcher recursively selects the same first-round filenames and keeps their filename order.
 
@@ -137,17 +137,17 @@ If a configured local proxy returns non-global DNS addresses, narrowly allow onl
 
 ## Manual correctness suites
 
-Live tests are opt-in local checks. No GitHub Actions workflow runs these suites. The existing `make live-test-ci` command and `ci.py` module remain the manual entry points for the 479 selected cases across seven suites; the full parameter matrices remain available through the ordinary live-test opt-ins below. Each invocation runs serially with its own dependencies and processes. Optional sharding keeps every selected node from a module together, preserving module-scoped backend setup.
+Live tests are opt-in local checks. No GitHub Actions workflow runs these suites. The existing `make live-test-ci` command and `ci.py` module remain the manual entry points for the 490 selected cases across seven suites; the full parameter matrices remain available through the ordinary live-test opt-ins below. Each invocation runs serially with its own dependencies and processes. Optional sharding keeps every selected node from a module together, preserving module-scoped backend setup.
 
 | Suite                 | Selected cases | Coverage                                                                                                                                                                                                                               |
 | --------------------- | -------------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `core`                |             21 | Cases 01–08, including Native/Hosted protocol contracts, in one owned lab                                                                                                                                                              |
-| `functional`          |            116 | Queue, Retry, Fork, async children, Workspace isolation, Agent/Plugin/Skill/Asset execution, Skill lifecycle and shared materialization, structured output, client feedback, and direct-local Environment selection/access/inheritance |
+| `functional`          |            121 | Queue, Retry, Fork, async children, Workspace isolation, Agent/Plugin/Skill/Asset execution, Skill lifecycle and shared materialization, structured output, client feedback, and direct-local Environment selection/access/inheritance |
 | `control`             |             63 | Cases 45–50: acceptance, waiting, concurrency, branches, queue and inbox boundaries                                                                                                                                                    |
 | `fork-queue`          |             49 | Cases 51–56, including both case-54 files: child results, Steer/queue races and Fork independence                                                                                                                                      |
 | `run-faults`          |             59 | Cases 37–42: persistence, control receipts, budgets/drain, acceptance/queue faults, current authority and dependency failures                                                                                                          |
 | `environment-native`  |            112 | Local/Docker/envd files, lifecycle, transport failures, bootstrap boundaries and real ENOSPC                                                                                                                                           |
-| `environment-service` |             59 | Docker case-21 variants, backend conformance and multi-Worker Environment lifecycle, sharing, policy, dependency and authority boundaries                                                                                              |
+| `environment-service` |             65 | Docker case-21 variants, backend conformance and multi-Worker Environment lifecycle, sharing, policy, dependency and authority boundaries                                                                                              |
 
 The reviewed suites use scripted local model endpoints and local MCP/Connector fixtures. Each invocation creates its own PostgreSQL, Redis and RustFS, starts real Control/Worker processes, and uses real direct-local, Local Envd, Docker, HTTP Envd and reverse-WebSocket Envd targets. Model-update case 23, real Model/Connector/Search account tests, E2B, and performance benchmarks are excluded. E2B parameters in mixed Environment modules are deselected before fixture setup, so private Provider configuration is not read. Five selected unsupported Environment combinations remain explicitly skipped because external daemons have no managed creation, some providers admit only one concurrent Session, and Docker has no native TTL renewal; these skips are not passing lifecycle coverage.
 
@@ -219,7 +219,13 @@ Before submitting changes, `git ls-files -- dev/live_tests/.state dev/live_tests
 make live-test-ci suite=functional LIVE_TEST_ARGS='-k skill --junitxml=var/skill-e2e/results.xml'
 ```
 
-This selection includes the original ZIP execution journey, the HTTP management journeys, and `skills/`. Each Skill module owns a disposable lab; cases create independent Skill, Agent and Environment resources. The tests use real HTTP, PostgreSQL, object storage and separate Worker processes. Skill barriers pause only after transaction-free preparation, before entering a deletion operation, or after complete file publication; they never mutate database lifecycle records. The Worker cases use direct-local Environments with both `on_run` and `on_use` preparation.
+This functional selection includes the original ZIP execution journey, HTTP management, and nine Skill modules including direct Agent authorization. Docker Skill recovery belongs to `environment-service`. To run only the two Agent grant and Docker recovery modules:
+
+```sh
+uv run --locked python -m pytest dev/live_tests/skills/test_agent_grants.py dev/live_tests/skills/test_docker_recovery.py --live-management -n 0
+```
+
+Each Skill module owns a disposable lab; cases create independent Skill, Agent and Environment resources. The tests use real HTTP, PostgreSQL, object storage and separate Worker processes. Skill barriers pause only after transaction-free preparation, before entering a deletion operation, or after complete file publication; they never mutate database lifecycle records. The direct-local and Docker Worker cases cover both `on_run` and `on_use` preparation. Docker cases require the local `a13n-sandbox:local` image, or an explicit `LIVE_TEST_SANDBOX_IMAGE` override, and never pull an image implicitly.
 
 The suite checks ordinary turns against updated heads, Retry and waiting successors against exact locks, current deletion state, same-key recreation, deletion races and post-deletion idempotent replay, both commit orders of deletion versus Run acceptance/Agent revision publication/unarchive, disabled-Agent references, shared partial preparation, Worker crash recovery after Skill deletion, and rejection of corrupt files, completion metadata or unexpected entries before model invocation. A scripted model selects file tools and returns their observed results. The authority cases use native sessions and real Workspace roles, check uploader ownership and cross-Workspace isolation, and revoke grants after transaction-free preparation. Publication cases exercise pinned and unpinned selections before submission, after invocation preparation, after initial-state publication, and after acceptance. They also cover continued, forked, and queued Run state refresh, deletion and same-key recreation during retries, Agent revision drift, and bounded repeated publication. Skill-only labs install their own barriers without legacy queue handoff or Environment lifecycle barriers; Worker identity and claim routing remain available for shared-materialization cases.
 
@@ -227,7 +233,11 @@ Retention cases run the production receipt sweeper and object collector in an ow
 
 Mixed-catalog and child-execution cases verify persisted root/child locks and actual file-tool results across publication. Preparation-failure cases cut real Worker object-storage connections, inject a stale-mount response, cancel during partial publication, and suspend/resume an obsolete Worker across real lease recovery, under both `on_run` and `on_use`. The stale-mount case requires automatic authority reacquisition in the same Run with its original Skill locks; it does not claim to rebuild a remote Provider target.
 
-Real GitHub credentials, browser UI, remote Environment backends, direct Agent grants, and wall-clock retention scheduling remain separate coverage.
+Docker recovery cases stop or remove the exact test-owned container after partial Skill publication, then require automatic RunAttempt recovery with the original frozen version. They also suspend the owning Worker, remove its container, and verify lease takeover and obsolete-Worker fencing. Failed automatic recovery records safe attempt metadata and checks whether a separate manual Retry can complete with the frozen version. Optional test observations retain only Environment event correlation and timestamps.
+
+Direct Agent authorization cases use real invitation acceptance and HTTP resource operations, with one explicit fixture boundary: the current public IAM API cannot create Agent RoleBindings, so a guarded subprocess seeds those grants in the disposable database through the production grant helper. Cases verify Workspace Viewer plus Agent Builder binding without Skill management, inherited/explicit invocation and content denial after Workspace revocation, Retry denial, and queue deferral followed by consumption after authority restoration. Revocation removes Model and Environment permissions too; Run rejection alone is not evidence of a Skill-specific permission check. Agent-grant creation and deletion through public HTTP remain uncovered.
+
+Real GitHub credentials, browser UI, remote Environment backends, and wall-clock retention scheduling remain separate coverage.
 
 ## Installed test plugins
 

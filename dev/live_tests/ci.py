@@ -68,6 +68,7 @@ SUITES = {
             "skills/test_retention.py",
             "skills/test_composition.py",
             "skills/test_preparation_failures.py",
+            "skills/test_agent_grants.py",
             "harness_integration/test_25_asset_execution.py",
             "harness_integration/test_26_output_and_client_tools.py",
         ),
@@ -291,6 +292,7 @@ SUITES = {
     ),
     "environment-service": Suite(
         (
+            "skills/test_docker_recovery.py",
             "environment/test_21_environment_lifecycle.py::test_stopped_and_deleted_managed_environment_recovers",
             "environment/test_21_environment_lifecycle.py::test_process_handle_cannot_cross_rebuilt_environment_generation",
             "environment/test_28_environment_backends.py",
