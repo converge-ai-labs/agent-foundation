@@ -71,7 +71,7 @@ class ToolPermissionsCapability(AbstractCapability[AgentContext]):
     async def before_model_request(
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
     ) -> ModelRequestContext:
-        if self.permissions.resolve(ToolIdentity("web.search")) != "allow" and any(
+        if self.permissions.resolve(ToolIdentity("web.search", "allow")) != "allow" and any(
             isinstance(tool, WebSearchTool) for tool in request_context.model_request_parameters.native_tools
         ):
             raise DefinitionError(

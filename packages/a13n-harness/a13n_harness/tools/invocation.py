@@ -19,7 +19,7 @@ from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai import CallToolsNode, RunContext, TextContent, ToolReturn
 from pydantic_ai.capabilities import AbstractCapability, AgentNode, CapabilityOrdering, ValidatedToolArgs
 from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ToolFailed
-from pydantic_ai.messages import ToolCallPart
+from pydantic_ai.messages import DeferredToolResultsEvent, ToolCallPart
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults, ToolDefinition, ToolDenied
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
@@ -32,11 +32,8 @@ from a13n_harness._json import (
     redact_json,
     require_finite_json,
 )
+from a13n_harness._review_context import ReviewEvidence, append_review_evidence, compact_target, record_approval_denials
 from a13n_harness._tool_observation import record_tool_operation_failure
-from a13n_harness.capabilities.shell_review import (
-    SHELL_REVIEW_CAPABILITY_ID,
-    ShellReviewCapability,
-)
 from a13n_harness.capabilities.tool_review import TOOL_REVIEW_CAPABILITY_ID, ToolReviewCapability
 from a13n_harness.capability_types import _validate_capability_id
 from a13n_harness.context import AgentContext
@@ -175,10 +172,17 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
     async def before_node_run(
         self, ctx: RunContext[AgentContext], *, node: AgentNode[AgentContext]
     ) -> AgentNode[AgentContext]:
+        resume = ctx.deps.deferred_resume
+        if isinstance(node, CallToolsNode) and resume is not None:
+            await record_approval_denials(resume.requests, resume.results, context=ctx.deps)
         recovery = ctx.deps._tool_recovery
         if recovery is not None and recovery.pending and isinstance(node, CallToolsNode):
             recovery.native_results = node.tool_call_results
         return node
+
+    async def on_event(self, ctx: RunContext[AgentContext], *, event: Any) -> None:
+        if isinstance(event, DeferredToolResultsEvent):
+            await record_approval_denials(None, event.results, context=ctx.deps)
 
     async def before_model_request(
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
@@ -225,6 +229,16 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
         *,
         requests: DeferredToolRequests,
     ) -> DeferredToolResults | None:
+        # Native declarative approvals are collected by kind without validator
+        # metadata. Preserve our captured advisory provenance for
+        # both inline handlers and the portable request returned on suspension.
+        for call in requests.approvals:
+            captured = ctx.deps._tool_pending_approvals.get(call.tool_call_id)
+            if captured is not None:
+                requests.metadata[call.tool_call_id] = {
+                    **requests.metadata.get(call.tool_call_id, {}),
+                    **captured,
+                }
         if ctx.deps.instance.parent_agent_instance_id is None:
             return None
         message = "Deferred tool interaction is unavailable in subagent runs."
@@ -337,12 +351,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
                 if TOOL_APPROVAL_KEY in (exc.metadata or {}):
                     raise
                 sources: frozenset[ApprovalSource] = frozenset({"tool"})
-                if _SHELL_REVIEW_APPROVAL_METADATA_KEY in (exc.metadata or {}):
-                    sources = frozenset({"reviewer"})
-                    policy_metadata = (exc.metadata or {}).get(_POLICY_APPROVAL_METADATA_KEY)
-                    if isinstance(policy_metadata, dict) and policy_metadata.get("decision") == "approval_required":
-                        sources |= frozenset({"permission"})
-                elif _POLICY_APPROVAL_METADATA_KEY in (exc.metadata or {}):
+                if _POLICY_APPROVAL_METADATA_KEY in (exc.metadata or {}):
                     sources = frozenset({"permission"})
                 raise approval_required(
                     ctx, check.approval, binding=check.binding, sources=sources, metadata=exc.metadata
@@ -368,7 +377,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         metadata_values = tool_def.metadata or {}
         raw_metadata = metadata_values.get(HARNESS_TOOL_METADATA_KEY)
         if raw_metadata is None:
-            result = await self.wrapped.call_tool(name, tool_args, ctx, tool)
+            result = await self._call_observed(name, tool_args, ctx, tool)
             return await _apply_result_policy(
                 result,
                 _UNMANAGED_OUTPUT_POLICY,
@@ -512,6 +521,36 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         finally:
             await lease_stack.aclose()
 
+    async def _call_observed(
+        self,
+        name: str,
+        tool_args: dict[str, Any],
+        ctx: RunContext[AgentContext],
+        tool: ToolsetTool[AgentContext],
+    ) -> Any:
+        """Record dispatch facts, including nested targets, never full tool output."""
+        check = ctx.deps._tool_permission_checks.get(ctx.tool_call_id or "")
+        evidence = ReviewEvidence(
+            run_id=ctx.deps.run_id,
+            tool_call_id=ctx.tool_call_id or "",
+            tool_id=tool_identity(tool.tool_def).tool_id,
+            binding=check.binding if check is not None else "",
+            kind="action",
+            target=compact_target(tool_args),
+            approved_sources=tuple(sorted(check.approval.approved_sources)) if check is not None else (),
+            outcome="unknown",
+        )
+        # A started dispatch may have side effects even if it raises or is cancelled.
+        # Persist unknown first, then update the same bounded receipt on return.
+        await append_review_evidence(ctx.deps, evidence)
+        result = await self.wrapped.call_tool(name, tool_args, ctx, tool)
+        content = result.return_value if isinstance(result, ToolReturn) else result
+        outcome = (
+            "tool_reported_failure" if isinstance(content, dict) and content.get("ok") is False else "tool_returned"
+        )
+        await append_review_evidence(ctx.deps, evidence.model_copy(update={"outcome": outcome}))
+        return result
+
     async def _dispatch(
         self,
         name: str,
@@ -533,7 +572,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
                     invocation_id=invocation.invocation_id,
                     attempt=attempt,
                 )
-                return await self.wrapped.call_tool(name, deepcopy(tool_args), ctx, tool)
+                return await self._call_observed(name, deepcopy(tool_args), ctx, tool)
             except asyncio.CancelledError:
                 await _emit_best_effort(
                     ctx,
@@ -564,7 +603,6 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
 
 
 _POLICY_APPROVAL_METADATA_KEY = "a13n.harness.invocation-policy"
-_SHELL_REVIEW_APPROVAL_METADATA_KEY = "a13n.harness.shell-review"
 
 
 async def _evaluate_policy(
@@ -719,10 +757,6 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
         ),
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID: (
             (DynamicEnvironmentCapability, _DynamicEnvironmentRunCapability),
-            provenance.definition_ids,
-        ),
-        SHELL_REVIEW_CAPABILITY_ID: (
-            (ShellReviewCapability,),
             provenance.definition_ids,
         ),
         TOOL_REVIEW_CAPABILITY_ID: ((ToolReviewCapability,), provenance.definition_ids),

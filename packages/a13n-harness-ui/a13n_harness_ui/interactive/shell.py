@@ -617,7 +617,7 @@ class CliShell:
         from a13n_harness_ui.surfaces import StructuredQuestionRequestView
 
         assert self.interaction is not None
-        self.selector_focused = True
+        self.selector_focused = self.selection is not None
         if isinstance(self.interaction.request, StructuredQuestionRequestView):
             self.renderer.register_questions(self.interaction.request)
             assert self.selection is not None
@@ -719,8 +719,8 @@ class CliShell:
                 and self.interaction is not None
                 and self.interaction.expired
             ):
-                self.emit("Timed out: ask_user_question. No answer or approval was supplied.")
-                self._finish_decision(self.interaction.expire_question())
+                self.emit(f"Timed out: {self.interaction.request.tool_name}. No answer or approval was supplied.")
+                self._finish_decision(self.interaction.expire())
             if self.renderer.transcript.dirty:
                 await self.flush()
             if self.status.started is not None:
@@ -1221,6 +1221,12 @@ class CliShell:
                 self.backend = None
 
     async def cancel(self) -> None:
+        if self.interaction is not None and not self.busy and self.interaction.back():
+            if self.interaction.expired:
+                self._finish_decision(self.interaction.expire())
+            else:
+                self._finish_decision(None)
+            return
         if (
             self._input_task is not None
             and self._input_task is not asyncio.current_task()

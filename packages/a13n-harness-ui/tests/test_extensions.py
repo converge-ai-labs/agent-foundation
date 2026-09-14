@@ -131,7 +131,8 @@ def test_catalog_reports_native_unexpected_constructor_arguments(key, configurat
     with pytest.raises(CompositionError) as error:
         _settings_catalog().capabilities(((key, configuration),))
     assert error.value.code == "capability_configuration_invalid"
-    assert isinstance(error.value.__cause__, TypeError)
+    expected_error = ValueError if key == "ShellReviewCapability" else TypeError
+    assert isinstance(error.value.__cause__, expected_error)
 
 
 @pytest.mark.parametrize("key", ["ShellReviewCapability", "_ProviderSettingsCapability"])
@@ -144,13 +145,13 @@ def test_catalog_preserves_settings_without_adding_native_type_validation(key: s
     )
     selected = _settings_catalog().capabilities(((key, configuration),))[0]
     capability = cast(Any, selected.capability)
-    actual = capability.model_settings if key == "ShellReviewCapability" else capability.settings
+    actual = capability.config.model_settings if key == "ShellReviewCapability" else capability.settings
     assert actual == settings
 
     settings["temperature"] = "not-a-number"
     selected = _settings_catalog().capabilities(((key, configuration),))[0]
     capability = cast(Any, selected.capability)
-    actual = capability.model_settings if key == "ShellReviewCapability" else capability.settings
+    actual = capability.config.model_settings if key == "ShellReviewCapability" else capability.settings
     assert actual == settings  # The native Model, not UI constructor wrapping, owns request validation.
 
 

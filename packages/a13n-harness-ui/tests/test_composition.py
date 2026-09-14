@@ -461,7 +461,7 @@ async def test_builtin_tool_switches_are_captured_and_reconstructed(
     path.write_text(
         path.read_text()
         + f"\ntools:\n  enable_ask_user_question: {str(enable_ask_user_question).lower()}\n"
-        + f"  enable_codeact: {str(enable_codeact).lower()}\n  ask_user_question_timeout_seconds: 30\n"
+        + f"  enable_codeact: {str(enable_codeact).lower()}\n  interaction_timeout_seconds: 30\n"
     )
     agent = tmp_path / "agents/assistant.yaml"
     agent.write_text(
@@ -474,7 +474,7 @@ async def test_builtin_tool_switches_are_captured_and_reconstructed(
     source = await load_harness_ui_configuration(path)
     catalog = _catalog()
     composition = AgentCompositionResolver(catalog).resolve_run(source, _selection())
-    assert source.document.tools.ask_user_question_timeout_seconds == 30
+    assert source.document.tools.interaction_timeout_seconds == 30
     for node in (composition.root, *(child.definition for child in composition.root.children)):
         names = [item.capability for item in node.capabilities]
         assert names.count("user_interaction") == int(enable_ask_user_question)
@@ -779,7 +779,7 @@ async def test_missing_markdown_only_blocks_the_agent_that_selects_it(tmp_path: 
 
 @pytest.mark.parametrize("on_error", ["approval_required", "deny", "skip"])
 async def test_shell_review_captures_and_registers_its_subscription_model(tmp_path: Path, on_error: str) -> None:
-    from a13n_harness.capabilities.shell_review import ShellReviewAction, ShellReviewCapability
+    from a13n_harness.capabilities import ToolReviewCapability
     from a13n_harness_ui.model_runtime import model_recipe_id
 
     path = _write_source(tmp_path)
@@ -817,12 +817,12 @@ harness_plugins: null""",
     review_model.unlink()
     reconstructed = AgentReconstructor(_catalog()).reconstruct(composition, subagent_operator=_UnusedOperator())
     capability = next(
-        item for item in reconstructed.executable.definition.capabilities if isinstance(item, ShellReviewCapability)
+        item for item in reconstructed.executable.definition.capabilities if isinstance(item, ToolReviewCapability)
     )
-    assert capability.model == model_recipe_id(recipe.model)
-    assert capability.on_error is ShellReviewAction(on_error)
-    assert capability.on_flagged is ShellReviewAction.APPROVAL_REQUIRED
-    assert capability.model_settings == {
+    assert capability.config.model == model_recipe_id(recipe.model)
+    assert capability.config.on_error == ("allow" if on_error == "skip" else on_error)
+    assert capability.policy.on_flagged == "approval_required"
+    assert capability.config.model_settings == {
         "thinking": "low",
         "openai_store": False,
         "openai_reasoning_summary": "concise",

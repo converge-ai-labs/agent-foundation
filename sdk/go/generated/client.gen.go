@@ -145,6 +145,7 @@ func (e AgentInputSchemaVersion) Valid() bool {
 
 // Defines values for AgentReviewerOnError.
 const (
+	AgentReviewerOnErrorAllow            AgentReviewerOnError = "allow"
 	AgentReviewerOnErrorApprovalRequired AgentReviewerOnError = "approval_required"
 	AgentReviewerOnErrorDeny             AgentReviewerOnError = "deny"
 )
@@ -152,9 +153,29 @@ const (
 // Valid indicates whether the value is a known member of the AgentReviewerOnError enum.
 func (e AgentReviewerOnError) Valid() bool {
 	switch e {
+	case AgentReviewerOnErrorAllow:
+		return true
 	case AgentReviewerOnErrorApprovalRequired:
 		return true
 	case AgentReviewerOnErrorDeny:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentReviewerOnFlagged.
+const (
+	AgentReviewerOnFlaggedApprovalRequired AgentReviewerOnFlagged = "approval_required"
+	AgentReviewerOnFlaggedDeny             AgentReviewerOnFlagged = "deny"
+)
+
+// Valid indicates whether the value is a known member of the AgentReviewerOnFlagged enum.
+func (e AgentReviewerOnFlagged) Valid() bool {
+	switch e {
+	case AgentReviewerOnFlaggedApprovalRequired:
+		return true
+	case AgentReviewerOnFlaggedDeny:
 		return true
 	default:
 		return false
@@ -2426,6 +2447,48 @@ func (e ToolPermissionSetting1) Valid() bool {
 	}
 }
 
+// Defines values for ToolReviewRuleOnFlagged.
+const (
+	ToolReviewRuleOnFlaggedApprovalRequired ToolReviewRuleOnFlagged = "approval_required"
+	ToolReviewRuleOnFlaggedDeny             ToolReviewRuleOnFlagged = "deny"
+)
+
+// Valid indicates whether the value is a known member of the ToolReviewRuleOnFlagged enum.
+func (e ToolReviewRuleOnFlagged) Valid() bool {
+	switch e {
+	case ToolReviewRuleOnFlaggedApprovalRequired:
+		return true
+	case ToolReviewRuleOnFlaggedDeny:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ToolRiskLevel.
+const (
+	ExtraHigh ToolRiskLevel = "extra_high"
+	High      ToolRiskLevel = "high"
+	Low       ToolRiskLevel = "low"
+	Medium    ToolRiskLevel = "medium"
+)
+
+// Valid indicates whether the value is a known member of the ToolRiskLevel enum.
+func (e ToolRiskLevel) Valid() bool {
+	switch e {
+	case ExtraHigh:
+		return true
+	case High:
+		return true
+	case Low:
+		return true
+	case Medium:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TraceView.
 const (
 	TraceViewCompact TraceView = "compact"
@@ -2929,12 +2992,18 @@ type AgentReviewer struct {
 	Model            string                                  `json:"model"`
 	ModelSettings    nullable.Nullable[map[string]JsonValue] `json:"model_settings,omitempty"`
 	OnError          *AgentReviewerOnError                   `json:"on_error,omitempty"`
+	OnFlagged        *AgentReviewerOnFlagged                 `json:"on_flagged,omitempty"`
+	RiskThreshold    *ToolRiskLevel                          `json:"risk_threshold,omitempty"`
+	Rules            *map[string]ToolReviewRule              `json:"rules,omitempty"`
 	ShellInstruction nullable.Nullable[string]               `json:"shell_instruction,omitempty"`
 	TimeoutSeconds   *float32                                `json:"timeout_seconds,omitempty"`
 }
 
 // AgentReviewerOnError defines model for AgentReviewer.OnError.
 type AgentReviewerOnError string
+
+// AgentReviewerOnFlagged defines model for AgentReviewer.OnFlagged.
+type AgentReviewerOnFlagged string
 
 // AgentRevision defines model for AgentRevision.
 type AgentRevision struct {
@@ -5810,6 +5879,18 @@ type ToolPermissions struct {
 	Default *ToolPermissionSetting            `json:"default,omitempty"`
 	Rules   *map[string]ToolPermissionSetting `json:"rules,omitempty"`
 }
+
+// ToolReviewRule A matching rule overrides the supplied fields of the global policy.
+type ToolReviewRule struct {
+	OnFlagged     nullable.Nullable[ToolReviewRuleOnFlagged] `json:"on_flagged,omitempty"`
+	RiskThreshold nullable.Nullable[ToolRiskLevel]           `json:"risk_threshold,omitempty"`
+}
+
+// ToolReviewRuleOnFlagged defines model for ToolReviewRule.OnFlagged.
+type ToolReviewRuleOnFlagged string
+
+// ToolRiskLevel defines model for ToolRiskLevel.
+type ToolRiskLevel string
 
 // Trace defines model for Trace.
 type Trace struct {

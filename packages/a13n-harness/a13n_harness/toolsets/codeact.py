@@ -11,6 +11,7 @@ import re
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from functools import partial
 from types import MappingProxyType
 from typing import Annotated, Any, Protocol, Self, cast, runtime_checkable
 from uuid import uuid4
@@ -31,6 +32,7 @@ from pydantic_monty import (
     MontyTypingError,
 )
 
+from a13n_harness._review_context import record_approval_denials
 from a13n_harness.codeact.config import CodeActConfig
 from a13n_harness.codeact.executor import is_sandbox_panic
 from a13n_harness.codeact.programs import (
@@ -473,6 +475,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                     call,
                     wrap_validation_errors=False,
                     on_validate=on_validate,
+                    on_inline_deferred=partial(record_approval_denials, context=ctx.deps),
                 )
                 if isinstance(result, ToolDenied):
                     denial = result

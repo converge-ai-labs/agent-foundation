@@ -3563,7 +3563,19 @@ export interface components {
        * @default approval_required
        * @enum {string}
        */
-      on_error?: "deny" | "approval_required";
+      on_error?: "deny" | "approval_required" | "allow";
+      /**
+       * On Flagged
+       * @default deny
+       * @enum {string}
+       */
+      on_flagged?: "deny" | "approval_required";
+      /** @default extra_high */
+      risk_threshold?: components["schemas"]["ToolRiskLevel"];
+      /** Rules */
+      rules?: {
+        [key: string]: components["schemas"]["ToolReviewRule"];
+      };
       /** Shell Instruction */
       shell_instruction?: string | null;
       /**
@@ -8003,6 +8015,20 @@ export interface components {
         [key: string]: components["schemas"]["ToolPermissionSetting"];
       };
     };
+    /**
+     * ToolReviewRule
+     * @description A matching rule overrides the supplied fields of the global policy.
+     */
+    ToolReviewRule: {
+      /** On Flagged */
+      on_flagged?: ("deny" | "approval_required") | null;
+      risk_threshold?: components["schemas"]["ToolRiskLevel"] | null;
+    };
+    /**
+     * ToolRiskLevel
+     * @enum {string}
+     */
+    ToolRiskLevel: "low" | "medium" | "high" | "extra_high";
     /** Trace */
     Trace: {
       correlation: components["schemas"]["TraceCorrelation"];

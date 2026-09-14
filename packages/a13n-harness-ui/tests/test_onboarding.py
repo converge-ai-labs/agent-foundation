@@ -562,14 +562,14 @@ async def test_add_model_only_then_add_agent_reuses_exact_model(tmp_path: Path, 
         assert source.agents["agent-first-agent"].model == "model-shared-model"
         assert source.agents["agent-second-agent"].model == "model-shared-model"
         review = next(
-            (c for c in source.agents["agent-first-agent"].capabilities if c.capability == "ShellReviewCapability"),
+            (c for c in source.agents["agent-first-agent"].capabilities if c.capability == "ToolReviewCapability"),
             None,
         )
         assert (review is None) is api
         if review is not None:
             assert review.configuration["risk_threshold"] == "extra_high"
             assert review.configuration["on_flagged"] == "approval_required"
-            assert review.configuration["on_error"] == "skip"
+            assert review.configuration["on_error"] == "allow"
         assert set((tmp_path / "models").glob("*.yaml")) == set(models)
         assert all(p.read_bytes() == content for p, content in {**baseline, **models}.items())
 

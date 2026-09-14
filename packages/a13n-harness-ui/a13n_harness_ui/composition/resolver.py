@@ -456,11 +456,11 @@ class AgentCompositionResolver:
             model = None
             try:
                 self.catalog.capabilities(((item.capability, configuration),))
-                if item.capability == "ShellReviewCapability":
+                if item.capability in {"ShellReviewCapability", "ToolReviewCapability"}:
                     model_id = item.configuration.get("model")
                     if not isinstance(model_id, str) or model_id not in source.models:
                         raise CompositionError(
-                            "Shell review must reference an available Model resource.",
+                            "Tool review must reference an available Model resource.",
                             code="capability_model_missing",
                             details={"agent_id": agent.id},
                         )

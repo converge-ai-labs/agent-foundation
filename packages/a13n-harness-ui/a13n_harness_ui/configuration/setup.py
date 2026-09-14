@@ -191,12 +191,12 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
             reviewer = "model-codex-review" if "codex" in providers else "model-grok-shell-review"
             capabilities.append(
                 {
-                    "capability": "ShellReviewCapability",
+                    "capability": "ToolReviewCapability",
                     "configuration": {
                         "model": reviewer,
                         "risk_threshold": "extra_high",
                         "on_flagged": "approval_required",
-                        "on_error": "skip",
+                        "on_error": "allow",
                     },
                 }
             )

@@ -36,6 +36,15 @@ pub struct AgentReviewer {
     #[serde(rename = "on_error", skip_serializing_if = "Option::is_none")]
     pub on_error: Option<OnError>,
 
+    #[serde(rename = "on_flagged", skip_serializing_if = "Option::is_none")]
+    pub on_flagged: Option<OnFlagged>,
+
+    #[serde(rename = "risk_threshold", skip_serializing_if = "Option::is_none")]
+    pub risk_threshold: Option<models::ToolRiskLevel>,
+
+    #[serde(rename = "rules", skip_serializing_if = "Option::is_none")]
+    pub rules: Option<std::collections::HashMap<String, models::ToolReviewRule>>,
+
     #[serde(
         rename = "shell_instruction",
         default,
@@ -56,6 +65,9 @@ impl AgentReviewer {
             model,
             model_settings: None,
             on_error: None,
+            on_flagged: None,
+            risk_threshold: None,
+            rules: None,
             shell_instruction: None,
             timeout_seconds: None,
         }
@@ -68,10 +80,26 @@ pub enum OnError {
     Deny,
     #[serde(rename = "approval_required")]
     ApprovalRequired,
+    #[serde(rename = "allow")]
+    Allow,
 }
 
 impl Default for OnError {
     fn default() -> OnError {
+        Self::Deny
+    }
+}
+///
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum OnFlagged {
+    #[serde(rename = "deny")]
+    Deny,
+    #[serde(rename = "approval_required")]
+    ApprovalRequired,
+}
+
+impl Default for OnFlagged {
+    fn default() -> OnFlagged {
         Self::Deny
     }
 }

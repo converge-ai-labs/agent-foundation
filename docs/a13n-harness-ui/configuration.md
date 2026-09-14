@@ -82,7 +82,7 @@ display:
   max_tool_argument_chars: 8192
 tools:
   enable_ask_user_question: true
-  ask_user_question_timeout_seconds: 120
+  interaction_timeout_seconds: 120
   enable_codeact: true
 subagents:
   include: []
@@ -155,12 +155,12 @@ Display defaults are read at startup. `--display` and live `/mode` override the 
 
 ### Built-in tools and subagents
 
-| Field                                     | Default | Meaning                                                                                             |
-| ----------------------------------------- | ------- | --------------------------------------------------------------------------------------------------- |
-| `tools.enable_ask_user_question`          | `true`  | Include native `ask_user_question` in newly resolved Runs                                           |
-| `tools.ask_user_question_timeout_seconds` | `120`   | Positive finite seconds for each displayed terminal question, not shell approval or model execution |
-| `tools.enable_codeact`                    | `true`  | Include native CodeAct runners and explicit `store`/`load`/`forget` state tools                     |
-| `subagents.include`                       | `[]`    | Ordered named built-ins: `code-reviewer`, `executor`, `explorer`                                    |
+| Field                               | Default | Meaning                                                                                               |
+| ----------------------------------- | ------- | ----------------------------------------------------------------------------------------------------- |
+| `tools.enable_ask_user_question`    | `true`  | Include native `ask_user_question` in newly resolved Runs                                             |
+| `tools.interaction_timeout_seconds` | `120`   | Positive finite seconds for each terminal question, approval, or external result; not model execution |
+| `tools.enable_codeact`              | `true`  | Include native CodeAct runners and explicit `store`/`load`/`forget` state tools                       |
+| `subagents.include`                 | `[]`    | Ordered named built-ins: `code-reviewer`, `executor`, `explorer`                                      |
 
 Setup writes all three `tools` fields explicitly into the selected root YAML (by default `~/.a13n-harness-ui/a13n-harness-ui.yaml`), filling omitted fields with these defaults and preserving existing values.
 
@@ -182,7 +182,7 @@ For a new Thread, selection precedence is explicit creation/launch choices, sele
 | Contents of selected Model/Agent/extension resources                          | A newly captured Run uses the accepted resources                                                 | An active or already captured composition is not rebuilt                                           |
 | Tool switches and built-in subagent inclusion                                 | Newly resolved Run composition                                                                   | Existing Run tool/child contracts                                                                  |
 | `input.long_text_threshold_chars`                                             | Captured for a root Run, including its later steering input                                      | The active Run's input policy                                                                      |
-| `tools.ask_user_question_timeout_seconds`                                     | Read when a terminal decision interaction is created                                             | It does not change the originating model call or shell-approval policy                             |
+| `tools.interaction_timeout_seconds`                                           | Read when a terminal decision interaction is created                                             | It does not change model execution or expire pending decisions outside the active CLI              |
 | MCP literal-bearing source files                                              | New captures use new sources; an older capture verifies its source before client construction    | Already constructed clients retain their Run-local values; changed old sources can fail validation |
 | Skill content                                                                 | Catalog preparation uses the Run's current source set; files are read through Environment access | Catalog membership is Run-frozen, but file bytes are not copied into immutable composition         |
 
@@ -211,3 +211,5 @@ Changing it opens separate state; it does not migrate old sessions. Relative boo
 | `COLORFGBG`                                                 | Passive terminal metadata for automatic theme selection                                    |
 
 There is no general `A13N_HARNESS_UI_*` setting override mechanism. `storage`, `envd_runtime`, and application shutdown timeouts are embedding/runtime settings, **not** root YAML sections. Web listener and authentication options are [process-local CLI arguments](webui.md), not resource configuration.
+
+The legacy `tools.ask_user_question_timeout_seconds` input key remains accepted. Saved configuration uses `tools.interaction_timeout_seconds`. Editing a response does not restart the Host timer; expiry denies rather than approving or inventing a result.

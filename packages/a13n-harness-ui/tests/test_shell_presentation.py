@@ -442,7 +442,8 @@ def test_shell_review_timeout_renders_observed_denial_without_a_frontend_timer(m
 
 
 @pytest.mark.parametrize("decision", ["deny", "approval_required", "allow"])
-def test_unified_shell_review_result_uses_existing_custom_event_renderer(decision) -> None:
+@pytest.mark.parametrize("legacy", [False, True])
+def test_unified_shell_review_result_uses_existing_custom_event_renderer(decision, legacy) -> None:
     renderer = StreamRenderer(Status(mode="concise"))
     try:
         _start(renderer, name="shell_exec")
@@ -458,7 +459,14 @@ def test_unified_shell_review_result_uses_existing_custom_event_renderer(decisio
                             "status": "completed",
                             "tool_id": "environment.shell_exec",
                             "tool_call_id": "call-one",
-                            "result": {"assessment": {"decision": decision, "reason": "Review reason"}, "usage": []},
+                            **({} if legacy else {"decision": decision}),
+                            "result": {
+                                "assessment": {
+                                    **({"decision": decision} if legacy else {"risk": "high"}),
+                                    "reason": "Review reason",
+                                },
+                                "usage": [],
+                            },
                         },
                     }
                 },

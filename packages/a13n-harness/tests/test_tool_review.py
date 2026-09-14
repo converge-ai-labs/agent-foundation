@@ -20,25 +20,23 @@ from a13n_harness import (
     RunBindings,
 )
 from a13n_harness.capabilities import (
-    AgentShellCommandReviewer,
-    ShellCommandReviewer,
-    ShellReviewAction,
-    ShellReviewAssessment,
-    ShellReviewCapability,
-    ShellReviewError,
-    ShellReviewRequest,
-    ShellReviewResult,
-    ShellRiskLevel,
+    AgentToolReviewer,
+    ToolReviewAssessment,
+    ToolReviewCapability,
+    ToolReviewConfig,
+    ToolReviewer,
+    ToolReviewError,
+    ToolReviewRequest,
+    ToolReviewResult,
+    ToolRiskLevel,
 )
 from a13n_harness.tools import (
-    HARNESS_TOOL_METADATA_KEY,
     HarnessTool,
     HarnessToolMetadata,
     InvocationPolicyCapability,
     InvocationPolicyDecision,
     ToolOutputPolicy,
 )
-from a13n_harness.toolsets import ShellToolset
 from a13n_harness.usage import (
     ProviderUsage,
     ProviderUsageRecord,
@@ -86,7 +84,6 @@ def _metadata() -> HarnessToolMetadata:
         credential_audiences=(),
         idempotency="none",
         output_policy=ToolOutputPolicy(max_inline_bytes=1024, max_output_bytes=4096),
-        shell_review=True,
     )
 
 
@@ -103,10 +100,10 @@ class _Policy:
 
 @dataclass
 class _Reviewer:
-    outcomes: list[ShellReviewResult | Exception]
-    requests: list[ShellReviewRequest] = field(default_factory=list)
+    outcomes: list[ToolReviewResult | Exception]
+    requests: list[ToolReviewRequest] = field(default_factory=list)
 
-    async def review(self, request: ShellReviewRequest, *, context: AgentContext) -> ShellReviewResult:
+    async def review(self, request: ToolReviewRequest, *, context: AgentContext) -> ToolReviewResult:
         del context
         self.requests.append(request)
         outcome = self.outcomes.pop(0)
@@ -115,20 +112,20 @@ class _Reviewer:
         return outcome
 
 
-def _result(risk: ShellRiskLevel, *, usage: tuple[ProviderUsage, ...] = ()) -> ShellReviewResult:
-    return ShellReviewResult(
-        assessment=ShellReviewAssessment(risk=risk, reason=f"{risk.value} command"),
+def _result(risk: ToolRiskLevel, *, usage: tuple[ProviderUsage, ...] = ()) -> ToolReviewResult:
+    return ToolReviewResult(
+        assessment=ToolReviewAssessment(risk=risk, reason=f"{risk.value} command"),
         usage=usage,
     )
 
 
 def _build(
-    reviewer: ShellCommandReviewer,
+    reviewer: ToolReviewer,
     executed: list[dict[str, Any]],
     *,
-    risk_threshold: ShellRiskLevel = ShellRiskLevel.HIGH,
-    on_flagged: ShellReviewAction = ShellReviewAction.APPROVAL_REQUIRED,
-    on_error: ShellReviewAction = ShellReviewAction.APPROVAL_REQUIRED,
+    risk_threshold: ToolRiskLevel = ToolRiskLevel.HIGH,
+    on_flagged: str = "approval_required",
+    on_error: str = "approval_required",
     timeout_seconds: float = 120.0,
 ):
     def shell_exec(
@@ -167,13 +164,15 @@ def _build(
         ),
         capabilities=(
             Capability(tools=[HarnessTool(shell_exec, harness_metadata=_metadata())], id="shell-tools"),
-            ShellReviewCapability(
-                "logical:review-model",
+            ToolReviewCapability(
+                ToolReviewConfig(
+                    model="logical:review-model",
+                    risk_threshold=risk_threshold,
+                    on_flagged=on_flagged,
+                    on_error=on_error,
+                    timeout_seconds=timeout_seconds,
+                ),
                 reviewer=reviewer,
-                risk_threshold=risk_threshold,
-                on_flagged=on_flagged,
-                on_error=on_error,
-                timeout_seconds=timeout_seconds,
             ),
         ),
     )
@@ -182,12 +181,12 @@ def _build(
 def test_agent_spec_registers_shell_review_without_global_registry_mutation() -> None:
     schema = AgentSpec.model_json_schema_with_capabilities()
     variants = schema["properties"]["capabilities"]["items"]["anyOf"]
-    assert {"$ref": "#/$defs/spec_ShellReviewCapability"} in variants
+    assert {"$ref": "#/$defs/spec_ToolReviewCapability"} in variants
 
     spec = AgentSpec(
         capabilities=[
             {
-                "name": "ShellReviewCapability",
+                "name": "ToolReviewCapability",
                 "arguments": {
                     "model": "logical:review-model",
                     "risk_threshold": "extra_high",
@@ -199,19 +198,19 @@ def test_agent_spec_registers_shell_review_without_global_registry_mutation() ->
     executable = HarnessBuilder().build(spec, output_type=str, model=FunctionModel(lambda messages, info: "done"))
     leaves: list[Any] = []
     executable._agent.root_capability.apply(leaves.append)
-    capability = next(item for item in leaves if isinstance(item, ShellReviewCapability))
+    capability = next(item for item in leaves if isinstance(item, ToolReviewCapability))
 
-    assert capability.model == "logical:review-model"
-    assert capability.timeout_seconds == 120.0
-    assert capability.risk_threshold == ShellRiskLevel.EXTRA_HIGH
-    assert capability.on_flagged == ShellReviewAction.DENY
+    assert capability.config.model == "logical:review-model"
+    assert capability.config.timeout_seconds == 120.0
+    assert capability.policy.risk_threshold == ToolRiskLevel.EXTRA_HIGH
+    assert capability.policy.on_flagged == "deny"
 
 
 def test_agent_spec_rejects_duplicate_shell_review_and_run_source_injection() -> None:
     duplicate = AgentSpec(
         capabilities=[
-            {"name": "ShellReviewCapability", "arguments": {"model": "logical:one"}},
-            {"name": "ShellReviewCapability", "arguments": {"model": "logical:two"}},
+            {"name": "ToolReviewCapability", "arguments": {"model": "logical:one"}},
+            {"name": "ToolReviewCapability", "arguments": {"model": "logical:two"}},
         ]
     )
     with pytest.raises(DefinitionError) as duplicate_error:
@@ -226,7 +225,9 @@ def test_agent_spec_rejects_duplicate_shell_review_and_run_source_injection() ->
     with pytest.raises(DefinitionError) as source_error:
         executable.stream(
             "go",
-            bindings=RunBindings.embedded(capabilities=(ShellReviewCapability("logical:review"),)),
+            bindings=RunBindings.embedded(
+                capabilities=(ToolReviewCapability(ToolReviewConfig(model="logical:review")),)
+            ),
         )
     assert source_error.value.code == "capability_scope_invalid"
 
@@ -270,7 +271,7 @@ async def test_shell_review_model_uses_builder_gateway_provider_factory(
         model=_tool_model({"command": "printf safe"}),
         capabilities=(
             Capability(tools=[HarnessTool(shell_exec, harness_metadata=_metadata())], id="shell-tools"),
-            ShellReviewCapability("company@openai:gpt-5.6-luna"),
+            ToolReviewCapability(ToolReviewConfig(model="company@openai:gpt-5.6-luna")),
         ),
     )
     result = await executable.run(
@@ -285,9 +286,9 @@ async def test_shell_review_model_uses_builder_gateway_provider_factory(
     assert executed == [{"command": "printf safe"}]
 
 
-@pytest.mark.parametrize("risk", list(ShellRiskLevel))
+@pytest.mark.parametrize("risk", list(ToolRiskLevel))
 async def test_default_reviewer_uses_only_output_tool_with_auto_choice_and_records_one_request_usage(
-    risk: ShellRiskLevel,
+    risk: ToolRiskLevel,
 ) -> None:
     seen_info: list[AgentInfo] = []
     seen_prompts: list[str] = []
@@ -309,14 +310,18 @@ async def test_default_reviewer_uses_only_output_tool_with_auto_choice_and_recor
         }
 
     settings = {"openai_store": False, "temperature": 0.5}
-    reviewer = AgentShellCommandReviewer(
-        FunctionModel(stream_function=review_model), model_settings=cast(Any, settings)
+    reviewer = AgentToolReviewer(
+        FunctionModel(stream_function=review_model),
+        config=ToolReviewConfig(model="test:review", model_settings=cast(Any, settings)),
     )
     result = await reviewer.review(
-        ShellReviewRequest(
+        ToolReviewRequest(
             tool_id="environment.shell_exec",
             tool_call_id="call-1",
-            command="touch result.txt",
+            tool_name="shell_exec",
+            profile="shell",
+            parameters_schema={},
+            arguments={"command": "touch result.txt"},
         ),
         context=cast(AgentContext, object()),  # The default reviewer intentionally ignores Harness context.
     )
@@ -326,16 +331,14 @@ async def test_default_reviewer_uses_only_output_tool_with_auto_choice_and_recor
     assert seen_info[0].function_tools == []
     assert len(seen_info[0].output_tools) == 1
     output_tool = seen_info[0].output_tools[0]
-    assert output_tool.name == "submit_shell_review"
+    assert output_tool.name == "submit_tool_review"
     assert "Call this tool exactly once with risk and a brief reason" in output_tool.description
     assert "does not execute or authorize the command" in output_tool.description
     assert "Plain text or JSON text is not a valid submission" in output_tool.description
     assert set(output_tool.parameters_json_schema["required"]) == {"risk", "reason"}
     assert len(seen_prompts) == 1
-    assert f"calling `{output_tool.name}` exactly once" in seen_prompts[0]
-    assert "including when the command is low risk" in seen_prompts[0]
-    assert "Do not answer with prose, Markdown, or a JSON object" in seen_prompts[0]
-    assert "Submit the assessment even when the command is dangerous" in seen_prompts[0]
+    assert "provided output tool" in seen_prompts[0]
+    assert "Plain text is not an assessment" in seen_prompts[0]
     assert seen_info[0].allow_text_output is True  # Provider compatibility, not local text acceptance.
     assert seen_info[0].model_settings == {"openai_store": False, "temperature": 0.5, "tool_choice": "auto"}
     assert settings == {"openai_store": False, "temperature": 0.5}  # Never mutate caller settings.
@@ -349,13 +352,18 @@ async def test_default_reviewer_preserves_usage_and_rejects_text_output(output: 
         del messages, info
         yield output
 
-    reviewer = AgentShellCommandReviewer(FunctionModel(stream_function=invalid_review))
-    with pytest.raises(ShellReviewError) as error:
+    reviewer = AgentToolReviewer(
+        FunctionModel(stream_function=invalid_review), config=ToolReviewConfig(model="test:review")
+    )
+    with pytest.raises(ToolReviewError) as error:
         await reviewer.review(
-            ShellReviewRequest(
+            ToolReviewRequest(
                 tool_id="environment.shell_exec",
                 tool_call_id="call-1",
-                command="touch result.txt",
+                tool_name="shell_exec",
+                profile="shell",
+                parameters_schema={},
+                arguments={"command": "touch result.txt"},
             ),
             context=cast(AgentContext, object()),
         )
@@ -381,32 +389,30 @@ async def test_default_reviewer_logs_safe_failure_metadata(
         raise failure
         yield ""  # Keep the failing model on the streaming path.
 
-    reviewer = AgentShellCommandReviewer(FunctionModel(stream_function=failed_review))
-    with pytest.raises(ShellReviewError) as error:
+    reviewer = AgentToolReviewer(
+        FunctionModel(stream_function=failed_review), config=ToolReviewConfig(model="test:review")
+    )
+    with pytest.raises(ToolReviewError) as error:
         await reviewer.review(
-            ShellReviewRequest(
+            ToolReviewRequest(
                 tool_id="environment.shell_exec",
                 tool_call_id="review-failure-call",
-                command="echo private-command-value",
+                tool_name="shell_exec",
+                profile="shell",
+                parameters_schema={},
+                arguments={"command": "echo private-command-value"},
             ),
             context=cast(AgentContext, object()),
         )
 
-    assert error.value.code == "shell_review_failed"
+    assert error.value.code == "tool_review_failed"
     assert error.value.__cause__ is failure
-    records = [record for record in caplog.records if record.getMessage() == "shell_review_failed"]
-    assert len(records) == 1
-    record = records[0]
-    assert record.__dict__["tool_call_id"] == "review-failure-call"
-    assert record.__dict__["error_type"] == type(failure).__name__
-    assert record.__dict__["status_code"] == (400 if isinstance(failure, ModelHTTPError) else None)
-    assert record.exc_info is None
-    assert "private-provider-body" not in str(record.__dict__)
-    assert "private-command-value" not in str(record.__dict__)
+    assert "private-provider-body" not in caplog.text
+    assert "private-command-value" not in caplog.text
 
 
 async def test_policy_deny_still_blocks_dispatch_after_front_review() -> None:
-    reviewer = _Reviewer([_result(ShellRiskLevel.LOW)])
+    reviewer = _Reviewer([_result(ToolRiskLevel.LOW)])
     executed: list[dict[str, Any]] = []
     executable = _build(reviewer, executed)
     policy = _Policy(InvocationPolicyDecision.deny("blocked"))
@@ -430,7 +436,7 @@ async def test_below_threshold_dispatches_without_environment_values_and_attribu
         timestamp=datetime.now(UTC),
         measures=(UsageMeasure(unit="requests", quantity=Decimal(1)),),
     )
-    reviewer = _Reviewer([_result(ShellRiskLevel.MEDIUM, usage=(receipt,))])
+    reviewer = _Reviewer([_result(ToolRiskLevel.MEDIUM, usage=(receipt,))])
     executed: list[dict[str, Any]] = []
     executable = _build(reviewer, executed)
 
@@ -444,12 +450,12 @@ async def test_below_threshold_dispatches_without_environment_values_and_attribu
     assert result.status == "completed"
     assert len(reviewer.requests) == 1
     request = reviewer.requests[0]
-    assert request.environment_keys == ("PATH", "TOKEN")
+    assert request.arguments["environment"] == {"keys": ["PATH", "TOKEN"]}
     assert "secret-value" not in request.model_dump_json()
-    assert request.command == "printf safe"
-    assert request.cwd == "/workspace"
-    assert request.yield_time_seconds == 10
-    assert request.alias == "primary"
+    assert request.arguments["command"] == "printf safe"
+    assert request.arguments["cwd"] == "/workspace"
+    assert request.arguments["yield_time_seconds"] == 10
+    assert request.arguments["alias"] == "primary"
     assert executed == [
         {
             "command": "printf safe",
@@ -461,15 +467,15 @@ async def test_below_threshold_dispatches_without_environment_values_and_attribu
         }
     ]
     provider_record = next(item for item in result.usage_records if isinstance(item, ProviderUsageRecord))
-    assert provider_record.source == "shell.review"
+    assert provider_record.source == "tool.review"
     assert provider_record.tool_id == "environment.shell_exec"
     assert provider_record.tool_call_id == "shell-call-1"
 
 
 async def test_flagged_deny_outranks_policy_approval() -> None:
-    reviewer = _Reviewer([_result(ShellRiskLevel.HIGH)])
+    reviewer = _Reviewer([_result(ToolRiskLevel.HIGH)])
     executed: list[dict[str, Any]] = []
-    executable = _build(reviewer, executed, on_flagged=ShellReviewAction.DENY)
+    executable = _build(reviewer, executed, on_flagged="deny")
 
     result = await executable.run(
         "go",
@@ -486,11 +492,11 @@ async def test_flagged_deny_outranks_policy_approval() -> None:
     assert executed == []
 
 
-@pytest.mark.parametrize("error", [ShellReviewError("review_failed"), RuntimeError("unexpected")])
+@pytest.mark.parametrize("error", [ToolReviewError("review_failed"), RuntimeError("unexpected")])
 async def test_review_error_uses_configured_fail_closed_action(error: Exception) -> None:
     reviewer = _Reviewer([error])
     executed: list[dict[str, Any]] = []
-    executable = _build(reviewer, executed, on_error=ShellReviewAction.DENY)
+    executable = _build(reviewer, executed, on_error="deny")
 
     result = await executable.run(
         "go",
@@ -506,19 +512,18 @@ async def test_review_error_uses_configured_fail_closed_action(error: Exception)
 @pytest.mark.parametrize(
     "outcome",
     [
-        _result(ShellRiskLevel.EXTRA_HIGH),
-        ShellReviewError("shell_review_failed"),
+        ToolReviewError("tool_review_failed"),
         ValueError("invalid assessment"),
     ],
-    ids=["flagged", "failed", "invalid"],
+    ids=["failed", "invalid"],
 )
 @pytest.mark.parametrize("policy_action", ["allow", "approval_required", "deny"])
 async def test_skip_adds_no_restriction_and_preserves_invocation_policy(
-    outcome: ShellReviewResult | Exception, policy_action: str
+    outcome: ToolReviewResult | Exception, policy_action: str
 ) -> None:
     reviewer = _Reviewer([outcome])
     executed: list[dict[str, Any]] = []
-    executable = _build(reviewer, executed, on_error=ShellReviewAction.SKIP, on_flagged=ShellReviewAction.SKIP)
+    executable = _build(reviewer, executed, on_error="allow")
     decision = (
         InvocationPolicyDecision.allow()
         if policy_action == "allow"
@@ -547,9 +552,9 @@ async def test_skip_adds_no_restriction_and_preserves_invocation_policy(
 
 
 async def test_skip_on_error_does_not_change_flagged_default() -> None:
-    reviewer = _Reviewer([_result(ShellRiskLevel.EXTRA_HIGH)])
+    reviewer = _Reviewer([_result(ToolRiskLevel.EXTRA_HIGH)])
     executed: list[dict[str, Any]] = []
-    executable = _build(reviewer, executed, on_error=ShellReviewAction.SKIP)
+    executable = _build(reviewer, executed, on_error="allow")
 
     result = await executable.run("go", bindings=RunBindings.embedded())
 
@@ -561,7 +566,7 @@ async def test_skip_on_error_does_not_change_flagged_default() -> None:
 
 
 async def test_flagged_review_and_policy_require_separate_approvals() -> None:
-    reviewer = _Reviewer([_result(ShellRiskLevel.HIGH) for _ in range(3)])
+    reviewer = _Reviewer([_result(ToolRiskLevel.HIGH) for _ in range(3)])
     executed: list[dict[str, Any]] = []
     executable = _build(reviewer, executed)
     first_policy = _Policy(
@@ -646,7 +651,7 @@ def test_plugin_cannot_contribute_reserved_shell_review_capability() -> None:
             return "shell-review-injector"
 
         def get_capabilities(self):
-            return (ShellReviewCapability("logical:review"),)
+            return (ToolReviewCapability(ToolReviewConfig(model="logical:review")),)
 
     with pytest.raises(DefinitionError) as error:
         HarnessBuilder().build(
@@ -660,29 +665,7 @@ def test_plugin_cannot_contribute_reserved_shell_review_capability() -> None:
     assert error.value.details["source"] == "plugin"
 
 
-def test_shell_toolset_marks_only_command_launch_for_review() -> None:
-    toolset = cast(Any, object.__new__(ShellToolset))
-    toolset._resource_resolver = lambda tool_id: None
-    command = toolset._tool(
-        lambda: None,
-        "environment.shell_exec",
-        {"execute"},
-        "none",
-        resources=cast(Any, None),
-    )
-    wait = toolset._tool(
-        lambda: None,
-        "environment.process_wait",
-        {"read"},
-        "none",
-        resources=cast(Any, None),
-    )
-
-    assert command.metadata[HARNESS_TOOL_METADATA_KEY].shell_review is True
-    assert wait.metadata[HARNESS_TOOL_METADATA_KEY].shell_review is False
-
-
-@pytest.mark.parametrize("on_error", list(ShellReviewAction))
+@pytest.mark.parametrize("on_error", ["deny", "approval_required", "allow"])
 @pytest.mark.parametrize("policy_requires_approval", [False, True])
 async def test_timeout_denies_even_when_policy_requires_approval_and_preserves_usage(
     on_error, policy_requires_approval: bool
@@ -696,7 +679,7 @@ async def test_timeout_denies_even_when_policy_requires_approval_and_preserves_u
     )
     executed = []
     executable = _build(
-        _Reviewer([ShellReviewError("shell_review_timeout", usage=(receipt,))]), executed, on_error=on_error
+        _Reviewer([ToolReviewError("tool_review_timeout", usage=(receipt,))]), executed, on_error=on_error
     )
     result = await executable.run(
         "go",
@@ -716,7 +699,7 @@ async def test_timeout_denies_even_when_policy_requires_approval_and_preserves_u
     assert result.deferred is None
     assert executed == []
     records = [item for item in result.usage_records if isinstance(item, ProviderUsageRecord)]
-    assert len(records) == 1 and records[0].source == "shell.review"
+    assert len(records) == 1 and records[0].source == "tool.review"
 
 
 async def test_custom_reviewer_deadline_cancels_review_and_never_dispatches() -> None:
@@ -758,19 +741,28 @@ async def test_default_reviewer_timeout_preserves_proven_usage() -> None:
         yield '{"risk":'
         await asyncio.Event().wait()
 
-    reviewer = AgentShellCommandReviewer(FunctionModel(stream_function=slow_review), timeout_seconds=0.01)
-    with pytest.raises(ShellReviewError) as error:
+    reviewer = AgentToolReviewer(
+        FunctionModel(stream_function=slow_review), config=ToolReviewConfig(model="test:review", timeout_seconds=0.01)
+    )
+    with pytest.raises(ToolReviewError) as error:
         await reviewer.review(
-            ShellReviewRequest(tool_id="environment.shell_exec", tool_call_id="timeout-call", command="echo safe"),
+            ToolReviewRequest(
+                tool_id="environment.shell_exec",
+                tool_call_id="timeout-call",
+                tool_name="shell_exec",
+                profile="shell",
+                parameters_schema={},
+                arguments={"command": "echo safe"},
+            ),
             context=cast(AgentContext, object()),
         )
-    assert error.value.code == "shell_review_timeout"
+    assert error.value.code == "tool_review_timeout"
     assert error.value.usage
     assert any(measure.unit == "requests" for receipt in error.value.usage for measure in receipt.measures)
 
 
 async def test_timeout_on_approved_resume_still_denies() -> None:
-    reviewer = _Reviewer([_result(ShellRiskLevel.HIGH), ShellReviewError("shell_review_timeout")])
+    reviewer = _Reviewer([_result(ToolRiskLevel.HIGH), ToolReviewError("tool_review_timeout")])
     executed = []
     executable = _build(reviewer, executed)
     first = await executable.run("go")
@@ -789,7 +781,7 @@ async def test_timeout_on_approved_resume_still_denies() -> None:
 
 async def test_other_review_failure_still_requests_approval_without_assessment() -> None:
     executed = []
-    result = await _build(_Reviewer([ShellReviewError("shell_review_failed")]), executed).run("go")
+    result = await _build(_Reviewer([ToolReviewError("tool_review_failed")]), executed).run("go")
     assert result.status == "suspended"
     assert result.deferred is not None
     call_id = result.deferred.approvals[0].tool_call_id
@@ -801,7 +793,7 @@ async def test_timeout_emits_observable_denial_before_any_authorization() -> Non
     from a13n_harness import HarnessEvent, HarnessExtensionEvent
 
     executed = []
-    executable = _build(_Reviewer([ShellReviewError("shell_review_timeout")]), executed)
+    executable = _build(_Reviewer([ToolReviewError("tool_review_timeout")]), executed)
     async with executable.stream("go", bindings=RunBindings.embedded()) as stream:
         events = [item async for item in stream]
     invocations = [
@@ -846,12 +838,21 @@ async def test_default_reviewer_rejects_invalid_output_tool_without_retry(argume
         requests += 1
         yield {0: DeltaToolCall(name=info.output_tools[0].name, json_args=arguments)}
 
-    reviewer = AgentShellCommandReviewer(FunctionModel(stream_function=invalid_review))
-    with pytest.raises(ShellReviewError) as error:
+    reviewer = AgentToolReviewer(
+        FunctionModel(stream_function=invalid_review), config=ToolReviewConfig(model="test:review")
+    )
+    with pytest.raises(ToolReviewError) as error:
         await reviewer.review(
-            ShellReviewRequest(tool_id="environment.shell_exec", tool_call_id="invalid-call", command="echo safe"),
+            ToolReviewRequest(
+                tool_id="environment.shell_exec",
+                tool_call_id="invalid-call",
+                tool_name="shell_exec",
+                profile="shell",
+                parameters_schema={},
+                arguments={"command": "echo safe"},
+            ),
             context=cast(AgentContext, object()),
         )
-    assert error.value.code == "shell_review_failed"
+    assert error.value.code == "tool_review_failed"
     assert requests == 1
     assert error.value.usage

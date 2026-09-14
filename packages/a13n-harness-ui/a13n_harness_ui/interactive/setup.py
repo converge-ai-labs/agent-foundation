@@ -99,7 +99,7 @@ _QUESTIONS = (
     ),
     Question(
         "review",
-        "Review shell commands; flagged commands require approval, timeouts deny, other review errors are skipped",
+        "Review tool calls; extra-high risk requires approval, review timeouts deny",
         "yes",
         ("yes", "no"),
     ),
@@ -288,9 +288,9 @@ class SetupWizard:
                         )
                     if not self.add_model:
                         hint += (
-                            " · Shell review threshold: extra high."
+                            " · Tool review threshold: extra high."
                             if self.values.get("review", "yes") == "yes"
-                            else " · Shell review disabled."
+                            else " · Tool review disabled."
                         )
                 if self.existing_model_id is None:
                     provider = self.values["provider"]

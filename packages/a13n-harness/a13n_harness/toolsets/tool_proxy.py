@@ -7,6 +7,7 @@ import re
 from collections.abc import Sequence
 from copy import deepcopy
 from dataclasses import dataclass, replace
+from functools import partial
 from typing import Annotated, Any
 from uuid import uuid4
 
@@ -26,6 +27,7 @@ from pydantic_ai.messages import InstructionPart, ToolCallPart
 from pydantic_ai.tools import ToolDenied
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
 
+from a13n_harness._review_context import record_approval_denials
 from a13n_harness.context import AgentContext
 from a13n_harness.tools.tool_proxy import (
     PROXY_CONTROL_KEY,
@@ -291,7 +293,9 @@ class ToolProxySurfaceToolset(WrapperToolset[AgentContext]):
             ctx.usage_limits.check_before_tool_call(projected)
         call = ToolCallPart(name, values, tool_call_id=f"proxy-{uuid4().hex}")
         try:
-            result = await manager.handle_call(call)
+            result = await manager.handle_call(
+                call, on_inline_deferred=partial(record_approval_denials, context=ctx.deps)
+            )
         except ToolRetryError as exc:
             # Native target retries remain keyed by the original prepared name.
             # Re-correlate only the model-facing message; rethrowing ModelRetry

@@ -26,7 +26,7 @@ class ToolIdentity:
     """Trusted policy identity; native definitions still own visible names and schemas."""
 
     tool_id: str
-    default_mode: ToolPermissionMode = "allow"
+    default_mode: ToolPermissionMode = "review"
 
     def __post_init__(self) -> None:
         if not self.tool_id or self.tool_id != self.tool_id.strip() or len(self.tool_id) > 1024 or "*" in self.tool_id:
@@ -57,7 +57,7 @@ def identify_tool(tool: ToolsetTool[AgentContext]) -> ToolsetTool[AgentContext]:
         return tool
     if HARNESS_TOOL_METADATA_KEY in metadata:
         managed = normalize_harness_tool_metadata(metadata[HARNESS_TOOL_METADATA_KEY])
-        identity = ToolIdentity(managed.tool_id, "review" if managed.shell_review else "allow")
+        identity = ToolIdentity(managed.tool_id)
     else:
         source = tool.toolset
         name = tool.tool_def.name
@@ -70,7 +70,8 @@ def identify_tool(tool: ToolsetTool[AgentContext]) -> ToolsetTool[AgentContext]:
         if isinstance(source, MCPToolset) and source.id is None:
             raise DefinitionError("MCP sources require a stable id.", code="tool_source_id_required")
         identity = ToolIdentity(
-            source_tool_id(source.id or "native", name, kind="mcp" if isinstance(source, MCPToolset) else "tool")
+            source_tool_id(source.id or "native", name, kind="mcp" if isinstance(source, MCPToolset) else "tool"),
+            "allow" if tool.tool_def.kind == "external" else "review",
         )
     metadata[TOOL_IDENTITY_KEY] = identity
     return replace(tool, tool_def=replace(tool.tool_def, metadata=metadata))
@@ -86,7 +87,7 @@ class ToolIdentityToolset(WrapperToolset[AgentContext]):
 
     source_id: str
     kind: Literal["tool", "mcp"] = "tool"
-    default_mode: ToolPermissionMode = "allow"
+    default_mode: ToolPermissionMode | None = None
 
     async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
         tools = await self.wrapped.get_tools(ctx)
@@ -101,7 +102,8 @@ class ToolIdentityToolset(WrapperToolset[AgentContext]):
                     metadata={
                         **(tool.tool_def.metadata or {}),
                         TOOL_IDENTITY_KEY: ToolIdentity(
-                            source_tool_id(self.source_id, name, kind=self.kind), self.default_mode
+                            source_tool_id(self.source_id, name, kind=self.kind),
+                            self.default_mode or ("allow" if tool.tool_def.kind == "external" else "review"),
                         ),
                     },
                 ),

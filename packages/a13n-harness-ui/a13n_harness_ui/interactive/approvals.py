@@ -66,7 +66,10 @@ def approval_panel(source: str, theme: ResolvedTheme) -> Panel:
         content.append(Text(value("context")))
     if value("notice"):
         content.extend((Text(""), Text(value("notice"), style=accent)))
-    content.extend((Text(""), Text("No automatic approval · " + value("details"), style=muted)))
+    footer = "No automatic approval · " + value("details")
+    if value("timeout"):
+        footer += " · " + value("timeout")
+    content.extend((Text(""), Text(footer, style=muted)))
     return Panel(
         Group(*content),
         title=Text("Tool Approval Required", style=f"bold {accent}"),

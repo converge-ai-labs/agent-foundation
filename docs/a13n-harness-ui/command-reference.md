@@ -52,17 +52,17 @@ No command-specific parameters.
 
 Configure a model, context budget, and execution permissions interactively.
 
-| Parameter    | Type / choices | Parser default | Meaning                                                                    |
-| ------------ | -------------- | -------------- | -------------------------------------------------------------------------- |
-| `--advanced` | boolean        | `false`        | Also choose context, reasoning, shell review, subagents, and instructions. |
+| Parameter    | Type / choices | Parser default | Meaning                                                                   |
+| ------------ | -------------- | -------------- | ------------------------------------------------------------------------- |
+| `--advanced` | boolean        | `false`        | Also choose context, reasoning, tool review, subagents, and instructions. |
 
 ### `add agent`
 
 Create another agent without changing existing agents or defaults.
 
-| Parameter    | Type / choices | Parser default | Meaning                                                   |
-| ------------ | -------------- | -------------- | --------------------------------------------------------- |
-| `--advanced` | boolean        | `false`        | Also customize reasoning, shell review, and instructions. |
+| Parameter    | Type / choices | Parser default | Meaning                                                  |
+| ------------ | -------------- | -------------- | -------------------------------------------------------- |
+| `--advanced` | boolean        | `false`        | Also customize reasoning, tool review, and instructions. |
 
 ### `add model`
 

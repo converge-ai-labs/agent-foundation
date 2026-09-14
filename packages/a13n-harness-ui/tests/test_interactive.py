@@ -1014,7 +1014,7 @@ async def test_pending_shell_decision_is_reviewed_and_resumed_through_app(
         assert interaction is not None
         prompt = interaction.prompt()
         assert "Reason: Needs review" in prompt
-        assert "Risk:" not in prompt  # The shared gate exposes a decision, not shell risk.
+        assert "Risk: high" in prompt  # Shell presentation reads the shared risk assessment.
         assert prompt.index("Reason:") < prompt.index("Command:")
         assert "Command:\necho reviewed > approved-result" in prompt
         response = interaction.accept("yes" if decision == "approve" else "no")
@@ -1338,7 +1338,7 @@ async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
 
     path = await _seed(tmp_path, monkeypatch)
     root = yaml.safe_load(path.read_text())
-    root["tools"]["ask_user_question_timeout_seconds"] = 30
+    root["tools"]["interaction_timeout_seconds"] = 30
     path.write_text(yaml.safe_dump(root))
 
     async def stream(messages, info):
@@ -1402,9 +1402,9 @@ async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
         assert interaction is not None and interaction.title() == "Option"
         assert interaction.timeout_seconds == 30
         if timeout:
-            interaction.question_started -= interaction.timeout_seconds
+            interaction.request_started -= interaction.timeout_seconds
             assert interaction.expired
-            response = interaction.expire_question()
+            response = interaction.expire()
         else:
             response = interaction.accept("One")
         assert response is not None and not isinstance(response, str)

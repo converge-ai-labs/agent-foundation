@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 import pytest
 from a13n_harness import AgentContext, AgentSpec, DeferredToolResume, HarnessBuilder, RunBindings
 from a13n_harness.capabilities import ToolReviewAssessment, ToolReviewCapability, ToolReviewRequest, ToolReviewResult
-from a13n_harness.capabilities.tool_review import render_review_instruction
+from a13n_harness.capabilities.tool_review import ToolReviewPolicy, render_review_instruction
 from a13n_harness.tools import ToolIdentity, ToolPermissions, ToolPermissionsCapability, source_tool_id
 from pydantic_ai import RunContext, ToolApproved
 from pydantic_ai.capabilities import Capability
@@ -38,13 +38,13 @@ def _model(name: str = "execute", arguments: dict | None = None) -> FunctionMode
 
 @dataclass
 class _Reviewer:
-    decision: str = "allow"
+    risk: str = "low"
     requests: list[ToolReviewRequest] = field(default_factory=list)
 
     async def review(self, request: ToolReviewRequest, *, context: AgentContext) -> ToolReviewResult:
         del context
         self.requests.append(request)
-        return ToolReviewResult(assessment=ToolReviewAssessment(decision=self.decision, reason="test review"))
+        return ToolReviewResult(assessment=ToolReviewAssessment(risk=self.risk, reason="test review"))
 
 
 def test_selector_specificity_and_auto_defaults() -> None:
@@ -148,7 +148,7 @@ async def test_review_allow_is_not_human_approval_and_runs_before_validator() ->
         capabilities=(
             Capability(toolsets=[FunctionToolset([Tool(execute, args_validator=validate)], id="business")]),
             ToolPermissionsCapability(ToolPermissions(default="review")),
-            ToolReviewCapability(reviewer=reviewer),
+            ToolReviewCapability(reviewer=reviewer, policy=ToolReviewPolicy(on_flagged="approval_required")),
         ),
     )
     result = await executable.run("do this", bindings=RunBindings.embedded())
@@ -242,7 +242,7 @@ async def test_reviewer_approval_does_not_approve_managed_policy() -> None:
 
     seen = []
     policy_calls = []
-    reviewer = _Reviewer(decision="approval_required")
+    reviewer = _Reviewer(risk="extra_high")
 
     def execute(ctx: RunContext[AgentContext]) -> str:
         seen.append(ctx.deps.tool_approval.approved_sources)
@@ -277,7 +277,7 @@ async def test_reviewer_approval_does_not_approve_managed_policy() -> None:
                 ]
             ),
             ToolPermissionsCapability(ToolPermissions(default="review")),
-            ToolReviewCapability(reviewer=reviewer),
+            ToolReviewCapability(reviewer=reviewer, policy=ToolReviewPolicy(on_flagged="approval_required")),
         ),
     )
 
@@ -325,9 +325,7 @@ async def test_review_usage_and_result_events_share_call_identity(failure: str |
         async def review(self, request, *, context):
             if failure is not None:
                 raise ToolReviewError(failure, usage=(receipt,))
-            return ToolReviewResult(
-                assessment=ToolReviewAssessment(decision="allow", reason="Safe call"), usage=(receipt,)
-            )
+            return ToolReviewResult(assessment=ToolReviewAssessment(risk="low", reason="Safe call"), usage=(receipt,))
 
     def execute() -> str:
         return "ok"
@@ -362,7 +360,7 @@ async def test_review_usage_and_result_events_share_call_identity(failure: str |
     assert review["tool_id"] == usage[0].tool_id and review["tool_call_id"] == usage[0].tool_call_id
     if failure is None:
         result = ToolReviewResult.model_validate(review["result"])
-        assert result.assessment.decision == "allow" and result.usage == (receipt,)
+        assert result.assessment.risk == "low" and result.usage == (receipt,)
     else:
         assert review["status"] == "error" and review["error_code"] == failure
         assert review["decision"] == ("deny" if failure.endswith("timeout") else "approval_required")
@@ -423,12 +421,10 @@ async def test_agent_reviewer_keeps_instruction_separate_and_requires_structured
     async def review_model(messages, info):
         seen.append((messages, info))
         if response == "text":
-            yield '{"decision":"allow","reason":"Looks valid"}'
+            yield '{"risk":"low","reason":"Looks valid"}'
         else:
             yield {
-                0: DeltaToolCall(
-                    name=info.output_tools[0].name, json_args='{"decision":"allow","reason":"Validated call"}'
-                )
+                0: DeltaToolCall(name=info.output_tools[0].name, json_args='{"risk":"low","reason":"Validated call"}')
             }
 
     reviewer = AgentToolReviewer(FunctionModel(stream_function=review_model), config)
@@ -447,7 +443,7 @@ async def test_agent_reviewer_keeps_instruction_separate_and_requires_structured
         assert caught.value.usage
     else:
         result = await reviewer.review(request, context=cast(AgentContext, object()))
-        assert result.assessment.decision == "allow" and result.usage
+        assert result.assessment.risk == "low" and result.usage
     assert len(seen) == 1
     messages, info = seen[0]
     assert info.function_tools == []

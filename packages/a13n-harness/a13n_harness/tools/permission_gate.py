@@ -15,7 +15,13 @@ from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import ToolsetTool
 
 from a13n_harness._json import dump_json_bytes, redact_json
-from a13n_harness.capabilities.shell_review import SHELL_REVIEW_CAPABILITY_ID, ShellReviewCapability
+from a13n_harness._review_context import (
+    ReviewEvidence,
+    append_review_evidence,
+    compact_target,
+    read_review_history,
+    select_review_history,
+)
 from a13n_harness.capabilities.tool_review import (
     TOOL_REVIEW_CAPABILITY_ID,
     ToolReviewCapability,
@@ -28,6 +34,7 @@ from a13n_harness.errors import DefinitionError
 from a13n_harness.events import HarnessExtensionEvent
 from a13n_harness.observation import observe_operation, observe_output
 from a13n_harness.tools.approval import (
+    NATIVE_TOOL_APPROVAL_KEY,
     ToolApprovalContext,
     approval_required,
     resolve_tool_approval,
@@ -92,6 +99,19 @@ async def check_permission(
     cached = ctx.deps._tool_permission_checks.get(ctx.tool_call_id or "")
     if cached is not None and cached.binding == binding and cached.approval == approval and cached.mode == mode:
         return cached
+    if approval.approved_sources:
+        await append_review_evidence(
+            ctx.deps,
+            ReviewEvidence(
+                run_id=ctx.deps.run_id,
+                tool_call_id=approval.tool_call_id,
+                tool_id=identity.tool_id,
+                binding=binding,
+                kind="approval",
+                approved_sources=tuple(sorted(approval.approved_sources)),
+                target=compact_target(arguments),
+            ),
+        )
     if mode == "ask" and "permission" not in approval.approved_sources:
         raise approval_required(
             ctx,
@@ -103,9 +123,9 @@ async def check_permission(
             },
         )
     if mode == "review":
-        capability = ctx.capabilities.get(TOOL_REVIEW_CAPABILITY_ID) or ctx.capabilities.get(SHELL_REVIEW_CAPABILITY_ID)
+        capability = ctx.capabilities.get(TOOL_REVIEW_CAPABILITY_ID)
         if capability is not None:
-            if not isinstance(capability, ToolReviewCapability | ShellReviewCapability):
+            if not isinstance(capability, ToolReviewCapability):
                 raise DefinitionError("Incompatible tool reviewer.", code="capability_type_mismatch")
             if capability.has_reviewer(identity.tool_id):
                 await _review(ctx, tool_def, arguments, approval, binding, capability)
@@ -120,42 +140,44 @@ async def _review(
     arguments: dict[str, JsonValue],
     approval: ToolApprovalContext,
     binding: str,
-    capability: ToolReviewCapability | ShellReviewCapability,
+    capability: ToolReviewCapability,
 ) -> None:
+    review_metadata: dict[str, JsonValue] = {}
     try:
-        request = _review_request(ctx, tool_def, arguments)
-        if len(request.model_dump_json().encode()) > 64 * 1024:
-            raise ToolReviewError("tool_review_input_too_large")
+        request = await _review_request(ctx, tool_def, arguments, approval, binding)
+        request.to_prompt()  # Enforce the same escaped-byte budget for custom reviewers.
         with observe_operation("tool_review", capability_id=capability.id, operation_id=approval.tool_call_id) as span:
             span.set_attribute("a13n.tool.id", approval.tool_id)
             span.set_attribute("a13n.tool.call.id", approval.tool_call_id)
-            result = (
-                await capability.review_tool(request, context=ctx.deps)
-                if isinstance(capability, ShellReviewCapability)
-                else await capability.review(request, context=ctx.deps)
-            )
+            result = await capability.review(request, context=ctx.deps)
             if result is not None:
                 observe_output(span, result.assessment.model_dump(mode="json"), status="completed")
     except ToolReviewError as exc:
         for usage in exc.usage:
             await ctx.deps.record_provider_usage(
                 usage,
-                source="shell.review" if isinstance(capability, ShellReviewCapability) else "tool.review",
+                source="tool.review",
                 tool_id=approval.tool_id,
                 tool_call_id=approval.tool_call_id,
             )
-        decision = (
-            capability.on_error.value
-            if isinstance(capability, ShellReviewCapability)
-            else capability.config.on_error
-            if capability.config is not None
-            else "approval_required"
-        )
-        if decision == "skip":
-            decision = "allow"
+        decision = capability.config.on_error if capability.config is not None else "approval_required"
         if exc.code == "tool_review_timeout":
             decision = "deny"
         reason = "Tool review timed out." if exc.code == "tool_review_timeout" else "Tool review could not complete."
+        await append_review_evidence(
+            ctx.deps,
+            ReviewEvidence(
+                run_id=ctx.deps.run_id,
+                tool_call_id=approval.tool_call_id,
+                tool_id=approval.tool_id,
+                binding=binding,
+                kind="review",
+                decision=cast(InvocationDecisionKind, decision),
+                reason=reason,
+                approved_sources=tuple(sorted(approval.approved_sources)),
+                target=compact_target(arguments),
+            ),
+        )
         await ctx.deps.events.emit(
             HarnessExtensionEvent(
                 kind="tool",
@@ -177,10 +199,12 @@ async def _review(
         for usage in result.usage:
             await ctx.deps.record_provider_usage(
                 usage,
-                source="shell.review" if isinstance(capability, ShellReviewCapability) else "tool.review",
+                source="tool.review",
                 tool_id=approval.tool_id,
                 tool_call_id=approval.tool_call_id,
             )
+        decision, reason = capability.decision_for(approval.tool_id, result.assessment), result.assessment.reason
+        review_metadata["a13n.harness.tool-review"] = result.assessment.model_dump(mode="json")
         await ctx.deps.events.emit(
             HarnessExtensionEvent(
                 kind="tool",
@@ -189,20 +213,43 @@ async def _review(
                     tool_call_id=approval.tool_call_id,
                     status="completed",
                     result=result,
-                ).model_dump(mode="json", exclude={"error_code", "decision"}),
+                    decision=decision,
+                ).model_dump(mode="json", exclude={"error_code"}),
             )
         )
-        decision, reason = result.assessment.decision, result.assessment.reason
+        await append_review_evidence(
+            ctx.deps,
+            ReviewEvidence(
+                run_id=ctx.deps.run_id,
+                tool_call_id=approval.tool_call_id,
+                tool_id=approval.tool_id,
+                binding=binding,
+                kind="review",
+                decision=decision,
+                reason=reason[:400],
+                risk=result.assessment.risk.value,
+                approved_sources=tuple(sorted(approval.approved_sources)),
+                target=compact_target(arguments),
+            ),
+        )
     if decision == "deny":
         raise ToolFailed(f"Tool review denied the invocation: {reason}")
     if decision == "approval_required" and "reviewer" not in approval.approved_sources:
         raise approval_required(
-            ctx, approval, binding=binding, sources=frozenset({"reviewer"}), metadata={"reason": reason}
+            ctx,
+            approval,
+            binding=binding,
+            sources=frozenset({"reviewer"}),
+            metadata={"reason": reason, **review_metadata},
         )
 
 
-def _review_request(
-    ctx: RunContext[AgentContext], tool_def: ToolDefinition, arguments: dict[str, JsonValue]
+async def _review_request(
+    ctx: RunContext[AgentContext],
+    tool_def: ToolDefinition,
+    arguments: dict[str, JsonValue],
+    approval: ToolApprovalContext,
+    binding: str,
 ) -> ToolReviewRequest:
     omitted: list[str] = []
     projected = dict(arguments)
@@ -214,7 +261,7 @@ def _review_request(
     redacted = cast(dict[str, JsonValue], redact_json(projected))
     if redacted != projected:
         omitted.append("arguments.sensitive_fields")
-    task = None
+    tasks: list[str] = []
     for message in reversed(ctx.messages):
         if isinstance(message, ModelRequest):
             text = [
@@ -223,14 +270,17 @@ def _review_request(
                 if isinstance(part, UserPromptPart) and isinstance(part.content, str)
             ]
             if text:
-                task = "\n".join(text)
-                if len(task) > 8192:
-                    task = task[:8192]
+                task_text = "\n".join(text)
+                if len(task_text) > 2048:
+                    task_text = task_text[:2048]
                     omitted.append("task")
-                break
+                tasks.append(task_text)
+                if len(tasks) == 2:
+                    break
+    task = "\n\n".join(reversed(tasks)) or None
     description = tool_def.description
-    if description is not None and len(description) > 8192:
-        description = description[:8192]
+    if description is not None and len(description) > 1024:
+        description = description[:1024]
         omitted.append("description")
     snapshot = ctx.deps.environment.snapshot
     if len(snapshot.mounts) > 16:
@@ -247,7 +297,19 @@ def _review_request(
             }
         )
     environment_context: dict[str, JsonValue] = {"default_mount": snapshot.default_mount, "mounts": mounts}
+    history = await read_review_history(ctx.deps)
+    previous_reviews, recent_actions = select_review_history(
+        history,
+        tool_id=approval.tool_id,
+        tool_call_id=approval.tool_call_id,
+        binding=binding,
+    )
+    if len(history.records) > len(previous_reviews) + len(recent_actions):
+        omitted.append("history.older_entries")
     return ToolReviewRequest(
+        previous_reviews=previous_reviews,
+        recent_actions=recent_actions,
+        approved_sources=tuple(sorted(approval.approved_sources)),
         context=environment_context,
         tool_id=tool_identity(tool_def).tool_id,
         tool_call_id=ctx.tool_call_id or "",
@@ -277,5 +339,16 @@ def gate_tool(tool: ToolsetTool[AgentContext]) -> ToolsetTool[AgentContext]:
                     raise approval_required(
                         ctx, check.approval, binding=check.binding, sources=frozenset({"tool"}), metadata=exc.metadata
                     ) from exc
+            if tool.tool_def.kind == "unapproved" and not ctx.tool_call_approved:
+                # Native declarative approval owns its override_args semantics.
+                # Capture advisory provenance without introducing a new grant or
+                # changing native approval into an argument-bound Harness grant.
+                ctx.deps._tool_pending_approvals.setdefault(check.approval.tool_call_id, {})[
+                    NATIVE_TOOL_APPROVAL_KEY
+                ] = {
+                    "tool_id": check.approval.tool_id,
+                    "binding": check.binding,
+                    "requested_sources": ["tool"],
+                }
 
     return replace(tool, args_validator_func=validate)

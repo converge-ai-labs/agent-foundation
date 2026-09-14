@@ -496,6 +496,23 @@ def test_permission_and_reviewer_overrides_inherit_replace_and_clear() -> None:
     )
     inherited = merge_agent_run_override(base, AgentRunOverride(instructions="Changed task"))
     assert inherited.permissions == base.permissions and inherited.reviewer == base.reviewer
+    assert inherited.reviewer.risk_threshold == "extra_high"
+    assert inherited.reviewer.on_flagged == "deny"
+    changed = merge_agent_run_override(
+        base,
+        AgentRunOverride.model_validate(
+            {
+                "reviewer": {
+                    "model": MODEL_ID,
+                    "on_flagged": "approval_required",
+                    "rules": {"environment.shell_exec": {"risk_threshold": "high"}},
+                },
+            }
+        ),
+    )
+    assert changed.reviewer.on_flagged == "approval_required"
+    assert changed.reviewer.rules["environment.shell_exec"].risk_threshold == "high"
+    assert changed.reviewer.instruction is None
     cleared = merge_agent_run_override(base, AgentRunOverride(permissions=None, reviewer=None))
     assert cleared.permissions is None and cleared.reviewer is None
     replaced = merge_agent_run_override(
@@ -520,7 +537,13 @@ async def test_permissions_and_managed_reviewer_survive_acceptance_and_reconstru
         {
             **agent_config().model_dump(),
             "permissions": {"rules": {"web.search": "review"}},
-            "reviewer": {"model": MODEL_ID, "instruction": "Review writes.", "model_settings": {"temperature": 0.1}},
+            "reviewer": {
+                "model": MODEL_ID,
+                "instruction": "Review writes.",
+                "model_settings": {"temperature": 0.1},
+                "on_flagged": "approval_required",
+                "rules": {"environment.shell_exec": {"risk_threshold": "high"}},
+            },
         }
     )
     created = await agent_management.commands.create(
@@ -547,4 +570,7 @@ async def test_permissions_and_managed_reviewer_survive_acceptance_and_reconstru
         prepared_plugins=PreparedAgentPlugins(plugins=()),
     )
     assert any(isinstance(capability, ToolPermissionsCapability) for capability in definition.capabilities)
-    assert any(isinstance(capability, ToolReviewCapability) for capability in definition.capabilities)
+    review = next(capability for capability in definition.capabilities if isinstance(capability, ToolReviewCapability))
+    assert review.policy.risk_threshold == "extra_high"
+    assert review.policy.on_flagged == "approval_required"
+    assert review.policy.rules["environment.shell_exec"].risk_threshold == "high"

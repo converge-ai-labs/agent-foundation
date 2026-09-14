@@ -49,7 +49,7 @@ input:
 
 tools:
   enable_ask_user_question: true
-  ask_user_question_timeout_seconds: 120
+  interaction_timeout_seconds: 120
   enable_codeact: true
 
 subagents:
@@ -70,7 +70,7 @@ defaults:
 
 `input.long_text_threshold_chars` is a positive integer, default `8000`, or `null` to disable automatic text files. It counts Unicode characters in each submitted user-text block, not tokens or UTF-8 bytes. A block is eligible only when strictly longer than the threshold. A root Run captures the policy from its accepted generation and uses it for initial input and human steering; later configuration changes affect later Runs. The [root input contract](05-runtime-subagents-and-surfaces.md#long-text-input-files) owns conversion, readability checks, and failure behavior.
 
-`tools.ask_user_question_timeout_seconds` is a positive finite number, default `120`. It controls the terminal's wait for each displayed structured question, not model execution or shell-approval timeouts. The [interactive contract](07-interactive-cli.md#decisions-cancellation-and-recovery) owns expiry and continuation behavior.
+`tools.interaction_timeout_seconds` is a positive finite number, default `120`. It controls the active terminal Host's wait for each question, approval, or external result, not model execution. The old `ask_user_question_timeout_seconds` key is accepted as an input alias; output uses `interaction_timeout_seconds`. The [interactive contract](07-interactive-cli.md#decisions-cancellation-and-recovery) owns expiry and continuation behavior.
 
 `process.pricing_auto_update` defaults to `true` and controls the App-owned upstream price updater. It is restart-bound, not a Model or Agent resource setting. The [App lifetime](05-runtime-subagents-and-surfaces.md#app-lifetime) owns update and shutdown behavior.
 

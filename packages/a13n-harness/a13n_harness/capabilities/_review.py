@@ -13,7 +13,7 @@ from pydantic_ai.usage import RunUsage
 from a13n_harness.usage import ProviderUsage, UsageMeasure
 
 
-async def drain_review_events(ctx: RunContext[None], events: AsyncIterable[AgentStreamEvent]) -> None:
+async def drain_review_events(ctx: RunContext[object], events: AsyncIterable[AgentStreamEvent]) -> None:
     del ctx
     async for _ in events:
         pass

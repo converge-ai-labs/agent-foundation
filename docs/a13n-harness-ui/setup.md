@@ -51,7 +51,7 @@ a13n-harness-ui setup --advanced
 
 Advanced setup exposes optional context, reasoning, shell-review, subagent, and instruction choices. Normal setup supplies starter values; these are still editable YAML, not hidden application state.
 
-New subscription Agents include shell review and the three built-in child roles. Shell review uses `risk_threshold: extra_high`, `on_flagged: approval_required`, and `on_error: skip`; a review timeout denies the command. These are starter selections, not a guarantee that every command is reviewed or that Full Control becomes isolated. See [shell-review configuration](configuration-recipes.md#configure-shell-review).
+New subscription Agents include unified tool review and the three built-in child roles. `ToolReviewCapability` uses `risk_threshold: extra_high`, `on_flagged: approval_required`, and `on_error: allow`; a review timeout denies the command. These are starter selections, not a guarantee that every command is reviewed or that Full Control becomes isolated. See [tool-review configuration](configuration-recipes.md#configure-tool-review).
 
 Built-in subagents inherit the parent Model. Advanced setup offers all or none; edit `subagents.include` to choose individual roles. External Codex/Claude Code subagent import is a separate `/import` workflow, not part of setup.
 

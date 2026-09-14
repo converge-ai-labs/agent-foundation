@@ -28,7 +28,7 @@ Capability presence does not itself authorize external work. Tools that cross a 
 
 `AgentSpec.capabilities` is the declarative feature-selection surface. It can select native Pydantic AI Capability types, the closed set of Harness types supported for declarative reconstruction, and exact custom types authorized by the current Host. It does not select Harness middleware plugins, Environment run extensions, Providers, credentials, policies, or live clients.
 
-For example, `ShellReviewCapability` is a Harness-owned declarative type and can be selected directly as shown in [Shell Command Review](#shell-command-review). Most first-party Harness features are composed as concrete definition or run instances because they accept typed collaborators or code-first configuration that does not belong in portable data.
+For example, `ToolReviewCapability` is a Harness-owned declarative type and can be selected directly as shown in [Shell Command Review](#shell-command-review). Most first-party Harness features are composed as concrete definition or run instances because they accept typed collaborators or code-first configuration that does not belong in portable data.
 
 ### Authorize a custom declarative type
 
@@ -101,7 +101,7 @@ The [integration package example](https://github.com/converge-ai-labs/agent-foun
 | `WorkspaceOutlineCapability`   | Bounded metadata-only file outline from the current Environment                             | Environment file facet                                         |
 | `FileContextCapability`        | Run-frozen `AGENTS.md` and explicit file contents                                           | Environment file facet                                         |
 | `DynamicEnvironmentCapability` | File and shell Toolset composition, current mount context, and mount-change notices         | Environment mount; managed calls also need current policy      |
-| `ShellReviewCapability`        | Optional model-backed risk review for `environment.shell_exec`                              | Fresh invocation policy still authorizes every managed call    |
+| `ToolReviewCapability`         | Optional risk review for local tools, with shell input specialization                       | Fresh invocation policy still authorizes every managed call    |
 | `SkillsCapability`             | Explicit Skill discovery, selection, instructions, and paths                                | Entered Environment and optional `SkillSelectionRunCapability` |
 | `WorkingStateCapability`       | Task and note tools plus model-context projection                                           | Optional `TaskStateRunCapability` in provider mode             |
 | `Mem0Capability`               | One bounded automatic recall plus optional search, list, and explicit-add tools             | Borrowed `AsyncMemoryClient`, or `MEM0_API_KEY` per run        |
@@ -177,7 +177,7 @@ Use `ToolPermissionsCapability` for stable-ID `allow`, `deny`, `ask`, and `revie
 
 ## Shell Command Review
 
-Shell review is off unless the Agent definition includes `ShellReviewCapability`. The declarative form is suitable for an `AgentSpec` loaded from JSON or YAML:
+Shell review is a specialization of `ToolReviewCapability`, not a second Capability. To review only shell launches, select their permission mode explicitly:
 
 ```python
 from a13n_harness import AgentSpec
@@ -185,26 +185,30 @@ from a13n_harness import AgentSpec
 agent_spec = AgentSpec(
     capabilities=[
         {
-            "name": "ShellReviewCapability",
+            "name": "ToolPermissionsCapability",
+            "arguments": {
+                "default": "allow",
+                "rules": {"environment.shell_exec": "review"},
+            },
+        },
+        {
+            "name": "ToolReviewCapability",
             "arguments": {
                 "model": "gateway@openai-responses:gpt-5.4-mini",
-                "risk_threshold": "high",
-                "on_flagged": "approval_required",
-                "on_error": "approval_required",
+                "risk_threshold": "extra_high",
+                "on_flagged": "deny",
                 "timeout_seconds": 20,
             },
-        }
+        },
     ]
 )
 ```
 
-The review applies only to `environment.shell_exec`; process wait, input, and signal calls are not sent to the reviewer. It uses the shared early permission gate after native structural validation, before custom argument validation, resource resolution, and fresh invocation policy. A front permission denial avoids review cost; resource policy may deny later. Review happens before credentials, grants, or Environment dispatch and can only add an approval or denial; it never grants permission that policy withheld.
+Without the explicit permission restriction, all locally executable tools default to review. The single reviewer Agent and common prompt assess risk and reason; runtime policy chooses the action. Shell inputs separate the command from working directory, timing, Environment alias, and environment variable names (never values). Other tools retain their structured schema and arguments. Compact previous reviews and action observations provide context, never authorization or automatic risk reduction.
 
-The default reviewer receives the command, working directory, yield window, total timeout, Environment alias, and sorted environment variable names. Environment values are never included. Risk order is `low < medium < high < extra_high`; a result at or above `risk_threshold` applies `on_flagged`, while an invalid result or non-timeout reviewer failure applies `on_error`. The AI review deadline defaults to 120 seconds (`timeout_seconds`, up to 120 seconds), including custom reviewers. Timeout always automatically denies the command before execution, even with `on_error: skip`, `on_error: approval_required`, or an earlier approval; it does not start an additional human-approval wait. Both actions also accept `skip`, which adds no review restriction, but never bypasses an invocation-policy denial or approval requirement. The Harness library defaults both actions to `approval_required`; Harness UI starter Agents explicitly select `on_error: skip`. Both policy and review run again after native approval resume, so a fresh denial still wins. Without an explicit `InvocationPolicyCapability`, managed Environment calls use the Harness default allow decision with no dispatch retries; an explicit policy can only narrow or condition dispatch.
+The Harness defaults to `extra_high` triggering `deny`; configure `on_flagged: approval_required` to ask instead. Non-timeout failures follow `on_error` (default `approval_required`, or `deny` or explicit `allow`). A reviewer timeout always denies before dispatch, regardless of error policy or an earlier approval. Hosts separately own human interaction timeouts. See [reviewer configuration](managed-tools.md#configure-or-replace-the-reviewer) for per-tool rules and custom reviewers.
 
-A non-timeout failure in the default reviewer logs `shell_review_failed` with `tool_call_id`, `error_type`, and `status_code` when available, including when `on_error: skip` lets invocation policy proceed. Raw provider messages, response bodies, and command input are not logged. An HTTP status alone does not identify the rejected parameter; inspect the protected exception cause in an explicit local reproduction when deeper diagnosis is needed.
-
-Code-first definitions can supply a custom `ShellCommandReviewer` to `ShellReviewCapability` when review is implemented by a trusted in-process service rather than the default model-backed reviewer.
+The core `ShellReviewCapability` and shell-specific review types have been removed. Use `ToolReviewCapability`, `ToolReviewer`, and the shared risk types. Only Harness UI accepts the old configuration name as an alias; it translates legacy `on_error: skip` to `allow`. Legacy `on_flagged: skip` is not a shared policy action: use permission `allow` to skip review intentionally.
 
 ## Working State
 

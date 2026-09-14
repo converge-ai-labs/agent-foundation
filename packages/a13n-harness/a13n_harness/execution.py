@@ -82,10 +82,6 @@ from a13n_harness.capabilities.media import (
     MediaCapability,
     MediaRunCapability,
 )
-from a13n_harness.capabilities.shell_review import (
-    SHELL_REVIEW_CAPABILITY_ID,
-    ShellReviewCapability,
-)
 from a13n_harness.capabilities.skills import (
     SKILL_SELECTION_RUN_CAPABILITY_ID,
     SKILLS_CAPABILITY_ID,
@@ -2826,7 +2822,7 @@ def _first_party_spec_reserved_ids(spec: AgentSpec) -> frozenset[str]:
     """Authorize reserved definition IDs selected by exact first-party wire names."""
     names = [capability.name for capability in spec.capabilities]
     selected: set[str] = set()
-    for capability_type in (ShellReviewCapability, ToolReviewCapability, ToolPermissionsCapability):
+    for capability_type in (ToolReviewCapability, ToolPermissionsCapability):
         name = capability_type.get_serialization_name()
         if name is None:
             raise AssertionError(f"{capability_type.__name__} must be serializable")
@@ -2918,7 +2914,6 @@ def _validate_built_capability_tree(
         CODEACT_CAPABILITY_ID,
         TOOL_PROXY_CAPABILITY_ID,
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
-        SHELL_REVIEW_CAPABILITY_ID,
         TOOL_REVIEW_CAPABILITY_ID,
         TOOL_PERMISSIONS_CAPABILITY_ID,
         FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID,
@@ -3067,7 +3062,6 @@ def _validate_built_capability_tree(
                 CodeActCapability,
                 _ToolProxySurfaceCapability,
                 DynamicEnvironmentCapability,
-                ShellReviewCapability,
                 ToolReviewCapability,
                 ToolPermissionsCapability,
                 RuntimeContextCapability,
@@ -3264,7 +3258,6 @@ def _validate_capability_source(
         CODEACT_CAPABILITY_ID,
         TOOL_PROXY_CAPABILITY_ID,
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
-        SHELL_REVIEW_CAPABILITY_ID,
         TOOL_REVIEW_CAPABILITY_ID,
         TOOL_PERMISSIONS_CAPABILITY_ID,
         FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID,
@@ -3305,7 +3298,6 @@ def _validate_capability_source(
                         CodeActCapability,
                         _ToolProxySurfaceCapability,
                         DynamicEnvironmentCapability,
-                        ShellReviewCapability,
                         ToolReviewCapability,
                         ToolPermissionsCapability,
                         RuntimeContextCapability,
@@ -3341,7 +3333,6 @@ def _validate_capability_source(
             | CodeActCapability
             | _ToolProxySurfaceCapability
             | DynamicEnvironmentCapability
-            | ShellReviewCapability
             | RuntimeContextCapability
             | WorkspaceOutlineCapability
             | FileContextCapability

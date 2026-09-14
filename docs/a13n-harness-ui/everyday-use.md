@@ -25,7 +25,7 @@
 | Cancel active work                                  | `/cancel`                                        |
 | Exit after cancelling and cleaning up active work   | `/quit` or `/exit`                               |
 
-`/agent` selects an Agent's instructions, tools, shell-review policy, and default model for the next turn, while preserving conversation history and execution permissions. Create another Agent with `a13n-harness-ui add agent`.
+`/agent` selects an Agent's instructions, tools, tool-review policy, and default model for the next turn, while preserving conversation history and execution permissions. Create another Agent with `a13n-harness-ui add agent`.
 
 `/model` opens a separate picker of configured Model resources. `/model <model-id>` changes only the model and remembers your choice for this Project, without switching Agent or rewriting YAML. It survives `/new`, `/resume`, `/agent`, and terminal restarts. Restoring an old conversation uses the launch Project's preference, not its historical model. `/model default` clears the Project preference and returns to the selected Agent's model. Selecting a Model or Agent clears temporary reasoning and service-tier settings; these settings are not part of the remembered preference. Both selection commands are unavailable during active work.
 
@@ -124,23 +124,25 @@ Configure built-in tools in the root `a13n-harness-ui.yaml`:
 ```yaml
 tools:
   enable_ask_user_question: true
-  ask_user_question_timeout_seconds: 120
+  interaction_timeout_seconds: 120
   enable_codeact: true
 ```
 
-`ask_user_question` is enabled by default. Set `enable_ask_user_question: false` to omit it from later Runs. Each displayed question waits up to `ask_user_question_timeout_seconds` (a positive finite number). On timeout, the question call is returned as failed with an explicit no-answer message; no option is selected and no shell request is approved. A mixed batch still waits for its remaining decisions. `/cancel` keeps the request pending instead of returning a timeout.
+`ask_user_question` is enabled by default. Set `enable_ask_user_question: false` to omit it from later Runs. Each displayed question waits up to `interaction_timeout_seconds` (a positive finite number). On timeout, the question call is returned as failed with an explicit no-answer message; no option is selected and no shell request is approved. A mixed batch still waits for its remaining decisions. `/cancel` keeps the request pending instead of returning a timeout.
 
-CodeAct is enabled by default, providing the Harness's restricted Python `run_code` and `run_program` tools, plus `store`, `load`, and `forget` for explicit values retained in the saved continuation. Set `enable_codeact: false` to omit them from later Runs. This is not an unrestricted host Python shell: host effects still go through eligible tools and their ordinary policy. Advanced native runner settings can be authored with an Agent `codeact` Capability configuration. Both global switches take precedence over authored capability selections; existing tool visibility filters still apply. Accepted edits affect later Runs, not already captured execution. Question waiting policy applies only while the TUI is collecting answers; one-shot and HTTP callers retain their own interaction lifecycle.
+CodeAct is enabled by default, providing the Harness's restricted Python `run_code` and `run_program` tools, plus `store`, `load`, and `forget` for explicit values retained in the saved continuation. Set `enable_codeact: false` to omit them from later Runs. This is not an unrestricted host Python shell: host effects still go through eligible tools and their ordinary policy. Advanced native runner settings can be authored with an Agent `codeact` Capability configuration. Both global switches take precedence over authored capability selections; existing tool visibility filters still apply. Accepted edits affect later Runs, not already captured execution. Interaction waiting policy applies only while the TUI is collecting answers; one-shot and HTTP callers retain their own interaction lifecycle.
 
 ### Approvals and questions
 
-New subscription starter Agents with shell review enabled use `on_flagged: approval_required` and `on_error: skip`: non-timeout review failures alone do not open an approval prompt, but other tool-policy approval requirements still apply. Existing Agent settings are preserved.
+New subscription starter Agents with review enabled use `ToolReviewCapability`, a global `extra_high` threshold, `on_flagged: approval_required`, and `on_error: allow`. Non-timeout reviewer failures alone do not open approval; other tool-policy requirements still apply. Existing configuration files are not rewritten.
 
-Flagged shell commands and non-timeout review failures open a selectable prompt when the Agent's review policy requires approval. The panel puts risk and reason first, followed by the highlighted command and working directory. Detailed policy metadata stays behind **Inspect request details** or `/review request-id`, keeping the decision readable. Review the evidence before choosing **Approve once** or **Deny** in the selector below. No approval is preselected, and ordinary free text cannot approve a shell request. Truncated previews explicitly point to retained details.
+Approval offers **1. Approve once**, **2. Deny**, and **3. Deny with reason**. Choose by number or arrow keys and Enter. The third option opens a text editor; Enter submits the reason, Alt+Enter adds a line, and Esc or `/cancel` returns to choices. Nothing is preselected, and ordinary free text cannot approve. Shell review displays risk and reason before the highlighted command; generic tools retain ordinary presentation. `/review request-id` inspects retained details.
 
-AI shell review defaults to a 120-second deadline. A timeout automatically denies the command before execution and displays a timeout notice; it does not open another approval prompt. Human approval itself has no countdown.
+Requests needing an actual external result offer **Provide result** instead of approval. It opens a JSON editor; invalid JSON remains editable. Choosing this action does not run the tool or invent its result. **Deny** and **Deny with reason** work in both flows.
 
-Approvals, denials, and external results use this interface, not `/approve`, `/deny`, or `/result` commands. `/cancel` discards local answers without approving anything; `/status` reopens pending decisions. Resuming a suspended conversation also reopens them.
+The active CLI uniformly waits up to `tools.interaction_timeout_seconds` for each approval, external result, or displayed question. Editing does not restart the timer. Timeout denies without an answer or approval. The separate AI reviewer deadline defaults to 120 seconds and also denies before dispatch on timeout. Neither is a durable server-side expiry of pending decisions.
+
+From the action selector, `/cancel` discards local answers without approving anything; `/status` or resuming the conversation reopens pending decisions. Approvals and external results use this interface, not `/approve`, `/deny`, or `/result` commands.
 
 #### Answer a question
 

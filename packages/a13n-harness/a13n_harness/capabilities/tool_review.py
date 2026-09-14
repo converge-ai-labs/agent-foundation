@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import StrEnum
 from functools import cache
 from html import escape
 from importlib.resources import files
@@ -17,6 +18,7 @@ from pydantic_ai.models import Model, ModelResolutionContext
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RunUsage, UsageLimits
 
+from a13n_harness._review_context import ReviewEvidence, render_review_input
 from a13n_harness.capabilities._review import drain_review_events as _drain_review_events
 from a13n_harness.capabilities._review import provider_usage_receipts as _provider_usage_receipts
 from a13n_harness.context import AgentContext
@@ -45,12 +47,69 @@ class ToolReviewRequest(BaseModel):
     context: dict[str, JsonValue] = Field(default_factory=dict)
     omitted: tuple[str, ...] = ()
     profile: Literal["shell", "general"] = "general"
+    approved_sources: tuple[Literal["permission", "reviewer", "tool"], ...] = ()
+    previous_reviews: tuple[ReviewEvidence, ...] = ()
+    recent_actions: tuple[ReviewEvidence, ...] = ()
+
+    def to_prompt(self) -> str:
+        return render_review_input(
+            tool_id=self.tool_id,
+            tool_call_id=self.tool_call_id,
+            tool_name=self.tool_name,
+            arguments=self.arguments,
+            parameters_schema=self.parameters_schema,
+            task=self.task,
+            description=self.description,
+            context=self.context,
+            approved_sources=self.approved_sources,
+            previous_reviews=self.previous_reviews,
+            recent_actions=self.recent_actions,
+            omitted=self.omitted,
+        )
+
+
+class ToolRiskLevel(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    EXTRA_HIGH = "extra_high"
+
+
+class ToolReviewRule(BaseModel):
+    """A matching rule overrides the supplied fields of the global policy."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    risk_threshold: ToolRiskLevel | None = None
+    on_flagged: Literal["deny", "approval_required"] | None = None
+
+
+class ToolReviewPolicy(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    risk_threshold: ToolRiskLevel = ToolRiskLevel.EXTRA_HIGH
+    on_flagged: Literal["deny", "approval_required"] = "deny"
+    rules: dict[str, ToolReviewRule] = Field(default_factory=dict, max_length=1024)
+
+    @field_validator("rules")
+    @classmethod
+    def _validate_rules(cls, rules: dict[str, ToolReviewRule]) -> dict[str, ToolReviewRule]:
+        for selector in rules:
+            validate_selector(selector)
+        return rules
+
+    def decision_for(self, tool_id: str, risk: ToolRiskLevel) -> InvocationDecisionKind:
+        rule = match_selector(self.rules, tool_id)
+        threshold = rule.risk_threshold if rule is not None and rule.risk_threshold is not None else self.risk_threshold
+        action = rule.on_flagged if rule is not None and rule.on_flagged is not None else self.on_flagged
+        levels = list(ToolRiskLevel)
+        return action if levels.index(risk) >= levels.index(threshold) else "allow"
 
 
 class ToolReviewAssessment(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    decision: InvocationDecisionKind
+    risk: ToolRiskLevel
     reason: str = Field(min_length=1, max_length=2000)
 
     @field_validator("reason")
@@ -94,7 +153,7 @@ class ToolReviewError(Exception):
         self.usage = usage
 
 
-class ToolReviewConfig(BaseModel):
+class ToolReviewConfig(ToolReviewPolicy):
     """Host-portable configuration for the default model-backed reviewer."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -104,7 +163,7 @@ class ToolReviewConfig(BaseModel):
     shell_instruction: str | None = Field(default=None, max_length=32768)
     model_settings: dict[str, JsonValue] | None = None
     timeout_seconds: float = Field(default=120, gt=0, le=120)
-    on_error: Literal["deny", "approval_required"] = "approval_required"
+    on_error: Literal["deny", "approval_required", "allow"] = "approval_required"
 
 
 def render_review_instruction(instruction: str | None) -> str | None:
@@ -115,13 +174,8 @@ def render_review_instruction(instruction: str | None) -> str | None:
 
 
 @cache
-def _review_prompt(profile: Literal["shell", "general"]) -> str:
-    root = files("a13n_harness.toolsets.prompts")
-    return (
-        root.joinpath("tool_review.md").read_text(encoding="utf-8")
-        + "\n"
-        + root.joinpath(f"tool_review_{profile}.md").read_text(encoding="utf-8")
-    )
+def _review_prompt() -> str:
+    return files("a13n_harness.toolsets.prompts").joinpath("tool_review.md").read_text(encoding="utf-8")
 
 
 class AgentToolReviewer:
@@ -130,37 +184,50 @@ class AgentToolReviewer:
     def __init__(self, model: Model, config: ToolReviewConfig) -> None:
         self._model = model
         self._config = config.model_copy(deep=True)
-        self._agents: dict[str, Agent[None, ToolReviewAssessment]] = {}
-        for profile in ("shell", "general"):
-            instruction = (
-                config.shell_instruction
-                if profile == "shell" and config.shell_instruction is not None
-                else config.instruction
-            )
-            self._agents[profile] = Agent(
-                StructuredOutputAutoToolChoiceModel(model),
-                output_type=ToolOutput(ToolReviewAssessment, name="submit_tool_review"),
-                system_prompt=_review_prompt(profile),
-                instructions=render_review_instruction(instruction),
-                model_settings=cast(ModelSettings, config.model_settings),
-                retries=0,
-                name=f"{profile}-tool-review",
-            )
-            self._agents[profile].instrument = False
+        self._agent: Agent[ToolReviewRequest, ToolReviewAssessment] = Agent(
+            StructuredOutputAutoToolChoiceModel(model),
+            deps_type=ToolReviewRequest,
+            output_type=ToolOutput(
+                ToolReviewAssessment,
+                name="submit_tool_review",
+                description=(
+                    "Call this tool exactly once with risk and a brief reason. "
+                    "This does not execute or authorize the command or tool call. "
+                    "Plain text or JSON text is not a valid submission."
+                ),
+            ),
+            system_prompt=_review_prompt(),
+            instructions=self._instructions,
+            model_settings=cast(ModelSettings, config.model_settings),
+            retries=0,
+            name="tool-review",
+        )
+        self._agent.instrument = False
+
+    def _instructions(self, ctx: RunContext[ToolReviewRequest]) -> str:
+        instruction = (
+            self._config.shell_instruction
+            if ctx.deps.profile == "shell" and self._config.shell_instruction is not None
+            else self._config.instruction
+        )
+        return render_review_instruction(instruction) or ""
 
     async def review(self, request: ToolReviewRequest, *, context: AgentContext) -> ToolReviewResult:
         del context
         usage = RunUsage()
         try:
             async with asyncio.timeout(self._config.timeout_seconds):
-                result = await self._agents[request.profile].run(
-                    request.model_dump_json(),
+                result = await self._agent.run(
+                    request.to_prompt(),
+                    deps=request,
                     usage=usage,
                     usage_limits=UsageLimits(request_limit=1),
                     capabilities=_auxiliary_agent_capabilities(),
                     event_stream_handler=_drain_review_events,
                 )
         except asyncio.CancelledError:
+            raise
+        except ToolReviewError:
             raise
         except TimeoutError as exc:
             raise ToolReviewError("tool_review_timeout", usage=_provider_usage_receipts(self._model, usage)) from exc
@@ -181,8 +248,12 @@ class ToolReviewCapability(AbstractCapability[AgentContext]):
         *,
         reviewer: ToolReviewer | None = None,
         reviewers: Mapping[str, ToolReviewer] | None = None,
+        policy: ToolReviewPolicy | None = None,
     ) -> None:
         self.config = config.model_copy(deep=True) if config is not None else None
+        if config is not None and policy is not None:
+            raise ValueError("Configure review policy through config or policy, not both")
+        self.policy = (policy or config or ToolReviewPolicy()).model_copy(deep=True)
         self._reviewer = reviewer
         self._reviewers = dict(reviewers or {})
         for selector, implementation in self._reviewers.items():
@@ -202,7 +273,10 @@ class ToolReviewCapability(AbstractCapability[AgentContext]):
         shell_instruction: str | None = None,
         model_settings: dict[str, JsonValue] | None = None,
         timeout_seconds: float = 120,
-        on_error: Literal["deny", "approval_required"] = "approval_required",
+        on_error: Literal["deny", "approval_required", "allow"] = "approval_required",
+        risk_threshold: ToolRiskLevel = ToolRiskLevel.EXTRA_HIGH,
+        on_flagged: Literal["deny", "approval_required"] = "deny",
+        rules: dict[str, ToolReviewRule] | None = None,
     ) -> ToolReviewCapability:
         return cls(
             ToolReviewConfig(
@@ -212,6 +286,9 @@ class ToolReviewCapability(AbstractCapability[AgentContext]):
                 model_settings=model_settings,
                 timeout_seconds=timeout_seconds,
                 on_error=on_error,
+                risk_threshold=risk_threshold,
+                on_flagged=on_flagged,
+                rules=rules or {},
             )
         )
 
@@ -221,7 +298,12 @@ class ToolReviewCapability(AbstractCapability[AgentContext]):
             if not isinstance(existing, ToolReviewCapability):
                 raise DefinitionError("Incompatible tool reviewer.", code="capability_type_mismatch")
             return existing
-        replacement = ToolReviewCapability(self.config, reviewer=self._reviewer, reviewers=self._reviewers)
+        replacement = ToolReviewCapability(
+            self.config,
+            reviewer=self._reviewer,
+            reviewers=self._reviewers,
+            policy=self.policy if self.config is None else None,
+        )
         replacement._context = ctx.deps
         if replacement._reviewer is None and self.config is not None:
             if ctx.agent is None:
@@ -232,6 +314,9 @@ class ToolReviewCapability(AbstractCapability[AgentContext]):
             replacement._reviewer = AgentToolReviewer(model, self.config)
         ctx.deps._record_run_capability(TOOL_REVIEW_CAPABILITY_ID, replacement)
         return replacement
+
+    def decision_for(self, tool_id: str, assessment: ToolReviewAssessment) -> InvocationDecisionKind:
+        return self.policy.decision_for(tool_id, assessment.risk)
 
     def has_reviewer(self, tool_id: str) -> bool:
         return match_selector(self._reviewers, tool_id) is not None or self._reviewer is not None

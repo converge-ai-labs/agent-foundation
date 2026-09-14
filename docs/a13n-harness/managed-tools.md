@@ -26,20 +26,33 @@ permissions = ToolPermissionsCapability(
 
 Use the actual prepared stable IDs, not display names. Managed tools retain their declared IDs; ordinary tools use `tool/<toolset-id>/<original-name>`, and local MCP tools use `mcp/<source-id>/<original-name>`. Source/name segments are percent-encoded. MCP needs a stable source ID. Prefixing, renaming, ToolProxy, and CodeAct do not change a target's permission identity. Hosts using custom naming wrappers can attach `ToolIdentityToolset` before them.
 
-Exact rules win over the longest `.*` or `/*` prefix, then `*`, then `default`. `auto` uses the tool default: shell command launches use `review`, other tools use `allow`. `allow` continues, `deny` fails before custom validation, `ask` requests human approval, and `review` consults a matching reviewer. If no reviewer is configured or matches, review adds no restriction. None of these modes supplies credentials or bypasses Host/Environment policy.
+Exact rules win over the longest `.*` or `/*` prefix, then `*`, then `default`. `auto` uses the tool default: all locally executable tools use `review`; external/provider-native tools retain their separate boundaries. `allow` continues, `deny` fails before custom validation, `ask` requests human approval, and `review` consults a matching reviewer. If no reviewer is configured or matches, review adds no restriction. None of these modes supplies credentials or bypasses Host/Environment policy.
 
 ### Configure or replace the reviewer
 
 A model-backed reviewer is separate from the business Agent and has no execution tools:
 
 ```python
-from a13n_harness.capabilities import ToolReviewCapability, ToolReviewConfig
+from a13n_harness.capabilities import (
+    ToolReviewCapability,
+    ToolReviewConfig,
+    ToolReviewPolicy,
+    ToolReviewRule,
+    ToolRiskLevel,
+)
 
 review = ToolReviewCapability(
     ToolReviewConfig(
         model="review-model",
-        instruction="Request approval before sending private customer data.",
-        shell_instruction="Request approval for destructive shell operations.",
+        instruction="Treat private customer data exports as high risk.",
+        shell_instruction="Treat irreversible shell operations as extra-high risk.",
+        risk_threshold=ToolRiskLevel.EXTRA_HIGH,
+        on_flagged="deny",
+        rules={
+            "tool/reporting/*": ToolReviewRule(
+                risk_threshold=ToolRiskLevel.HIGH, on_flagged="approval_required"
+            ),
+        },
         timeout_seconds=30,
         on_error="approval_required",
     )
@@ -49,6 +62,10 @@ review = ToolReviewCapability(
 ```
 
 The packaged system prompt stays separate from custom `instruction`. A shell-specific instruction replaces the general custom instruction for shell calls. Custom text is escaped inside `<custom-instruction>`; the tool schema, arguments, and task are request data, not reviewer instructions. Requests redact sensitive fields, omit environment variable values, and include bounded task and passive Environment context. Reviews run after structural validation but before custom validation, resource lookup, or dispatch. Timeout always denies, even after earlier approval; other failures follow `on_error`.
+
+Reviewers return only `risk` and `reason`. Risk order is `low < medium < high < extra_high`; the runtime applies the configured action at or above the threshold. Defaults are global `extra_high` and `deny`. One best rule wins: exact ID, longest prefix, then `*`; missing fields inherit global values, not broader rules. `ToolReviewConfig` contains this policy; code-first reviewers may instead use `ToolReviewPolicy`.
+
+The single common prompt renders XML with an intact redacted current call and original schema, targeting 16 KiB with a 64 KiB hard limit. Optional blocks are omitted explicitly, never by truncating the current operation. Task/correction text, passive Environment information, up to five earlier reviews, and eight recent actions supply bounded context. At most 48 flat evidence records travel with saved Harness state across Runs; they contain no full arguments or results. Human denials and observed dispatch outcomes are distinguished from assessments. History is advisory, not reusable approval or proof of successful external effects.
 
 To implement a trusted reviewer without another model request:
 
@@ -67,7 +84,7 @@ class ExportReviewer:
     ) -> ToolReviewResult:
         return ToolReviewResult(
             assessment=ToolReviewAssessment(
-                decision="approval_required",
+                risk="high",
                 reason="Confirm the export destination before sending data.",
             ),
         )
@@ -75,10 +92,11 @@ class ExportReviewer:
 
 review = ToolReviewCapability(
     reviewers={"tool/reporting/*": ExportReviewer()},
+    policy=ToolReviewPolicy(risk_threshold=ToolRiskLevel.HIGH, on_flagged="approval_required"),
 )
 ```
 
-A custom reviewer can return provider usage receipts in `ToolReviewResult.usage` or preserve proven receipts in `ToolReviewError`. The shared gate records them in the existing ledger with source `tool.review` and tool/call IDs; the shell compatibility adapter retains source `shell.review`. Completed `HarnessExtensionEvent(kind="tool")` events with `payload.type="tool_review_result"` expose the redacted result, including assessment and usage. Errors expose a safe code and effective decision with `result=null`. Do not account the event receipts a second time. Missing reviewers produce neither a review call nor a result event.
+A custom reviewer can return provider usage receipts in `ToolReviewResult.usage` or preserve proven receipts in `ToolReviewError`. The shared gate records them in the existing ledger with source `tool.review` and tool/call IDs for all tools, including shell. Completed `HarnessExtensionEvent(kind="tool")` events with `payload.type="tool_review_result"` expose the redacted result, including risk/reason and usage, plus a separate runtime-computed `decision`. Errors expose a safe code and effective decision with `result=null`. Do not account the event receipts a second time. Missing reviewers produce neither a review call nor a result event.
 
 ### Read human approval provenance
 

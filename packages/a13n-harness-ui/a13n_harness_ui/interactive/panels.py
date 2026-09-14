@@ -52,7 +52,9 @@ def capability_panel(
             )
         result = payload.get("result")
         assessment = result.get("assessment") if isinstance(result, dict) else None
-        decision = assessment.get("decision") if isinstance(assessment, dict) else payload.get("decision")
+        decision = payload.get("decision")
+        if decision is None and isinstance(assessment, dict):
+            decision = assessment.get("decision")  # Retained pre-risk-only events.
         if decision == "allow":
             return None
         reason = assessment.get("reason") if isinstance(assessment, dict) else "AI review could not complete."

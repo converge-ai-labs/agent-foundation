@@ -1064,9 +1064,27 @@
           },
           "on_error": {
             "default": "approval_required",
-            "enum": ["deny", "approval_required"],
+            "enum": ["deny", "approval_required", "allow"],
             "title": "On Error",
             "type": "string"
+          },
+          "on_flagged": {
+            "default": "deny",
+            "enum": ["deny", "approval_required"],
+            "title": "On Flagged",
+            "type": "string"
+          },
+          "risk_threshold": {
+            "$ref": "#/components/schemas/ToolRiskLevel",
+            "default": "extra_high"
+          },
+          "rules": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ToolReviewRule"
+            },
+            "maxProperties": 1024,
+            "title": "Rules",
+            "type": "object"
           },
           "shell_instruction": {
             "anyOf": [
@@ -13698,6 +13716,41 @@
         },
         "title": "ToolPermissions",
         "type": "object"
+      },
+      "ToolReviewRule": {
+        "additionalProperties": false,
+        "description": "A matching rule overrides the supplied fields of the global policy.",
+        "properties": {
+          "on_flagged": {
+            "anyOf": [
+              {
+                "enum": ["deny", "approval_required"],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "On Flagged"
+          },
+          "risk_threshold": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolRiskLevel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "ToolReviewRule",
+        "type": "object"
+      },
+      "ToolRiskLevel": {
+        "enum": ["low", "medium", "high", "extra_high"],
+        "title": "ToolRiskLevel",
+        "type": "string"
       },
       "Trace": {
         "additionalProperties": false,

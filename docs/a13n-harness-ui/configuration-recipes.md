@@ -122,25 +122,30 @@ The available names are `explorer`, `code-reviewer`, and `executor`. `[]` disabl
 
 For a child with an independent model, create an Agent resource and add `- agent: agent-reviewer` to the parent Agent's `subagents`. For instructions-only roles, use [Markdown children](agents-and-subagents.md#write-a-markdown-child).
 
-## Configure shell review
+## Configure tool review
 
 **File: `agents/<name>.yaml`, entry inside `capabilities`**
 
 ```yaml
 capabilities:
-  - capability: ShellReviewCapability
+  - capability: ToolReviewCapability
     configuration:
       model: model-review
-      risk_threshold: high
+      risk_threshold: extra_high
+      rules:
+        environment.shell_exec:
+          risk_threshold: high
       on_flagged: approval_required
       on_error: approval_required
 ```
 
-Preserve other Capability entries. `model-review` must be a configured **Model resource**, not a subagent ID. This reviewer examines shell invocations; it is unrelated to delegating a code review to the `code-reviewer` child.
+Preserve other Capability entries. `model-review` must be a configured **Model resource**, not a subagent ID. This reviewer examines local tool invocations; it is unrelated to delegating a code review to the `code-reviewer` child.
 
-The configuration and setup choices are unchanged. Internally this shell reviewer uses the shared early tool-review gate, `AgentContext.tool_approval` provenance, usage accounting, and `tool_review_result` custom events. You do not need to add Agent-level `permissions` or `reviewer` fields. New approval prompts display the shared review reason rather than a shell-specific risk field; retained older requests remain readable. A separate tool-policy confirmation can still follow reviewer approval.
+Preserve the shared global defaults or override individual tools. One best rule wins (exact ID, longest prefix, then `*`); omitted fields inherit global settings, not broader rules. Risk and reason come from the reviewer; runtime policy asks or denies at the threshold. This example asks at `extra_high` globally and `high` for shell launches. The UI catalog defaults to asking, unlike the Harness library's `deny`. Explicit `deny` remains supported.
 
-The example asks for approval for flagged commands and non-timeout review errors. A review timeout denies execution regardless of `on_error`. Shell review is not filesystem or network isolation, and it cannot override a mandatory tool-policy denial. New subscription setup uses the less restrictive starter `extra_high` threshold and `on_error: skip`; choose intentionally rather than assuming all defaults are identical.
+The unified gate reviews all local tools by default, with compact task, Environment, previous-review, and observed-action context. History is advisory, never permission. Shell approval rendering shows risk/reason best effort; other tools keep ordinary presentation. `/review request-id` opens details. A separate tool-policy confirmation may follow reviewer approval.
+
+Non-timeout errors follow `on_error`; the example asks, while subscription setup explicitly uses `allow`. Reviewer timeout always denies execution. Human decisions use the independent uniform Host `tools.interaction_timeout_seconds`, default 120. Legacy `ShellReviewCapability` is accepted only as a UI alias; `on_error: skip` maps to `allow`. Migrate `on_flagged: skip` to an explicit permission `allow` if review should be bypassed. Review is not filesystem or network isolation.
 
 ## Enable an MCP server
 
@@ -194,7 +199,7 @@ display:
   max_tool_argument_chars: 8192
 tools:
   enable_ask_user_question: true
-  ask_user_question_timeout_seconds: 300
+  interaction_timeout_seconds: 300
   enable_codeact: true
 ```
 

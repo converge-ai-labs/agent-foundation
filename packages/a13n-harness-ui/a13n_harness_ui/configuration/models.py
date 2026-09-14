@@ -14,6 +14,7 @@ from a13n_harness.capabilities import ToolProxyConfig
 from a13n_harness.spec import HarnessModelCharacteristics
 from a13n_harness.tools.tool_proxy import validate_group
 from pydantic import (
+    AliasChoices,
     BaseModel,
     BeforeValidator,
     ConfigDict,
@@ -119,10 +120,15 @@ class TerminalDisplayConfiguration(ConfigurationModel):
 
 
 class ToolsConfiguration(ConfigurationModel):
-    """Application-owned built-in tool switches and terminal question waiting policy."""
+    """Application-owned tool switches and uniform interactive waiting policy."""
 
     enable_ask_user_question: bool = True
-    ask_user_question_timeout_seconds: float = Field(default=120.0, gt=0, allow_inf_nan=False)
+    interaction_timeout_seconds: float = Field(
+        default=120.0,
+        gt=0,
+        allow_inf_nan=False,
+        validation_alias=AliasChoices("interaction_timeout_seconds", "ask_user_question_timeout_seconds"),
+    )
     enable_codeact: bool = True
 
     @model_validator(mode="before")

@@ -41,6 +41,8 @@ def verify_approval_facts(invocation: ToolInvocationContext, metadata: object) -
 
 
 TOOL_APPROVAL_KEY = "a13n.harness.tool-approval"
+# Advisory provenance for native declarative approval, not an authority envelope.
+NATIVE_TOOL_APPROVAL_KEY = "a13n.harness.native-tool-approval"
 type ApprovalSource = Literal["permission", "reviewer", "tool"]
 _APPROVAL_SOURCES = frozenset({"permission", "reviewer", "tool"})
 

@@ -29,7 +29,7 @@ The complete fields are in [MCP field reference](mcp.md#mcp-field-reference).
 
 Each Agent selection is `{capability: <catalog-key>, configuration: <JSON mapping>}`. Harness UI exposes its built-ins and configurable installed/native capabilities. There is no arbitrary module import field in a resource file.
 
-Common built-in keys are `dynamic_environment`, `documents`, `web`, `skills`, `working_state`, `user_interaction`, `runtime_context`, `handoff`, `compaction`, and `codeact`. Native declarative keys such as `ShellReviewCapability` are also supported. Not every capability is automatically enabled.
+Common built-in keys are `dynamic_environment`, `documents`, `web`, `skills`, `working_state`, `user_interaction`, `runtime_context`, `handoff`, `compaction`, and `codeact`. Native declarative keys such as `ToolReviewCapability` are also supported. Not every capability is automatically enabled.
 
 The complete capability-specific schemas are owned by the installed Harness/native implementation, rather than flattened into Harness UI YAML. Consult the [Harness capability reference](https://github.com/converge-ai-labs/agent-foundation/tree/main/packages/a13n-harness/a13n_harness/capabilities) and the implementation matching your installed version. `a13n-harness-ui config validate` checks selected keys and their configuration.
 
@@ -51,12 +51,12 @@ Setup enables review for subscription starters. To configure it yourself, first 
 
 ```yaml
 capabilities:
-  - capability: ShellReviewCapability
+  - capability: ToolReviewCapability
     configuration:
       model: model-review
       risk_threshold: high
       on_flagged: approval_required
-      on_error: skip
+      on_error: allow
 ```
 
 `model` here is a **Model resource ID** for an auxiliary reviewer with no execution tools, not a subagent reference or ambient provider route. Explicit capability `model_settings` can override its captured Model settings. With this configuration, flagged commands require approval and non-timeout review errors add no restriction; invocation-policy denial and approval requirements still apply. A review timeout always denies the command before execution, regardless of `on_error`. Omitting `on_error` retains the Harness library's `approval_required` default. Review does not provide filesystem or network isolation. This is independent of the `code-reviewer` built-in child, which reviews changes when delegated work.

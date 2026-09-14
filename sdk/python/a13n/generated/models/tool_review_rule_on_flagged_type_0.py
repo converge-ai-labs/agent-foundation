@@ -1,8 +1,7 @@
 from enum import StrEnum
 
 
-class AgentReviewerOnError(StrEnum):
-    ALLOW = "allow"
+class ToolReviewRuleOnFlaggedType0(StrEnum):
     APPROVAL_REQUIRED = "approval_required"
     DENY = "deny"
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass, field
+from typing import Literal
 
 from a13n_harness_ui.surfaces import (
     ApprovalDecision,
@@ -33,21 +34,32 @@ class DecisionInteraction:
     responses: list[ApprovalDecision | ExternalToolResult] = field(default_factory=list)
     answers: dict[str, str | tuple[str, ...]] = field(default_factory=dict)
     timeout_seconds: float = 120.0
-    question_started: float = field(default_factory=time.monotonic)
+    request_started: float = field(default_factory=time.monotonic)
+    editor: Literal["reason", "result"] | None = None
+
+    def back(self) -> bool:
+        """Leave an editor without resolving the request or restarting its timeout."""
+        if self.editor is None:
+            return False
+        self.editor = None
+        return True
 
     @property
     def expired(self) -> bool:
-        return (
-            isinstance(self.request, StructuredQuestionRequestView)
-            and time.monotonic() - self.question_started >= self.timeout_seconds
-        )
+        return time.monotonic() - self.request_started >= self.timeout_seconds
 
-    def expire_question(self) -> ThreadDeferredResponse | None:
-        """Reject this entire question call; never invent partial answers or approve another request."""
-        if not isinstance(self.request, StructuredQuestionRequestView):
-            raise ValueError("Only structured questions have an automatic waiting timeout")
+    def expire(self) -> ThreadDeferredResponse | None:
+        """Deny the current request on Host timeout; never manufacture approval or answers."""
+        request = self.request
+        message = (
+            QUESTION_TIMEOUT_MESSAGE
+            if isinstance(request, StructuredQuestionRequestView)
+            else "The user did not respond before this interaction timed out. No approval or result was supplied."
+        )
         self.responses.append(
-            ExternalToolResult(request_id=self.request.request_id, denied=True, denial_message=QUESTION_TIMEOUT_MESSAGE)
+            ApprovalDecision(request_id=request.request_id, approved=False, denial_message=message)
+            if isinstance(request, ApprovalRequestView)
+            else ExternalToolResult(request_id=request.request_id, denied=True, denial_message=message)
         )
         return self._advance()
 
@@ -57,23 +69,28 @@ class DecisionInteraction:
 
     def selection(self) -> Selection | None:
         request = self.request
+        if self.editor is not None:
+            return None
         if isinstance(request, StructuredQuestionRequestView):
             question = request.questions[self.question_index]
             return Selection(
                 tuple(Choice(option.label, option.label, option.description) for option in question.options),
                 multiple=question.multi_select,
             )
-        if isinstance(request, ApprovalRequestView):
-            return Selection(
-                (
-                    Choice("review", "Inspect request details", "Read retained arguments and review evidence"),
-                    Choice("approve", "Approve once", "Execute only this pending request"),
-                    Choice("deny", "Deny", "Do not execute this request"),
-                )
+        approval = isinstance(request, ApprovalRequestView)
+        return Selection(
+            (
+                Choice("approve", "Approve once", "Execute only this pending request")
+                if approval
+                else Choice("provide", "Provide result", "Open the JSON result editor"),
+                Choice("deny", "Deny", "Do not execute this request" if approval else "Decline to provide a result"),
+                Choice("deny with reason", "Deny with reason", "Open the reason editor"),
             )
-        return None
+        )
 
     def title(self) -> str:
+        if self.editor is not None:
+            return "Denial reason" if self.editor == "reason" else "Provide JSON result"
         request = self.request
         if isinstance(request, StructuredQuestionRequestView):
             question = request.questions[self.question_index]
@@ -85,19 +102,26 @@ class DecisionInteraction:
 
     @property
     def prompt_kind(self) -> str:
-        return "approval" if isinstance(self.request, ApprovalRequestView) else "notice"
+        return "approval" if isinstance(self.request, ApprovalRequestView) and self.editor is None else "notice"
 
     def display_prompt(self) -> str:
         """Keep structured display fields separate from untrusted text boundaries."""
-        if isinstance(self.request, ApprovalRequestView):
-            return json.dumps(
-                _approval_content(self.request, self.index + 1, len(self.batch.requests)), ensure_ascii=False
-            )
+        if isinstance(self.request, ApprovalRequestView) and self.editor is None:
+            content = _approval_content(self.request, self.index + 1, len(self.batch.requests))
+            content["timeout"] = f"{self.timeout_seconds:g}s timeout without approval"
+            return json.dumps(content, ensure_ascii=False)
         return self.prompt()
 
     def prompt(self) -> str:
         request = self.request
         heading = f"Decision {self.index + 1}/{len(self.batch.requests)} · {request.tool_name} · {request.request_id}"
+        if self.editor is not None:
+            instruction = (
+                "Enter a reason to deny this request."
+                if self.editor == "reason"
+                else "Enter the actual tool result as JSON. Providing a result does not execute the tool."
+            )
+            return f"{heading}\n{instruction}\nEnter submits · Alt+Enter adds a line · Esc or /cancel returns to choices. The original {self.timeout_seconds:g}s timeout continues."
         if isinstance(request, StructuredQuestionRequestView):
             question = request.questions[self.question_index]
             options = "\n".join(
@@ -110,15 +134,20 @@ class DecisionInteraction:
             )
             return f"{question.header} · {self.question_index + 1}/{len(request.questions)}\n{question.question}\n{options}{review}\nChoose a number or type your own answer. {self.timeout_seconds:g}s timeout · /cancel leaves unanswered."
         if isinstance(request, ApprovalRequestView):
-            return _approval_prompt(request, self.index + 1, len(self.batch.requests))
+            return (
+                _approval_prompt(request, self.index + 1, len(self.batch.requests))
+                + f"\n{self.timeout_seconds:g}s timeout without approval."
+            )
         arguments = json.dumps(request.arguments, ensure_ascii=False, indent=2)
         metadata = json.dumps(request.metadata, ensure_ascii=False, indent=2) if request.metadata else ""
         content = f"{arguments}\n{metadata}".strip()
         if len(content) > 8192 or request.arguments_omitted or request.metadata_omitted:
             content = content[:8192] + f"\n[Preview incomplete; /review {request.request_id} reads retained details]"
-        return f"{heading}\n{content}\nEnter a JSON result, or type deny [reason]. /cancel keeps the request pending."
+        return f"{heading}\n{content}\n1. Provide result   2. Deny   3. Deny with reason\nDetails: /review {request.request_id} · {self.timeout_seconds:g}s timeout. /cancel keeps the request pending."
 
     def accept(self, text: str) -> str | ThreadDeferredResponse | None:
+        if self.expired:
+            return self.expire()
         request = self.request
         value = text.strip()
         if isinstance(request, StructuredQuestionRequestView):
@@ -129,7 +158,7 @@ class DecisionInteraction:
             self.answers[question.question] = answer
             self.question_index += 1
             if self.question_index < len(request.questions):
-                self.question_started = time.monotonic()
+                self.request_started = time.monotonic()
                 return None
             self.responses.append(
                 ExternalToolResult(
@@ -142,28 +171,40 @@ class DecisionInteraction:
                     },
                 )
             )
-        elif isinstance(request, ApprovalRequestView):
-            value = str(resolve_choice(value, ("review", "approve", "deny")))
-            if value == "review":
-                return "review"
-            verb, _, reason = value.partition(" ")
-            if verb not in {"approve", "yes", "y", "deny", "no", "n"}:
-                raise ValueError("Choose approve/yes, deny/no [reason], or review. Ordinary text never approves.")
+        else:
+            approval = isinstance(request, ApprovalRequestView)
+            reason = None
+            result = None
+            if self.editor == "reason":
+                if not value:
+                    raise ValueError("Enter a denial reason, or press Esc to return to choices.")
+                denied, reason = True, value
+            elif self.editor == "result":
+                denied, result = False, json.loads(value)
+            else:
+                value = str(resolve_choice(value, ("approve" if approval else "provide", "deny", "deny with reason")))
+                if value == "review":
+                    return "review"
+                if value == "deny with reason" or (not approval and value in {"provide", "provide result"}):
+                    self.editor = "reason" if value == "deny with reason" else "result"
+                    return None
+                verb, _, reason = value.partition(" ")
+                allowed = {"approve", "yes", "y", "deny", "no", "n"} if approval else {"deny", "no", "n"}
+                if verb not in allowed:
+                    raise ValueError("Choose an action by number or name. Use review to inspect details.")
+                denied = verb in {"deny", "no", "n"}
             self.responses.append(
                 ApprovalDecision(
                     request_id=request.request_id,
-                    approved=verb in {"approve", "yes", "y"},
-                    denial_message=reason if reason and verb in {"deny", "no", "n"} else None,
+                    approved=not denied,
+                    denial_message=reason if denied and reason else None,
                 )
-            )
-        else:
-            denied = value == "deny" or value.startswith("deny ")
-            self.responses.append(
-                ExternalToolResult(
+                if approval
+                else ExternalToolResult(
                     request_id=request.request_id,
                     denied=denied,
-                    denial_message=(value[5:].strip() or "Denied in CLI") if denied else None,
-                    result=None if denied else json.loads(value),
+                    denial_message=reason or None,
+                    result=result,
                 )
             )
         return self._advance()
@@ -171,8 +212,9 @@ class DecisionInteraction:
     def _advance(self) -> ThreadDeferredResponse | None:
         self.index += 1
         self.question_index = 0
+        self.editor = None
         self.answers.clear()
-        self.question_started = time.monotonic()
+        self.request_started = time.monotonic()
         if self.index == len(self.batch.requests):
             return ThreadDeferredResponse(
                 expected_continuation_id=self.batch.continuation_id, responses=tuple(self.responses)
@@ -198,6 +240,9 @@ def _approval_content(request: ApprovalRequestView, index: int, total: int) -> d
     if isinstance(reason, str) and reason:
         content["reason"] = preview(reason, 2000)
     review = metadata.pop("a13n.harness.shell-review", None)
+    shared_review = metadata.pop("a13n.harness.tool-review", None)
+    if isinstance(approval, dict) and approval.get("tool_id") == "environment.shell_exec":
+        review = shared_review if isinstance(shared_review, dict) else review
     if isinstance(review, dict):
         if review.get("status") == "error":
             content["error"] = "The reviewer failed; no risk assessment or reason is available."
@@ -256,6 +301,6 @@ def _approval_prompt(request: ApprovalRequestView, index: int, total: int) -> st
         if key in content:
             parts.append(f"{label}:" + ("\n" if key in {"command", "arguments"} else " ") + content[key])
     parts.append(
-        "1. Inspect request details   2. Approve once   3. Deny\nNo automatic approval · " + content["details"]
+        "1. Approve once   2. Deny   3. Deny with reason\nNo automatic approval · Details: " + content["details"]
     )
     return "\n".join(parts)

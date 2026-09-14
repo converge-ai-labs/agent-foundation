@@ -321,6 +321,7 @@ class AgentContext:
         compare=False,
     )
 
+    _review_history_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)
     _tool_permission_checks: dict[str, PermissionCheck] = field(default_factory=dict, repr=False, compare=False)
     _tool_pending_approvals: dict[str, dict[str, JsonValue]] = field(default_factory=dict, repr=False, compare=False)
 

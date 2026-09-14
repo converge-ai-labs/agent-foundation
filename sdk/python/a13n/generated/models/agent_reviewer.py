@@ -6,10 +6,13 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 from attrs import define as _attrs_define
 
 from ..models.agent_reviewer_on_error import AgentReviewerOnError
+from ..models.agent_reviewer_on_flagged import AgentReviewerOnFlagged
+from ..models.tool_risk_level import ToolRiskLevel
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.agent_reviewer_model_settings_type_0 import AgentReviewerModelSettingsType0
+    from ..models.agent_reviewer_rules import AgentReviewerRules
 
 
 T = TypeVar("T", bound="AgentReviewer")
@@ -24,6 +27,9 @@ class AgentReviewer:
         instruction (None | str | Unset):
         model_settings (AgentReviewerModelSettingsType0 | None | Unset):
         on_error (AgentReviewerOnError | Unset):
+        on_flagged (AgentReviewerOnFlagged | Unset):
+        risk_threshold (ToolRiskLevel | Unset):
+        rules (AgentReviewerRules | Unset):
         shell_instruction (None | str | Unset):
         timeout_seconds (float | Unset):
     """
@@ -32,6 +38,9 @@ class AgentReviewer:
     instruction: str | Unset | None = UNSET
     model_settings: AgentReviewerModelSettingsType0 | Unset | None = UNSET
     on_error: AgentReviewerOnError | Unset = UNSET
+    on_flagged: AgentReviewerOnFlagged | Unset = UNSET
+    risk_threshold: ToolRiskLevel | Unset = UNSET
+    rules: AgentReviewerRules | Unset = UNSET
     shell_instruction: str | Unset | None = UNSET
     timeout_seconds: float | Unset = UNSET
 
@@ -58,6 +67,18 @@ class AgentReviewer:
         if not isinstance(self.on_error, Unset):
             on_error = self.on_error.value
 
+        on_flagged: str | Unset = UNSET
+        if not isinstance(self.on_flagged, Unset):
+            on_flagged = self.on_flagged.value
+
+        risk_threshold: str | Unset = UNSET
+        if not isinstance(self.risk_threshold, Unset):
+            risk_threshold = self.risk_threshold.value
+
+        rules: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.rules, Unset):
+            rules = self.rules.to_dict()
+
         shell_instruction: str | Unset | None
         if isinstance(self.shell_instruction, Unset):
             shell_instruction = UNSET
@@ -79,6 +100,12 @@ class AgentReviewer:
             field_dict["model_settings"] = model_settings
         if on_error is not UNSET:
             field_dict["on_error"] = on_error
+        if on_flagged is not UNSET:
+            field_dict["on_flagged"] = on_flagged
+        if risk_threshold is not UNSET:
+            field_dict["risk_threshold"] = risk_threshold
+        if rules is not UNSET:
+            field_dict["rules"] = rules
         if shell_instruction is not UNSET:
             field_dict["shell_instruction"] = shell_instruction
         if timeout_seconds is not UNSET:
@@ -89,6 +116,7 @@ class AgentReviewer:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         from ..models.agent_reviewer_model_settings_type_0 import AgentReviewerModelSettingsType0
+        from ..models.agent_reviewer_rules import AgentReviewerRules
 
         d = dict(src_dict)
         model = d.pop("model")
@@ -126,6 +154,27 @@ class AgentReviewer:
         else:
             on_error = AgentReviewerOnError(_on_error)
 
+        _on_flagged = d.pop("on_flagged", UNSET)
+        on_flagged: AgentReviewerOnFlagged | Unset
+        if isinstance(_on_flagged, Unset):
+            on_flagged = UNSET
+        else:
+            on_flagged = AgentReviewerOnFlagged(_on_flagged)
+
+        _risk_threshold = d.pop("risk_threshold", UNSET)
+        risk_threshold: ToolRiskLevel | Unset
+        if isinstance(_risk_threshold, Unset):
+            risk_threshold = UNSET
+        else:
+            risk_threshold = ToolRiskLevel(_risk_threshold)
+
+        _rules = d.pop("rules", UNSET)
+        rules: AgentReviewerRules | Unset
+        if isinstance(_rules, Unset):
+            rules = UNSET
+        else:
+            rules = AgentReviewerRules.from_dict(_rules)
+
         def _parse_shell_instruction(data: object) -> str | Unset | None:
             if data is None:
                 return data
@@ -142,6 +191,9 @@ class AgentReviewer:
             instruction=instruction,
             model_settings=model_settings,
             on_error=on_error,
+            on_flagged=on_flagged,
+            risk_threshold=risk_threshold,
+            rules=rules,
             shell_instruction=shell_instruction,
             timeout_seconds=timeout_seconds,
         )
