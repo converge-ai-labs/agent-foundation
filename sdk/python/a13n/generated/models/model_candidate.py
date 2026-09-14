@@ -25,6 +25,7 @@ class ModelCandidate:
         upstream_model (str):
         display_name (None | str | Unset):
         limits (ModelLimits | Unset):
+        native_profile (ModelProfile | Unset): Read-only Provider capability information returned by discovery.
         parameter_support (ModelCandidateParameterSupport | Unset):
         profile (ModelProfile | Unset): Read-only Provider capability information returned by discovery.
         suggested_settings (ModelCandidateSuggestedSettings | Unset):
@@ -34,6 +35,7 @@ class ModelCandidate:
     upstream_model: str
     display_name: str | Unset | None = UNSET
     limits: ModelLimits | Unset = UNSET
+    native_profile: ModelProfile | Unset = UNSET
     parameter_support: ModelCandidateParameterSupport | Unset = UNSET
     profile: ModelProfile | Unset = UNSET
     suggested_settings: ModelCandidateSuggestedSettings | Unset = UNSET
@@ -52,6 +54,10 @@ class ModelCandidate:
         limits: dict[str, Any] | Unset = UNSET
         if not isinstance(self.limits, Unset):
             limits = self.limits.to_dict()
+
+        native_profile: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.native_profile, Unset):
+            native_profile = self.native_profile.to_dict()
 
         parameter_support: dict[str, Any] | Unset = UNSET
         if not isinstance(self.parameter_support, Unset):
@@ -77,6 +83,8 @@ class ModelCandidate:
             field_dict["display_name"] = display_name
         if limits is not UNSET:
             field_dict["limits"] = limits
+        if native_profile is not UNSET:
+            field_dict["native_profile"] = native_profile
         if parameter_support is not UNSET:
             field_dict["parameter_support"] = parameter_support
         if profile is not UNSET:
@@ -114,6 +122,13 @@ class ModelCandidate:
         else:
             limits = ModelLimits.from_dict(_limits)
 
+        _native_profile = d.pop("native_profile", UNSET)
+        native_profile: ModelProfile | Unset
+        if isinstance(_native_profile, Unset):
+            native_profile = UNSET
+        else:
+            native_profile = ModelProfile.from_dict(_native_profile)
+
         _parameter_support = d.pop("parameter_support", UNSET)
         parameter_support: ModelCandidateParameterSupport | Unset
         if isinstance(_parameter_support, Unset):
@@ -140,6 +155,7 @@ class ModelCandidate:
             upstream_model=upstream_model,
             display_name=display_name,
             limits=limits,
+            native_profile=native_profile,
             parameter_support=parameter_support,
             profile=profile,
             suggested_settings=suggested_settings,

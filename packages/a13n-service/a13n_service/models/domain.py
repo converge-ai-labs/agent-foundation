@@ -59,14 +59,16 @@ class ModelProfile(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    input_modalities: tuple[Literal["text", "image", "audio", "video"], ...] | None = None
-    supports_tools: bool | None = None
-    supports_json_schema_output: bool | None = None
-    supports_json_object_output: bool | None = None
-    supports_image_output: bool | None = None
-    supports_audio_input: bool | None = None
-    supports_thinking: bool | None = None
-    thinking_always_enabled: bool | None = None
+    input_modalities: tuple[Literal["text", "image", "audio", "video"], ...] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    supports_tools: bool | None = Field(default=None, exclude_if=lambda value: value is None)
+    supports_json_schema_output: bool | None = Field(default=None, exclude_if=lambda value: value is None)
+    supports_json_object_output: bool | None = Field(default=None, exclude_if=lambda value: value is None)
+    supports_image_output: bool | None = Field(default=None, exclude_if=lambda value: value is None)
+    supports_audio_input: bool | None = Field(default=None, exclude_if=lambda value: value is None)
+    supports_thinking: bool | None = Field(default=None, exclude_if=lambda value: value is None)
+    thinking_always_enabled: bool | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def normalize_modalities(self) -> ModelProfile:
@@ -279,6 +281,7 @@ class ModelCandidate(BaseModel):
     suggested_model_api: str
     suggested_settings: dict[str, JsonValue] = Field(default_factory=dict)
     profile: ModelProfile = Field(default_factory=ModelProfile)
+    native_profile: ModelProfile = Field(default_factory=ModelProfile)
     limits: ModelLimits = Field(default_factory=ModelLimits)
     parameter_support: dict[str, Literal["supported", "unsupported", "unknown"]] = Field(default_factory=dict)
 

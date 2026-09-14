@@ -169,7 +169,7 @@ class Model:
 
 `model_api` is one key allowed by the selected Provider type. `settings` contains non-secret, JSON-serializable native request defaults and defaults to an empty object. `declarations` is a separate typed object that never enters native request settings. It always serializes with empty `thinking_efforts`, empty `capabilities`, and a null `context_window` when values are absent. Effort choices are editable authoring options rather than a runtime allowlist or proof of provider support. Capabilities use the Harness image, video, and audio understanding values; context window is a positive token count or null.
 
-Discovery returns read-only `profile` and `limits` supplied by the Provider; unknown facts remain null rather than false or fabricated numeric defaults. The trusted integration projects the selected native Provider's local Pydantic AI profile without constructing a client or performing another network request, then lets explicit catalog facts refine that projection. Clients may use catalog modalities and limits to suggest initial declarations, but saved declarations are explicit user-confirmed values and later discovery never overwrites them.
+Discovery returns read-only `profile` and `limits` supplied by the Provider; unknown profile facts are omitted rather than reported as false, and unknown limits remain null rather than using fabricated numeric defaults. A separate read-only `native_profile` reports trusted facts about the local Pydantic AI calling channel without constructing a client or performing another network request. Catalog and native profiles are independent provenance channels: clients must not treat gateway-wide transport support as a per-model catalog claim. Clients may use catalog modalities and limits to suggest initial declarations, but saved declarations are explicit user-confirmed values and later discovery never overwrites them.
 
 The safe profile deliberately mirrors only serializable Pydantic AI `ModelProfile` facts useful to users. Schema transformers, Python types, system-prompt templates, request transforms, and other execution mechanics remain trusted adapter/runtime code. Profile metadata does not automatically gate Agent save or execution; the upstream response remains authoritative.
 
@@ -190,6 +190,7 @@ class ModelCandidate:
     suggested_model_api: str
     suggested_settings: JsonObject
     profile: ModelProfile
+    native_profile: ModelProfile
     limits: ModelLimits
     parameter_support: dict[str, Literal["supported", "unsupported", "unknown"]]
 

@@ -24,6 +24,7 @@ from pydantic_ai.providers import Provider
 
 BuiltModel = PydanticModel[Any]
 NativeProvider = Provider[Any]
+SettingsPath = tuple[str, ...]
 
 # Connection fields are Provider-owned, even on custom compatible endpoints.
 _CONNECTION_FIELDS = ("api_key", "authorization", "credentials", "base_url", "endpoint", "headers", "extra_headers")
@@ -50,20 +51,38 @@ _RESPONSES_FIELDS = (
     "conversation",
 )
 _ANTHROPIC_FIELDS = ("model", "messages", "system", "tools", "tool_choice", "stream", "container", "output_format")
-_OPENAI_RESPONSES_REASONING_ALTERNATIVES = (
-    (("thinking",),),
-    (("openai_reasoning_effort",),),
-    (("extra_body", "reasoning"),),
-)
-_OPENAI_CHAT_REASONING_ALTERNATIVES = (
-    (("thinking",),),
-    (("openai_reasoning_effort",),),
-    (("extra_body", "reasoning_effort"),),
-)
 
 
 def _paths(*fields: str) -> tuple[tuple[str, ...], ...]:
     return tuple((name,) for name in (*_CONNECTION_FIELDS, *fields))
+
+
+@dataclass(frozen=True, slots=True)
+class ReasoningAlternative:
+    paths: tuple[SettingsPath, ...]
+    preserved_fields: tuple[tuple[SettingsPath, SettingsPath], ...] = ()
+
+
+def _reasoning(
+    *paths: SettingsPath,
+    preserve: tuple[tuple[SettingsPath, SettingsPath], ...] = (),
+) -> ReasoningAlternative:
+    return ReasoningAlternative(paths, preserve)
+
+
+_OPENAI_RESPONSES_REASONING_ALTERNATIVES = (
+    _reasoning(("thinking",)),
+    _reasoning(("openai_reasoning_effort",)),
+    _reasoning(
+        ("extra_body", "reasoning"),
+        preserve=((("extra_body", "reasoning", "summary"), ("openai_reasoning_summary",)),),
+    ),
+)
+_OPENAI_CHAT_REASONING_ALTERNATIVES = (
+    _reasoning(("thinking",)),
+    _reasoning(("openai_reasoning_effort",)),
+    _reasoning(("extra_body", "reasoning_effort")),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,7 +92,7 @@ class ModelApiBinding:
     settings_type: Any
     protected_body_paths: tuple[tuple[str, ...], ...]
     supports_extra_body: bool = True
-    reasoning_alternatives: tuple[tuple[tuple[str, ...], ...], ...] = ()
+    reasoning_alternatives: tuple[ReasoningAlternative, ...] = ()
 
     def build(self, upstream_model: str, provider: NativeProvider) -> BuiltModel:
         return self.model_type(upstream_model, provider=provider)
@@ -110,9 +129,13 @@ BUILT_IN_MODEL_APIS = _index(
             AnthropicModelSettings,
             (*_paths(*_ANTHROPIC_FIELDS), ("output_config", "format")),
             reasoning_alternatives=(
-                (("thinking",),),
-                (("anthropic_thinking",), ("anthropic_effort",)),
-                (("extra_body", "thinking"), ("extra_body", "output_config")),
+                _reasoning(("thinking",)),
+                _reasoning(("anthropic_thinking",), ("anthropic_effort",)),
+                _reasoning(
+                    ("extra_body", "thinking"),
+                    ("extra_body", "output_config"),
+                    preserve=((("extra_body", "output_config", "task_budget"), ("anthropic_task_budget",)),),
+                ),
             ),
         ),
         ModelApiBinding(
@@ -122,8 +145,8 @@ BUILT_IN_MODEL_APIS = _index(
             (),
             supports_extra_body=False,
             reasoning_alternatives=(
-                (("thinking",),),
-                (("google_thinking_config",),),
+                _reasoning(("thinking",)),
+                _reasoning(("google_thinking_config",)),
             ),
         ),
         ModelApiBinding(
@@ -133,13 +156,13 @@ BUILT_IN_MODEL_APIS = _index(
             _paths(*_ANTHROPIC_FIELDS, "modelId", "toolConfig", "outputConfig", "inferenceConfig"),
             supports_extra_body=False,
             reasoning_alternatives=(
-                (("thinking",),),
-                (
+                _reasoning(("thinking",)),
+                _reasoning(
                     ("bedrock_additional_model_requests_fields", "thinking"),
                     ("bedrock_additional_model_requests_fields", "output_config"),
                 ),
-                (("bedrock_additional_model_requests_fields", "reasoning_effort"),),
-                (("bedrock_additional_model_requests_fields", "reasoning_config"),),
+                _reasoning(("bedrock_additional_model_requests_fields", "reasoning_effort")),
+                _reasoning(("bedrock_additional_model_requests_fields", "reasoning_config")),
             ),
         ),
         ModelApiBinding(
@@ -162,11 +185,11 @@ BUILT_IN_MODEL_APIS = _index(
             OpenRouterModelSettings,
             _paths(*_CHAT_FIELDS, "models", "preset", "transforms"),
             reasoning_alternatives=(
-                (("thinking",),),
-                (("openrouter_reasoning",),),
-                (("openai_reasoning_effort",),),
-                (("extra_body", "reasoning"),),
-                (("extra_body", "reasoning_effort"),),
+                _reasoning(("thinking",)),
+                _reasoning(("openrouter_reasoning",)),
+                _reasoning(("openai_reasoning_effort",)),
+                _reasoning(("extra_body", "reasoning")),
+                _reasoning(("extra_body", "reasoning_effort")),
             ),
         ),
         ModelApiBinding(

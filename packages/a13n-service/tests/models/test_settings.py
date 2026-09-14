@@ -82,7 +82,7 @@ def test_catalog_candidates_are_advisory() -> None:
     unknown = candidate_from_catalog(registry, "openai", "unreleased/deployment")
     assert unknown.suggested_model_api == "openai.responses"
     assert unknown.profile.input_modalities is None
-    assert unknown.profile.supports_json_schema_output is True
+    assert unknown.native_profile.supports_json_schema_output is True
     assert unknown.suggested_settings == {}
     assert unknown.parameter_support == {}
     known = candidate_from_catalog(
@@ -133,12 +133,23 @@ def test_openrouter_catalog_facts_override_gateway_wide_profile_defaults() -> No
     )
     assert result.profile.supports_tools is True
     assert result.profile.supports_thinking is False
+    assert result.native_profile.supports_thinking is True
+
+    unknown = candidate_from_catalog(
+        built_in_provider_registry(),
+        "openrouter",
+        "unknown/model",
+        metadata={},
+    )
+    assert unknown.profile.supports_thinking is None
+    assert unknown.native_profile.supports_thinking is True
 
 
 def test_native_provider_profile_is_projected_without_catalog_metadata() -> None:
     result = candidate_from_catalog(built_in_provider_registry(), "openai", "gpt-5")
-    assert result.profile.supports_thinking is True
-    assert result.profile.thinking_always_enabled is True
+    assert result.profile.supports_thinking is None
+    assert result.native_profile.supports_thinking is True
+    assert result.native_profile.thinking_always_enabled is True
 
 
 def test_explicit_reasoning_choice_replaces_conflicting_inherited_settings() -> None:
@@ -188,6 +199,51 @@ def test_complementary_native_anthropic_reasoning_settings_can_coexist() -> None
     assert validate_settings("anthropic.messages", settings) == settings
 
 
+def test_partial_anthropic_reasoning_overrides_preserve_complementary_fields_across_layers() -> None:
+    assert effective_settings(
+        "anthropic.messages",
+        {"anthropic_thinking": {"type": "adaptive"}, "anthropic_effort": "low"},
+        {"anthropic_effort": "high"},
+        {"max_tokens": 1000},
+    ) == {
+        "anthropic_thinking": {"type": "adaptive"},
+        "anthropic_effort": "high",
+        "max_tokens": 1000,
+    }
+    assert effective_settings(
+        "anthropic.messages",
+        {"anthropic_thinking": {"type": "enabled", "budget_tokens": 1024}, "anthropic_effort": "low"},
+        {"anthropic_effort": "medium"},
+        {"anthropic_thinking": {"type": "adaptive"}},
+    ) == {"anthropic_thinking": {"type": "adaptive"}, "anthropic_effort": "medium"}
+
+
+def test_responses_reasoning_summary_is_canonicalized_when_unified_thinking_wins() -> None:
+    assert effective_settings(
+        "openai.responses",
+        {
+            "extra_body": {
+                "reasoning": {"effort": "low", "summary": "detailed"},
+                "metadata": {"a": "b"},
+            }
+        },
+        {"thinking": "high"},
+    ) == {
+        "extra_body": {"metadata": {"a": "b"}},
+        "openai_reasoning_summary": "detailed",
+        "thinking": "high",
+    }
+
+
+@pytest.mark.parametrize("reasoning", [{}, None, "malformed", []])
+def test_responses_reasoning_cleanup_tolerates_empty_and_malformed_containers(reasoning) -> None:
+    assert effective_settings(
+        "openai.responses",
+        {"extra_body": {"reasoning": reasoning, "metadata": {"a": "b"}}},
+        {"thinking": "high"},
+    ) == {"extra_body": {"metadata": {"a": "b"}}, "thinking": "high"}
+
+
 @pytest.mark.parametrize("output_config", [{}, None, "malformed", []])
 def test_bedrock_unified_thinking_replaces_suppressing_output_config(output_config) -> None:
     defaults = {
@@ -210,6 +266,16 @@ def test_bedrock_native_thinking_and_effort_can_coexist() -> None:
         }
     }
     assert validate_settings("bedrock.converse", settings) == settings
+    assert effective_settings(
+        "bedrock.converse",
+        settings,
+        {"bedrock_additional_model_requests_fields": {"output_config": {"effort": "low"}}},
+    ) == {
+        "bedrock_additional_model_requests_fields": {
+            "thinking": {"type": "adaptive"},
+            "output_config": {"effort": "low"},
+        }
+    }
 
 
 @pytest.mark.parametrize("api", BUILT_IN_MODEL_APIS)
@@ -280,3 +346,15 @@ def test_sibling_of_protected_nested_path_is_free_to_use():
     # the native SDK shallow-merges extra_body and replaces the whole text object.
     settings = {"extra_body": {"text": {"verbosity": "brief"}}}
     assert validate_settings("openai.responses", settings) == settings
+
+
+def test_complementary_reasoning_merge_does_not_mutate_input_layers() -> None:
+    defaults = {"bedrock_additional_model_requests_fields": {"thinking": {"type": "adaptive"}}}
+    overrides = {"bedrock_additional_model_requests_fields": {"output_config": {"effort": "high"}}}
+    effective = effective_settings("bedrock.converse", defaults, overrides)
+    assert effective["bedrock_additional_model_requests_fields"] == {
+        "thinking": {"type": "adaptive"},
+        "output_config": {"effort": "high"},
+    }
+    assert overrides == {"bedrock_additional_model_requests_fields": {"output_config": {"effort": "high"}}}
+    assert defaults == {"bedrock_additional_model_requests_fields": {"thinking": {"type": "adaptive"}}}

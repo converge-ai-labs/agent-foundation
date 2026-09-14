@@ -11,12 +11,13 @@ from a13n_service.agents.domain import (
     EffectiveAgentConfig,
     EffectiveAgentModel,
 )
+from a13n_service.agents.model_characteristics import compose_model_characteristics
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.database.metadata import service_metadata
 from a13n_service.digests import digest_request
 from a13n_service.iam.models import OrganizationRecord, WorkspaceRecord
 from a13n_service.interactions.state import HostContinuationState, RunCheckpoint
-from a13n_service.models.domain import ModelExecutionSnapshot
+from a13n_service.models.domain import ModelDeclarations, ModelExecutionSnapshot
 from a13n_service.storage import transaction
 from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
 from a13n_service.storage.object_store import LocalObjectStore
@@ -69,7 +70,7 @@ def effective_agent_config() -> EffectiveAgentConfig:
         resolved_model=EffectiveAgentModel(
             execution=execution,
             settings=base.model.settings,
-            characteristics=base.model.characteristics,
+            characteristics=compose_model_characteristics(ModelDeclarations(), base.model.characteristics),
         ),
         instructions=base.instructions,
         input_adapter=base.input_adapter,

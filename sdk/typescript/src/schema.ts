@@ -6036,6 +6036,7 @@ export interface components {
       /** Display Name */
       display_name?: string | null;
       limits?: components["schemas"]["ModelLimits"];
+      native_profile?: components["schemas"]["ModelProfile"];
       /** Parameter Support */
       parameter_support?: {
         [key: string]: "supported" | "unsupported" | "unknown";

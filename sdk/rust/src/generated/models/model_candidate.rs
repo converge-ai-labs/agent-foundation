@@ -24,6 +24,9 @@ pub struct ModelCandidate {
     #[serde(rename = "limits", skip_serializing_if = "Option::is_none")]
     pub limits: Option<Box<models::ModelLimits>>,
 
+    #[serde(rename = "native_profile", skip_serializing_if = "Option::is_none")]
+    pub native_profile: Option<Box<models::ModelProfile>>,
+
     #[serde(rename = "parameter_support", skip_serializing_if = "Option::is_none")]
     pub parameter_support: Option<ParameterSupport>,
 
@@ -45,6 +48,7 @@ impl ModelCandidate {
         ModelCandidate {
             display_name: None,
             limits: None,
+            native_profile: None,
             parameter_support: None,
             profile: None,
             suggested_model_api,

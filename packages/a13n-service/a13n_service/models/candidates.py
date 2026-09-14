@@ -46,13 +46,7 @@ def candidate_from_catalog(
     projected = ModelProfile.model_validate(
         {name: native[name] for name in ModelProfile.model_fields if name in native}
     )
-    profile = ModelProfile.model_validate(
-        {
-            **projected.model_dump(exclude_unset=True),
-            **candidate.profile.model_dump(exclude_unset=True),
-        }
-    )
-    return candidate.model_copy(update={"profile": profile})
+    return candidate.model_copy(update={"native_profile": projected})
 
 
 def positive_token_limit(value: Any) -> int | None:

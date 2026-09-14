@@ -24,13 +24,19 @@ from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.requests import LiveProviderModel
 from a13n_service.models.service_common import ModelError
 from a13n_service.models.settings import effective_settings
+from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from pydantic_ai.messages import ModelRequest, UserPromptPart
 from pydantic_ai.models import ModelRequestParameters
+from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.bedrock import BedrockConverseModel
+from pydantic_ai.models.openai import OpenAIResponsesModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.profiles import ModelProfile
+from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.bedrock import BedrockProvider
+from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.tools import ToolDefinition
 
 from .conftest import ORG_ID, WORKSPACE_ID, actor, protector
@@ -494,3 +500,58 @@ async def test_bedrock_effective_thinking_reaches_native_effort_request_fields()
         "output_config": {"effort": "high"},
         "unrelated": "preserved",
     }
+
+
+@pytest.mark.anyio
+async def test_anthropic_partial_effort_override_preserves_native_thinking_on_wire():
+    sent = []
+
+    def handler(request):
+        sent.append(json.loads(request.content))
+        raise RuntimeError("capture request")
+
+    settings = effective_settings(
+        "anthropic.messages",
+        {"anthropic_thinking": {"type": "adaptive"}, "anthropic_effort": "low"},
+        {"anthropic_effort": "high"},
+    )
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        native = AnthropicModel(
+            "claude-sonnet-4-6",
+            provider=AnthropicProvider(
+                anthropic_client=AsyncAnthropic(
+                    api_key="test-key", base_url="https://example.test", http_client=client, max_retries=0
+                )
+            ),
+        )
+        with pytest.raises(ModelAPIError):
+            await _request(native, settings=settings)
+    assert sent[0]["thinking"] == {"type": "adaptive"}
+    assert sent[0]["output_config"] == {"effort": "high"}
+
+
+@pytest.mark.anyio
+async def test_responses_unified_effort_and_preserved_summary_both_reach_wire():
+    sent = []
+
+    def handler(request):
+        sent.append(json.loads(request.content))
+        raise RuntimeError("capture request")
+
+    settings = effective_settings(
+        "openai.responses",
+        {"extra_body": {"reasoning": {"effort": "low", "summary": "detailed"}}},
+        {"thinking": "high"},
+    )
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        native = OpenAIResponsesModel(
+            "gpt-5",
+            provider=OpenAIProvider(
+                openai_client=AsyncOpenAI(
+                    api_key="test-key", base_url="https://example.test/v1", http_client=client, max_retries=0
+                )
+            ),
+        )
+        with pytest.raises(ModelAPIError):
+            await _request(native, settings=settings)
+    assert sent[0]["reasoning"] == {"effort": "high", "summary": "detailed"}

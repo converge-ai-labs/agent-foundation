@@ -8193,6 +8193,9 @@
           "limits": {
             "$ref": "#/components/schemas/ModelLimits"
           },
+          "native_profile": {
+            "$ref": "#/components/schemas/ModelProfile"
+          },
           "parameter_support": {
             "additionalProperties": {
               "enum": [

@@ -4534,8 +4534,11 @@ type Model struct {
 
 // ModelCandidate defines model for ModelCandidate.
 type ModelCandidate struct {
-	DisplayName      nullable.Nullable[string]                  `json:"display_name,omitempty"`
-	Limits           *ModelLimits                               `json:"limits,omitempty"`
+	DisplayName nullable.Nullable[string] `json:"display_name,omitempty"`
+	Limits      *ModelLimits              `json:"limits,omitempty"`
+
+	// NativeProfile Read-only Provider capability information returned by discovery.
+	NativeProfile    *ModelProfile                              `json:"native_profile,omitempty"`
 	ParameterSupport *map[string]ModelCandidateParameterSupport `json:"parameter_support,omitempty"`
 
 	// Profile Read-only Provider capability information returned by discovery.
