@@ -725,4 +725,28 @@ def _json_null(value: Any) -> Any:
     return None if value is JSON.NULL else value
 
 
-__all__ = ["RunAttemptRecord", "RunRecord", "SessionRecord", "ThreadRecord"]
+class RunUsageRecord(Base):
+    """Immutable Harness receipt; Run and Attempt retain its accepted attribution."""
+
+    __tablename__ = "run_usage_records"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ("organization_id", "run_id", "run_attempt_id"),
+            ("run_attempts.organization_id", "run_attempts.run_id", "run_attempts.id"),
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("length(content_digest) = 64", name="content_digest_sha256"),
+        Index("ix_run_usage_records_attempt", "organization_id", "run_attempt_id"),
+    )
+
+    organization_id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    record_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    run_attempt_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    harness_run_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    record_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    ingested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+__all__ = ["RunAttemptRecord", "RunRecord", "RunUsageRecord", "SessionRecord", "ThreadRecord"]

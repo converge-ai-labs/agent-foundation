@@ -51,12 +51,16 @@ async def seed_admin():
 
 
 @asynccontextmanager
-async def native_clients(lab):
+async def native_clients(lab, *, public_origin=ORIGIN):
     origin = free_origin()
     process = await lab.spawn(
         "dev.live_tests.iam.native_iam",
         "serve",
-        environment={**lab.environment, "LIVE_TEST_NATIVE_CONTROL_URL": origin},
+        environment={
+            **lab.environment,
+            "LIVE_TEST_NATIVE_CONTROL_URL": origin,
+            "LIVE_TEST_NATIVE_PUBLIC_ORIGIN": public_origin,
+        },
     )
     await lab.ready(process, origin)
     await lab.command("dev.live_tests.iam.native_iam", "seed")
@@ -65,7 +69,7 @@ async def native_clients(lab):
     headers = {
         "Cookie": "a13n_session=" + admin["cookie"],
         "X-A13N-CSRF-Token": admin["csrf"],
-        "Origin": ORIGIN,
+        "Origin": public_origin,
         "X-A13N-Workspace-ID": lab.config["workspace_id"],
     }
     async with (
@@ -86,7 +90,13 @@ def main():
         config = load_config()
         config["control_url"] = os.environ["LIVE_TEST_NATIVE_CONTROL_URL"]
         settings = settings_for(config, "control")
-        settings = settings.model_copy(update={"iam": settings.iam.model_copy(update={"public_origin": ORIGIN})})
+        settings = settings.model_copy(
+            update={
+                "iam": settings.iam.model_copy(
+                    update={"public_origin": os.environ.get("LIVE_TEST_NATIVE_PUBLIC_ORIGIN", ORIGIN)}
+                )
+            }
+        )
         configure_logging(settings)
         serve_app(create_app(settings))
 

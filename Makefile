@@ -201,7 +201,20 @@ live-test-plugin-image: sync ## Build a custom plugin wheel/image and exercise t
 
 .PHONY: live-test-providers
 live-test-providers: sync ## Run optional configured real Providers in disposable local labs
-	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests/providers/test_31_real_providers.py --live-providers -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)
+	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests/providers --live-providers -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)
+
+.PHONY: live-test-models live-test-model-console live-test-openai live-test-zhipu
+live-test-openai: sync ## Run official OpenAI Chat Completions and Responses journeys
+	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests/providers/test_openai_direct.py --live-openai -n 0 -v --tb=short --log-disable=httpx2 $(LIVE_TEST_ARGS)
+
+live-test-zhipu: sync ## Run GLM journeys against the official BigModel endpoint
+	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests/providers/test_zhipu_direct.py --live-zhipu -n 0 -v --tb=short --log-disable=httpx2 $(LIVE_TEST_ARGS)
+
+live-test-models: sync ## Run isolated Model Management HTTP, IAM, protocol and recovery journeys
+	@uv run --locked python -m pytest dev/live_tests/model --live-management -n 0 -v --tb=short --log-disable=httpx2 $(LIVE_TEST_ARGS)
+
+live-test-model-console: sync frontend-sync sdk-typescript-build ## Run optional Chromium Model Management journeys
+	@uv run --locked --with playwright==1.58.0 python -m pytest dev/live_tests/model/test_console.py --live-management --live-model-console -n 0 -v --tb=short --log-disable=httpx2 $(LIVE_TEST_ARGS)
 
 live-test-check: sync ## Validate live-test support without contacting services
 	@uv run --locked ruff check --no-fix dev/live_tests

@@ -27,7 +27,7 @@ class ComposioSettings(Settings):
 
 
 class ModelSettings(Settings):
-    provider: Literal["openrouter", "openai"]
+    provider: Literal["openrouter", "openai", "zhipu"]
     api_key: SecretStr = Field(min_length=1)
     model: str = Field(min_length=1)
     base_url: str = ""

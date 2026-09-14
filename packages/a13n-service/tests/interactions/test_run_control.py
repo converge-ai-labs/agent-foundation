@@ -85,6 +85,10 @@ class _RecordingAttemptExecution(AttemptExecutionService):
     yielded: RunAttemptYieldReason | None = None
     handoff_permitted: bool = True
 
+    async def ingest_usage(self, authority, *, harness_run_id, records):
+        assert harness_run_id
+        assert all(record.record_id for record in records)
+
     async def commit_preparation_success(self, authority: AttemptContext):
         return _preparation(authority)
 

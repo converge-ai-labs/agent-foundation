@@ -122,6 +122,8 @@ Public Workspace UsageRecord List authorizes `usage.read` from the IAM [stable a
 
 A `usage_report` ID is a delivery identity, not another usage fact. Reports can overlap through retries or chunk delivery. `HarnessRunResult.usage_records` is a complete detached run-local snapshot and can overlap records already delivered incrementally. Service deduplicates all paths by immutable `record_id` and rejects conflicting content for the same identity.
 
+Service persists each receipt in `run_usage_records`, attributed to its original RunAttempt. The incremental Harness report and terminal result both use that ingestion path. For a current running Attempt, newly inserted model receipts add their input and output tokens to its operational `RunUsage`; model-request admission already owns the request counter, so ingesting a receipt does not increment it again. A token usage limit cannot discard already incurred usage: the receipt commits even if its tokens exceed the limit, and subsequent request admission enforces the exhausted budget. Provider receipts retain their native measures without inventing a conversion into model tokens.
+
 Terminal `RunUsage` is an aggregate process-local snapshot used for operational limits and summary display. Service does not sum it with UsageRecords, inline-child snapshots, or later RunAttempt snapshots. Durable attribution operates from immutable records. Harness model records already carry the applied build-time pricing revision, rule, status, and cost source; Service may add negotiated or settlement projections without changing record identity or content.
 
 ### Late Usage from a Terminal or Stale RunAttempt
@@ -135,6 +137,8 @@ Late ingestion:
 - preserves the original RunAttempt attribution and ingestion timestamp;
 - remains idempotent by `record_id`; and
 - can be supplemented by separately identified provider evidence under an owning reconciliation contract.
+
+Late receipts remain queryable attribution evidence and do not rewrite the sealed operational usage snapshot or an already published lifecycle event.
 
 This exception prevents lease loss from silently dropping attributable usage without weakening lifecycle fencing.
 

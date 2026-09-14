@@ -10,7 +10,7 @@ provider = "" # composio
 api_key = ""
 
 [model]
-provider = "" # openrouter or openai
+provider = "" # openrouter, openai or zhipu
 api_key = ""
 model = "" # Required for the configured case; ignored by the fixed OpenRouter matrix.
 base_url = "" # Optional custom endpoint; leave blank for the provider default.
