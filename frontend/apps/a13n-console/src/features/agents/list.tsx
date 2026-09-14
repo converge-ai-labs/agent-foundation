@@ -120,6 +120,8 @@ export function Agents() {
         <div className={`${styles.listTable} a13n-scrollbar`}>
           <ResourceTable
             items={visible}
+            caption={t("Agents")}
+            onRowActivate={(agent) => navigate(agent.key)}
             columns={[
               {
                 label: t("Agent"),
