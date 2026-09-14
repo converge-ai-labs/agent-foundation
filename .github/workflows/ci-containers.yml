@@ -9,6 +9,7 @@ on:
       - "Cargo.lock"
       - "Cargo.toml"
       - "deploy/containers/a13n-service/Dockerfile"
+      - "deploy/containers/a13n-service/service.toml"
       - "deploy/containers/sandbox/Dockerfile"
       - "LICENSE"
       - "crates/a13n-envd/**"
@@ -17,8 +18,10 @@ on:
       - "packages/a13n-harness/pyproject.toml"
       - "packages/a13n-stream-protocol/pyproject.toml"
       - "packages/a13n-harness-ui/pyproject.toml"
-      - "packages/a13n-service/**"
-      - "packages/a13n-logging/**"
+      - "packages/a13n-service/*"
+      - "packages/a13n-service/a13n_service/**"
+      - "packages/a13n-logging/*"
+      - "packages/a13n-logging/a13n_logging/**"
       - "pyproject.toml"
       - "scripts/docker-entrypoint.sh"
       - "uv.lock"
@@ -58,13 +61,16 @@ jobs:
               - '.dockerignore'
               - '.github/workflows/ci-containers.yml'
               - 'deploy/containers/a13n-service/Dockerfile'
+              - 'deploy/containers/a13n-service/service.toml'
               - 'packages/a13n-envd-client/pyproject.toml'
               - 'packages/a13n-environment/pyproject.toml'
               - 'packages/a13n-harness/pyproject.toml'
               - 'packages/a13n-stream-protocol/pyproject.toml'
               - 'packages/a13n-harness-ui/pyproject.toml'
-              - 'packages/a13n-service/**'
-              - 'packages/a13n-logging/**'
+              - 'packages/a13n-service/*'
+              - 'packages/a13n-service/a13n_service/**'
+              - 'packages/a13n-logging/*'
+              - 'packages/a13n-logging/a13n_logging/**'
               - 'pyproject.toml'
               - 'scripts/docker-entrypoint.sh'
               - 'uv.lock'
