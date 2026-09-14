@@ -38,6 +38,6 @@ The CLI releases as six platform-specific binary archives plus `SHA256SUMS` thro
 
 ## External tool selection wire contract
 
-Service Agent configuration uses `connection_tools` arrays. Entries contain `connection_id`, optional `tools`, `defer_loading` (default `false`), `permission` (default `auto`), and optional exact per-tool `permissions`. An omitted or null entry-level `tools` selects all tools; an empty array selects none. Run overrides inherit omitted categories and replace supplied arrays, including clearing with `[]`. Category-level null, aliases, `exposure`, and inline credentials are invalid.
+Service Agent configuration uses `connection_tools` arrays. Entries contain `connection_id`, optional `tools`, `defer_loading` (default `false`), `permission` (default `inherit`), and optional exact per-tool `permissions`. An omitted or null entry-level `tools` selects all tools; an empty array selects none. Run overrides inherit omitted categories and replace supplied arrays, including clearing with `[]`. Category-level null, aliases, `exposure`, and inline credentials are invalid.
 
 The TypeScript generated Native types preserve these distinctions. Python, Go, and Rust preserve unknown Service-owned fields in their search-only wrappers but do not locally validate the full external-tool configuration. Do not translate the removed alias-keyed shape. See [External tools](../docs/a13n-service/external-tools.md) for request examples and execution semantics.

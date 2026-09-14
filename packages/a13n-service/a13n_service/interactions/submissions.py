@@ -184,6 +184,7 @@ class QueuedSubmissionService:
         continuation = ContinueRunCommand(
             expected_thread_version=request.expected_thread_version,
             input=request.input,
+            labels=request.labels,
             agent_id=request.agent_id,
             agent_revision_id=request.agent_revision_id,
             expected_current_revision_id=request.expected_current_revision_id,
@@ -225,7 +226,7 @@ class QueuedSubmissionService:
                     expected_thread_version=request.expected_thread_version,
                     sealed_state_digest_sha256=request.waiting_resolution.sealed_state_digest_sha256,
                     input=request.input,
-                    **request.model_dump(include={"hook_subscription"}, exclude_unset=True),
+                    **request.model_dump(include={"hook_subscription", "labels"}, exclude_unset=True),
                 ),
                 transaction_hook=commit_run,
             )

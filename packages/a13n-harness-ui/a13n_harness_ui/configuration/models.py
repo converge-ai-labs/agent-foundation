@@ -158,6 +158,27 @@ class InputConfiguration(ConfigurationModel):
     long_text_threshold_chars: int | None = Field(default=8000, ge=1)
 
 
+class ShellReviewConfiguration(ConfigurationModel):
+    """Optional Host shortcut; disabled leaves Agent capability policy untouched."""
+
+    enable: bool = False
+    risk_threshold: Literal["low", "medium", "high", "extra_high"] | None = None
+    model: ResourceId | None = None
+    on_flagged: Literal["deny", "approval_required"] | None = None
+    on_error: Literal["deny", "approval_required", "allow"] | None = None
+
+    @field_validator("model")
+    @classmethod
+    def _model_id(cls, value: str | None) -> str | None:
+        if value is not None:
+            _require_id_prefix(value, "model-")
+        return value
+
+
+class SecurityConfiguration(ConfigurationModel):
+    shell_review: ShellReviewConfiguration = Field(default_factory=ShellReviewConfiguration)
+
+
 class HarnessUiDocument(ConfigurationModel):
     """Root ``a13n-harness-ui.yaml`` document."""
 
@@ -167,6 +188,7 @@ class HarnessUiDocument(ConfigurationModel):
     defaults: GlobalDefaults = Field(default_factory=GlobalDefaults)
     display: TerminalDisplayConfiguration = Field(default_factory=TerminalDisplayConfiguration)
     tools: ToolsConfiguration = Field(default_factory=ToolsConfiguration)
+    security: SecurityConfiguration = Field(default_factory=SecurityConfiguration)
     subagents: SubagentsConfiguration = Field(default_factory=SubagentsConfiguration)
 
 
@@ -386,6 +408,16 @@ class AgentSubagentSelection(StrictModel):
 
 
 type SubagentSelection = MarkdownSubagentSelection | AgentSubagentSelection
+
+
+class _MissingModelReferenceError(ValueError):
+    """A graph diagnostic containing only the authored reference and its location."""
+
+    def __init__(self, *, path: str, field: str, model_id: str) -> None:
+        self.path = path
+        self.field = field
+        self.model_id = model_id
+        super().__init__(f"{path}: {field} references unavailable Model {model_id!r}.")
 
 
 class _ToolProxyConfigurationError(ValueError):
@@ -634,8 +666,12 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
                     _require_reference(item, resources, f"{project.id}.defaults.{name}")
 
         for agent in self.agents.values():
-            if agent.model is not None:
-                _require_reference(agent.model, self.models, f"{agent.id}.model")
+            if agent.model is not None and agent.model not in self.models:
+                path = next(
+                    (item.relative_path for item in self.sources if agent.id in item.indexed_resource_ids),
+                    agent.id,
+                )
+                raise _MissingModelReferenceError(path=path, field="model", model_id=agent.model)
             for item in agent.harness_plugins or ():
                 _require_reference(item, self.harness_plugins, f"{agent.id}.harness_plugins")
             for item in agent.mcp_servers or ():

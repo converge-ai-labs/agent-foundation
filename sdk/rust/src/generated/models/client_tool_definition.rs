@@ -58,8 +58,8 @@ impl ClientToolDefinition {
 ///
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum Permission {
-    #[serde(rename = "auto")]
-    Auto,
+    #[serde(rename = "inherit")]
+    Inherit,
     #[serde(rename = "allow")]
     Allow,
     #[serde(rename = "deny")]
@@ -68,6 +68,6 @@ pub enum Permission {
 
 impl Default for Permission {
     fn default() -> Permission {
-        Self::Auto
+        Self::Inherit
     }
 }

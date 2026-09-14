@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Mapping
-from typing import Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 
 from ..models.thread_origin_kind import ThreadOriginKind
 from ..models.thread_role import ThreadRole
 from ..types import UNSET, Unset
+
+if TYPE_CHECKING:
+    from ..models.thread_labels import ThreadLabels
+
 
 T = TypeVar("T", bound="Thread")
 
@@ -29,6 +33,7 @@ class Thread:
         current_run_id (None | str | Unset):
         default_environment_id (None | str | Unset):
         head_run_id (None | str | Unset):
+        labels (ThreadLabels | Unset):
         origin_run_id (None | str | Unset):
         origin_thread_id (None | str | Unset):
     """
@@ -45,6 +50,7 @@ class Thread:
     current_run_id: str | Unset | None = UNSET
     default_environment_id: str | Unset | None = UNSET
     head_run_id: str | Unset | None = UNSET
+    labels: ThreadLabels | Unset = UNSET
     origin_run_id: str | Unset | None = UNSET
     origin_thread_id: str | Unset | None = UNSET
 
@@ -85,6 +91,10 @@ class Thread:
         else:
             head_run_id = self.head_run_id
 
+        labels: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.labels, Unset):
+            labels = self.labels.to_dict()
+
         origin_run_id: str | Unset | None
         if isinstance(self.origin_run_id, Unset):
             origin_run_id = UNSET
@@ -118,6 +128,8 @@ class Thread:
             field_dict["default_environment_id"] = default_environment_id
         if head_run_id is not UNSET:
             field_dict["head_run_id"] = head_run_id
+        if labels is not UNSET:
+            field_dict["labels"] = labels
         if origin_run_id is not UNSET:
             field_dict["origin_run_id"] = origin_run_id
         if origin_thread_id is not UNSET:
@@ -127,6 +139,8 @@ class Thread:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        from ..models.thread_labels import ThreadLabels
+
         d = dict(src_dict)
         created_at = datetime.datetime.fromisoformat(d.pop("created_at"))
 
@@ -173,6 +187,13 @@ class Thread:
 
         head_run_id = _parse_head_run_id(d.pop("head_run_id", UNSET))
 
+        _labels = d.pop("labels", UNSET)
+        labels: ThreadLabels | Unset
+        if isinstance(_labels, Unset):
+            labels = UNSET
+        else:
+            labels = ThreadLabels.from_dict(_labels)
+
         def _parse_origin_run_id(data: object) -> str | Unset | None:
             if data is None:
                 return data
@@ -204,6 +225,7 @@ class Thread:
             current_run_id=current_run_id,
             default_environment_id=default_environment_id,
             head_run_id=head_run_id,
+            labels=labels,
             origin_run_id=origin_run_id,
             origin_thread_id=origin_thread_id,
         )

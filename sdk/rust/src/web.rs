@@ -106,9 +106,9 @@ pub struct DownloadToolConfiguration {
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub enum ToolPermission {
-    #[serde(rename = "auto")]
+    #[serde(rename = "inherit")]
     #[default]
-    Auto,
+    Inherit,
     #[serde(rename = "allow")]
     Allow,
     #[serde(rename = "ask")]

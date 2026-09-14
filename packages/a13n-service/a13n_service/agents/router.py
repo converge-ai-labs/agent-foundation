@@ -12,6 +12,7 @@ from a13n_service.http_images import IMAGE_UPLOAD, image_body, image_response
 from a13n_service.http_types import IdempotencyKey
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.iam.http.resource_dependencies import WorkspaceId, workspace_actor
+from a13n_service.labels import LabelFilterValues, LabelsBody, parse_label_filters
 from a13n_service.request_runtime import get_control_runtime, get_process_runtime
 
 from .application import AgentManagement
@@ -80,6 +81,7 @@ async def list_agents(
     enabled: bool | None = None,
     source: AgentSource | None = None,
     include_archived: bool = False,
+    label: Annotated[LabelFilterValues, Query()] = (),
 ) -> AgentCollection:
     return await _management(request).queries.list(
         actor=actor,
@@ -89,6 +91,7 @@ async def list_agents(
         enabled=enabled,
         source=source,
         include_archived=include_archived,
+        labels=parse_label_filters(label),
     )
 
 
@@ -120,6 +123,29 @@ async def get_agent(request: Request, response: Response, actor: Actor, agent_id
     agent = await _management(request).queries.get(actor=actor, agent_id=agent_id)
     _set_etag(response, agent)
     return agent
+
+
+@router.get("/workspaces/{workspace}/agents/{agent}/labels", response_model=LabelsBody)
+async def get_agent_labels(request: Request, response: Response, actor: Actor, agent_id: AgentId) -> LabelsBody:
+    body, etag = await _management(request).queries.get_labels(actor=actor, agent_id=agent_id)
+    response.headers["ETag"] = etag
+    return body
+
+
+@router.put("/workspaces/{workspace}/agents/{agent}/labels", response_model=LabelsBody)
+async def put_agent_labels(
+    request: Request,
+    response: Response,
+    actor: Actor,
+    agent_id: AgentId,
+    body: LabelsBody,
+    if_match: IfMatch,
+) -> LabelsBody:
+    result, etag = await _management(request).commands.replace_labels(
+        actor=actor, agent_id=agent_id, body=body, if_match=if_match
+    )
+    response.headers["ETag"] = etag
+    return result
 
 
 @router.patch("/workspaces/{workspace}/agents/{agent}", response_model=Agent)

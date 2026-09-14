@@ -7,22 +7,33 @@ import * as Y from "yjs";
 import { decode, encode, type ThreadDraft } from "./draft";
 import type { Schema } from "../transport/client";
 import type { Profile } from "../shell/presence";
+import {
+  composerAttachments,
+  refreshAttachments,
+  type ComposerAttachmentView,
+} from "./composer-attachments";
 
 export function ComposerEditor({
   draft,
   profile,
   presence,
   submit,
+  attachments,
+  editor,
 }: {
   draft: ThreadDraft;
   profile: Profile;
   presence: (value: Schema<"DraftPresence">) => void;
   submit: () => void;
+  attachments?: ComposerAttachmentView;
+  editor?: { current: EditorView | null };
 }) {
   const host = useRef<HTMLDivElement>(null);
   const send = useRef(submit);
   const report = useRef(presence);
   const person = useRef(profile);
+  const attachmentContext = useRef(attachments);
+  attachmentContext.current = attachments;
   send.current = submit;
   report.current = presence;
   person.current = profile;
@@ -80,6 +91,9 @@ export function ComposerEditor({
       doc: doc.getText("text").toString(),
       extensions: [
         EditorView.lineWrapping,
+        ...(attachments
+          ? [composerAttachments(draft, () => attachmentContext.current!)]
+          : []),
         EditorView.contentAttributes.of({
           "aria-label": "Shared prompt",
           "aria-multiline": "true",
@@ -121,6 +135,7 @@ export function ComposerEditor({
         }),
       ],
     });
+    if (editor) editor.current = view;
     let disposed = false;
     let scheduled = false;
     const unsubscribe = draft.subscribe(() => {
@@ -128,7 +143,10 @@ export function ComposerEditor({
       scheduled = true;
       queueMicrotask(() => {
         scheduled = false;
-        if (!disposed) syncPresence();
+        if (!disposed) {
+          syncPresence();
+          view.dispatch({ effects: refreshAttachments.of(null) });
+        }
       });
     });
     syncPresence();
@@ -136,6 +154,7 @@ export function ComposerEditor({
       disposed = true;
       unsubscribe();
       awareness.off("update", publish);
+      if (editor) editor.current = null;
       view.destroy();
       awareness.destroy();
       report.current({
@@ -145,7 +164,10 @@ export function ComposerEditor({
         head: null,
       });
     };
-  }, [draft, doc]);
+  }, [draft, doc, editor]);
+  useEffect(() => {
+    editor?.current?.dispatch({ effects: refreshAttachments.of(null) });
+  }, [attachments, editor]);
   useEffect(() => {
     report.current({ name: profile.display_name, color: profile.color });
   }, [profile]);

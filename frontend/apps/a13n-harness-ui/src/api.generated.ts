@@ -3489,6 +3489,8 @@ export interface components {
             tool_name?: string | null;
             /** Tool Call Id */
             tool_call_id?: string | null;
+            /** Outcome */
+            outcome?: ("success" | "failed" | "denied" | "interrupted") | null;
             value?: components["schemas"]["JsonValue"] | null;
             /**
              * Value Omitted
@@ -4131,6 +4133,11 @@ export interface components {
             expected_version: number;
             patch: components["schemas"]["ThreadMetadataPatch"];
         };
+        /** InputAttachmentReference */
+        InputAttachmentReference: {
+            /** Attachment Id */
+            attachment_id: string;
+        };
         /** PromptRequest */
         PromptRequest: {
             /**
@@ -4143,16 +4150,23 @@ export interface components {
              * @default []
              */
             attachment_ids?: string[];
+            /** Parts */
+            parts?: (string | components["schemas"]["InputAttachmentReference"])[] | null;
         };
         /** RootSteerRequest */
         RootSteerRequest: {
-            /** Prompt */
-            prompt: string;
+            /**
+             * Prompt
+             * @default
+             */
+            prompt?: string;
             /**
              * Attachment Ids
              * @default []
              */
             attachment_ids?: string[];
+            /** Parts */
+            parts?: (string | components["schemas"]["InputAttachmentReference"])[] | null;
         };
     };
     responses: never;

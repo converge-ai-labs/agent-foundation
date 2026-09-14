@@ -215,8 +215,14 @@ export function SetupPage() {
                 checked={shellReview}
                 onChange={(event) => setShellReview(event.target.checked)}
               />
-              Review shell commands
+              Initialize shell command review
             </label>
+            <p>
+              Saved in root security.shell_review for all Agents. Existing root
+              settings stay unchanged. Review uses a Model request; extra-high
+              risk asks for approval. Turning this shortcut off does not remove
+              explicit Agent policies.
+            </p>
             {environment === "environment-native" ? (
               <Preflight
                 profile={environment}

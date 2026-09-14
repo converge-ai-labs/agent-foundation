@@ -23,8 +23,6 @@ from a13n_harness._review_context import (
     select_review_history,
 )
 from a13n_harness.capabilities.tool_review import (
-    TOOL_REVIEW_CAPABILITY_ID,
-    ToolReviewCapability,
     ToolReviewError,
     ToolReviewRequest,
     ToolReviewResultPayload,
@@ -41,7 +39,7 @@ from a13n_harness.tools.approval import (
     tool_approval_scope,
 )
 from a13n_harness.tools.identity import ToolPermissionMode, tool_identity
-from a13n_harness.tools.permissions import TOOL_PERMISSIONS_CAPABILITY_ID, ToolPermissions, ToolPermissionsCapability
+from a13n_harness.tools.permissions import TOOL_PERMISSIONS_CAPABILITY_ID, ToolPermissionsCapability
 from a13n_harness.tools.policy import InvocationDecisionKind
 
 _JSON = TypeAdapter(dict[str, JsonValue])
@@ -59,7 +57,7 @@ def permission_mode(ctx: RunContext[AgentContext], tool_def: ToolDefinition) -> 
     identity = tool_identity(tool_def)
     capability = ctx.capabilities.get(TOOL_PERMISSIONS_CAPABILITY_ID)
     if capability is None:
-        return ToolPermissions().resolve(identity)
+        return identity.default_mode
     if not isinstance(capability, ToolPermissionsCapability):
         raise DefinitionError("Incompatible tool permissions.", code="capability_type_mismatch")
     return capability.permissions.resolve(identity)
@@ -123,14 +121,12 @@ async def check_permission(
             },
         )
     if mode == "review":
-        capability = ctx.capabilities.get(TOOL_REVIEW_CAPABILITY_ID)
-        if capability is None:
-            raise DefinitionError("Tool review requires a matching reviewer.", code="tool_reviewer_missing")
-        if not isinstance(capability, ToolReviewCapability):
-            raise DefinitionError("Incompatible tool reviewer.", code="capability_type_mismatch")
-        if not capability.has_reviewer(identity.tool_id):
-            raise DefinitionError("Tool review requires a matching reviewer.", code="tool_reviewer_missing")
-        await _review(ctx, tool_def, arguments, approval, binding, capability)
+        capability = ctx.capabilities.get(TOOL_PERMISSIONS_CAPABILITY_ID)
+        if capability is not None:
+            if not isinstance(capability, ToolPermissionsCapability):
+                raise DefinitionError("Incompatible tool reviewer.", code="capability_type_mismatch")
+            if capability.has_reviewer(identity.tool_id):
+                await _review(ctx, tool_def, arguments, approval, binding, capability)
     result = PermissionCheck(binding, approval, mode)
     ctx.deps._tool_permission_checks[ctx.tool_call_id or ""] = result
     return result
@@ -142,7 +138,7 @@ async def _review(
     arguments: dict[str, JsonValue],
     approval: ToolApprovalContext,
     binding: str,
-    capability: ToolReviewCapability,
+    capability: ToolPermissionsCapability,
 ) -> None:
     review_metadata: dict[str, JsonValue] = {}
     try:

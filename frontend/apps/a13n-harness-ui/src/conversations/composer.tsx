@@ -9,6 +9,13 @@ import {
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
 import { Paperclip, ArrowUp, X } from "@phosphor-icons/react";
+import type { EditorView } from "@codemirror/view";
+import {
+  attachmentSelections,
+  attachmentToken,
+  isReadyAttachment,
+} from "./inline-attachments";
+import { AttachmentThumbnail } from "./attachment-thumbnail";
 import { useTransport } from "../transport/context";
 import {
   ApiError,
@@ -64,7 +71,7 @@ export async function submitDraft(
       const accepted = await result(
         transport.client.POST("/api/threads/{thread_id}/submit", {
           params: { path: { thread_id: threadId } },
-          body: captured.input,
+          body: { parts: captured.parts },
         }),
       );
       if (!accepted.receipt_id || accepted.thread_id !== threadId)
@@ -79,7 +86,7 @@ export async function submitDraft(
       const accepted = await result(
         transport.client.POST("/api/operations/{receipt_id}/steer", {
           params: { path: { receipt_id: receipt } },
-          body: captured.input,
+          body: { parts: captured.parts },
         }),
       );
       if (accepted.receipt_id !== receipt)
@@ -145,24 +152,29 @@ export function Composer({
   const queries = useQueryClient();
   const connection = useRef<ReturnType<ThreadDraft["connect"]> | null>(null);
   const upload = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
+  const editor = useRef<EditorView | null>(null);
+  const previewRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => previewRequest.current?.abort(), [transport, threadId]);
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<{
     name: string;
     text: string;
     url?: string;
     source?: Schema<"ThreadAttachment">["source"];
+    image?: boolean;
   } | null>(null);
-  const selections = [...draft.doc.getMap<string>("attachments").entries()];
+  const selections = attachmentSelections(draft.doc);
+  const uploading = selections.some(({ id }) => id === "pending");
   const attachments = useQueries({
-    queries: selections.map(([, id]) => ({
+    queries: selections.map(({ id }) => ({
+      enabled: isReadyAttachment(id),
       queryKey: ["thread", threadId, "attachment", id],
       queryFn: ({ signal }: { signal: AbortSignal }) =>
         result(
           transport.client.GET(
             "/api/threads/{thread_id}/attachments/{attachment_id}/metadata",
             {
-              params: { path: { thread_id: threadId, attachment_id: id } },
+              params: { path: { thread_id: threadId, attachment_id: id! } },
               signal,
             },
           ),
@@ -189,10 +201,6 @@ export function Composer({
   const unknown = draft.submission.kind === "unknown";
   const input = values(draft.doc);
   const missing = attachments.some((attachment) => !attachment.data);
-  const unsupportedSteer = attachments.some(
-    (attachment) =>
-      !attachment.data?.source || attachment.data.size > 64 * 1024,
-  );
   const valid =
     !!(input.prompt.trim() || input.attachment_ids.length) && !missing;
   const canSend =
@@ -205,7 +213,6 @@ export function Composer({
         pending ||
         unknown ||
         !valid ||
-        unsupportedSteer ||
         !activity.available_actions?.includes("steer"))
     )
       return;
@@ -218,45 +225,93 @@ export function Composer({
     );
     reconcile();
   };
-  async function uploadFiles(files: FileList | null) {
-    if (!files) return;
+  async function uploadOne(key: string, file: File) {
     setError("");
-    setUploading(true);
+    const doc = draft.doc;
+    const incarnation = draft.draftId;
+    draft.uploads.set(key, { file, status: "pending" });
+    doc.getMap("attachments").set(key, "pending");
     try {
-      if (selections.length + files.length > 8)
+      const response = await transport.fetch(
+        `/api/threads/${encodeURIComponent(threadId)}/attachments?name=${encodeURIComponent(file.name)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": file.type || "application/octet-stream" },
+          body: file,
+        },
+      );
+      const attachment = (await response.json()) as Schema<"ThreadAttachment">;
+      queries.setQueryData(
+        ["thread", threadId, "attachment", attachment.attachment_id],
+        attachment,
+      );
+      if (
+        draft.doc !== doc ||
+        (incarnation !== undefined && draft.draftId !== incarnation) ||
+        draft.replacement
+      )
+        return;
+      // Keep the registry even if the token was deleted: native undo can restore it.
+      doc.getMap("attachments").set(key, attachment.attachment_id);
+      draft.uploads.delete(key);
+    } catch (failure) {
+      if (
+        draft.doc !== doc ||
+        (incarnation !== undefined && draft.draftId !== incarnation)
+      )
+        return;
+      draft.uploads.set(key, { file, status: "failed" });
+      doc.getMap("attachments").set(key, "failed");
+      setError(
+        failure instanceof Error
+          ? failure.message
+          : "Upload failed. Retry or remove the attachment.",
+      );
+    }
+  }
+  async function uploadFiles(
+    files: File[],
+    at = editor.current?.state.selection.main.head ??
+      draft.doc.getText("text").length,
+  ) {
+    if (!files.length) return;
+    setError("");
+    try {
+      if (attachmentSelections(draft.doc).length + files.length > 8)
         throw new Error("Select up to eight attachments.");
       const total =
-        attachments.reduce((size, item) => size + (item.data?.size ?? 0), 0) +
-        Array.from(files).reduce((size, file) => size + file.size, 0);
+        attachmentSelections(draft.doc).reduce((size, { key, id }) => {
+          const retained = queries.getQueryData<Schema<"ThreadAttachment">>([
+            "thread",
+            threadId,
+            "attachment",
+            id,
+          ]);
+          return (
+            size + (retained?.size ?? draft.uploads.get(key)?.file.size ?? 0)
+          );
+        }, 0) + files.reduce((size, file) => size + file.size, 0);
       if (total > 20 * 1024 * 1024)
         throw new Error("Selected attachments exceed 20 MiB.");
-      for (const file of files) {
+      for (const file of files)
         if (file.size > 10 * 1024 * 1024)
           throw new Error(`${file.name} exceeds 10 MiB.`);
-        const response = await transport.fetch(
-          `/api/threads/${encodeURIComponent(threadId)}/attachments?name=${encodeURIComponent(file.name)}`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": file.type || "application/octet-stream",
-            },
-            body: file,
-          },
-        );
-        const attachment =
-          (await response.json()) as Schema<"ThreadAttachment">;
-        queries.setQueryData(
-          ["thread", threadId, "attachment", attachment.attachment_id],
-          attachment,
-        );
-        draft.doc
-          .getMap("attachments")
-          .set(crypto.randomUUID(), attachment.attachment_id);
-      }
+      // Reserve every position synchronously, before any upload can finish.
+      const pending = files.map((file) => {
+        const key = draft.addAttachment("pending", at);
+        draft.uploads.set(key, { file, status: "pending" });
+        at += attachmentToken(key).length;
+        return { key, file };
+      });
+      editor.current?.dispatch({
+        selection: { anchor: at },
+        scrollIntoView: true,
+      });
+      editor.current?.focus();
+      await Promise.all(pending.map(({ key, file }) => uploadOne(key, file)));
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Upload failed.");
     } finally {
-      setUploading(false);
       if (upload.current) upload.current.value = "";
     }
   }
@@ -265,9 +320,13 @@ export function Composer({
     attachment?: Schema<"ThreadAttachment">,
   ) {
     setError("");
+    previewRequest.current?.abort();
+    const controller = new AbortController();
+    previewRequest.current = controller;
     try {
       const response = await transport.fetch(
         `/api/threads/${encodeURIComponent(threadId)}/attachments/${encodeURIComponent(id)}`,
+        { signal: controller.signal },
       );
       const blob = await response.blob();
       let text = "Binary attachment. Download to inspect its original bytes.";
@@ -283,13 +342,16 @@ export function Composer({
       } else
         text =
           "This attachment is too large for inline preview. Download to inspect it.";
+      if (controller.signal.aborted) return;
       setPreview({
         name: attachment?.name ?? id,
         text,
         url: URL.createObjectURL(blob),
         source: attachment?.source,
+        image: attachment?.media_type.startsWith("image/"),
       });
     } catch (failure) {
+      if (controller.signal.aborted) return;
       setError(
         failure instanceof Error ? failure.message : "Preview unavailable.",
       );
@@ -341,42 +403,72 @@ export function Composer({
         profile={profile}
         presence={(value) => connection.current?.presence(value)}
         submit={() => void submit("send")}
+        editor={editor}
+        attachments={{
+          transport,
+          threadId,
+          metadata: new Map(
+            attachments.flatMap((item) =>
+              item.data ? [[item.data.attachment_id, item.data] as const] : [],
+            ),
+          ),
+          preview: (id, attachment) => void showAttachment(id, attachment),
+          upload: (files, at) => void uploadFiles(files, at),
+          retry: (key) => {
+            const item = draft.uploads.get(key);
+            if (item?.status === "failed") void uploadOne(key, item.file);
+            else if (!item)
+              setError(
+                "This upload is unavailable in this tab. Remove it and attach the file again.",
+              );
+          },
+        }}
       />
-      {selections.length > 0 && (
+      {selections.some((selection) => selection.from === undefined) && (
         <ul className={styles.attachments}>
-          {selections.map(([key, id], index) => (
-            <li key={key}>
-              <button
-                type="button"
-                onClick={() => void showAttachment(id, attachments[index].data)}
-              >
-                <Paperclip /> {attachments[index].data?.name ?? id}
-                {attachments[index].data?.source && (
-                  <small>
-                    Captured{" "}
-                    {"comment_id" in attachments[index].data.source
-                      ? "comment reference"
-                      : "repository_path" in attachments[index].data.source
-                        ? "diff"
-                        : "file"}
-                  </small>
+          {selections.map(({ key, id, from }, index) =>
+            from !== undefined ? null : (
+              <li key={key}>
+                <button
+                  type="button"
+                  onClick={() =>
+                    id && void showAttachment(id, attachments[index].data)
+                  }
+                >
+                  {attachments[index].data && (
+                    <AttachmentThumbnail
+                      threadId={threadId}
+                      attachment={attachments[index].data}
+                    />
+                  )}
+                  <Paperclip /> {attachments[index].data?.name ?? id}
+                  {attachments[index].data?.source && (
+                    <small>
+                      Captured{" "}
+                      {"comment_id" in attachments[index].data.source
+                        ? "comment reference"
+                        : "repository_path" in attachments[index].data.source
+                          ? "diff"
+                          : "file"}
+                    </small>
+                  )}
+                </button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Remove ${attachments[index].data?.name ?? id}`}
+                  onClick={() => draft.removeAttachment(key)}
+                >
+                  <X />
+                </Button>
+                {attachments[index].error && (
+                  <span role="alert">
+                    Attachment unavailable; remove it or refresh access.
+                  </span>
                 )}
-              </button>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={`Remove ${attachments[index].data?.name ?? id}`}
-                onClick={() => draft.doc.getMap("attachments").delete(key)}
-              >
-                <X />
-              </Button>
-              {attachments[index].error && (
-                <span role="alert">
-                  Attachment unavailable; remove it or refresh access.
-                </span>
-              )}
-            </li>
-          ))}
+              </li>
+            ),
+          )}
         </ul>
       )}
       {(error || draft.error) && (
@@ -422,7 +514,9 @@ export function Composer({
             type="file"
             multiple
             hidden
-            onChange={(event) => void uploadFiles(event.target.files)}
+            onChange={(event) =>
+              void uploadFiles(Array.from(event.target.files ?? []))
+            }
           />
           <Button
             variant="ghost"
@@ -436,13 +530,7 @@ export function Composer({
           {busy && activity.available_actions?.includes("steer") && (
             <Button
               variant="outline"
-              disabled={
-                !draft.synchronized ||
-                pending ||
-                unknown ||
-                !valid ||
-                unsupportedSteer
-              }
+              disabled={!draft.synchronized || pending || unknown || !valid}
               onClick={() => void submit("steer")}
             >
               Send as instruction
@@ -462,17 +550,13 @@ export function Composer({
         {busy ? "Next message is not queued. " : ""}Enter adds a line ·
         Ctrl/⌘+Enter sends · Drafts are not saved across server restarts.
       </small>
-      {busy && unsupportedSteer && selections.length > 0 && (
-        <small>
-          Steering accepts only captured UTF-8 file/diff context up to 64 KiB
-          each, not ordinary uploads. Remove unsupported selections or keep this
-          for your next message.
-        </small>
-      )}
       <ModalFrame
         open={!!preview}
         onOpenChange={(open) => {
-          if (!open) setPreview(null);
+          if (!open) {
+            previewRequest.current?.abort();
+            setPreview(null);
+          }
         }}
         title={preview?.name ?? "Attachment"}
         description="These are the retained bytes selected for input, not the current file on the server."
@@ -501,7 +585,15 @@ export function Composer({
             </p>
           </div>
         )}
-        <pre className={styles.code}>{preview?.text}</pre>
+        {preview?.image && preview.url ? (
+          <img
+            className={styles.attachmentPreview}
+            src={preview.url}
+            alt={preview.name}
+          />
+        ) : (
+          <pre className={styles.code}>{preview?.text}</pre>
+        )}
         {preview?.url && (
           <a href={preview.url} download={preview.name}>
             Download original

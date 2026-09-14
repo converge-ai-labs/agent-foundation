@@ -40,6 +40,9 @@ pub struct CreateAgentRequest {
     )]
     pub key: Option<Option<String>>,
 
+    #[serde(rename = "labels", skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Value>,
+
     #[serde(rename = "name")]
     pub name: String,
 }
@@ -51,6 +54,7 @@ impl CreateAgentRequest {
             default_environment_template_id: None,
             description: None,
             key: None,
+            labels: None,
             name,
         }
     }

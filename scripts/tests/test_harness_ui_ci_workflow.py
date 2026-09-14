@@ -21,13 +21,16 @@ def test_ui_ci_keeps_main_linux_and_separate_windows_backstop() -> None:
     assert "workflow_dispatch" in triggers
     assert "github.event_name" in workflow["concurrency"]["group"]
     jobs = workflow["jobs"]
-    assert jobs["tests"]["if"] == (
-        "github.event_name != 'schedule' && "
-        "(github.event_name != 'pull_request' || github.event.pull_request.draft == false)"
-    )
-    assert jobs["windows"]["if"] == (
-        "github.event_name != 'push' && "
-        "(github.event_name != 'pull_request' || github.event.pull_request.draft == false)"
+    assert workflow["permissions"]["pull-requests"] == "read"
+    assert jobs["changes"]["if"] == ("github.event_name != 'pull_request' || github.event.pull_request.draft == false")
+    checkout = jobs["changes"]["steps"][0]
+    assert checkout["with"]["fetch-depth"] == 0
+    classifier = jobs["changes"]["steps"][1]
+    assert classifier["if"] == "github.event_name == 'pull_request' || github.event_name == 'push'"
+    assert jobs["windows"]["needs"] == "changes"
+    assert jobs["windows"]["if"].strip() == (
+        "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || "
+        "(github.event_name == 'pull_request' && needs.changes.outputs.tests == 'true')"
     )
     for event in ("push", "pull_request"):
         assert {
@@ -94,8 +97,11 @@ def test_linux_keeps_full_tests_and_distribution_checks() -> None:
     assert "Test native command lifecycle" in by_name
     assert not any("pnpm" in step.get("run", "") for step in steps)
     for name in ("tests", "frontend", "distribution"):
-        assert "needs" not in jobs[name]
-        assert jobs[name]["if"] == jobs["tests"]["if"]
+        assert jobs[name]["needs"] == "changes"
+        assert jobs[name]["if"] == (
+            f"github.event_name == 'workflow_dispatch' || needs.changes.outputs.{name} == 'true'"
+        )
+        assert jobs["changes"]["outputs"][name] == "${{ steps.filter.outputs." + name + " }}"
     frontend = "\n".join(step.get("run", "") for step in jobs["frontend"]["steps"])
     assert "--filter '!a13n-harness-ui-webui' -r run check" in frontend
     assert "--filter '!a13n-harness-ui-webui' -r run test" in frontend
@@ -113,19 +119,90 @@ def test_linux_keeps_full_tests_and_distribution_checks() -> None:
         "Verify bundled assets and sdist wheel rebuild",
     ):
         assert "if" not in distribution[name]
-    assert jobs["linux"]["needs"] == ["tests", "frontend", "distribution"]
+    assert "prettier --check apps/a13n-harness-ui" in webui
+    assert jobs["linux"]["needs"] == ["changes", "tests", "frontend", "distribution"]
     assert jobs["linux"]["name"] == "UI (Linux)"
     assert jobs["linux"]["if"].startswith("always() &&")
 
 
-@pytest.mark.parametrize("result", ["success", "failure", "cancelled", "skipped"])
+@pytest.mark.parametrize("result", ["success", "failure", "cancelled", "skipped", ""])
+@pytest.mark.parametrize("selected", [True, False])
 @pytest.mark.parametrize("component", ["TESTS", "FRONTEND", "DISTRIBUTION"])
-def test_linux_gate_rejects_any_unsuccessful_job(component: str, result: str) -> None:
+def test_linux_gate_requires_exact_selected_results(component: str, selected: bool, result: str) -> None:
     gate = yaml.safe_load(WORKFLOW.read_text())["jobs"]["linux"]["steps"][0]
-    env = {f"{name}_RESULT": "success" for name in ("TESTS", "FRONTEND", "DISTRIBUTION")}
+    env = {"CHANGES_RESULT": "success"}
+    for name in ("TESTS", "FRONTEND", "DISTRIBUTION"):
+        env[f"{name}_RESULT"] = "success"
+        env[f"{name}_SELECTED"] = "true"
+        assert gate["env"][f"{name}_SELECTED"] == (
+            "${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs." + name.lower() + " == 'true' }}"
+        )
+        assert gate["env"][f"{name}_RESULT"] == "${{ needs." + name.lower() + ".result }}"
     env[f"{component}_RESULT"] = result
+    env[f"{component}_SELECTED"] = str(selected).lower()
     completed = subprocess.run(["bash", "-e", "-c", gate["run"]], env=env, check=False)
-    assert (completed.returncode == 0) == (result == "success")
+    assert (completed.returncode == 0) == (result == ("success" if selected else "skipped"))
+
+
+@pytest.mark.parametrize("result", ["failure", "cancelled", "skipped", ""])
+def test_linux_gate_rejects_failed_classification(result: str) -> None:
+    gate = yaml.safe_load(WORKFLOW.read_text())["jobs"]["linux"]["steps"][0]
+    assert gate["env"]["CHANGES_RESULT"] == "${{ needs.changes.result }}"
+    completed = subprocess.run(["bash", "-e", "-c", gate["run"]], env={"CHANGES_RESULT": result}, check=False)
+    assert completed.returncode != 0
+
+
+@pytest.mark.parametrize(
+    "paths,expected",
+    [
+        (["frontend/apps/a13n-console/src/features/traces/detail.tsx"], {"frontend"}),
+        (["sdk/typescript/src/client.ts"], {"frontend"}),
+        (["frontend/apps/a13n-harness-ui/src/shell/workbench.tsx"], {"distribution"}),
+        (["frontend/apps/a13n-harness-ui/src/openapi.json"], {"distribution"}),
+        (["frontend/packages/a13n-ui/src/components/button.tsx"], {"frontend", "distribution"}),
+        (["frontend/package.json"], {"frontend", "distribution"}),
+        (["frontend/pnpm-lock.yaml"], {"frontend", "distribution"}),
+        (["frontend/.prettierignore"], {"frontend", "distribution"}),
+        (["packages/a13n-harness-ui/tests/test_cli_interactions.py"], {"tests"}),
+        (["packages/a13n-harness-ui/tests/conftest.py"], {"tests"}),
+        (["packages/a13n-environment/tests/test_direct_local.py"], {"tests"}),
+        (["packages/a13n-harness-ui/a13n_harness_ui/app.py"], {"tests", "distribution"}),
+        (["packages/a13n-harness-ui/build_skills.py"], {"tests", "distribution"}),
+        (["packages/a13n-harness-ui/pyproject.toml"], {"tests", "distribution"}),
+        (["packages/a13n-envd-client/a13n_envd_client/eip/client.py"], {"tests", "distribution"}),
+        (["packages/a13n-logging/a13n_logging/__init__.py"], {"tests", "distribution"}),
+        (["packages/a13n-harness/a13n_harness/types.py"], {"tests", "distribution"}),
+        (["packages/a13n-service/pyproject.toml"], {"tests", "distribution"}),
+        (["uv.lock"], {"tests", "distribution"}),
+        (["conftest.py"], {"tests", "distribution"}),
+        (["docs/a13n-harness-ui/configuration.md"], {"tests", "distribution"}),
+        (["mkdocs.yml"], {"tests", "distribution"}),
+        (["scripts/export-a13n-harness-ui-openapi.py"], {"distribution"}),
+        (["scripts/tests/test_prepare_release_version.py"], {"distribution"}),
+        (["scripts/check_a13n_harness_ui_distribution.py"], {"tests", "distribution"}),
+        ([".github/workflows/ci-a13n-harness-ui.yml"], {"tests", "frontend", "distribution"}),
+        (["scripts/tests/test_harness_ui_ci_workflow.py"], {"tests", "frontend", "distribution"}),
+        (
+            ["packages/a13n-harness-ui/tests/test_cli_interactions.py", "frontend/apps/a13n-console/src/app.tsx"],
+            {"tests", "frontend"},
+        ),
+        (["docs/a13n-service/index.md"], set()),
+    ],
+)
+def test_ui_ci_selects_only_affected_jobs(paths: list[str], expected: set[str]) -> None:
+    workflow = yaml.safe_load(WORKFLOW.read_text())
+    filters = yaml.safe_load(workflow["jobs"]["changes"]["steps"][1]["with"]["filters"])
+    assert all(not pattern.startswith("!") for patterns in filters.values() for pattern in patterns)
+    actual = {
+        name
+        for name, patterns in filters.items()
+        if any(Path(path).full_match(pattern) for path in paths for pattern in patterns)
+    }
+    assert actual == expected
+    for event in ("pull_request", "push"):
+        assert any(
+            Path(path).full_match(pattern) for path in paths for pattern in workflow[True][event]["paths"]
+        ) == bool(expected)
 
 
 def test_windows_native_selection_exists_and_full_suite_is_retained() -> None:

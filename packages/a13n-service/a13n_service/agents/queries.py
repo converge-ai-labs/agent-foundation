@@ -12,6 +12,7 @@ from a13n_service.iam import (
     authorize_agent_collection,
 )
 from a13n_service.iam.authorization import WorkspaceAction
+from a13n_service.labels import LabelsBody, label_predicates, labels_etag
 from a13n_service.storage import transaction
 
 from .cursors import (
@@ -76,6 +77,10 @@ class AgentQueries:
                 agent_id=agent_id,
             )
 
+    async def get_labels(self, *, actor: AuthenticatedActor, agent_id: str) -> tuple[LabelsBody, str]:
+        agent = await self.get(actor=actor, agent_id=agent_id)
+        return LabelsBody(labels=agent.labels), labels_etag(agent.id, agent.labels)
+
     async def list(
         self,
         *,
@@ -86,12 +91,14 @@ class AgentQueries:
         enabled: bool | None,
         source: AgentSource | None,
         include_archived: bool,
+        labels: dict[str, str] | None = None,
     ) -> AgentCollection:
         scope = {
             "workspace_id": workspace_id,
             "enabled": enabled,
             "source": source.value if source is not None else None,
             "include_archived": include_archived,
+            "labels": labels or {},
         }
         try:
             after = decode_agent_cursor(cursor, scope=scope) if cursor is not None else None
@@ -110,6 +117,13 @@ class AgentQueries:
                 query = select(AgentRecord).where(
                     AgentRecord.organization_id == workspace.organization_id,
                     AgentRecord.workspace_id == workspace_id,
+                )
+                query = query.where(
+                    *label_predicates(
+                        AgentRecord.labels,
+                        labels or {},
+                        dialect=session.bind.dialect.name,
+                    )
                 )
                 if authorization.visible_agent_ids is not None:
                     query = query.where(AgentRecord.id.in_(authorization.visible_agent_ids))

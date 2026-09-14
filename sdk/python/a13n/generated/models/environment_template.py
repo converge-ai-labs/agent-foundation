@@ -2,9 +2,15 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Mapping
-from typing import Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
+
+from ..types import UNSET, Unset
+
+if TYPE_CHECKING:
+    from ..models.environment_template_labels import EnvironmentTemplateLabels
+
 
 T = TypeVar("T", bound="EnvironmentTemplate")
 
@@ -23,6 +29,7 @@ class EnvironmentTemplate:
         updated_at (datetime.datetime):
         version (int):
         workspace_id (None | str):
+        labels (EnvironmentTemplateLabels | Unset):
     """
 
     archived_at: datetime.datetime | None
@@ -35,6 +42,7 @@ class EnvironmentTemplate:
     updated_at: datetime.datetime
     version: int
     workspace_id: str | None
+    labels: EnvironmentTemplateLabels | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         archived_at: str | None
@@ -63,6 +71,10 @@ class EnvironmentTemplate:
         workspace_id: str | None
         workspace_id = self.workspace_id
 
+        labels: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.labels, Unset):
+            labels = self.labels.to_dict()
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -79,11 +91,15 @@ class EnvironmentTemplate:
                 "workspace_id": workspace_id,
             }
         )
+        if labels is not UNSET:
+            field_dict["labels"] = labels
 
         return field_dict
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        from ..models.environment_template_labels import EnvironmentTemplateLabels
+
         d = dict(src_dict)
 
         def _parse_archived_at(data: object) -> datetime.datetime | None:
@@ -129,6 +145,13 @@ class EnvironmentTemplate:
 
         workspace_id = _parse_workspace_id(d.pop("workspace_id"))
 
+        _labels = d.pop("labels", UNSET)
+        labels: EnvironmentTemplateLabels | Unset
+        if isinstance(_labels, Unset):
+            labels = UNSET
+        else:
+            labels = EnvironmentTemplateLabels.from_dict(_labels)
+
         environment_template = cls(
             archived_at=archived_at,
             created_at=created_at,
@@ -140,6 +163,7 @@ class EnvironmentTemplate:
             updated_at=updated_at,
             version=version,
             workspace_id=workspace_id,
+            labels=labels,
         )
 
         return environment_template

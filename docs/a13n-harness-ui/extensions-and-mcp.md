@@ -29,7 +29,7 @@ The complete fields are in [MCP field reference](mcp.md#mcp-field-reference).
 
 Each Agent selection is `{capability: <catalog-key>, configuration: <JSON mapping>}`. Harness UI exposes its built-ins and configurable installed/native capabilities. There is no arbitrary module import field in a resource file.
 
-Common built-in keys are `dynamic_environment`, `documents`, `web`, `skills`, `working_state`, `user_interaction`, `runtime_context`, `handoff`, `compaction`, and `codeact`. Native declarative keys such as `ToolReviewCapability` are also supported. Not every capability is automatically enabled.
+Common built-in keys are `dynamic_environment`, `documents`, `web`, `skills`, `working_state`, `user_interaction`, `runtime_context`, `handoff`, `compaction`, and `codeact`. Permission and review Capabilities are intentionally absent from ordinary catalog choices; use root `security.shell_review` instead. Existing raw Agent selections remain compatible. Not every capability is automatically enabled.
 
 The complete capability-specific schemas are owned by the installed Harness/native implementation, rather than flattened into Harness UI YAML. Consult the [Harness capability reference](https://github.com/converge-ai-labs/agent-foundation/tree/main/packages/a13n-harness/a13n_harness/capabilities) and the implementation matching your installed version. `a13n-harness-ui config validate` checks selected keys and their configuration.
 
@@ -47,19 +47,17 @@ This enables native Environment tools, not a second local runner. Use `tools` on
 
 ### Shell review
 
-Setup enables review for subscription starters. To configure it yourself, first create a reviewer Model resource, then select:
+Configure shell review in the selected root `a13n-harness-ui.yaml`, not an Agent capability picker:
 
 ```yaml
-capabilities:
-  - capability: ToolReviewCapability
-    configuration:
-      model: model-review
-      risk_threshold: high
-      on_flagged: approval_required
-      on_error: allow
+security:
+  shell_review:
+    enable: true
+    model: model-review
+    risk_threshold: high
 ```
 
-`model` here is a **Model resource ID** for an auxiliary reviewer with no execution tools, not a subagent reference or ambient provider route. Explicit capability `model_settings` can override its captured Model settings. With this configuration, flagged commands require approval and non-timeout review errors add no restriction; invocation-policy denial and approval requirements still apply. A review timeout always denies the command before execution, regardless of `on_error`. Omitting `on_error` retains the Harness library's `approval_required` default. Review does not provide filesystem or network isolation. This is independent of the `code-reviewer` built-in child, which reviews changes when delegated work.
+`model` is a configured **Model resource ID**, not a subagent reference or ambient provider route. The shortcut merges permissions and optional review into one `ToolPermissionsCapability` for shell launches, with explicit root fields taking precedence and unrelated Agent rules preserved. `enable: false` leaves explicit Agent policies untouched. See the [complete shell-review recipe](configuration-recipes.md#configure-tool-review) for defaults, inheritance, errors, and usage. Review is not filesystem or network isolation and is independent of the `code-reviewer` child.
 
 ### Context management
 

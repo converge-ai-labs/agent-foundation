@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.application_errors import ApplicationError
 from a13n_service.background import Sweep
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
-from a13n_service.interactions.acceptance import validate_prepared_run
+from a13n_service.interactions.acceptance_validation import validate_prepared_run
 from a13n_service.interactions.control_domain import RunAcceptanceReceipt, ThreadInboxEntry
 from a13n_service.interactions.control_models import ThreadInboxRecord
 from a13n_service.interactions.domain import Run
@@ -32,6 +32,7 @@ from a13n_service.interactions.objects import (
     StaleStateWriter,
     StoredRunState,
 )
+from a13n_service.labels import merge_labels
 from a13n_service.run_stream import RetainedItem, RunReplayStore
 from a13n_service.storage import ObjectStoreError, short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
@@ -293,7 +294,7 @@ class AsyncSubagentSuccessorReconciler:
                 )
                 successor_record = await add_run_with_environment(
                     database,
-                    run=prepared.run,
+                    run=prepared.run.model_copy(update={"labels": merge_labels(selected.thread.labels)}),
                     state=prepared.state,
                     workspace_id=session.workspace_id,
                     intent=RetainedRunEnvironment(selected.selected_parent.id, selected.selected_parent.thread_id),

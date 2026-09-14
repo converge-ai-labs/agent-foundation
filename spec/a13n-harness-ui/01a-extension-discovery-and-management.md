@@ -40,7 +40,9 @@ Catalog refresh is process-local and reads package metadata or explicit Host reg
 
 ## Capability Catalog
 
-Harness UI enumerates the complete declarative Capability catalog available to its Agent resolver:
+Harness UI enumerates the declarative Capability authoring catalog. `ToolPermissionsCapability` is omitted from user-facing catalog choices; ordinary configuration uses the root `security.shell_review` shortcut instead. Advanced Agent selections may configure this single Capability directly, including nested `review` configuration. Hiding authoring choices does not reject or remove explicit Agent policy.
+
+The remaining catalog includes:
 
 - native Pydantic AI declarative Capability types;
 - the closed Harness first-party declarative set;

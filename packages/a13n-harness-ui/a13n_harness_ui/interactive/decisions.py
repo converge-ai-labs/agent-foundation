@@ -239,17 +239,14 @@ def _approval_content(request: ApprovalRequestView, index: int, total: int) -> d
     reason = metadata.pop("reason", None) if isinstance(approval, dict) else None
     if isinstance(reason, str) and reason:
         content["reason"] = preview(reason, 2000)
-    review = metadata.pop("a13n.harness.shell-review", None)
     shared_review = metadata.pop("a13n.harness.tool-review", None)
-    if isinstance(approval, dict) and approval.get("tool_id") == "environment.shell_exec":
-        review = shared_review if isinstance(shared_review, dict) else review
+    review = (
+        shared_review if isinstance(approval, dict) and approval.get("tool_id") == "environment.shell_exec" else None
+    )
     if isinstance(review, dict):
-        if review.get("status") == "error":
-            content["error"] = "The reviewer failed; no risk assessment or reason is available."
-        else:
-            risk, reason = review.get("risk"), review.get("reason")
-            content["risk"] = preview(risk, 80) if isinstance(risk, str) and risk else "unavailable"
-            content["reason"] = preview(reason, 2000) if isinstance(reason, str) and reason else "unavailable"
+        risk, reason = review.get("risk"), review.get("reason")
+        content["risk"] = preview(risk, 80) if isinstance(risk, str) and risk else "unavailable"
+        content["reason"] = preview(reason, 2000) if isinstance(reason, str) and reason else "unavailable"
     elif review is not None:
         content["error"] = "Shell review unavailable (invalid review metadata)"
     arguments = request.arguments

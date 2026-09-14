@@ -37,7 +37,7 @@ The `201` representation contains `agent` and `revision`. Save their returned ID
 
 ## Configure tool permissions and a reviewer
 
-Each built-in Tool owns its permission in `toolsets`. Authored permissions default to persisted `auto`; replace the reviewer placeholder with a real managed Model **ID**, not a Model key or provider route:
+Each built-in Tool owns its permission in `toolsets`. Authored permissions default to persisted `inherit`; replace the reviewer placeholder with a real managed Model **ID**, not a Model key or provider route:
 
 ```json
 {
@@ -65,9 +65,9 @@ Each built-in Tool owns its permission in `toolsets`. Authored permissions defau
 }
 ```
 
-`auto` resolves through each Tool's catalogued code-owned default; `allow` continues, `deny` blocks, `ask` requests human approval, and `review` consults the reviewer. Effective review without a matching reviewer is invalid at save/override and fails explicitly at runtime. These settings never widen Service IAM or Environment authority. Code-first Harness consumers can still use stable-ID selectors; Service built-ins keep exact permission ownership in their Tool entries.
+Use actual stable tool IDs from the prepared surface, not display-name guesses. `inherit` uses the Tool's declared default, which is `allow` unless explicitly overridden by trusted Tool code. A reviewer or risk rule alone does not enable review; `allow` continues, `deny` blocks, `ask` requests human approval, and `review` consults the matching reviewer when configured. Without a matching reviewer, review adds no restriction. These settings never widen Service IAM or Environment authority. Code-first Harness consumers can still use stable-ID selectors; Service built-ins keep exact permission ownership in their Tool entries.
 
-Run acceptance freezes reviewer Model execution settings alongside the main Model. Later Model edits do not change an accepted Run; credentials still resolve through current managed authentication. In `config_override`, each supplied Toolset entry replaces that whole entry while omitted entries inherit. Reviewer omission inherits; null can clear it only when no active Tool resolves to review. A reviewer approval may be followed by a separate tool-policy approval through the normal waiting/feedback flow.
+Run acceptance freezes configured reviewer Model execution settings alongside the main Model. Later Model edits do not change an accepted Run; credentials still resolve through current managed authentication. In `config_override`, each supplied Toolset entry replaces that whole entry while omitted entries inherit. Reviewer omission inherits and null clears it. A reviewer approval may be followed by a separate tool-policy approval through the normal waiting/feedback flow.
 
 Review usage enters the existing accounting records with tool/call correlation. The stream exposes `tool_review_result` custom events with a completed risk/reason/usage result and independently computed decision, or a safe error code and effective decision. Treat those as observations, not another billable record or proof of execution.
 

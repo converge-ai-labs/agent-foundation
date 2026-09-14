@@ -43,7 +43,7 @@ replace = AgentRunOverride(
             enabled=True,
             tools={
                 "search": ToolSelection(
-                    permission="auto",
+                    permission="inherit",
                     config=SearchToolConfiguration(provider_id="wprov_example").model_dump(exclude_none=True),
                 )
             },

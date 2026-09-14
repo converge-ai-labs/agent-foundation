@@ -13,7 +13,7 @@ from a13n_environment import (
     build_environment_provider_catalog,
     discover_environment_provider_references,
 )
-from a13n_harness.capabilities import DocumentsCapability, ToolReviewCapability, ToolReviewConfig, WebCapability
+from a13n_harness.capabilities import DocumentsCapability, ToolReviewConfig, WebCapability
 from a13n_harness.capabilities.codeact import CodeActCapability, CodeActConfig
 from a13n_harness.capabilities.context import (
     CompactionCapability,
@@ -66,7 +66,6 @@ _BUILTIN_PROVIDER_KEYS = frozenset(
     {"a13n.direct-local", "a13n.local-envd", "a13n.docker", "a13n.e2b", "a13n.http-envd", "a13n.websocket-envd"}
 )
 _BUILTIN_CAPABILITIES: dict[str, type[AbstractCapability[Any]]] = {
-    "ShellReviewCapability": ToolReviewCapability,  # Legacy UI preset name; no separate Harness capability.
     "dynamic_environment": DynamicEnvironmentCapability,
     "codeact": CodeActCapability,
     "compaction": CompactionCapability,
@@ -174,7 +173,11 @@ class HarnessUiExtensionCatalog:
 
     @property
     def references(self) -> tuple[CatalogReference, ...]:
-        return tuple(item.model_copy(deep=True) for item in self._references)
+        return tuple(
+            item.model_copy(deep=True)
+            for item in self._references
+            if item.kind != "capability" or item.key != "ToolPermissionsCapability"
+        )
 
     def refresh(self) -> tuple[CatalogReference, ...]:
         """Refresh process-local package metadata without replacing imported Host code."""
@@ -214,8 +217,6 @@ class HarnessUiExtensionCatalog:
         result: list[SelectedCapability] = []
         custom_types: list[type[AbstractCapability[Any]]] = []
         for key, configuration in selections:
-            if key == "ShellReviewCapability" and configuration.get("on_error") == "skip":
-                configuration = {**configuration, "on_error": "allow"}
             self._require_unambiguous("capability", key)
             capability_type = _BUILTIN_CAPABILITIES.get(key)
             source: Literal["installed", "host"] = "installed"
@@ -487,11 +488,14 @@ def _construct_capability(
     if capability_type is WebCapability:
         return WebCapability(WebConfiguration.model_validate(configuration))
     if capability_type is ToolPermissionsCapability:
-        return ToolPermissionsCapability(ToolPermissions.model_validate(configuration))
-    if capability_type is ToolReviewCapability:
-        return ToolReviewCapability(
-            ToolReviewConfig.model_validate({"on_flagged": "approval_required", **configuration})
-        )
+        permissions = dict(configuration)
+        review = permissions.pop("review", None)
+        review_config = None
+        if review is not None:
+            if not isinstance(review, dict):
+                raise ValueError("Tool review must be an object")
+            review_config = ToolReviewConfig.model_validate({"on_flagged": "approval_required", **review})
+        return ToolPermissionsCapability(ToolPermissions.model_validate(permissions), review=review_config)
     if capability_type is SkillsCapability:
         return _construct_skills_capability(
             configuration,

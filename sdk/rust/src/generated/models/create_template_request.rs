@@ -33,6 +33,9 @@ pub struct CreateTemplateRequest {
     )]
     pub description: Option<Option<String>>,
 
+    #[serde(rename = "labels", skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Value>,
+
     #[serde(rename = "name")]
     pub name: String,
 
@@ -58,6 +61,7 @@ impl CreateTemplateRequest {
             configuration,
             configuration_schema_version: None,
             description: None,
+            labels: None,
             name,
             preparation: None,
             provider_id,

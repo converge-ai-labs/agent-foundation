@@ -13,6 +13,7 @@ from a13n_service.etags import resource_etag
 from a13n_service.http_types import IdempotencyKey
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.iam.http.resource_dependencies import WorkspaceId
+from a13n_service.labels import LabelFilterValues, LabelsBody, parse_label_filters
 from a13n_service.request_runtime import get_control_runtime
 
 from .catalog import SkillCatalogService
@@ -168,6 +169,7 @@ async def list_skills(
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
     q: Annotated[str | None, Query(max_length=256)] = None,
     source_kind: Literal["zip", "github"] | None = None,
+    label: Annotated[LabelFilterValues, Query()] = (),
 ) -> SkillCollection:
     return await _catalog(request).list(
         actor=actor,
@@ -176,6 +178,7 @@ async def list_skills(
         cursor=cursor,
         q=q,
         source_kind=source_kind,
+        labels=parse_label_filters(label),
     )
 
 
@@ -193,6 +196,27 @@ async def get_skill(request: Request, response: Response, actor: Actor, skill_id
     skill = await _catalog(request).get(actor=actor, skill_id=skill_id)
     response.headers["ETag"] = resource_etag(skill.id, skill.updated_at)
     return skill
+
+
+@router.get("/skills/{skill_id}/labels", response_model=LabelsBody)
+async def get_skill_labels(request: Request, response: Response, actor: Actor, skill_id: str) -> LabelsBody:
+    body, etag = await _catalog(request).get_labels(actor=actor, skill_id=skill_id)
+    response.headers["ETag"] = etag
+    return body
+
+
+@router.put("/skills/{skill_id}/labels", response_model=LabelsBody)
+async def put_skill_labels(
+    request: Request,
+    response: Response,
+    actor: Actor,
+    skill_id: str,
+    body: LabelsBody,
+    if_match: IfMatch,
+) -> LabelsBody:
+    result, etag = await _catalog(request).replace_labels(actor=actor, skill_id=skill_id, body=body, if_match=if_match)
+    response.headers["ETag"] = etag
+    return result
 
 
 @router.get("/skills/{skill_id}/revisions", response_model=SkillRevisionCollection)

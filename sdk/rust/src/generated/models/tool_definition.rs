@@ -80,6 +80,8 @@ impl ToolDefinition {
 ///
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum SupportedPermissions {
+    #[serde(rename = "inherit")]
+    Inherit,
     #[serde(rename = "allow")]
     Allow,
     #[serde(rename = "ask")]
@@ -88,12 +90,10 @@ pub enum SupportedPermissions {
     Deny,
     #[serde(rename = "review")]
     Review,
-    #[serde(rename = "auto")]
-    Auto,
 }
 
 impl Default for SupportedPermissions {
     fn default() -> SupportedPermissions {
-        Self::Allow
+        Self::Inherit
     }
 }

@@ -415,14 +415,16 @@ def test_shell_review_timeout_renders_observed_denial_without_a_frontend_timer(m
         renderer.ingest(
             "CUSTOM",
             {
-                "name": "a13n.harness.invocation",
+                "name": "a13n.harness.tool",
                 "value": {
                     "event": {
-                        "kind": "invocation",
+                        "kind": "tool",
                         "payload": {
-                            "phase": "denied",
-                            "reason_code": "shell_review_timeout",
-                            "timeout_seconds": 120.0,
+                            "type": "tool_review_result",
+                            "status": "error",
+                            "error_code": "tool_review_timeout",
+                            "decision": "deny",
+                            "result": None,
                             "tool_id": "environment.shell_exec",
                             "tool_name": "shell_exec",
                             "tool_call_id": "call-one",
@@ -433,8 +435,7 @@ def test_shell_review_timeout_renders_observed_denial_without_a_frontend_timer(m
         )
         visible = _visible(renderer, detailed=mode == "detailed")
         assert "Shell review · timed out" in visible
-        assert "after 120s" in visible
-        assert "Automatically denied; command was not executed" in visible
+        assert "Automatically denied; tool was not executed" in visible
         assert "call-one" in visible
         assert renderer.background_hint == ""
     finally:
@@ -442,8 +443,7 @@ def test_shell_review_timeout_renders_observed_denial_without_a_frontend_timer(m
 
 
 @pytest.mark.parametrize("decision", ["deny", "approval_required", "allow"])
-@pytest.mark.parametrize("legacy", [False, True])
-def test_unified_shell_review_result_uses_existing_custom_event_renderer(decision, legacy) -> None:
+def test_unified_shell_review_result_uses_existing_custom_event_renderer(decision) -> None:
     renderer = StreamRenderer(Status(mode="concise"))
     try:
         _start(renderer, name="shell_exec")
@@ -459,10 +459,10 @@ def test_unified_shell_review_result_uses_existing_custom_event_renderer(decisio
                             "status": "completed",
                             "tool_id": "environment.shell_exec",
                             "tool_call_id": "call-one",
-                            **({} if legacy else {"decision": decision}),
+                            "decision": decision,
                             "result": {
                                 "assessment": {
-                                    **({"decision": decision} if legacy else {"risk": "high"}),
+                                    "risk": "high",
                                     "reason": "Review reason",
                                 },
                                 "usage": [],

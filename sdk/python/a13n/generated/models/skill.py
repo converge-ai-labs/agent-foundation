@@ -6,8 +6,11 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 
+from ..types import UNSET, Unset
+
 if TYPE_CHECKING:
     from ..models.principal_ref import PrincipalRef
+    from ..models.skill_labels import SkillLabels
 
 
 T = TypeVar("T", bound="Skill")
@@ -29,6 +32,7 @@ class Skill:
         updated_by (PrincipalRef):
         version (int):
         workspace_id (str):
+        labels (SkillLabels | Unset):
     """
 
     created_at: datetime.datetime
@@ -43,6 +47,7 @@ class Skill:
     updated_by: PrincipalRef
     version: int
     workspace_id: str
+    labels: SkillLabels | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         created_at = self.created_at.isoformat()
@@ -73,6 +78,10 @@ class Skill:
 
         workspace_id = self.workspace_id
 
+        labels: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.labels, Unset):
+            labels = self.labels.to_dict()
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -91,12 +100,15 @@ class Skill:
                 "workspace_id": workspace_id,
             }
         )
+        if labels is not UNSET:
+            field_dict["labels"] = labels
 
         return field_dict
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         from ..models.principal_ref import PrincipalRef
+        from ..models.skill_labels import SkillLabels
 
         d = dict(src_dict)
         created_at = datetime.datetime.fromisoformat(d.pop("created_at"))
@@ -136,6 +148,13 @@ class Skill:
 
         workspace_id = d.pop("workspace_id")
 
+        _labels = d.pop("labels", UNSET)
+        labels: SkillLabels | Unset
+        if isinstance(_labels, Unset):
+            labels = UNSET
+        else:
+            labels = SkillLabels.from_dict(_labels)
+
         skill = cls(
             created_at=created_at,
             created_by=created_by,
@@ -149,6 +168,7 @@ class Skill:
             updated_by=updated_by,
             version=version,
             workspace_id=workspace_id,
+            labels=labels,
         )
 
         return skill

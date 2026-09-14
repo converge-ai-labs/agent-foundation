@@ -528,7 +528,7 @@ def test_toolset_and_reviewer_overrides_inherit_replace_and_clear() -> None:
     )
     assert not replaced.toolsets["shell"].enabled
     assert replaced.toolsets["shell"].tools["exec"].permission == "deny"
-    assert replaced.toolsets["shell"].tools["wait"].permission == "auto"
+    assert replaced.toolsets["shell"].tools["wait"].permission == "inherit"
 
 
 @pytest.mark.anyio
@@ -537,7 +537,7 @@ async def test_permissions_and_managed_reviewer_survive_acceptance_and_reconstru
     agent_invocation_resolver: AgentInvocationResolver,
     agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    from a13n_harness.capabilities import SubagentCapability, ToolReviewCapability
+    from a13n_harness.capabilities import SubagentCapability
     from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
     from a13n_harness.tools import ToolPermissionsCapability
     from a13n_service.agents.domain import AgentConfig, EffectiveAgentConfig, PreparedAgentPlugins
@@ -584,8 +584,9 @@ async def test_permissions_and_managed_reviewer_survive_acceptance_and_reconstru
         subagent_capability=SubagentCapability(),
         prepared_plugins=PreparedAgentPlugins(plugins=()),
     )
-    assert any(isinstance(capability, ToolPermissionsCapability) for capability in definition.capabilities)
-    review = next(capability for capability in definition.capabilities if isinstance(capability, ToolReviewCapability))
-    assert review.policy.risk_threshold == "extra_high"
-    assert review.policy.on_flagged == "approval_required"
-    assert review.policy.rules["environment.shell_exec"].risk_threshold == "high"
+    permissions = next(
+        capability for capability in definition.capabilities if isinstance(capability, ToolPermissionsCapability)
+    )
+    assert permissions.policy.risk_threshold == "extra_high"
+    assert permissions.policy.on_flagged == "approval_required"
+    assert permissions.policy.rules["environment.shell_exec"].risk_threshold == "high"

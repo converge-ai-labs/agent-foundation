@@ -461,6 +461,7 @@ def _request_parts(part: object) -> tuple[TranscriptPart, ...]:
                 kind="tool_result",
                 tool_name=part.tool_name,
                 tool_call_id=part.tool_call_id,
+                outcome=part.outcome,
                 value=value,
                 value_omitted=omitted,
             ),

@@ -31,6 +31,7 @@ from .agent_config_output_subagents import AgentConfigOutputSubagents
 from .agent_config_output_toolsets import AgentConfigOutputToolsets
 from .agent_input import AgentInput
 from .agent_input_schema_version import AgentInputSchemaVersion
+from .agent_labels import AgentLabels
 from .agent_model import AgentModel
 from .agent_model_settings import AgentModelSettings
 from .agent_reviewer import AgentReviewer
@@ -127,11 +128,13 @@ from .consume_queued_submission_request import ConsumeQueuedSubmissionRequest
 from .content import Content
 from .context import Context
 from .continue_run_request import ContinueRunRequest
+from .continue_run_request_labels import ContinueRunRequestLabels
 from .create_account_request import CreateAccountRequest
 from .create_account_request_credentials import CreateAccountRequestCredentials
 from .create_account_request_provider_config import CreateAccountRequestProviderConfig
 from .create_account_request_provider_policy_type_0 import CreateAccountRequestProviderPolicyType0
 from .create_agent_request import CreateAgentRequest
+from .create_agent_request_labels import CreateAgentRequestLabels
 from .create_agent_revision_request import CreateAgentRevisionRequest
 from .create_authorization_request import CreateAuthorizationRequest
 from .create_authorization_request_credentials_type_0 import CreateAuthorizationRequestCredentialsType0
@@ -145,6 +148,7 @@ from .create_hook_subscription_request import CreateHookSubscriptionRequest
 from .create_invitation_request import CreateInvitationRequest
 from .create_key_request import CreateKeyRequest
 from .create_managed_environment_request import CreateManagedEnvironmentRequest
+from .create_managed_environment_request_labels import CreateManagedEnvironmentRequestLabels
 from .create_model_provider_request import CreateModelProviderRequest
 from .create_model_provider_request_configuration import CreateModelProviderRequestConfiguration
 from .create_model_provider_request_extra_headers import CreateModelProviderRequestExtraHeaders
@@ -156,14 +160,18 @@ from .create_provider_request_credential_type_0 import CreateProviderRequestCred
 from .create_service_account_request import CreateServiceAccountRequest
 from .create_service_account_request_role import CreateServiceAccountRequestRole
 from .create_skill_request import CreateSkillRequest
+from .create_skill_request_labels import CreateSkillRequestLabels
 from .create_skill_revision_request import CreateSkillRevisionRequest
 from .create_template_request import CreateTemplateRequest
 from .create_template_request_configuration import CreateTemplateRequestConfiguration
+from .create_template_request_labels import CreateTemplateRequestLabels
 from .create_template_request_preparation import CreateTemplateRequestPreparation
 from .create_template_revision_request import CreateTemplateRevisionRequest
 from .create_template_revision_request_configuration import CreateTemplateRevisionRequestConfiguration
 from .create_template_revision_request_preparation import CreateTemplateRevisionRequestPreparation
 from .create_thread_request import CreateThreadRequest
+from .create_thread_request_labels import CreateThreadRequestLabels
+from .create_thread_request_session_labels import CreateThreadRequestSessionLabels
 from .create_web_provider_request import CreateWebProviderRequest
 from .create_web_provider_request_configuration import CreateWebProviderRequestConfiguration
 from .create_web_provider_request_credential import CreateWebProviderRequestCredential
@@ -178,12 +186,14 @@ from .describe_model_request import DescribeModelRequest
 from .developer_message import DeveloperMessage
 from .document_input_content import DocumentInputContent
 from .duplicate_agent_request import DuplicateAgentRequest
+from .duplicate_agent_request_labels import DuplicateAgentRequestLabels
 from .email_change_request import EmailChangeRequest
 from .environment import Environment
 from .environment_access import EnvironmentAccess
 from .environment_command import EnvironmentCommand
 from .environment_command_action import EnvironmentCommandAction
 from .environment_command_status import EnvironmentCommandStatus
+from .environment_labels import EnvironmentLabels
 from .environment_ownership import EnvironmentOwnership
 from .environment_provider import EnvironmentProvider
 from .environment_provider_configuration import EnvironmentProviderConfiguration
@@ -201,6 +211,7 @@ from .environment_retention_condition import EnvironmentRetentionCondition
 from .environment_state import EnvironmentState
 from .environment_status import EnvironmentStatus
 from .environment_template import EnvironmentTemplate
+from .environment_template_labels import EnvironmentTemplateLabels
 from .environment_template_revision import EnvironmentTemplateRevision
 from .environment_template_revision_configuration import EnvironmentTemplateRevisionConfiguration
 from .environment_template_revision_preparation import EnvironmentTemplateRevisionPreparation
@@ -211,6 +222,8 @@ from .existing_environment_selection import ExistingEnvironmentSelection
 from .expected_version import ExpectedVersion
 from .extended_agent_card_policy import ExtendedAgentCardPolicy
 from .fork_run_request import ForkRunRequest
+from .fork_run_request_labels import ForkRunRequestLabels
+from .fork_run_request_thread_labels import ForkRunRequestThreadLabels
 from .function_call import FunctionCall
 from .get_auth_csrf_response_browser_proof_api_v1_auth_csrf_get import GetAuthCsrfResponseBrowserProofApiV1AuthCsrfGet
 from .get_workspaces_workspace_models_scope_type_0 import GetWorkspacesWorkspaceModelsScopeType0
@@ -247,6 +260,8 @@ from .invite_workspace_request_role import InviteWorkspaceRequestRole
 from .invoking_user_secret_credential import InvokingUserSecretCredential
 from .item_collection import ItemCollection
 from .item_resource import ItemResource
+from .labels_body import LabelsBody
+from .labels_body_labels import LabelsBodyLabels
 from .launch_authorization_request import LaunchAuthorizationRequest
 from .lifecycle_entity_type import LifecycleEntityType
 from .lifecycle_event import LifecycleEvent
@@ -319,6 +334,7 @@ from .model_provider_definition_credential_schema import ModelProviderDefinition
 from .model_settings import ModelSettings
 from .model_test_request import ModelTestRequest
 from .new_environment_selection import NewEnvironmentSelection
+from .new_environment_selection_labels import NewEnvironmentSelectionLabels
 from .notification_subscription import NotificationSubscription
 from .notification_subscription_scope import NotificationSubscriptionScope
 from .notification_subscription_topics_item import NotificationSubscriptionTopicsItem
@@ -379,6 +395,7 @@ from .reasoning_message import ReasoningMessage
 from .receive_authorization_request import ReceiveAuthorizationRequest
 from .register_environment_request import RegisterEnvironmentRequest
 from .register_environment_request_configuration import RegisterEnvironmentRequestConfiguration
+from .register_environment_request_labels import RegisterEnvironmentRequestLabels
 from .reject_pending_resolution import RejectPendingResolution
 from .reorder_queued_submissions_request import ReorderQueuedSubmissionsRequest
 from .replace_account_credentials_request import ReplaceAccountCredentialsRequest
@@ -407,6 +424,7 @@ from .retention_window import RetentionWindow
 from .retry_config import RetryConfig
 from .retry_override import RetryOverride
 from .retry_run_request import RetryRunRequest
+from .retry_run_request_labels import RetryRunRequestLabels
 from .role_binding import RoleBinding
 from .run_acceptance_receipt import RunAcceptanceReceipt
 from .run_agent_input import RunAgentInput
@@ -418,6 +436,7 @@ from .run_lineage_entry import RunLineageEntry
 from .run_lineage_kind import RunLineageKind
 from .run_output_asset_source import RunOutputAssetSource
 from .run_resource import RunResource
+from .run_resource_labels import RunResourceLabels
 from .run_status import RunStatus
 from .run_stream_event import RunStreamEvent
 from .run_stream_event_payload import RunStreamEventPayload
@@ -431,13 +450,16 @@ from .service_account import ServiceAccount
 from .session_collection import SessionCollection
 from .session_preview import SessionPreview
 from .session_resource import SessionResource
+from .session_resource_labels import SessionResourceLabels
 from .set_role_request import SetRoleRequest
 from .set_role_request_role import SetRoleRequestRole
 from .skill import Skill
 from .skill_agent_reference import SkillAgentReference
 from .skill_agent_reference_collection import SkillAgentReferenceCollection
 from .skill_collection import SkillCollection
+from .skill_labels import SkillLabels
 from .skill_list_item import SkillListItem
+from .skill_list_item_labels import SkillListItemLabels
 from .skill_list_item_source_kind import SkillListItemSourceKind
 from .skill_package_file import SkillPackageFile
 from .skill_package_manifest import SkillPackageManifest
@@ -448,6 +470,9 @@ from .skill_revision_collection import SkillRevisionCollection
 from .skill_selection import SkillSelection
 from .skill_upload_receipt import SkillUploadReceipt
 from .start_run_request import StartRunRequest
+from .start_run_request_labels import StartRunRequestLabels
+from .start_run_request_session_labels import StartRunRequestSessionLabels
+from .start_run_request_thread_labels import StartRunRequestThreadLabels
 from .steer_receipt import SteerReceipt
 from .steer_status import SteerStatus
 from .steer_status_status import SteerStatusStatus
@@ -465,15 +490,20 @@ from .text_content import TextContent
 from .text_input_content import TextInputContent
 from .thread import Thread
 from .thread_collection import ThreadCollection
+from .thread_labels import ThreadLabels
 from .thread_origin_kind import ThreadOriginKind
 from .thread_queue_mutation_receipt import ThreadQueueMutationReceipt
 from .thread_resource import ThreadResource
+from .thread_resource_labels import ThreadResourceLabels
 from .thread_role import ThreadRole
 from .thread_run_submission_intent_input import ThreadRunSubmissionIntentInput
+from .thread_run_submission_intent_input_labels import ThreadRunSubmissionIntentInputLabels
 from .thread_run_submission_intent_output import ThreadRunSubmissionIntentOutput
+from .thread_run_submission_intent_output_labels import ThreadRunSubmissionIntentOutputLabels
 from .thread_run_submission_receipt import ThreadRunSubmissionReceipt
 from .thread_run_submission_receipt_outcome import ThreadRunSubmissionReceiptOutcome
 from .thread_run_submission_request import ThreadRunSubmissionRequest
+from .thread_run_submission_request_labels import ThreadRunSubmissionRequestLabels
 from .tool import Tool
 from .tool_call import ToolCall
 from .tool_definition import ToolDefinition
@@ -547,6 +577,7 @@ from .validation_error_context import ValidationErrorContext
 from .video_input_content import VideoInputContent
 from .waiting_resolution_defaults import WaitingResolutionDefaults
 from .waiting_run_feedback_request import WaitingRunFeedbackRequest
+from .waiting_run_feedback_request_labels import WaitingRunFeedbackRequestLabels
 from .web_provider import WebProvider
 from .web_provider_collection import WebProviderCollection
 from .web_provider_configuration import WebProviderConfiguration
@@ -597,6 +628,7 @@ __all__ = (
     "AgentConfigOutputToolsets",
     "AgentInput",
     "AgentInputSchemaVersion",
+    "AgentLabels",
     "AgentModel",
     "AgentModelSettings",
     "AgentReviewer",
@@ -693,11 +725,13 @@ __all__ = (
     "Content",
     "Context",
     "ContinueRunRequest",
+    "ContinueRunRequestLabels",
     "CreateAccountRequest",
     "CreateAccountRequestCredentials",
     "CreateAccountRequestProviderConfig",
     "CreateAccountRequestProviderPolicyType0",
     "CreateAgentRequest",
+    "CreateAgentRequestLabels",
     "CreateAgentRevisionRequest",
     "CreateAuthorizationRequest",
     "CreateAuthorizationRequestCredentialsType0",
@@ -711,6 +745,7 @@ __all__ = (
     "CreateInvitationRequest",
     "CreateKeyRequest",
     "CreateManagedEnvironmentRequest",
+    "CreateManagedEnvironmentRequestLabels",
     "CreateModelProviderRequest",
     "CreateModelProviderRequestConfiguration",
     "CreateModelProviderRequestExtraHeaders",
@@ -722,14 +757,18 @@ __all__ = (
     "CreateServiceAccountRequest",
     "CreateServiceAccountRequestRole",
     "CreateSkillRequest",
+    "CreateSkillRequestLabels",
     "CreateSkillRevisionRequest",
     "CreateTemplateRequest",
     "CreateTemplateRequestConfiguration",
+    "CreateTemplateRequestLabels",
     "CreateTemplateRequestPreparation",
     "CreateTemplateRevisionRequest",
     "CreateTemplateRevisionRequestConfiguration",
     "CreateTemplateRevisionRequestPreparation",
     "CreateThreadRequest",
+    "CreateThreadRequestLabels",
+    "CreateThreadRequestSessionLabels",
     "CreateWebProviderRequest",
     "CreateWebProviderRequestConfiguration",
     "CreateWebProviderRequestCredential",
@@ -744,12 +783,14 @@ __all__ = (
     "DeveloperMessage",
     "DocumentInputContent",
     "DuplicateAgentRequest",
+    "DuplicateAgentRequestLabels",
     "EmailChangeRequest",
     "Environment",
     "EnvironmentAccess",
     "EnvironmentCommand",
     "EnvironmentCommandAction",
     "EnvironmentCommandStatus",
+    "EnvironmentLabels",
     "EnvironmentOwnership",
     "EnvironmentProvider",
     "EnvironmentProviderConfiguration",
@@ -763,6 +804,7 @@ __all__ = (
     "EnvironmentState",
     "EnvironmentStatus",
     "EnvironmentTemplate",
+    "EnvironmentTemplateLabels",
     "EnvironmentTemplateRevision",
     "EnvironmentTemplateRevisionConfiguration",
     "EnvironmentTemplateRevisionPreparation",
@@ -773,6 +815,8 @@ __all__ = (
     "ExpectedVersion",
     "ExtendedAgentCardPolicy",
     "ForkRunRequest",
+    "ForkRunRequestLabels",
+    "ForkRunRequestThreadLabels",
     "FunctionCall",
     "GetAuthCsrfResponseBrowserProofApiV1AuthCsrfGet",
     "GetWorkspacesWorkspaceModelsScopeType0",
@@ -809,6 +853,8 @@ __all__ = (
     "InvokingUserSecretCredential",
     "ItemCollection",
     "ItemResource",
+    "LabelsBody",
+    "LabelsBodyLabels",
     "LaunchAuthorizationRequest",
     "LifecycleEntityType",
     "LifecycleEvent",
@@ -877,6 +923,7 @@ __all__ = (
     "ModelSettings",
     "ModelTestRequest",
     "NewEnvironmentSelection",
+    "NewEnvironmentSelectionLabels",
     "NotificationSubscription",
     "NotificationSubscriptionScope",
     "NotificationSubscriptionTopicsItem",
@@ -935,6 +982,7 @@ __all__ = (
     "ReceiveAuthorizationRequest",
     "RegisterEnvironmentRequest",
     "RegisterEnvironmentRequestConfiguration",
+    "RegisterEnvironmentRequestLabels",
     "RejectPendingResolution",
     "ReorderQueuedSubmissionsRequest",
     "ReplaceAccountCredentialsRequest",
@@ -961,6 +1009,7 @@ __all__ = (
     "RetryConfig",
     "RetryOverride",
     "RetryRunRequest",
+    "RetryRunRequestLabels",
     "RoleBinding",
     "RunAcceptanceReceipt",
     "RunAgentInput",
@@ -972,6 +1021,7 @@ __all__ = (
     "RunLineageKind",
     "RunOutputAssetSource",
     "RunResource",
+    "RunResourceLabels",
     "RunStatus",
     "RunStreamEvent",
     "RunStreamEventPayload",
@@ -985,13 +1035,16 @@ __all__ = (
     "SessionCollection",
     "SessionPreview",
     "SessionResource",
+    "SessionResourceLabels",
     "SetRoleRequest",
     "SetRoleRequestRole",
     "Skill",
     "SkillAgentReference",
     "SkillAgentReferenceCollection",
     "SkillCollection",
+    "SkillLabels",
     "SkillListItem",
+    "SkillListItemLabels",
     "SkillListItemSourceKind",
     "SkillPackageFile",
     "SkillPackageManifest",
@@ -1002,6 +1055,9 @@ __all__ = (
     "SkillSelection",
     "SkillUploadReceipt",
     "StartRunRequest",
+    "StartRunRequestLabels",
+    "StartRunRequestSessionLabels",
+    "StartRunRequestThreadLabels",
     "SteerReceipt",
     "SteerStatus",
     "SteerStatusStatus",
@@ -1019,15 +1075,20 @@ __all__ = (
     "TextInputContent",
     "Thread",
     "ThreadCollection",
+    "ThreadLabels",
     "ThreadOriginKind",
     "ThreadQueueMutationReceipt",
     "ThreadResource",
+    "ThreadResourceLabels",
     "ThreadRole",
     "ThreadRunSubmissionIntentInput",
+    "ThreadRunSubmissionIntentInputLabels",
     "ThreadRunSubmissionIntentOutput",
+    "ThreadRunSubmissionIntentOutputLabels",
     "ThreadRunSubmissionReceipt",
     "ThreadRunSubmissionReceiptOutcome",
     "ThreadRunSubmissionRequest",
+    "ThreadRunSubmissionRequestLabels",
     "Tool",
     "ToolCall",
     "ToolDefinition",
@@ -1101,6 +1162,7 @@ __all__ = (
     "VideoInputContent",
     "WaitingResolutionDefaults",
     "WaitingRunFeedbackRequest",
+    "WaitingRunFeedbackRequestLabels",
     "WebProvider",
     "WebProviderCollection",
     "WebProviderConfiguration",

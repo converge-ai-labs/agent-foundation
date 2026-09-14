@@ -8,6 +8,7 @@ from attrs import define as _attrs_define
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.create_skill_request_labels import CreateSkillRequestLabels
     from ..models.git_hub_revision_source import GitHubRevisionSource
     from ..models.zip_upload_skill_source import ZipUploadSkillSource
 
@@ -20,10 +21,12 @@ class CreateSkillRequest:
     """
     Attributes:
         source (GitHubRevisionSource | ZipUploadSkillSource):
+        labels (CreateSkillRequestLabels | Unset):
         name (None | str | Unset):
     """
 
     source: GitHubRevisionSource | ZipUploadSkillSource
+    labels: CreateSkillRequestLabels | Unset = UNSET
     name: str | Unset | None = UNSET
 
     def to_dict(self) -> dict[str, Any]:
@@ -34,6 +37,10 @@ class CreateSkillRequest:
             source = self.source.to_dict()
         else:
             source = self.source.to_dict()
+
+        labels: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.labels, Unset):
+            labels = self.labels.to_dict()
 
         name: str | Unset | None
         if isinstance(self.name, Unset):
@@ -48,6 +55,8 @@ class CreateSkillRequest:
                 "source": source,
             }
         )
+        if labels is not UNSET:
+            field_dict["labels"] = labels
         if name is not UNSET:
             field_dict["name"] = name
 
@@ -55,6 +64,7 @@ class CreateSkillRequest:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        from ..models.create_skill_request_labels import CreateSkillRequestLabels
         from ..models.git_hub_revision_source import GitHubRevisionSource
         from ..models.zip_upload_skill_source import ZipUploadSkillSource
 
@@ -77,6 +87,13 @@ class CreateSkillRequest:
 
         source = _parse_source(d.pop("source"))
 
+        _labels = d.pop("labels", UNSET)
+        labels: CreateSkillRequestLabels | Unset
+        if isinstance(_labels, Unset):
+            labels = UNSET
+        else:
+            labels = CreateSkillRequestLabels.from_dict(_labels)
+
         def _parse_name(data: object) -> str | Unset | None:
             if data is None:
                 return data
@@ -88,6 +105,7 @@ class CreateSkillRequest:
 
         create_skill_request = cls(
             source=source,
+            labels=labels,
             name=name,
         )
 

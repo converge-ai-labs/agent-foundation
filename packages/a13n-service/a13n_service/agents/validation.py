@@ -6,7 +6,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
-from a13n_harness.tools import ToolIdentity, ToolPermissions, ToolPermissionSetting
 from a13n_harness.tools.client import ClientToolDefinition
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
@@ -14,7 +13,7 @@ from jsonschema.exceptions import SchemaError
 from a13n_service.connectivity.selection_domain import ConnectionToolSelection
 
 from .domain import AgentReviewer, OutputSpec, ProtocolConfig
-from .toolsets import Toolsets, active_model_names, enabled_tool, requires_reviewer
+from .toolsets import Toolsets, active_model_names, enabled_tool
 
 _DEFAULT_OUTPUT_MODES = frozenset({"text"})
 _DEFAULT_EVENT_VISIBILITY = frozenset(
@@ -84,13 +83,6 @@ def _validate_tool_policy(config: AgentConfigValidationInput) -> None:
                 "web_provider_required",
                 path=f"toolsets.web.tools.{operation}.config.provider_id",
             )
-    connection_review = any(
-        ToolPermissions(default=permission).resolve(ToolIdentity("connection.tool", "review")) == "review"
-        for selection in config.connection_tools
-        for permission in _connection_permissions(selection)
-    )
-    if (requires_reviewer(config.toolsets) or connection_review) and config.reviewer is None:
-        raise AgentConfigValidationError("tool_reviewer_missing", path="reviewer")
     built_in_names = active_model_names(config.toolsets)
     for index, tool in enumerate(config.client_tools):
         if tool.name in built_in_names:
@@ -98,12 +90,6 @@ def _validate_tool_policy(config: AgentConfigValidationInput) -> None:
                 "tool_name_conflict",
                 path=f"client_tools.{index}.name",
             )
-
-
-def _connection_permissions(selection: ConnectionToolSelection) -> tuple[ToolPermissionSetting, ...]:
-    if selection.tools is None:
-        return (selection.permission, *selection.permissions.values())
-    return tuple(selection.permissions.get(name, selection.permission) for name in selection.tools)
 
 
 def _validate_protocol(config: AgentConfigValidationInput, policy: AgentProtocolPolicy) -> None:

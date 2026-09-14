@@ -26,6 +26,7 @@ def build_agent_management(
         shared.storage.sessions,
         resolver,
         resources.invocations,
+        resources.models,
         resources.web_providers,
     )
 

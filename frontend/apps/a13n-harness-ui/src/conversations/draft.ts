@@ -1,5 +1,12 @@
 import * as Y from "yjs";
 import type { Schema, Transport } from "../transport/client";
+import {
+  attachmentSelections,
+  attachmentToken,
+  inlinePattern,
+  isReadyAttachment,
+  orderedInput,
+} from "./inline-attachments";
 
 const remote = Symbol("server draft");
 const captureClear = Symbol("accepted capture");
@@ -19,12 +26,11 @@ export function replica(update?: Uint8Array): Y.Doc {
   return doc;
 }
 export function values(doc: Y.Doc) {
-  const attachments = doc.getMap<string>("attachments");
   return {
-    prompt: doc.getText("text").toString(),
-    attachment_ids: [...attachments.keys()]
-      .sort()
-      .map((key) => attachments.get(key)!),
+    prompt: doc.getText("text").toString().replace(inlinePattern, ""),
+    attachment_ids: attachmentSelections(doc)
+      .map(({ id }) => id)
+      .filter(isReadyAttachment),
   };
 }
 // State vectors alone miss deletions. Compare the complete accepted snapshot,
@@ -51,6 +57,7 @@ export type DraftCapture = {
   doc: Y.Doc;
   draftId: string;
   input: ReturnType<typeof values>;
+  parts: ReturnType<typeof orderedInput>;
 };
 export type Submission =
   | { kind: "idle" }
@@ -66,10 +73,10 @@ export type Submission =
 
 export class ThreadDraft {
   doc = replica();
-  undo = new Y.UndoManager([
-    this.doc.getText("text"),
-    this.doc.getMap("attachments"),
-  ]);
+  undo = new Y.UndoManager(this.doc.getText("text"));
+  // Retained IDs are a registry, not undoable editor content. In particular,
+  // finishing an asynchronous upload must not revive a pending upload on undo.
+  uploads = new Map<string, { file: File; status: "pending" | "failed" }>();
   draftId: string | undefined;
   participantId: string | undefined;
   participants: Schema<"DraftFrame">["participants"] = {};
@@ -115,7 +122,17 @@ export class ThreadDraft {
     if (!this.synchronized || !this.draftId)
       throw new Error("Synchronize your edits before sending.");
     const doc = replica(Y.encodeStateAsUpdate(this.doc));
-    return { doc, draftId: this.draftId, input: values(doc) };
+    try {
+      return {
+        doc,
+        draftId: this.draftId,
+        input: values(doc),
+        parts: orderedInput(doc),
+      };
+    } catch (error) {
+      doc.destroy();
+      throw error;
+    }
   }
   clear(captured: DraftCapture) {
     // Never apply an old incarnation's deletion to a replacement draft.
@@ -124,11 +141,17 @@ export class ThreadDraft {
       captured.doc
         .getText("text")
         .delete(0, captured.doc.getText("text").length);
-      captured.doc.getMap("attachments").clear();
+      // Inline registry keys can also be used by uncaptured pasted occurrences,
+      // including peer inserts that have not arrived yet. Keep those identities.
+      const registry = captured.doc.getMap("attachments");
+      for (const key of registry.keys())
+        if (!key.startsWith("inline-")) registry.delete(key);
     });
     this.undo.stopCapturing();
     Y.applyUpdate(this.doc, Y.encodeStateAsUpdate(captured.doc), captureClear);
     this.undo.clear();
+    for (const key of this.uploads.keys())
+      if (!this.doc.getMap("attachments").has(key)) this.uploads.delete(key);
   }
   receive(frame: Schema<"DraftFrame">) {
     if (this.draftId && this.draftId !== frame.draft_id) {
@@ -151,15 +174,15 @@ export class ThreadDraft {
   joinReplacement(restore: boolean) {
     const frame = this.replacement;
     if (!frame) return;
-    const old = values(this.doc);
+    const oldText = this.doc.getText("text").toString();
+    const oldAttachments = [
+      ...this.doc.getMap<string>("attachments").entries(),
+    ];
     this.doc.off("update", this.documentChanged);
     this.undo.destroy();
     this.doc.destroy();
     this.doc = replica();
-    this.undo = new Y.UndoManager([
-      this.doc.getText("text"),
-      this.doc.getMap("attachments"),
-    ]);
+    this.undo = new Y.UndoManager(this.doc.getText("text"));
     this.doc.on("update", this.documentChanged);
     this.draftId = undefined;
     this.replacement = undefined;
@@ -169,12 +192,35 @@ export class ThreadDraft {
       this.doc.transact(() => {
         this.doc
           .getText("text")
-          .insert(this.doc.getText("text").length, old.prompt);
-        for (const id of old.attachment_ids)
-          this.doc.getMap("attachments").set(crypto.randomUUID(), id);
+          .insert(this.doc.getText("text").length, oldText);
+        for (const [key, id] of oldAttachments)
+          this.doc.getMap("attachments").set(key, id);
       });
     this.send?.();
     this.notify();
+  }
+  addAttachment(id: string, at = this.doc.getText("text").length) {
+    if (attachmentSelections(this.doc).length >= 8)
+      throw new Error("Select up to eight attachments.");
+    const key = `inline-${crypto.randomUUID()}`;
+    this.doc.getMap("attachments").set(key, id);
+    this.undo.stopCapturing();
+    this.doc.getText("text").insert(at, attachmentToken(key));
+    this.undo.stopCapturing();
+    return key;
+  }
+  removeAttachment(key: string, at?: number) {
+    const selection = attachmentSelections(this.doc).find(
+      (item) => item.key === key && (at === undefined || item.from === at),
+    );
+    if (!selection) return;
+    this.undo.stopCapturing();
+    if (selection.from !== undefined)
+      this.doc
+        .getText("text")
+        .delete(selection.from, selection.to! - selection.from);
+    else this.doc.getMap("attachments").delete(key);
+    this.undo.stopCapturing();
   }
   connect(transport: Transport, threadId: string, unauthorized: () => void) {
     let stopped = false;

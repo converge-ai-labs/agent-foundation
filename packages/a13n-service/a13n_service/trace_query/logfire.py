@@ -331,8 +331,8 @@ def _events(value: object) -> tuple[ObservationEvent, ...] | None:
             raise TraceQueryProviderError("malformed")
         events.append(
             ObservationEvent(
-                name=decoding.required_text(item.get("name"), "event name"),
-                occurred_at=decoding.datetime(item.get("timestamp"), "event timestamp"),
+                name=decoding.required_text(item.get("event_name"), "event name"),
+                occurred_at=decoding.datetime(item.get("event_timestamp"), "event timestamp"),
                 attributes=_attributes(item.get("attributes")) or {},
             )
         )
@@ -423,12 +423,19 @@ def _operation_type(attributes: Mapping[str, JsonValue]) -> str:
 
 
 def _content(attributes: Mapping[str, JsonValue], direction: str) -> Content | None:
-    if f"{direction}.value" in attributes:
-        return decoding.io_value(attributes[f"{direction}.value"], attributes.get(f"{direction}.mime_type"))
-    # These producer-owned attributes contain serialized JSON, not free text.
-    for key in (f"a13n.{direction}", f"gen_ai.{direction}.messages"):
+    # Logfire's records attributes already contain decoded JSON, including
+    # strings and null. Decoding these values again corrupts JSON-looking text
+    # and rejects ordinary Harness output. Key presence distinguishes reported
+    # null from missing content; _attributes has already bounded the values.
+    for key, media_type in (
+        (f"{direction}.value", attributes.get(f"{direction}.mime_type")),
+        (f"a13n.{direction}", "application/json"),
+        (f"gen_ai.{direction}.messages", "application/json"),
+    ):
         if key in attributes:
-            return decoding.io_value(attributes[key], "application/json")
+            return Content(
+                media_type=decoding.optional_text(media_type, "media_type", max_bytes=256), value=attributes[key]
+            )
     return None
 
 

@@ -26,7 +26,7 @@ Bind API Key operations with `client.Workspace(ctx)`. This reads `/api/v1/auth/c
 
 Create a bearer client with `NewClient(baseURL, NewSecret(token), nil)` and call `Close` when finished. All operations accept `context.Context`. `WebProviders` returns a `Representation[Page[WebProvider]]`; pass `WebProviderListOptions{Cursor: ...}` to continue pagination. `UpdateWebProvider` requires the current account ETag. `TestWebProvider` sends one quota-consuming probe only when called.
 
-Credential request fields use `NewSecret(value)`. Their JSON and formatting diagnostics omit or redact credentials; the client serializes the write-only field for the request. `AgentRunOverride.Toolsets` uses its zero value to inherit; a supplied `web` entry replaces that complete Toolset, and `Enabled: &false` disables it. `ToolPermissionAuto` preserves the authored `auto` setting. Configuration JSON round-trips preserve other fields in `Fields`.
+Credential request fields use `NewSecret(value)`. Their JSON and formatting diagnostics omit or redact credentials; the client serializes the write-only field for the request. `AgentRunOverride.Toolsets` uses its zero value to inherit; a supplied `web` entry replaces that complete Toolset, and `Enabled: &false` disables it. `ToolPermissionInherit` preserves the authored `inherit` setting. Configuration JSON round-trips preserve other fields in `Fields`.
 
 ## Generated HTTP operations
 

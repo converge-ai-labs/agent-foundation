@@ -625,7 +625,7 @@ async def test_setup_context_and_names_survive_publication_capture_and_reconstru
     answers = deque(["api", provider, "", "env:TEST_KEY", model_id, "", "none", "", "", "full-control"])
 
     async def ask(question, selection):
-        if question.key == "tools":
+        if question.key in {"tools", "review"}:
             return question.default
         assert answers, question
         return answers.popleft()

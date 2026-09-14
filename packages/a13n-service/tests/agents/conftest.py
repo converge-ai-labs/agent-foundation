@@ -255,6 +255,7 @@ async def agent_management(
         agent_sessions,
         resolver,
         invocation_resolver,
+        model_selector,
         clock=lambda: NOW,
     )
 

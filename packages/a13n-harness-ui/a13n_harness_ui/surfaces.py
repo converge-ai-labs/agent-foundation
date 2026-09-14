@@ -195,6 +195,7 @@ class TranscriptPart(SurfaceModel):
     text: str | None = Field(default=None, max_length=64 * 1024)
     tool_name: str | None = Field(default=None, max_length=128)
     tool_call_id: str | None = Field(default=None, max_length=256)
+    outcome: Literal["success", "failed", "denied", "interrupted"] | None = None
     value: JsonValue | None = None
     value_omitted: bool = False
 

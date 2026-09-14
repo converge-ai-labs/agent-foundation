@@ -89,7 +89,6 @@ from .tool_proxy import ToolProxyCapability, ToolProxyConfig, ToolProxyGroup, To
 from .tool_review import (
     AgentToolReviewer,
     ToolReviewAssessment,
-    ToolReviewCapability,
     ToolReviewConfig,
     ToolReviewer,
     ToolReviewError,
@@ -252,7 +251,6 @@ __all__ = [
     "ToolProxyPlan",
     "ToolProxySelection",
     "ToolReviewAssessment",
-    "ToolReviewCapability",
     "ToolReviewConfig",
     "ToolReviewError",
     "ToolReviewPolicy",

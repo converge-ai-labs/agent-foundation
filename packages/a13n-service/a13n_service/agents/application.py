@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.temporal import Clock, utc_now
 from a13n_service.web.registry import WebProviderRegistry, built_in_web_provider_registry
 
@@ -37,6 +38,7 @@ class AgentManagement:
         sessions: async_sessionmaker[AsyncSession],
         resolver: AgentResolver,
         invocation_resolver: AgentInvocationResolver,
+        model_selector: AcceptedModelSelector,
         web_providers: WebProviderRegistry | None = None,
         *,
         clock: Clock = utc_now,
@@ -49,4 +51,8 @@ class AgentManagement:
         self.revisions = AgentRevisions(sessions, resolver, invocation_resolver, queries, clock=clock)
         self.duplication = AgentDuplication(sessions, invocation_resolver, queries, clock=clock)
         self.builtins = BuiltinAgents(sessions, resolver, clock=clock)
-        self.toolsets = ToolsetService(sessions, web_providers or built_in_web_provider_registry())
+        self.toolsets = ToolsetService(
+            sessions,
+            model_selector,
+            web_providers or built_in_web_provider_registry(),
+        )

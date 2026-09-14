@@ -37,6 +37,7 @@ type ThreadOriginKind = Literal["new", "fork", "child"]
 
 
 class Thread:
+    labels: dict[str, str]
     id: str
     version: int
     queue_version: int
@@ -203,17 +204,33 @@ The independent Thread row duplicates relationships that are also present on Run
 ## Invariants
 
 01. Every Service Thread is one independently versioned relational resource and belongs to exactly one persisted Session.
+
 02. A root Thread can precede its first Run; combined root start, Fork and child acceptance are atomic.
+
 03. Thread ID equals the stable `HarnessState.thread_id` for every Run state in that Thread.
+
 04. Exactly one retained root Thread belongs to a Session; child and fork histories use distinct Thread IDs.
+
 05. `current_run_id` is null before first acceptance and otherwise names the most recently accepted Run and is never inferred from time or event order; it is the sole active Run exactly while its status is `accepted` or `running`.
+
 06. `head_run_id` is null until the Thread selects a sealed waiting or completed Run and never names a failed or cancelled Run.
+
 07. Thread `version` changes once on accepted advancement and once whenever the current Run seals. Source sealing and later queued acceptance commit separately. Claim, execution, worker recovery, and queue-only mutation do not change it.
+
 08. Accepted advancement and Run sealing update current, head, and Thread versions exactly as defined by this contract; the owning input, queue, or asynchronous-subagent contract determines operation eligibility and Run lineage.
+
 09. When an owning command defines idempotency, replay resolves before `expected_thread_version`; a losing concurrency check changes neither Thread nor Run state.
+
 10. No Thread mutation transaction spans Harness execution, object I/O, provider calls, Redis, streaming, sleeps, or other external work.
+
 11. Thread identity, origin, Run references, cursors, and object locators grant no authority by possession.
+
 12. Run state, Items, events, provider state, and presentation history never substitute for the durable Thread row.
+
 13. Internal inbox sequence and capacity counters live on the Thread row and are updated atomically with inbox transitions under its row lock. They are absent from public Thread reads; counter-only updates preserve Thread versions, timestamps, and Run selection. Inbox entries and Redis control-group cursors retain their separate stores.
+
 14. `queue_version` changes on every queued-submission mutation. Consuming an entry atomically advances the queue version and creates one accepted Run; terminally failing permanently invalid queued intent advances the queue version and creates no Run. Both transitions commit independently of the already-terminal source outcome.
+
 15. Source completion selects the completed Run as head and retains it as current before any queued successor is prepared. Terminal Thread state and a non-empty queue can coexist until the Worker or periodic scanner consumes an entry, or while consumption is recoverably blocked. An ordinary existing-Thread submission appends behind that queue when the current Run is completed; a failed or cancelled current Run rejects it.
+
+16. Thread labels are mutable classification metadata outside execution and queue versions. A new ordinary or child Thread copies its Session's current labels at acceptance; a forked Thread instead copies its source Thread's current labels. Explicit creation overrides apply after the copy and no later parent mutation propagates.

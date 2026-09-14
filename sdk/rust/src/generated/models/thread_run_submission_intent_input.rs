@@ -63,6 +63,9 @@ pub struct ThreadRunSubmissionIntentInput {
 
     #[serde(rename = "input")]
     pub input: Box<models::AgentInput>,
+
+    #[serde(rename = "labels", skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Value>,
 }
 
 impl ThreadRunSubmissionIntentInput {
@@ -75,6 +78,7 @@ impl ThreadRunSubmissionIntentInput {
             expected_current_revision_id: None,
             hook_subscription: None,
             input: Box::new(input),
+            labels: None,
         }
     }
 }

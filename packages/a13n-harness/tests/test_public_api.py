@@ -125,7 +125,6 @@ def test_feature_facades_export_documented_families() -> None:
         "AgentToolReviewer",
         "ToolReviewer",
         "ToolReviewAssessment",
-        "ToolReviewCapability",
         "ToolReviewConfig",
         "ToolReviewError",
         "ToolReviewPolicy",

@@ -26,7 +26,7 @@ class ToolIdentity:
     """Trusted policy identity; native definitions still own visible names and schemas."""
 
     tool_id: str
-    default_mode: ToolPermissionMode = "review"
+    default_mode: ToolPermissionMode = "allow"
 
     def __post_init__(self) -> None:
         if not self.tool_id or self.tool_id != self.tool_id.strip() or len(self.tool_id) > 1024 or "*" in self.tool_id:
@@ -78,7 +78,7 @@ def identify_tool(tool: ToolsetTool[AgentContext]) -> ToolsetTool[AgentContext]:
             raise DefinitionError("MCP sources require a stable id.", code="tool_source_id_required")
         identity = ToolIdentity(
             source_tool_id(source.id or "native", name, kind="mcp" if isinstance(source, MCPToolset) else "tool"),
-            "allow" if tool.tool_def.kind == "external" else "review",
+            "allow",
         )
     metadata[TOOL_IDENTITY_KEY] = identity
     return replace(tool, tool_def=replace(tool.tool_def, metadata=metadata))
@@ -110,7 +110,7 @@ class ToolIdentityToolset(WrapperToolset[AgentContext]):
                         **(tool.tool_def.metadata or {}),
                         TOOL_IDENTITY_KEY: ToolIdentity(
                             source_tool_id(self.source_id, name, kind=self.kind),
-                            self.default_mode or ("allow" if tool.tool_def.kind == "external" else "review"),
+                            self.default_mode or "allow",
                         ),
                     },
                 ),

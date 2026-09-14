@@ -32,7 +32,7 @@ class ConnectionToolSelection(BaseModel):
     connection_id: ObjectId
     tools: ToolSelection = None
     defer_loading: bool = False
-    permission: ToolPermissionSetting = "auto"
+    permission: ToolPermissionSetting = "inherit"
     permissions: dict[ToolKey, ToolPermissionSetting] = Field(default_factory=dict, max_length=2048)
 
     @model_validator(mode="after")

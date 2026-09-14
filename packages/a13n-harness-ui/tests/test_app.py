@@ -37,7 +37,7 @@ from a13n_harness_ui.composition import (
 from a13n_harness_ui.configuration import load_harness_ui_configuration
 from a13n_harness_ui.environment_profiles import SANDBOX_PROFILE_ID
 from a13n_harness_ui.environment_runtime import EnvironmentRunService
-from a13n_harness_ui.errors import AppStateError, StoreConflictError, ThreadError
+from a13n_harness_ui.errors import AppStateError, ConfigurationError, StoreConflictError, ThreadError
 from a13n_harness_ui.model_accounts import (
     DEFAULT_GROK_OAUTH_CLIENT_ID,
     DEFAULT_GROK_OAUTH_ISSUER,
@@ -264,6 +264,74 @@ async def test_invalid_capabilities_warn_but_allow_real_composition_and_chat(
         agent.write_text(agent.read_text().replace("  - capability: vendor.missing\n", "  - capability: web\n"))
         await app.reload_configuration()
         assert (await app.status()).capability_warnings == ()
+
+
+@pytest.mark.parametrize("previous_generation", [False, True])
+@pytest.mark.parametrize("reference", ["agent", "root_review", "agent_review", "agent_review_disabled_root"])
+async def test_startup_rejects_missing_model_with_actionable_log(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    previous_generation: bool,
+    reference: str,
+) -> None:
+    root = _write_configuration(tmp_path, instructions="private-instructions-not-for-logs")
+    settings = _settings(tmp_path / "state")
+    if previous_generation:
+        async with open_harness_ui_app(settings, configuration_path=root):
+            pass
+    agent = tmp_path / "agents/assistant.yaml"
+    if reference == "agent":
+        agent.write_text(agent.read_text().replace("model-primary", "model-missing"))
+        expected_path = agent
+        field = "model"
+        code = "configuration_model_missing"
+    elif reference == "root_review":
+        root.write_text(root.read_text() + "security:\n  shell_review: {enable: true, model: model-missing}\n")
+        expected_path = root
+        field = "security.shell_review.model"
+        code = "capability_model_missing"
+    else:
+        agent.write_text(
+            agent.read_text() + "capabilities:\n"
+            "  - capability: ToolPermissionsCapability\n"
+            "    configuration:\n"
+            "      rules: {environment.shell_exec: deny}\n"
+            "      review: {model: model-missing}\n"
+        )
+        if reference == "agent_review_disabled_root":
+            root.write_text(root.read_text() + "security:\n  shell_review: {enable: false}\n")
+        expected_path = agent
+        field = "capabilities.ToolPermissionsCapability.review.model"
+        code = "capability_model_missing"
+
+    caplog.clear()
+    with pytest.raises(ConfigurationError) as failed:
+        async with open_harness_ui_app(settings, configuration_path=root):
+            pytest.fail("A missing Model must prevent startup, not fall back to an accepted generation.")
+
+    error = failed.value
+    assert error.code == code
+    assert error.details["model_id"] == "model-missing"
+    assert error.details["field"] == field
+    reported_path = Path(error.details["path"])
+    assert (reported_path if reported_path.is_absolute() else root.parent / reported_path) == expected_path
+    assert "Startup aborted" in caplog.text
+    assert str(expected_path.relative_to(tmp_path)) in caplog.text
+    assert field in caplog.text
+    assert "model-missing" in caplog.text
+    assert code in caplog.text
+    assert "private-instructions-not-for-logs" not in caplog.text
+
+
+async def test_missing_model_during_reload_retains_accepted_generation(tmp_path: Path) -> None:
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        previous = (await app.status()).accepted_generation_digest
+        root.write_text(root.read_text() + "security:\n  shell_review: {enable: true, model: model-missing}\n")
+        await app.reload_configuration()
+        status = await app.status()
+        assert status.accepted_generation_digest == previous
+        assert status.candidate_error_code == "capability_model_missing"
 
 
 async def test_invalid_first_candidate_starts_with_diagnostics_and_observer_accepts_repair(

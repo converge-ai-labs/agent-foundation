@@ -11,6 +11,9 @@ on:
       - ".pre-commit-config.yaml"
       - "frontend/**"
       - "sdk/typescript/**"
+      - "packages/*/pyproject.toml"
+      - "packages/a13n-envd-client/**"
+      - "packages/a13n-logging/**"
       - "packages/a13n-environment/**"
       - "packages/a13n-harness/**"
       - "packages/a13n-stream-protocol/**"
@@ -41,6 +44,9 @@ on:
       - ".pre-commit-config.yaml"
       - "frontend/**"
       - "sdk/typescript/**"
+      - "packages/*/pyproject.toml"
+      - "packages/a13n-envd-client/**"
+      - "packages/a13n-logging/**"
       - "packages/a13n-environment/**"
       - "packages/a13n-harness/**"
       - "packages/a13n-stream-protocol/**"
@@ -71,15 +77,114 @@ env:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect UI changes
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    outputs:
+      tests: ${{ steps.filter.outputs.tests }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      distribution: ${{ steps.filter.outputs.distribution }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Classify UI inputs
+        id: filter
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            tests:
+              - '.github/workflows/ci-a13n-harness-ui*.yml'
+              - '.github/workflows/release-a13n-harness-ui.yml'
+              - '.gitignore'
+              - '.pre-commit-config.yaml'
+              - 'Makefile'
+              - 'packages/*/pyproject.toml'
+              - 'packages/a13n-envd-client/**'
+              - 'packages/a13n-logging/**'
+              - 'packages/a13n-environment/**'
+              - 'packages/a13n-harness/**'
+              - 'packages/a13n-stream-protocol/**'
+              - 'packages/a13n-harness-ui/**'
+              - 'docs/a13n-harness-ui/**'
+              - 'mkdocs.yml'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'conftest.py'
+              - 'scripts/run_python_tests.py'
+              - 'scripts/tests/test_harness_ui_ci_workflow.py'
+              - 'scripts/check-a13n-harness-ui-distribution.py'
+              - 'scripts/check_a13n_harness_ui_distribution.py'
+              - 'scripts/prepare-a13n-harness-ui-assets.py'
+              - 'scripts/prepare_a13n_harness_ui_assets.py'
+              - 'scripts/release_version.py'
+            frontend:
+              - '.github/workflows/ci-a13n-harness-ui*.yml'
+              - '.github/workflows/release-a13n-harness-ui.yml'
+              - '.gitignore'
+              - '.pre-commit-config.yaml'
+              - 'Makefile'
+              - 'frontend/*'
+              - 'frontend/apps/a13n-console/**'
+              - 'frontend/packages/**'
+              - 'sdk/typescript/**'
+              - 'scripts/tests/test_harness_ui_ci_workflow.py'
+            distribution:
+              - '.github/workflows/ci-a13n-harness-ui*.yml'
+              - '.github/workflows/release-a13n-harness-ui.yml'
+              - '.gitignore'
+              - '.pre-commit-config.yaml'
+              - 'Makefile'
+              - 'frontend/*'
+              - 'frontend/apps/a13n-harness-ui/**'
+              - 'frontend/packages/**'
+              # Package-root metadata/build hooks and runtime sources, not tests.
+              - 'packages/*/pyproject.toml'
+              - 'packages/a13n-envd-client/*'
+              - 'packages/a13n-envd-client/a13n_envd_client/**'
+              - 'packages/a13n-logging/*'
+              - 'packages/a13n-logging/a13n_logging/**'
+              - 'packages/a13n-environment/*'
+              - 'packages/a13n-environment/a13n_environment/**'
+              - 'packages/a13n-harness/*'
+              - 'packages/a13n-harness/a13n_harness/**'
+              - 'packages/a13n-stream-protocol/*'
+              - 'packages/a13n-stream-protocol/a13n_stream_protocol/**'
+              - 'packages/a13n-harness-ui/*'
+              - 'packages/a13n-harness-ui/a13n_harness_ui/**'
+              - 'docs/a13n-harness-ui/**'
+              - 'mkdocs.yml'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'conftest.py'
+              - 'scripts/run_python_tests.py'
+              - 'scripts/tests/test_harness_ui_ci_workflow.py'
+              - 'scripts/check-a13n-harness-ui-distribution.py'
+              - 'scripts/check_a13n_harness_ui_distribution.py'
+              - 'scripts/export-a13n-harness-ui-openapi.py'
+              - 'scripts/prepare-a13n-harness-ui-assets.py'
+              - 'scripts/prepare_a13n_harness_ui_assets.py'
+              - 'scripts/release_version.py'
+              - 'scripts/tests/test_check_a13n_harness_ui_distribution.py'
+              - 'scripts/tests/test_prepare_release_version.py'
+              - 'scripts/tests/test_prepare_a13n_harness_ui_assets.py'
+
   tests:
     name: UI Python tests
-    if: github.event_name != 'schedule' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.tests == 'true'
     runs-on: ubuntu-24.04-8core
     timeout-minutes: 12
     steps:
@@ -132,7 +237,8 @@ jobs:
 
   frontend:
     name: Console and shared frontend
-    if: github.event_name != 'schedule' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
@@ -164,7 +270,8 @@ jobs:
 
   distribution:
     name: UI distribution
-    if: github.event_name != 'schedule' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.distribution == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
@@ -206,6 +313,7 @@ jobs:
       - name: Check and build WebUI assets
         run: |
           pnpm --dir frontend install --frozen-lockfile
+          pnpm --dir frontend exec prettier --check apps/a13n-harness-ui
           pnpm --dir frontend --filter a13n-harness-ui-webui run check
           pnpm --dir frontend --filter a13n-harness-ui-webui run test
           pnpm --dir frontend --filter a13n-harness-ui-webui run build
@@ -231,7 +339,7 @@ jobs:
 
   linux:
     name: UI (Linux)
-    needs: [tests, frontend, distribution]
+    needs: [changes, tests, frontend, distribution]
     if: >-
       always() && github.event_name != 'schedule' &&
       (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
@@ -239,17 +347,31 @@ jobs:
     steps:
       - name: Require all Linux checks to pass
         env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
           TESTS_RESULT: ${{ needs.tests.result }}
           FRONTEND_RESULT: ${{ needs.frontend.result }}
           DISTRIBUTION_RESULT: ${{ needs.distribution.result }}
+          TESTS_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.tests == 'true' }}
+          FRONTEND_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.frontend == 'true' }}
+          DISTRIBUTION_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.distribution == 'true' }}
         run: |
-          test "$TESTS_RESULT" = success
-          test "$FRONTEND_RESULT" = success
-          test "$DISTRIBUTION_RESULT" = success
+          test "$CHANGES_RESULT" = success
+          for component in TESTS FRONTEND DISTRIBUTION; do
+            selected="${component}_SELECTED"
+            result="${component}_RESULT"
+            expected=skipped
+            if [[ "${!selected}" == true ]]; then
+              expected=success
+            fi
+            test "${!result}" = "$expected" || exit 1
+          done
 
   windows:
     name: UI (Windows)
-    if: github.event_name != 'push' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    needs: changes
+    if: >-
+      github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && needs.changes.outputs.tests == 'true')
     runs-on: windows-2025
     timeout-minutes: 12
     steps:

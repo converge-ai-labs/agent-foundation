@@ -47,6 +47,7 @@ async def test_agent_revision_and_invocation_use_connectivity_resolver(
         connectivity_sessions,
         revision_resolver,
         invocation_resolver,
+        models,
         clock=lambda: NOW,
     )
     config = AgentConfig.model_validate(

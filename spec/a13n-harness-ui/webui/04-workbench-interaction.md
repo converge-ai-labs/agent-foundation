@@ -46,7 +46,13 @@ On narrow screens, the right drawer or terminal temporarily takes the available 
 
 ## Conversation and Shared Composer
 
-The transcript foregrounds prompts and Agent responses. Tool activity is grouped with concise status and expandable arguments/results. Child execution appears as inspectable subordinate activity, not an unrelated root conversation. Pending questions and approvals have actionable cards adjacent to the relevant execution.
+The transcript foregrounds prompts and Agent responses. Each tool call has a compact semantic summary at its transcript position, with expandable arguments/results. Loaded saved calls and their following results are paired by call identity; a result whose call is outside the loaded page remains inspectable. Arguments completion does not establish execution completion. Failed, denied, interrupted, retry, and terminal-without-result states remain distinguishable.
+
+An observed filesystem edit displays its actual before/after diff, including when a later tool result fails. It is associated only by exact tool-call identity; proxy inner calls with independent identities remain separate observations. Historical replacement arguments are labeled as requested input, never reconstructed as applied changes. Large changes retain an explicit bounded-preview fallback and inspectable recorded content.
+
+An absolute path can offer an explicit **Open on host** lookup when native files are enabled. This human action looks up the same path spelling on the WebUI server/container; it does not map Environment mounts or assert that a remote file is the Host file. It opens current Host content or the existing private editor buffer, not recorded historical bytes. Relative paths and Environment aliases are not automatically resolved.
+
+Child execution appears as inspectable subordinate activity, not an unrelated root conversation. Pending questions and approvals have actionable cards adjacent to the relevant execution.
 
 The composer shows collaborator cursors, selected context, and editing status: local changes, synchronizing, or synchronized in this server instance. Synchronization is not a durable save. Participants can change their display name without creating an account. Names/colors provide interaction context, not verified identity or private workspaces.
 

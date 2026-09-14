@@ -26,6 +26,7 @@ from a13n_service.iam import (
 )
 from a13n_service.interactions.domain import RunLineageKind, RunStatus
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord, SessionRecord, ThreadRecord
+from a13n_service.labels import Labels, label_predicates
 from a13n_service.lifecycle import LifecycleEntityType
 from a13n_service.lifecycle.reconciliation import load_owning_run
 from a13n_service.run_stream import RetainedReplayUnavailable, RunReplayIntegrityError, RunReplayStore
@@ -55,6 +56,7 @@ class ThreadResource(_Resource):
     head_run_id: str | None
     current_run_id: str | None
     default_environment_id: str | None
+    labels: Labels
     created_at: datetime
     updated_at: datetime
 
@@ -64,6 +66,7 @@ class RunResource(_Resource):
     version: int
     session_id: str
     thread_id: str
+    labels: Labels
     parent_run_id: str | None
     retry_of_run_id: str | None
     lineage_kind: RunLineageKind
@@ -224,8 +227,10 @@ class NativeInteractionQueries:
         session_id: str,
         limit: int,
         cursor: str | None,
+        labels: dict[str, str] | None = None,
     ) -> ThreadCollection:
-        scope = _scope(actor, "threads", session_id)
+        labels = labels or {}
+        scope = {**_scope(actor, "threads", session_id), "labels": labels}
         boundary = _cursor_boundary(cursor, scope=scope, kind="threads")
         async with short_session(self._sessions) as database:
             session = await database.scalar(
@@ -257,6 +262,13 @@ class NativeInteractionQueries:
             )
             if authorization.visible_agent_ids is not None:
                 query = query.where(RunRecord.agent_id.in_(authorization.visible_agent_ids))
+            query = query.where(
+                *label_predicates(
+                    ThreadRecord.labels,
+                    labels,
+                    dialect=database.bind.dialect.name,
+                )
+            )
             if boundary is not None:
                 updated_at, resource_id = boundary
                 query = query.where(
@@ -289,12 +301,14 @@ class NativeInteractionQueries:
         thread_id: str | None,
         limit: int,
         cursor: str | None,
+        labels: dict[str, str] | None = None,
     ) -> RunCollection:
         selected_scope = workspace_id or thread_id
         if selected_scope is None:
             raise ValueError("one Run collection scope is required")
         actual_workspace = actor.workspace_id
-        scope = _scope(actor, "runs", selected_scope)
+        labels = labels or {}
+        scope = {**_scope(actor, "runs", selected_scope), "labels": labels}
         boundary = _cursor_boundary(cursor, scope=scope, kind="runs")
         async with short_session(self._sessions) as database:
             if thread_id is not None:
@@ -334,6 +348,13 @@ class NativeInteractionQueries:
                 )
             if authorization.visible_agent_ids is not None:
                 query = query.where(RunRecord.agent_id.in_(authorization.visible_agent_ids))
+            query = query.where(
+                *label_predicates(
+                    RunRecord.labels,
+                    labels,
+                    dialect=database.bind.dialect.name,
+                )
+            )
             query = query.order_by(RunRecord.created_at.desc(), RunRecord.id.desc()).limit(limit + 1)
             if boundary is not None:
                 created_at, resource_id = boundary
@@ -626,6 +647,7 @@ def _thread(record: ThreadRecord) -> ThreadResource:
         head_run_id=record.head_run_id,
         current_run_id=record.current_run_id,
         default_environment_id=record.default_environment_id,
+        labels=record.labels,
         created_at=assume_utc(record.created_at),
         updated_at=assume_utc(record.updated_at),
     )
@@ -638,6 +660,7 @@ def _run(record: RunRecord) -> RunResource:
         version=resource.version,
         session_id=resource.session_id,
         thread_id=resource.thread_id,
+        labels=resource.labels,
         parent_run_id=resource.parent_run_id,
         retry_of_run_id=resource.retry_of_run_id,
         lineage_kind=resource.lineage_kind,

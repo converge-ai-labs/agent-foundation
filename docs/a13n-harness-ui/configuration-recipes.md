@@ -124,28 +124,27 @@ For a child with an independent model, create an Agent resource and add `- agent
 
 ## Configure tool review
 
-**File: `agents/<name>.yaml`, entry inside `capabilities`**
+**File: `a13n-harness-ui.yaml`**
 
 ```yaml
-capabilities:
-  - capability: ToolReviewCapability
-    configuration:
-      model: model-review
-      risk_threshold: extra_high
-      rules:
-        environment.shell_exec:
-          risk_threshold: high
-      on_flagged: approval_required
-      on_error: approval_required
+security:
+  shell_review:
+    enable: true
+    risk_threshold: extra_high
+    model: model-review
+    on_flagged: approval_required
+    on_error: allow
 ```
 
-Preserve other Capability entries. `model-review` must be a configured **Model resource**, not a subagent ID. This reviewer examines local tool invocations; it is unrelated to delegating a code review to the `code-reviewer` child.
+Create `model-review` as a **Model resource** first, or use an existing Model ID. It is not the `code-reviewer` subagent and cannot execute tools. Subscription setup creates a separate lightweight reviewer; API-key setup reuses the connected Model. Each review makes a Model request, with the selected connection's usage and cost.
 
-Preserve the shared global defaults or override individual tools. One best rule wins (exact ID, longest prefix, then `*`); omitted fields inherit global settings, not broader rules. Risk and reason come from the reviewer; runtime policy asks or denies at the threshold. This example asks at `extra_high` globally and `high` for shell launches. The UI catalog defaults to asking, unlike the Harness library's `deny`. Explicit `deny` remains supported.
+This shortcut applies to shell launches (`environment.shell_exec`) across Agents and their children, not every tool. Risk levels are `low`, `medium`, `high`, and `extra_high`; the default threshold is `extra_high`. Calls at or above the threshold ask for approval by default. Other tools are not opted into review by this shortcut.
 
-The unified gate reviews all local tools by default, with compact task, Environment, previous-review, and observed-action context. History is advisory, never permission. Shell approval rendering shows risk/reason best effort; other tools keep ordinary presentation. `/review request-id` opens details. A separate tool-policy confirmation may follow reviewer approval.
+Set `enable: false` to stop using the shortcut. **This does not remove or disable an explicitly configured Agent policy.** When enabled, the shortcut merges permissions and optional review into one `ToolPermissionsCapability` in the captured Run. Its shell permission wins even over an Agent's explicit `allow`, `deny`, or `ask`; its supplied threshold, flagged action, error action, and Model win over the corresponding Agent fields. Unrelated rules, reviewer instructions, and other settings are preserved. Omitted/null fields inherit the Agent reviewer configuration, falling back to `extra_high`, the effective Agent Model, `on_flagged: approval_required`, and `on_error: allow` when absent.
 
-Non-timeout errors follow `on_error`; the example asks, while subscription setup explicitly uses `allow`. Reviewer timeout always denies execution. Human decisions use the independent uniform Host `tools.interaction_timeout_seconds`, default 120. Legacy `ShellReviewCapability` is accepted only as a UI alias; `on_error: skip` maps to `allow`. Migrate `on_flagged: skip` to an explicit permission `allow` if review should be bypassed. Review is not filesystem or network isolation.
+Ordinary UI authoring uses this root mapping. Advanced Agent configuration can use one `ToolPermissionsCapability` with nested `review` configuration. With the shortcut off, permission `review` is still required for the reviewer to run: a reviewer or risk rule alone does not activate review. There is no separate review Capability or compatibility alias.
+
+`on_flagged` accepts `deny` or `approval_required`; `on_error` additionally accepts `allow`. Non-timeout reviewer errors follow the effective `on_error` policy; the default `allow` continues through all remaining checks. Reviewer timeout always denies execution. Human decisions use the separate Host `tools.interaction_timeout_seconds` (default 120). Risk/reason rendering is best effort; `/review request-id` opens details. History is advisory, not permission, and review is not filesystem or network isolation. Validate with `a13n-harness-ui config validate`; an enabled shortcut with a missing Model or invalid merged policy is an error. Accepted edits affect later Runs, never already captured execution.
 
 ## Enable an MCP server
 

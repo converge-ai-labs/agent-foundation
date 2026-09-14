@@ -20,7 +20,7 @@ from anyio import Event, create_task_group, fail_after, move_on_after
 from fastapi import FastAPI, Query, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Receive, Scope, Send
 from starlette.websockets import WebSocketDisconnect
@@ -115,7 +115,13 @@ from a13n_harness_ui.surfaces import (
     ThreadSummary,
     TranscriptPage,
 )
-from a13n_harness_ui.thread_files import MAX_ATTACHMENT_BYTES, AttachmentUpload, ThreadAttachment
+from a13n_harness_ui.thread_files import (
+    MAX_ATTACHMENT_BYTES,
+    AttachmentUpload,
+    ComposerAttachmentReference,
+    ComposerInput,
+    ThreadAttachment,
+)
 from a13n_harness_ui.webui_lifecycle import EventStreamResponse, RequestLog, WebUIServer
 
 API_VERSION = "1"
@@ -150,17 +156,45 @@ class CreateThreadRequest(SurfaceModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
 
 
+class InputAttachmentReference(SurfaceModel):
+    attachment_id: str = Field(min_length=1, max_length=100)
+
+
 class PromptRequest(SurfaceModel):
     prompt: str = Field(default="", max_length=256 * 1024)
     attachment_ids: tuple[str, ...] = Field(default=(), max_length=8)
+    parts: tuple[str | InputAttachmentReference, ...] | None = Field(default=None, max_length=1024)
+
+    @model_validator(mode="after")
+    def validate_ordered_input(self) -> PromptRequest:
+        if self.parts is not None:
+            if self.prompt or self.attachment_ids:
+                raise ValueError("Use ordered parts or prompt/attachment_ids, not both.")
+            if sum(len(part) for part in self.parts if isinstance(part, str)) > 256 * 1024:
+                raise ValueError("Authored input exceeds 256 Ki characters.")
+        return self
+
+    def input(self) -> str | ComposerInput:
+        if self.parts is None:
+            return self.prompt
+        return ComposerInput(
+            parts=tuple(
+                part if isinstance(part, str) else ComposerAttachmentReference(part.attachment_id)
+                for part in self.parts
+            )
+        )
 
 
 class SteerRequest(SurfaceModel):
     prompt: str = Field(min_length=1, max_length=256 * 1024)
 
 
-class RootSteerRequest(SteerRequest):
-    attachment_ids: tuple[str, ...] = Field(default=(), max_length=8)
+class RootSteerRequest(PromptRequest):
+    @model_validator(mode="after")
+    def validate_instruction(self) -> RootSteerRequest:
+        if self.parts is None and not self.prompt and not self.attachment_ids:
+            raise ValueError("An instruction must not be empty.")
+        return self
 
 
 class SetupApplyRequest(SurfaceModel):
@@ -1154,7 +1188,7 @@ def create_webui(
         document = await _document(request, PromptRequest)
         try:
             return await app().submit_thread(
-                thread_id=thread_id, prompt=document.prompt, attachment_ids=document.attachment_ids
+                thread_id=thread_id, prompt=document.input(), attachment_ids=document.attachment_ids
             )
         except ValueError as exc:
             raise HarnessUiError(str(exc), code="input_invalid") from exc
@@ -1176,9 +1210,12 @@ def create_webui(
     )
     async def steer(receipt_id: str, request: Request) -> RootControlResult:
         document = await _document(request, RootSteerRequest)
-        return await app().steer_root_operation(
-            receipt_id=receipt_id, message=document.prompt, attachment_ids=document.attachment_ids
-        )
+        try:
+            return await app().steer_root_operation(
+                receipt_id=receipt_id, message=document.input(), attachment_ids=document.attachment_ids
+            )
+        except ValueError as exc:
+            raise HarnessUiError(str(exc), code="input_invalid") from exc
 
     @server.post("/api/operations/{receipt_id}/cancel", response_model=RootControlResult)
     async def cancel(receipt_id: str) -> RootControlResult:
@@ -1308,7 +1345,7 @@ def create_webui(
             index,
             headers={
                 "Cache-Control": "no-cache",
-                "Content-Security-Policy": "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'",
+                "Content-Security-Policy": "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'",
             },
         )
 

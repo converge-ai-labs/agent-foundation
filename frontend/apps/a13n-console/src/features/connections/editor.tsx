@@ -81,7 +81,6 @@ export function ConnectionDetails({
         ) : undefined
       }
       size="lg"
-      placement="top"
       title={
         <span className="flex min-w-0 items-center gap-3">
           <BrandIcon

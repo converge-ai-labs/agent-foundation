@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Mapping
-from typing import Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
+
+if TYPE_CHECKING:
+    from ..models.thread_resource_labels import ThreadResourceLabels
+
 
 T = TypeVar("T", bound="ThreadResource")
 
@@ -18,6 +22,7 @@ class ThreadResource:
         default_environment_id (None | str):
         head_run_id (None | str):
         id (str):
+        labels (ThreadResourceLabels):
         origin_kind (str):
         origin_run_id (None | str):
         origin_thread_id (None | str):
@@ -33,6 +38,7 @@ class ThreadResource:
     default_environment_id: str | None
     head_run_id: str | None
     id: str
+    labels: ThreadResourceLabels
     origin_kind: str
     origin_run_id: str | None
     origin_thread_id: str | None
@@ -55,6 +61,8 @@ class ThreadResource:
         head_run_id = self.head_run_id
 
         id = self.id
+
+        labels = self.labels.to_dict()
 
         origin_kind = self.origin_kind
 
@@ -83,6 +91,7 @@ class ThreadResource:
                 "default_environment_id": default_environment_id,
                 "head_run_id": head_run_id,
                 "id": id,
+                "labels": labels,
                 "origin_kind": origin_kind,
                 "origin_run_id": origin_run_id,
                 "origin_thread_id": origin_thread_id,
@@ -98,6 +107,8 @@ class ThreadResource:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        from ..models.thread_resource_labels import ThreadResourceLabels
+
         d = dict(src_dict)
         created_at = datetime.datetime.fromisoformat(d.pop("created_at"))
 
@@ -123,6 +134,8 @@ class ThreadResource:
         head_run_id = _parse_head_run_id(d.pop("head_run_id"))
 
         id = d.pop("id")
+
+        labels = ThreadResourceLabels.from_dict(d.pop("labels"))
 
         origin_kind = d.pop("origin_kind")
 
@@ -156,6 +169,7 @@ class ThreadResource:
             default_environment_id=default_environment_id,
             head_run_id=head_run_id,
             id=id,
+            labels=labels,
             origin_kind=origin_kind,
             origin_run_id=origin_run_id,
             origin_thread_id=origin_thread_id,

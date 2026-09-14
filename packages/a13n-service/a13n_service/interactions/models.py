@@ -24,6 +24,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
+from a13n_service.labels import LABELS_SQL_TYPE
 from a13n_service.models.domain import ModelExecutionObservation
 from a13n_service.temporal import assume_utc, optional_assume_utc
 
@@ -71,11 +72,15 @@ class SessionRecord(Base):
         UniqueConstraint("organization_id", "id", name="uq_sessions_organization_id"),
         Index("ix_sessions_workspace_created", "organization_id", "workspace_id", "created_at", "id"),
         Index("ix_sessions_workspace_updated", "organization_id", "workspace_id", "updated_at", "id"),
+        Index("ix_sessions_labels", "labels", postgresql_using="gin", postgresql_ops={"labels": "jsonb_path_ops"}),
     )
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    labels: Mapped[dict[str, str]] = mapped_column(
+        LABELS_SQL_TYPE, nullable=False, default=dict, server_default=text("'{}'")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -84,6 +89,7 @@ class SessionRecord(Base):
             id=self.id,
             organization_id=self.organization_id,
             workspace_id=self.workspace_id,
+            labels=self.labels or {},
             created_at=assume_utc(self.created_at),
             updated_at=assume_utc(self.updated_at),
         )
@@ -158,6 +164,7 @@ class ThreadRecord(Base):
         Index("ix_threads_selected_run", "organization_id", text("coalesce(current_run_id, head_run_id)")),
         Index("ix_threads_origin_run", "organization_id", "origin_run_id", "id"),
         Index("ix_threads_origin_thread", "organization_id", "origin_thread_id", "id"),
+        Index("ix_threads_labels", "labels", postgresql_using="gin", postgresql_ops={"labels": "jsonb_path_ops"}),
     )
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
@@ -175,6 +182,9 @@ class ThreadRecord(Base):
     head_run_id: Mapped[str | None] = mapped_column(String(72))
     current_run_id: Mapped[str | None] = mapped_column(String(72))
     default_environment_id: Mapped[str | None] = mapped_column(ForeignKey("environments.id"))
+    labels: Mapped[dict[str, str]] = mapped_column(
+        LABELS_SQL_TYPE, nullable=False, default=dict, server_default=text("'{}'")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -192,6 +202,7 @@ class ThreadRecord(Base):
             head_run_id=self.head_run_id,
             current_run_id=self.current_run_id,
             default_environment_id=self.default_environment_id,
+            labels=self.labels or {},
             created_at=assume_utc(self.created_at),
             updated_at=assume_utc(self.updated_at),
         )
@@ -204,6 +215,7 @@ class RunRecord(Base):
             "(environment_id IS NULL AND environment_access IS NULL AND environment_use_started_at IS NULL) OR (environment_id IS NOT NULL AND environment_access IN ('read_only','read_write','full'))",
             name="environment_selection_valid",
         ),
+        Index("ix_runs_labels", "labels", postgresql_using="gin", postgresql_ops={"labels": "jsonb_path_ops"}),
         ForeignKeyConstraint(
             ("organization_id", "session_id", "thread_id"),
             ("threads.organization_id", "threads.session_id", "threads.id"),
@@ -419,6 +431,9 @@ class RunRecord(Base):
     authority_principal_id: Mapped[str] = mapped_column(String(72), nullable=False)
     session_id: Mapped[str] = mapped_column(String(72), nullable=False)
     thread_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    labels: Mapped[dict[str, str]] = mapped_column(
+        LABELS_SQL_TYPE, nullable=False, default=dict, server_default=text("'{}'")
+    )
     parent_run_id: Mapped[str | None] = mapped_column(String(72))
     retry_of_run_id: Mapped[str | None] = mapped_column(String(72))
     lineage_kind: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -495,6 +510,7 @@ class RunRecord(Base):
             ),
             "session_id": self.session_id,
             "thread_id": self.thread_id,
+            "labels": self.labels,
             "parent_run_id": self.parent_run_id,
             "retry_of_run_id": self.retry_of_run_id,
             "environment_id": self.environment_id,

@@ -130,7 +130,8 @@ export function ConversationNavigation() {
                 </NavLink>
                 <Menu>
                   <MenuTrigger
-                    render={<Button variant="ghost" size="icon" />}
+                    render={<Button variant="ghost" size="icon-sm" />}
+                    className={styles.threadActions}
                     aria-label={`Actions for ${row.thread.title || "Untitled conversation"}`}
                   >
                     <DotsThree />

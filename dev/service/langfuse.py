@@ -43,8 +43,13 @@ class Langfuse:
     def validate(self) -> None:
         if self.query.provider == "none":
             return
+        if self.query.provider == "logfire":
+            self.environment.settings.validate_trace_query_configuration()
+            return
         if not self.enabled:
-            raise ValueError("Local development supports observability.query.provider = 'langfuse' or 'none'")
+            raise ValueError(
+                "Local development supports observability.query.provider = 'langfuse', 'logfire' or 'none'"
+            )
         url = urlsplit(self.query.langfuse_base_url or "")
         if (
             url.scheme != "http"
@@ -205,7 +210,7 @@ def trace_environment(langfuse: Langfuse) -> dict[str, str]:
     # Preserve remote proxy policy while forcing local development traffic direct.
     bypass = ",".join(filter(None, [env.get("NO_PROXY"), env.get("no_proxy"), "127.0.0.1,localhost,::1"]))
     env.update(NO_PROXY=bypass, no_proxy=bypass)
-    backend = os.environ.get("A13N_DEV_TRACE_BACKEND", "langfuse")
+    backend = os.environ.get("A13N_DEV_TRACE_BACKEND", langfuse.query.provider)
     if backend not in {"langfuse", "logfire", "none"}:
         raise ValueError("A13N_DEV_TRACE_BACKEND must be langfuse, logfire or none")
     tracing = langfuse.environment.settings.observability.tracing
@@ -216,9 +221,9 @@ def trace_environment(langfuse: Langfuse) -> dict[str, str]:
         env.update(
             OTEL_TRACES_EXPORTER="otlp",
             OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf",
-            OTEL_EXPORTER_OTLP_ENDPOINT=os.environ.get("LOGFIRE_BASE_URL", "https://logfire-us.pydantic.dev").rstrip(
-                "/"
-            ),
+            OTEL_EXPORTER_OTLP_ENDPOINT=os.environ.get(
+                "LOGFIRE_BASE_URL", langfuse.query.logfire_base_url or "https://logfire-us.pydantic.dev"
+            ).rstrip("/"),
             OTEL_EXPORTER_OTLP_HEADERS=f"Authorization={token}",
             OTEL_TRACES_SAMPLER="parentbased_always_on",
             OTEL_BSP_SCHEDULE_DELAY="500",

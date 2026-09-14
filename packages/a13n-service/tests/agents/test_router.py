@@ -235,3 +235,20 @@ async def test_agent_avatar_upload_replace_remove_and_authorization(api_client: 
     assert removed.json()["image_url"] is None
     assert removed.json()["version"] == original["version"]
     assert (await api_client.get(replaced.json()["image_url"])).status_code == 404
+
+
+@pytest.mark.anyio
+async def test_agent_labels_http_contract(api_client):
+    from tests.labels_support import assert_labels_http_contract
+
+    collection = f"/api/v1/workspaces/{WORKSPACE_ID}/agents"
+    created = await api_client.post(
+        collection,
+        headers={"Idempotency-Key": "label-agent"},
+        json={"name": "Label agent", "config": agent_config().model_dump(mode="json", by_alias=True)},
+    )
+    assert created.status_code == 201, created.text
+    identity = created.json()["agent"]["id"]
+    await assert_labels_http_contract(
+        api_client, f"{collection}/{identity}", collection, immutable_fields=["version", "current_revision_id"]
+    )

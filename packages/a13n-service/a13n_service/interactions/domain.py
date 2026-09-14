@@ -21,6 +21,7 @@ from pydantic import (
 from a13n_service.digests import Sha256Digest
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import ObjectId, new_object_id
+from a13n_service.labels import Labels
 from a13n_service.models.domain import ModelExecutionObservation
 from a13n_service.temporal import UtcDateTime
 
@@ -208,6 +209,7 @@ class Session(StrictModel):
     id: ObjectId
     organization_id: ObjectId
     workspace_id: ObjectId
+    labels: Labels = Field(default_factory=dict)
     created_at: UtcDateTime
     updated_at: UtcDateTime
 
@@ -225,6 +227,7 @@ class Thread(StrictModel):
     head_run_id: ObjectId | None = None
     current_run_id: ObjectId | None = None
     default_environment_id: ObjectId | None = None
+    labels: Labels = Field(default_factory=dict)
     created_at: UtcDateTime
     updated_at: UtcDateTime
 
@@ -247,6 +250,7 @@ class Run(StrictModel):
     authority_principal: PrincipalRef
     session_id: ObjectId
     thread_id: ThreadId
+    labels: Labels = Field(default_factory=dict)
     parent_run_id: ObjectId | None = None
     retry_of_run_id: ObjectId | None = None
     lineage_kind: RunLineageKind
@@ -498,6 +502,7 @@ def accepted_run(
     input: JsonValue | None = None,
     input_object: RunPayloadObjectRef | None = None,
     input_text: Annotated[str, StringConstraints(max_length=65536)] | None = None,
+    labels: Labels | None = None,
 ) -> Run:
     """Construct fresh execution state from accepted intent, never from prior execution."""
     values: dict[str, object] = dict(
@@ -530,6 +535,7 @@ def accepted_run(
         request_fingerprint=request_fingerprint,
         input_kind=input_kind,
         input_text=input_text,
+        labels=labels or {},
         version=1,
         available_at=now,
         attempts_started=0,

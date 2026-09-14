@@ -10243,6 +10243,23 @@
             ],
             "title": "Tool Call Id"
           },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "success",
+                  "failed",
+                  "denied",
+                  "interrupted"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
           "value": {
             "anyOf": [
               {
@@ -12013,6 +12030,22 @@
         "title": "ThreadMetadataMutation",
         "type": "object"
       },
+      "InputAttachmentReference": {
+        "additionalProperties": false,
+        "properties": {
+          "attachment_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Attachment Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "attachment_id"
+        ],
+        "title": "InputAttachmentReference",
+        "type": "object"
+      },
       "PromptRequest": {
         "additionalProperties": false,
         "properties": {
@@ -12030,6 +12063,28 @@
             "maxItems": 8,
             "title": "Attachment Ids",
             "type": "array"
+          },
+          "parts": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InputAttachmentReference"
+                    }
+                  ]
+                },
+                "maxItems": 1024,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parts"
           }
         },
         "title": "PromptRequest",
@@ -12039,8 +12094,8 @@
         "additionalProperties": false,
         "properties": {
           "prompt": {
+            "default": "",
             "maxLength": 262144,
-            "minLength": 1,
             "title": "Prompt",
             "type": "string"
           },
@@ -12052,11 +12107,30 @@
             "maxItems": 8,
             "title": "Attachment Ids",
             "type": "array"
+          },
+          "parts": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InputAttachmentReference"
+                    }
+                  ]
+                },
+                "maxItems": 1024,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parts"
           }
         },
-        "required": [
-          "prompt"
-        ],
         "title": "RootSteerRequest",
         "type": "object"
       }

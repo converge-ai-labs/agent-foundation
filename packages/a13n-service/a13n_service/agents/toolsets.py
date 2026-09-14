@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Annotated, Literal
 
 from a13n_harness.environment import DynamicEnvironmentConfiguration
-from a13n_harness.tools import ToolIdentity, ToolPermissionMode, ToolPermissions, ToolPermissionSetting
+from a13n_harness.tools import ToolPermissionMode, ToolPermissionSetting
 from a13n_harness.toolsets.domains import DomainRestrictions
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, StringConstraints
 
@@ -22,8 +22,8 @@ from a13n_service.web.domain import (
 ToolsetKey = Literal["files", "shell", "web", "assets"]
 ToolKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
 JsonObject = dict[str, JsonValue]
-SupportedPermission = Literal["allow", "ask", "deny", "review", "auto"]
-_ALL_PERMISSIONS: tuple[SupportedPermission, ...] = ("allow", "ask", "deny", "review", "auto")
+SupportedPermission = Literal["inherit", "allow", "ask", "deny", "review"]
+_ALL_PERMISSIONS: tuple[SupportedPermission, ...] = ("inherit", "allow", "ask", "deny", "review")
 
 
 class _StrictModel(BaseModel):
@@ -54,7 +54,7 @@ class ScrapeToolConfiguration(DomainRestrictions):
 
 class ToolSelection(_StrictModel):
     enabled: bool = True
-    permission: ToolPermissionSetting = "auto"
+    permission: ToolPermissionSetting = "inherit"
     config: JsonObject = Field(default_factory=dict)
 
 
@@ -102,7 +102,7 @@ class _Tool:
     model_name: str
     config_model: type[BaseModel]
     default_enabled: bool = True
-    default_permission: ToolPermissionMode = "review"
+    default_permission: ToolPermissionMode = "allow"
     resource_selector: ToolResourceSelector | None = None
 
     def public(self, *, deployment_supported: bool = True) -> ToolDefinition:
@@ -264,7 +264,7 @@ def _normalize_toolset(definition: _Toolset, selected: ToolsetSelection | None) 
         tool_config = tool.config_model.model_validate({} if submitted is None else submitted.config)
         tools[tool.key] = ToolSelection(
             enabled=tool.default_enabled if submitted is None else submitted.enabled,
-            permission="auto" if submitted is None else submitted.permission,
+            permission="inherit" if submitted is None else submitted.permission,
             config=tool_config.model_dump(mode="json", exclude_none=True),
         )
     return ToolsetSelection(
@@ -286,20 +286,6 @@ def enabled_tool(toolsets: Toolsets, toolset_key: ToolsetKey, tool_key: str) -> 
     toolset = toolsets[toolset_key]
     tool = toolset.tools[tool_key]
     return tool if toolset.enabled and tool.enabled else None
-
-
-def requires_reviewer(toolsets: Toolsets) -> bool:
-    return any(
-        selected.enabled and tool.enabled and _effective_permission(definition_tool, tool.permission) == "review"
-        for definition in _TOOLSETS
-        for definition_tool in definition.tools
-        for selected in (toolsets[definition.key],)
-        for tool in (selected.tools[definition_tool.key],)
-    )
-
-
-def _effective_permission(tool: _Tool, setting: ToolPermissionSetting) -> ToolPermissionMode:
-    return ToolPermissions(default=setting).resolve(ToolIdentity(tool.execution_id, tool.default_permission))
 
 
 def builtin_permission_rules(toolsets: Toolsets) -> dict[str, ToolPermissionSetting]:
@@ -368,6 +354,5 @@ __all__ = [
     "enabled_tool",
     "environment_configuration",
     "normalize_toolsets",
-    "requires_reviewer",
     "web_selection",
 ]

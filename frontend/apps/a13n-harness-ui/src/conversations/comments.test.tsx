@@ -355,8 +355,10 @@ it("opens a text selection's private editor inline and publishes only after expl
   fireEvent.click(screen.getByRole("button", { name: "Comment on selection" }));
   await screen.findByLabelText("Comment", { selector: "textarea" });
   expect(
-    screen.queryByRole("dialog", { name: "Saved output discussion" }),
-  ).toBeNull();
+    screen
+      .getByRole("dialog", { name: "Comments" })
+      .hasAttribute("data-a13n-modal"),
+  ).toBe(false);
   expect(drafts.get("thread-one")!.publication.selection).toEqual({
     start: 6,
     end: 11,

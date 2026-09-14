@@ -14,6 +14,7 @@ from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAc
 from a13n_service.iam.authorization import AuthorizedAgentCollection
 from a13n_service.interactions.domain import RunStatus
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
+from a13n_service.labels import LabelFilterValues, Labels, label_predicates, parse_label_filters
 from a13n_service.temporal import assume_utc
 
 
@@ -28,6 +29,11 @@ class SessionFilters(_Resource):
     trigger_type: tuple[str, ...] = Field(default=(), max_length=16)
     updated_after: AwareDatetime | None = None
     updated_before: AwareDatetime | None = None
+    label: LabelFilterValues = ()
+
+    @property
+    def labels(self) -> dict[str, str]:
+        return parse_label_filters(self.label)
 
     @field_validator("q", "agent_id")
     @classmethod
@@ -67,6 +73,7 @@ class SessionResource(_Resource):
     workspace_id: str
     created_at: datetime
     updated_at: datetime
+    labels: Labels
     preview: SessionPreview | None
     run_count: int | None = Field(ge=0)
 
@@ -96,6 +103,13 @@ async def collect_sessions(
         )
         .order_by(SessionRecord.updated_at.desc(), SessionRecord.id.desc())
         .limit(limit + 1)
+    )
+    query = query.where(
+        *label_predicates(
+            SessionRecord.labels,
+            filters.labels,
+            dialect=database.bind.dialect.name,
+        )
     )
     if authorization.visible_agent_ids is not None:
         query = query.where(
@@ -307,6 +321,7 @@ def _session(record: SessionRecord, preview: SessionPreview | None, run_count: i
         workspace_id=record.workspace_id,
         created_at=assume_utc(record.created_at),
         updated_at=assume_utc(record.updated_at),
+        labels=record.labels,
         preview=preview,
         run_count=run_count,
     )

@@ -29,7 +29,7 @@ Agent configuration stores Web operations in the built-in `web` Toolset:
       "tools": {
         "search": {
           "enabled": true,
-          "permission": "auto",
+          "permission": "inherit",
           "config": {
             "provider_id": "wprov_search",
             "max_results": 5,
@@ -39,15 +39,15 @@ Agent configuration stores Web operations in the built-in `web` Toolset:
         },
         "scrape": {
           "enabled": true,
-          "permission": "auto",
+          "permission": "inherit",
           "config": {"provider_id": "wprov_exa", "max_content_bytes": 524288}
         },
         "fetch": {
           "enabled": true,
-          "permission": "auto",
+          "permission": "inherit",
           "config": {"max_content_bytes": 262144}
         },
-        "download": {"enabled": true, "permission": "auto", "config": {}}
+        "download": {"enabled": true, "permission": "inherit", "config": {}}
       }
     }
   }

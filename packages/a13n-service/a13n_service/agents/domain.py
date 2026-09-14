@@ -29,6 +29,7 @@ from a13n_service.connectivity.selection_domain import (
 from a13n_service.digests import Sha256Digest
 from a13n_service.iam.domain import ActorRef
 from a13n_service.ids import ObjectId, new_object_id
+from a13n_service.labels import Labels
 from a13n_service.models.domain import ModelExecutionSnapshot, ModelKey
 from a13n_service.models.settings import validate_settings_bounds
 from a13n_service.resource_keys import ResourceKey
@@ -384,6 +385,7 @@ class Agent(StrictModel):
     name: AgentName
     key: ResourceKey
     description: str | None
+    labels: Labels = Field(default_factory=dict)
     version: int = Field(ge=1)
     current_revision_id: ObjectId
     enabled: bool
@@ -441,6 +443,7 @@ class CreateAgentRequest(BaseModel):
     name: AgentName
     key: ResourceKey | None = None
     description: AgentDescription | None = None
+    labels: Labels = Field(default_factory=dict)
     config: AgentConfig
 
 
@@ -483,6 +486,7 @@ class DuplicateAgentRequest(BaseModel):
     name: AgentName
     key: ResourceKey | None = None
     description: AgentDescription | None = None
+    labels: Labels = Field(default_factory=dict)
 
 
 class AgentRevisionCreateResult(StrictModel):

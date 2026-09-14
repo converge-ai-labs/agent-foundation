@@ -83,7 +83,7 @@ async fn generated_http_uses_owner_pool_prefix_and_headers() {
 
 #[test]
 fn boolean_constants_are_booleans_not_strings() {
-    let value = json!({"enabled": true, "permission": "auto"});
+    let value = json!({"enabled": true, "permission": "inherit"});
     let parsed: ToolSelection = serde_json::from_value(value.clone()).unwrap();
     assert_eq!(serde_json::to_value(parsed).unwrap(), value);
     assert!(serde_json::from_value::<ToolSelection>(json!({"enabled": "true"})).is_err());

@@ -154,7 +154,7 @@ Checks cannot restore an old binding while authorization is active. Publishing a
 
 ## Assignment and effective selection
 
-[Agent configuration](../28-agent-management.md#agentconfig) and narrow AccountTarget overrides use one `connection_tools` list. Each entry names `connection_id`, the source-native `tools` selection, `defer_loading`, a default `permission`, and optional exact per-tool `permissions`. The default permission is persisted `auto`; exact entries override it. Omitted or null tools means all currently available authorized tools; an empty list means none. Duplicate Connection IDs are invalid, including across source kinds.
+[Agent configuration](../28-agent-management.md#agentconfig) and narrow AccountTarget overrides use one `connection_tools` list. Each entry names `connection_id`, the source-native `tools` selection, `defer_loading`, a default `permission`, and optional exact per-tool `permissions`. The default permission is persisted `inherit`; exact entries override it. Omitted or null tools means all currently available authorized tools; an empty list means none. Duplicate Connection IDs are invalid, including across source kinds.
 
 Run acceptance resolves each Connection and freezes its kind, Connection ID, authorization generation, tool scope, and deferred-loading policy. Connector selections additionally retain the resolved Provider ID. [Run persistence](../12-run-persistence.md) owns the single `connection_selections` snapshot. These are accepted authorization facts, not a catalog of discovered tool definitions.
 

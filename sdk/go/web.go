@@ -58,11 +58,11 @@ type DownloadToolConfiguration struct {
 type ToolPermission string
 
 const (
-	ToolPermissionAuto   ToolPermission = "auto"
-	ToolPermissionAllow  ToolPermission = "allow"
-	ToolPermissionAsk    ToolPermission = "ask"
-	ToolPermissionDeny   ToolPermission = "deny"
-	ToolPermissionReview ToolPermission = "review"
+	ToolPermissionInherit ToolPermission = "inherit"
+	ToolPermissionAllow   ToolPermission = "allow"
+	ToolPermissionAsk     ToolPermission = "ask"
+	ToolPermissionDeny    ToolPermission = "deny"
+	ToolPermissionReview  ToolPermission = "review"
 )
 
 type ToolSelection struct {

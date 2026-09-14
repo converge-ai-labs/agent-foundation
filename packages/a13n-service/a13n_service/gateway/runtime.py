@@ -9,6 +9,7 @@ from a13n_service.interactions.submissions import QueuedSubmissionService
 
 from .a2a import A2AService
 from .hosted_agui import HostedAguiService
+from .labels import InteractionLabels
 from .native_streaming import NativeRunStreamService
 from .notifications import NotificationService
 from .queries import NativeInteractionQueries
@@ -23,6 +24,7 @@ class GatewayRuntime:
     native_streams: NativeRunStreamService
     notifications: NotificationService
     queries: NativeInteractionQueries
+    labels: InteractionLabels
     queued_submissions: QueuedSubmissionService
     a2a: A2AService | None
 

@@ -73,7 +73,7 @@ export function withSearchSelection(
     ...current?.tools,
     search: {
       enabled: search !== null,
-      permission: current?.tools?.search?.permission ?? "auto",
+      permission: current?.tools?.search?.permission ?? "inherit",
       config: search ?? current?.tools?.search?.config ?? {},
     },
   };

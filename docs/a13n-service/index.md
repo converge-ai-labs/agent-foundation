@@ -52,7 +52,7 @@ Agent revisions preserve authored configuration. Run acceptance freezes executio
 
 - **Console** is the repository's private browser application for Service; it uses the TypeScript SDK and is hosted separately from Service API processes.
 - **Native HTTP** is the main resource and execution contract. TypeScript covers it; Python, Go, and Rust currently cover Web Provider management, not general Run APIs.
-- **`a13n-service`** is the process/operator CLI. **`a13n-service-cli`** is a separate remote-client scaffold with help/version only.
+- **`a13n-service`** is the process/operator CLI. **`a13n-service-cli`** is a separate remote client with label read and replacement commands.
 - **AG-UI, A2A, and provider ingress** are separate protocol boundaries, not additional paths on the Native SDK's transport.
 - **Tracing export** does not automatically enable authorized Service trace queries. Configure an installed query adapter; the default Run/IAM authorizer enforces access.
 

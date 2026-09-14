@@ -34,7 +34,6 @@ from a13n_harness._json import (
 )
 from a13n_harness._review_context import ReviewEvidence, append_review_evidence, compact_target, record_approval_denials
 from a13n_harness._tool_observation import record_tool_operation_failure
-from a13n_harness.capabilities.tool_review import TOOL_REVIEW_CAPABILITY_ID, ToolReviewCapability
 from a13n_harness.capability_types import _validate_capability_id
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.models import EnvironmentError
@@ -759,7 +758,6 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
             (DynamicEnvironmentCapability, _DynamicEnvironmentRunCapability),
             provenance.definition_ids,
         ),
-        TOOL_REVIEW_CAPABILITY_ID: ((ToolReviewCapability,), provenance.definition_ids),
         TOOL_PERMISSIONS_CAPABILITY_ID: ((ToolPermissionsCapability,), provenance.definition_ids),
         RUNTIME_CONTEXT_CAPABILITY_ID: (
             (RuntimeContextCapability,),

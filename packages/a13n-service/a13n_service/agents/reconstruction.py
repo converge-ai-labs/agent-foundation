@@ -18,7 +18,7 @@ from a13n_harness import (
 from a13n_harness import (
     DelegationContextPolicy as HarnessDelegationContextPolicy,
 )
-from a13n_harness.capabilities import SubagentCapability, ToolReviewCapability, ToolReviewConfig
+from a13n_harness.capabilities import SubagentCapability, ToolReviewConfig
 from a13n_harness.environment import DynamicEnvironmentCapability
 from a13n_harness.errors import HarnessError
 from a13n_harness.output_schema import structured_output_type
@@ -249,21 +249,18 @@ class AgentReconstructor:
             DynamicEnvironmentCapability(environment_configuration(config.toolsets)),
             *self._provided_capabilities(node),
         ]
-        capabilities.append(ToolPermissionsCapability(_permissions(config)))
+        review = None
         if config.reviewer is not None:
             if config.resolved_reviewer_model is None:
                 raise AgentDefinitionReconstructionError("reviewer_model_missing", path="reviewer")
-            capabilities.append(
-                ToolReviewCapability(
-                    ToolReviewConfig.model_validate(
-                        {
-                            **config.reviewer.model_dump(),
-                            "model": config.resolved_reviewer_model.execution.model_id,
-                            "model_settings": dict(config.resolved_reviewer_model.settings),
-                        }
-                    )
-                )
+            review = ToolReviewConfig.model_validate(
+                {
+                    **config.reviewer.model_dump(),
+                    "model": config.resolved_reviewer_model.execution.model_id,
+                    "model_settings": dict(config.resolved_reviewer_model.settings),
+                }
             )
+        capabilities.append(ToolPermissionsCapability(_permissions(config), review=review))
         selected_web = web_selection(config.toolsets)
         if selected_web is not None:
             capabilities.append(web_capability(selected_web))
@@ -394,9 +391,7 @@ def _permissions(config: EffectiveAgentConfig) -> ToolPermissions:
                 add(source_tool_id(key, name, kind="mcp"), selection.permissions.get(name, selection.permission))
     for tool in config.client_tools:
         add(source_tool_id(_CLIENT_TOOLSET_ID, tool.name), tool.permission)
-    # Internal control tools are not an authored Toolset surface. Every authored
-    # built-in, connection, and client tool has an exact rule above.
-    return ToolPermissions(default="allow", rules=rules)
+    return ToolPermissions(rules=rules)
 
 
 def _inline_schema_resources(

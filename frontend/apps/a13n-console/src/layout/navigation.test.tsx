@@ -194,8 +194,18 @@ it("shows all authorized settings groups and searches without changing the selec
   const navigation = within(
     screen.getByRole("navigation", { name: "Settings navigation" }),
   );
-  for (const name of ["Personal", "Workspace", "Organization"])
-    expect(navigation.getByRole("heading", { name })).toBeTruthy();
+  expect(navigation.getByRole("heading", { name: "Workspace" })).toBeTruthy();
+  const organization = navigation.getByRole("button", {
+    name: /Organization/,
+  });
+  for (const toggle of [
+    navigation.getByRole("button", { name: "Personal" }),
+    organization,
+  ])
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  await user.click(organization);
+  expect(organization.getAttribute("aria-expanded")).toBe("true");
+  expect(navigation.getByRole("link", { name: "Models" })).toBeTruthy();
   await user.type(
     screen.getByRole("searchbox", { name: "Search settings" }),
     "password",

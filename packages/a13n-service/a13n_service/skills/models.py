@@ -20,6 +20,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
+from a13n_service.labels import LABELS_SQL_TYPE
 from a13n_service.temporal import assume_utc, optional_assume_utc
 
 from .domain import (
@@ -48,6 +49,7 @@ class SkillRecord(Base):
         CheckConstraint("created_by_type IN ('user', 'service_account')", name="created_by_type_valid"),
         CheckConstraint("updated_by_type IN ('user', 'service_account')", name="updated_by_type_valid"),
         Index("ix_skills_listing", "workspace_id", "name", "id"),
+        Index("ix_skills_labels", "labels", postgresql_using="gin", postgresql_ops={"labels": "jsonb_path_ops"}),
         Index(
             "uq_skills_workspace_key_active",
             "workspace_id",
@@ -63,6 +65,9 @@ class SkillRecord(Base):
     workspace_id: Mapped[str] = mapped_column(String(72))
     key: Mapped[str] = mapped_column(String(64))
     name: Mapped[str] = mapped_column(String(256))
+    labels: Mapped[dict[str, str]] = mapped_column(
+        LABELS_SQL_TYPE, nullable=False, default=dict, server_default=text("'{}'")
+    )
     version: Mapped[int] = mapped_column(BigInteger)
     current_revision_id: Mapped[str] = mapped_column(String(72))
     created_by_type: Mapped[str] = mapped_column(String(32))
@@ -80,6 +85,7 @@ class SkillRecord(Base):
             workspace_id=self.workspace_id,
             key=self.key,
             name=self.name,
+            labels=self.labels or {},
             version=self.version,
             current_revision_id=self.current_revision_id,
             created_at=assume_utc(self.created_at),

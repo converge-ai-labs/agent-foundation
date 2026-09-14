@@ -13,6 +13,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct NewEnvironmentSelection {
+    #[serde(rename = "labels", skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Value>,
+
     #[serde(rename = "template_id")]
     pub template_id: String,
 
@@ -28,6 +31,7 @@ pub struct NewEnvironmentSelection {
 impl NewEnvironmentSelection {
     pub fn new(template_id: String) -> NewEnvironmentSelection {
         NewEnvironmentSelection {
+            labels: None,
             template_id,
             version: None,
         }

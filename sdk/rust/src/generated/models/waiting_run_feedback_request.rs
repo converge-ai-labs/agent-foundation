@@ -24,6 +24,9 @@ pub struct WaitingRunFeedbackRequest {
     )]
     pub hook_subscription: Option<Option<Box<models::InlineHookSubscriptionInput>>>,
 
+    #[serde(rename = "labels", skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Value>,
+
     #[serde(rename = "resolutions", skip_serializing_if = "Option::is_none")]
     pub resolutions: Option<Vec<models::ResolutionsInner>>,
 
@@ -39,6 +42,7 @@ impl WaitingRunFeedbackRequest {
         WaitingRunFeedbackRequest {
             expected_thread_version,
             hook_subscription: None,
+            labels: None,
             resolutions: None,
             sealed_state_digest_sha256,
         }

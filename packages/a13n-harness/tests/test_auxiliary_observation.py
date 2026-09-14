@@ -24,11 +24,16 @@ from a13n_harness.capabilities import (
     CompactionCapability,
     CompactionPolicy,
     HandoffCapability,
-    ToolReviewCapability,
     ToolReviewConfig,
 )
 from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
-from a13n_harness.tools import HarnessTool, InvocationPolicyCapability, InvocationPolicyDecision
+from a13n_harness.tools import (
+    HarnessTool,
+    InvocationPolicyCapability,
+    InvocationPolicyDecision,
+    ToolPermissions,
+    ToolPermissionsCapability,
+)
 from a13n_harness.toolsets import AgentMediaUnderstandingProvider, CodeActPolicyToolset, CodeActToolPolicy
 from a13n_harness.toolsets.file_media import MediaUnderstandingRequest
 from a13n_harness.usage import ProviderUsageRecord
@@ -76,8 +81,9 @@ async def test_auxiliary_models_are_native_descendants_of_the_invoking_tool(
         capabilities.extend(
             [
                 Capability(tools=[HarnessTool(shell_exec, harness_metadata=_metadata())]),
-                ToolReviewCapability(
-                    ToolReviewConfig(model="test:review"),
+                ToolPermissionsCapability(
+                    ToolPermissions(default="review"),
+                    review=ToolReviewConfig(model="test:review"),
                     reviewer=AgentToolReviewer(
                         FunctionModel(stream_function=_review_model), config=ToolReviewConfig(model="test:review")
                     ),
@@ -217,7 +223,9 @@ async def test_auxiliary_agents_do_not_fall_back_to_global_instrumentation(
         model=FunctionModel(stream_function=_single_shell_call()),
         capabilities=[
             Capability(tools=[HarnessTool(shell_exec, harness_metadata=_metadata())]),
-            ToolReviewCapability(ToolReviewConfig(model="test:review"), reviewer=reviewer),
+            ToolPermissionsCapability(
+                ToolPermissions(default="review"), review=ToolReviewConfig(model="test:review"), reviewer=reviewer
+            ),
         ],
     )
     with provider.get_tracer("host").start_as_current_span("host"):
@@ -341,7 +349,11 @@ async def test_shared_auxiliary_agents_use_each_concurrent_runs_observation() ->
                 model=FunctionModel(stream_function=_single_shell_call()),
                 capabilities=[
                     Capability(tools=[HarnessTool(shell_exec, harness_metadata=_metadata())]),
-                    ToolReviewCapability(ToolReviewConfig(model="test:review"), reviewer=reviewer),
+                    ToolPermissionsCapability(
+                        ToolPermissions(default="review"),
+                        review=ToolReviewConfig(model="test:review"),
+                        reviewer=reviewer,
+                    ),
                 ],
             )
         )
@@ -406,7 +418,9 @@ async def test_instrumented_review_preserves_failure_policy_and_cancellation(fai
         model=FunctionModel(stream_function=_single_shell_call()),
         capabilities=[
             Capability(tools=[HarnessTool(shell_exec, harness_metadata=_metadata())]),
-            ToolReviewCapability(ToolReviewConfig(model="test:review"), reviewer=reviewer),
+            ToolPermissionsCapability(
+                ToolPermissions(default="review"), review=ToolReviewConfig(model="test:review"), reviewer=reviewer
+            ),
         ],
     )
     task = asyncio.create_task(

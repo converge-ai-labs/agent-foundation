@@ -13,7 +13,7 @@ from a13n_harness.tools import ToolPermissions, ToolPermissionsCapability
 
 permissions = ToolPermissionsCapability(
     ToolPermissions(
-        default="auto",
+        default="inherit",
         rules={
             "environment.shell_exec": "review",
             "filesystem.remove": "ask",
@@ -26,23 +26,23 @@ permissions = ToolPermissionsCapability(
 
 Use the actual prepared stable IDs, not display names. Managed tools retain their declared IDs; ordinary tools use `tool/<toolset-id>/<original-name>`, and local MCP tools use `mcp/<source-id>/<original-name>`. Source/name segments are percent-encoded. MCP needs a stable source ID. Prefixing, renaming, ToolProxy, and CodeAct do not change a target's permission identity. Hosts using custom naming wrappers can attach `ToolIdentityToolset` before them.
 
-Exact rules win over the longest `.*` or `/*` prefix, then `*`, then `default`. `auto` uses the tool default: all locally executable tools use `review`; external/provider-native tools retain their separate boundaries. `allow` continues, `deny` fails before custom validation, `ask` requests human approval, and `review` consults a matching reviewer. If no reviewer is configured or matches, review adds no restriction. None of these modes supplies credentials or bypasses Host/Environment policy.
+Exact rules win over the longest `.*` or `/*` prefix, then `*`, then `default`. `inherit` uses the tool default, which is `allow` without review unless trusted code explicitly declares otherwise. External/provider-native tools retain their separate boundaries. A reviewer and its risk rules do not enable review by themselves; select permission `review` for the tools you want assessed. `allow` continues, `deny` fails before custom validation, `ask` requests human approval, and `review` consults a matching reviewer. If no reviewer is configured or matches, review adds no restriction. None of these modes supplies credentials or bypasses Host/Environment policy.
 
 ### Configure or replace the reviewer
 
-A model-backed reviewer is separate from the business Agent and has no execution tools:
+The same `ToolPermissionsCapability` owns optional review configuration, reviewer selection, and the per-Run review lifecycle. Its model-backed reviewer uses a separate Agent with no execution tools:
 
 ```python
 from a13n_harness.capabilities import (
-    ToolReviewCapability,
     ToolReviewConfig,
     ToolReviewPolicy,
     ToolReviewRule,
     ToolRiskLevel,
 )
 
-review = ToolReviewCapability(
-    ToolReviewConfig(
+permissions = ToolPermissionsCapability(
+    ToolPermissions(rules={"environment.shell_exec": "review", "tool/reporting/*": "review"}),
+    review=ToolReviewConfig(
         model="review-model",
         instruction="Treat private customer data exports as high risk.",
         shell_instruction="Treat irreversible shell operations as extra-high risk.",
@@ -57,7 +57,7 @@ review = ToolReviewCapability(
         on_error="approval_required",
     )
 )
-# Pass permissions and review in HarnessBuilder.build(..., capabilities=(...)).
+# Pass this one permissions Capability in HarnessBuilder.build(..., capabilities=(...)).
 # Your Host's Run Model resolver resolves the logical "review-model" selection.
 ```
 
@@ -90,7 +90,8 @@ class ExportReviewer:
         )
 
 
-review = ToolReviewCapability(
+permissions = ToolPermissionsCapability(
+    ToolPermissions(rules={"tool/reporting/*": "review"}),
     reviewers={"tool/reporting/*": ExportReviewer()},
     policy=ToolReviewPolicy(risk_threshold=ToolRiskLevel.HIGH, on_flagged="approval_required"),
 )

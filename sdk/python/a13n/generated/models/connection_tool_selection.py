@@ -21,14 +21,14 @@ class ConnectionToolSelection:
     Attributes:
         connection_id (str):
         defer_loading (bool | Unset):
-        permission (Literal['auto'] | ToolPermissionMode | Unset):
+        permission (Literal['inherit'] | ToolPermissionMode | Unset):
         permissions (ConnectionToolSelectionPermissions | Unset):
         tools (list[str] | None | Unset):
     """
 
     connection_id: str
     defer_loading: bool | Unset = UNSET
-    permission: Literal["auto"] | ToolPermissionMode | Unset = UNSET
+    permission: Literal["inherit"] | ToolPermissionMode | Unset = UNSET
     permissions: ConnectionToolSelectionPermissions | Unset = UNSET
     tools: list[str] | Unset | None = UNSET
 
@@ -37,7 +37,7 @@ class ConnectionToolSelection:
 
         defer_loading = self.defer_loading
 
-        permission: Literal["auto"] | str | Unset
+        permission: Literal["inherit"] | str | Unset
         if isinstance(self.permission, Unset):
             permission = UNSET
         elif isinstance(self.permission, ToolPermissionMode):
@@ -85,7 +85,7 @@ class ConnectionToolSelection:
 
         defer_loading = d.pop("defer_loading", UNSET)
 
-        def _parse_permission(data: object) -> Literal["auto"] | ToolPermissionMode | Unset:
+        def _parse_permission(data: object) -> Literal["inherit"] | ToolPermissionMode | Unset:
             if isinstance(data, Unset):
                 return data
             try:
@@ -96,10 +96,10 @@ class ConnectionToolSelection:
                 return componentsschemas_tool_permission_setting_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
-            componentsschemas_tool_permission_setting_type_1 = cast(Literal["auto"], data)
-            if componentsschemas_tool_permission_setting_type_1 != "auto":
+            componentsschemas_tool_permission_setting_type_1 = cast(Literal["inherit"], data)
+            if componentsschemas_tool_permission_setting_type_1 != "inherit":
                 raise ValueError(
-                    f"/components/schemas/ToolPermissionSetting_type_1 must match const 'auto', got '{componentsschemas_tool_permission_setting_type_1}'"
+                    f"/components/schemas/ToolPermissionSetting_type_1 must match const 'inherit', got '{componentsschemas_tool_permission_setting_type_1}'"
                 )
             return componentsschemas_tool_permission_setting_type_1
 

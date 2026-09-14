@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
 
@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.durable_operations.idempotency import is_evidence_unique_race
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
+from a13n_service.labels import Labels
 from a13n_service.object_retention.persistence import require_object_publications
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, utc_now
@@ -81,6 +82,7 @@ class _PublicationContext:
     workspace_id: str
     skill_id: str
     now: datetime
+    labels: Labels = field(default_factory=dict)
 
 
 class SkillPublicationService:
@@ -179,6 +181,7 @@ class SkillPublicationService:
                     workspace_id=workspace_id,
                     skill_id=skill_id,
                     now=now,
+                    labels=request.labels,
                 )
                 skill = _new_skill_record(
                     context,
@@ -519,6 +522,7 @@ def _new_skill_record(context: _PublicationContext, *, key: str, name: str, revi
         workspace_id=context.workspace_id,
         key=key,
         name=name,
+        labels=context.labels,
         version=1,
         current_revision_id=revision_id,
         created_by_type=context.actor.principal.principal_type.value,

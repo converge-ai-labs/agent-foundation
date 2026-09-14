@@ -10,6 +10,7 @@ from a13n_service.http_types import IdempotencyKey, IfMatch
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.iam.http.resource_dependencies import OrganizationId, WorkspaceId
 from a13n_service.iam.resource_routes import require_organization_boundary
+from a13n_service.labels import LabelFilterValues, LabelsBody, parse_label_filters
 from a13n_service.request_runtime import get_control_runtime
 
 from .domain import (
@@ -158,9 +159,20 @@ async def get_provider(request: Request, response: Response, actor: Actor, resou
 
 @router.get("/workspaces/{workspace}/environment-templates")
 async def list_templates(
-    request: Request, actor: Actor, workspace_id: WorkspaceId, limit: Limit = 50, cursor: str | None = None
+    request: Request,
+    actor: Actor,
+    workspace_id: WorkspaceId,
+    limit: Limit = 50,
+    cursor: str | None = None,
+    label: Annotated[LabelFilterValues, Query()] = (),
 ) -> Collection[EnvironmentTemplate]:
-    return await _service(request).list_templates(actor=actor, workspace_id=workspace_id, limit=limit, cursor=cursor)
+    return await _service(request).list_templates(
+        actor=actor,
+        workspace_id=workspace_id,
+        limit=limit,
+        cursor=cursor,
+        labels=parse_label_filters(label),
+    )
 
 
 @router.get("/environment-templates/{resource_id}")
@@ -170,11 +182,45 @@ async def get_template(request: Request, response: Response, actor: Actor, resou
     return resource
 
 
+@router.get("/environment-templates/{template_id}/labels", response_model=LabelsBody)
+async def get_template_labels(request: Request, response: Response, actor: Actor, template_id: str) -> LabelsBody:
+    body, etag = await _service(request).get_template_labels(actor=actor, template_id=template_id)
+    response.headers["ETag"] = etag
+    return body
+
+
+@router.put("/environment-templates/{template_id}/labels", response_model=LabelsBody)
+async def put_template_labels(
+    request: Request,
+    response: Response,
+    actor: Actor,
+    template_id: str,
+    body: LabelsBody,
+    if_match: IfMatch,
+) -> LabelsBody:
+    result, etag = await _service(request).replace_template_labels(
+        actor=actor, template_id=template_id, body=body, if_match=if_match
+    )
+    response.headers["ETag"] = etag
+    return result
+
+
 @router.get("/workspaces/{workspace}/environments")
 async def list_environments(
-    request: Request, actor: Actor, workspace_id: WorkspaceId, limit: Limit = 50, cursor: str | None = None
+    request: Request,
+    actor: Actor,
+    workspace_id: WorkspaceId,
+    limit: Limit = 50,
+    cursor: str | None = None,
+    label: Annotated[LabelFilterValues, Query()] = (),
 ) -> Collection[Environment]:
-    return await _service(request).list_environments(actor=actor, workspace_id=workspace_id, limit=limit, cursor=cursor)
+    return await _service(request).list_environments(
+        actor=actor,
+        workspace_id=workspace_id,
+        limit=limit,
+        cursor=cursor,
+        labels=parse_label_filters(label),
+    )
 
 
 @router.get("/environments/{resource_id}")
@@ -182,6 +228,29 @@ async def get_environment(request: Request, response: Response, actor: Actor, re
     resource = await _service(request).get_environment(actor=actor, resource_id=resource_id)
     response.headers["ETag"] = resource_etag(resource.id, resource.updated_at)
     return resource
+
+
+@router.get("/environments/{environment_id}/labels", response_model=LabelsBody)
+async def get_environment_labels(request: Request, response: Response, actor: Actor, environment_id: str) -> LabelsBody:
+    body, etag = await _service(request).get_environment_labels(actor=actor, environment_id=environment_id)
+    response.headers["ETag"] = etag
+    return body
+
+
+@router.put("/environments/{environment_id}/labels", response_model=LabelsBody)
+async def put_environment_labels(
+    request: Request,
+    response: Response,
+    actor: Actor,
+    environment_id: str,
+    body: LabelsBody,
+    if_match: IfMatch,
+) -> LabelsBody:
+    result, etag = await _service(request).replace_environment_labels(
+        actor=actor, environment_id=environment_id, body=body, if_match=if_match
+    )
+    response.headers["ETag"] = etag
+    return result
 
 
 @router.patch("/environments/{environment_id}")
@@ -261,7 +330,18 @@ async def organization_list_providers(
 
 @router.get("/organizations/{organization}/environment-templates")
 async def organization_list_templates(
-    request: Request, actor: Actor, organization_id: OrganizationId, limit: Limit = 50, cursor: str | None = None
+    request: Request,
+    actor: Actor,
+    organization_id: OrganizationId,
+    limit: Limit = 50,
+    cursor: str | None = None,
+    label: Annotated[LabelFilterValues, Query()] = (),
 ) -> Collection[EnvironmentTemplate]:
     require_organization_boundary(actor, organization_id)
-    return await _service(request).list_templates(actor=actor, workspace_id=None, limit=limit, cursor=cursor)
+    return await _service(request).list_templates(
+        actor=actor,
+        workspace_id=None,
+        limit=limit,
+        cursor=cursor,
+        labels=parse_label_filters(label),
+    )

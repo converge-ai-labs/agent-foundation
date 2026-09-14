@@ -43,7 +43,7 @@ class DownloadToolConfiguration(BaseModel):
 class ToolSelection(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     enabled: bool = True
-    permission: Literal["auto", "allow", "ask", "deny", "review"] = "auto"
+    permission: Literal["inherit", "allow", "ask", "deny", "review"] = "inherit"
     config: dict[str, JsonValue] = Field(default_factory=dict)
 
 

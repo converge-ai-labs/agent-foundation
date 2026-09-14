@@ -45,7 +45,7 @@ class ClientToolDefinition(BaseModel):
     parameters_json_schema: dict[str, JsonValue]
     instruction: str | None = Field(default=None, min_length=1, max_length=MAX_CLIENT_TEXT_LENGTH)
     metadata: dict[str, JsonValue] = Field(default_factory=dict)
-    permission: Literal["auto", "allow", "deny"] = "auto"
+    permission: Literal["inherit", "allow", "deny"] = "inherit"
 
     @field_validator("parameters_json_schema")
     @classmethod

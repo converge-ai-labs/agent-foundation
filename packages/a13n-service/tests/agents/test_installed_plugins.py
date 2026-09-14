@@ -66,7 +66,7 @@ class InstalledFactory(HarnessPluginFactory):
 def _management(sessions):
     models = AcceptedModelSelector(sessions, built_in_provider_registry())
     invocations = AgentInvocationResolver(sessions, models)
-    management = AgentManagement(sessions, AgentResolver(sessions, models), invocations)
+    management = AgentManagement(sessions, AgentResolver(sessions, models), invocations, models)
     return management, invocations
 
 

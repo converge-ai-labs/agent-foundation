@@ -15,6 +15,7 @@ from a13n_service.gateway.a2a_import import A2APartImporter
 from a13n_service.gateway.a2a_push import A2APushPublisher
 from a13n_service.gateway.agui_replay import HostedAguiReplayStore
 from a13n_service.gateway.hosted_agui import HostedAguiService
+from a13n_service.gateway.labels import InteractionLabels
 from a13n_service.gateway.native_streaming import NativeRunStreamService
 from a13n_service.gateway.notifications import NotificationService
 from a13n_service.gateway.queries import NativeInteractionQueries
@@ -170,6 +171,7 @@ async def build_control_runtime(
         ),
         notifications=NotificationService(shared.storage.sessions),
         queries=NativeInteractionQueries(shared.storage.sessions, gateway_replay),
+        labels=InteractionLabels(shared.storage.sessions),
         queued_submissions=QueuedSubmissionService(
             shared.storage.sessions,
             QueuedSubmissionStore(shared.storage.sessions, hooks.inline_validator),

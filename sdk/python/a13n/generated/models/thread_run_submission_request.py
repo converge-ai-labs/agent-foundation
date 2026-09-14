@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from ..models.existing_environment_selection import ExistingEnvironmentSelection
     from ..models.inline_hook_subscription_input import InlineHookSubscriptionInput
     from ..models.new_environment_selection import NewEnvironmentSelection
+    from ..models.thread_run_submission_request_labels import ThreadRunSubmissionRequestLabels
     from ..models.waiting_resolution_defaults import WaitingResolutionDefaults
 
 
@@ -31,6 +32,7 @@ class ThreadRunSubmissionRequest:
         environment (ExistingEnvironmentSelection | NewEnvironmentSelection | None | Unset):
         expected_current_revision_id (None | str | Unset):
         hook_subscription (InlineHookSubscriptionInput | None | Unset):
+        labels (ThreadRunSubmissionRequestLabels | Unset):
         waiting_resolution (None | Unset | WaitingResolutionDefaults):
     """
 
@@ -42,6 +44,7 @@ class ThreadRunSubmissionRequest:
     environment: ExistingEnvironmentSelection | NewEnvironmentSelection | Unset | None = UNSET
     expected_current_revision_id: str | Unset | None = UNSET
     hook_subscription: InlineHookSubscriptionInput | Unset | None = UNSET
+    labels: ThreadRunSubmissionRequestLabels | Unset = UNSET
     waiting_resolution: Unset | WaitingResolutionDefaults | None = UNSET
 
     def to_dict(self) -> dict[str, Any]:
@@ -99,6 +102,10 @@ class ThreadRunSubmissionRequest:
         else:
             hook_subscription = self.hook_subscription
 
+        labels: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.labels, Unset):
+            labels = self.labels.to_dict()
+
         waiting_resolution: dict[str, Any] | Unset | None
         if isinstance(self.waiting_resolution, Unset):
             waiting_resolution = UNSET
@@ -127,6 +134,8 @@ class ThreadRunSubmissionRequest:
             field_dict["expected_current_revision_id"] = expected_current_revision_id
         if hook_subscription is not UNSET:
             field_dict["hook_subscription"] = hook_subscription
+        if labels is not UNSET:
+            field_dict["labels"] = labels
         if waiting_resolution is not UNSET:
             field_dict["waiting_resolution"] = waiting_resolution
 
@@ -139,6 +148,7 @@ class ThreadRunSubmissionRequest:
         from ..models.existing_environment_selection import ExistingEnvironmentSelection
         from ..models.inline_hook_subscription_input import InlineHookSubscriptionInput
         from ..models.new_environment_selection import NewEnvironmentSelection
+        from ..models.thread_run_submission_request_labels import ThreadRunSubmissionRequestLabels
         from ..models.waiting_resolution_defaults import WaitingResolutionDefaults
 
         d = dict(src_dict)
@@ -232,6 +242,13 @@ class ThreadRunSubmissionRequest:
 
         hook_subscription = _parse_hook_subscription(d.pop("hook_subscription", UNSET))
 
+        _labels = d.pop("labels", UNSET)
+        labels: ThreadRunSubmissionRequestLabels | Unset
+        if isinstance(_labels, Unset):
+            labels = UNSET
+        else:
+            labels = ThreadRunSubmissionRequestLabels.from_dict(_labels)
+
         def _parse_waiting_resolution(data: object) -> Unset | WaitingResolutionDefaults | None:
             if data is None:
                 return data
@@ -258,6 +275,7 @@ class ThreadRunSubmissionRequest:
             environment=environment,
             expected_current_revision_id=expected_current_revision_id,
             hook_subscription=hook_subscription,
+            labels=labels,
             waiting_resolution=waiting_resolution,
         )
 
