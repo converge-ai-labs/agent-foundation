@@ -15,13 +15,20 @@
   background: var(--a13n-surface);
   border-right: 1px solid var(--a13n-border);
 }
+.sidebarHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 0 20px 8px;
+}
 .brand {
   display: flex;
   align-items: center;
   gap: 12px;
   color: var(--a13n-text);
   text-decoration: none;
-  padding: 0 8px 20px;
+  white-space: nowrap;
   font-size: 16px;
 }
 .brandMark {
@@ -70,6 +77,12 @@
   min-width: 0;
   flex-shrink: 0;
   gap: 6px;
+}
+.colorSwatch {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  border-radius: 50%;
 }
 .profileAvatar {
   display: inline-flex;
@@ -440,6 +453,13 @@ a.resourceRow:hover {
   gap: 16px;
   overflow: hidden;
   max-width: 300px;
+}
+.mobileNavigationHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-right: 32px;
 }
 .mobileNavigation nav {
   display: grid;
