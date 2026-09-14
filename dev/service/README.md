@@ -61,6 +61,40 @@ make langfuse-reset    # Delete only Langfuse data, never Service data
 
 The default Service composition supplies a Run/IAM-backed `TraceAccessAuthorizer`. With the query backend configured, Console and the Service Trace Query API return traces only for retained Runs the caller can read with `trace.read` permission. Backend correlation is checked against Service records after each backend read. The smoke test uses fixture-owned Run/IAM records and the default authorizer to verify OTLP transport, backend reads, and authorized HTTP list/detail responses.
 
+### Using Logfire
+
+The commented alternative in `local.toml` supports both OTLP export and Console Trace Query. Copy the template to `local.private.toml` if you do not already have a private file; otherwise update its existing `[observability.query]` table. Select `provider = "logfire"`, set `logfire_base_url` to the project's US or EU regional root URL, and choose a timezone-aware `logfire_history_from` lower bound for queryable history. This lower bound does not change Logfire retention or delete data.
+
+Logfire export needs a project write token in `LOGFIRE_TOKEN`. Query needs a project read token in `logfire_read_token` or `A13N_SERVICE_OBSERVABILITY_QUERY_LOGFIRE_READ_TOKEN`. Use the same project for both, but do not assume a write token also authorizes queries. Keep real credentials in private files or injected environment variables, never in the public template or Console configuration. The launcher does not automatically load `.env` files; explicitly source a private shell environment file or export the variables before invoking Make.
+
+```sh
+export LOGFIRE_TOKEN='YOUR_LOGFIRE_WRITE_TOKEN'
+export A13N_SERVICE_OBSERVABILITY_QUERY_LOGFIRE_READ_TOKEN='YOUR_LOGFIRE_READ_TOKEN'
+make dev SERVICE_CONFIG=dev/service/local.private.toml
+```
+
+The exporter defaults to the selected query provider and, for Logfire, its configured regional base URL. `A13N_DEV_TRACE_BACKEND` and `LOGFIRE_BASE_URL` remain explicit export-only overrides. For Logfire export without Console queries, select `provider = "none"`, export `A13N_DEV_TRACE_BACKEND=logfire`, and set `LOGFIRE_BASE_URL` for a non-US project; no read token is needed in that mode. No Logfire SDK is required. With `trace_content = "standard"`, input/output content is uploaded to Logfire; use `"none"` to omit it.
+
+With Logfire selected, setup still prepares the owned PostgreSQL and Redis stores but does not start or authenticate local Langfuse. Switching providers neither resets Service data nor migrates old traces. Existing Langfuse containers and volumes are retained; `make langfuse-down SERVICE_CONFIG=dev/service/local.private.toml` can stop that checkout's old stack without deleting it. Service reset never clears the remote Logfire project.
+
+### Incremental Logfire execution check
+
+With an existing seeded baseline and Service already running with the Logfire configuration above, explicitly enable the live regression from another terminal:
+
+```sh
+A13N_TEST_LOGFIRE_CONFIG=dev/service/local.private.toml \
+A13N_TEST_LOGFIRE_OUTPUT=var/logfire-check-$(date +%Y%m%d-%H%M%S) \
+uv run pytest dev/service/tests/test_logfire_integration.py -q --tb=short
+```
+
+This test does not start infrastructure, reset stores, initialize identity, or reseed resources. It signs in through the ordinary local password flow, verifies the retained Agents use the loopback scripted model and MCP fixture, and creates eight additional fictional Runs: plain output, tool success, tool failure, long output, provider failure, retry, client-tool waiting, and feedback completion. Runs and their Attempt IDs remain in Service; their standard content is uploaded to the configured Logfire project. Never point this test at real accounts or a paid model.
+
+The check waits boundedly for ingestion, compares raw completed Logfire records with the existing provider adapter and production Run/IAM-authorized HTTP API, and validates Attempt correlation, full/compact projections, native messages/events, reported usage, absent costs, parent relationships, pagination, history bounds, and anonymous/cross-Workspace denial. It records Run/Attempt IDs, raw records, public projections, and a final `verified.json` in the output directory. Use a new directory on each invocation; earlier evidence is not overwritten. Without `A13N_TEST_LOGFIRE_CONFIG`, ordinary test runs skip all live execution and remote reads.
+
+Logfire read quotas are independent of OTLP ingestion. The test spaces backend reads by ten seconds by default, allowing extra time for observation pages that require both root authorization and child reads. Expect several minutes of validation. `A13N_TEST_LOGFIRE_QUERY_INTERVAL` changes that interval for the selected project's budget; avoid concurrent Console trace browsing during this check. Rate limiting remains a safe unavailable response, not evidence that a Run failed or its telemetry is absent. The test reports transient HTTP 429 backend reads and HTTP 503 Service trace reads, waits 60 seconds, and retries each at most twice; persistent failures still fail the test. It never retries Run creation, retry, feedback, or other mutations.
+
+After an interrupted or unsuccessful query check, set `A13N_TEST_LOGFIRE_RUNS` to the earlier output directory's complete `runs.json` to repeat readback without creating more Runs. Keep the same Service configuration and seed baseline and choose a new output directory. This explicitly reuses execution evidence; it does not claim to have executed new Runs.
+
 ### Upgrading an older local Langfuse stack
 
 Older `make langfuse-up` versions used the shared Compose project `agent-foundation-langfuse-dev`. The launcher warns if it is still running; it never stops it automatically. To release its ports without deleting its data:
