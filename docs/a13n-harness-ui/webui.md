@@ -22,7 +22,15 @@ Press **Ctrl+C** once, or send **SIGTERM**, to stop. The server reports **Stoppi
 
 ## Configure the workbench
 
-Open **Settings** for General defaults, Agents & models, Capabilities, Environments, Projects, Accounts & API keys, MCP connections, and Advanced configuration. **General → Setup & diagnostics** opens guided first-use setup: choose a model connection and execution environment, add optional Project roots and Agent instructions, review changes, then **Save setup**. Provider login and model credentials live under **Accounts & API keys**, separately from the instance login key. Device login is preferred for remote servers where a browser callback cannot reach the server's loopback listener.
+On a fresh installation, the browser opens a three-step setup wizard automatically:
+
+1. **Connect** a Codex or Grok account inline, reuse an available account, or save a provider API key. Device login shows a verification link and copyable code; browser callback login is an advanced option requiring access to the server's loopback listener. Credentials are shared by this server, separately from your browser's instance login key. A new API key is saved immediately, even if you leave setup later.
+2. **Choose a model** from the installed release's suggestions, or enter an API provider model ID and endpoint. Reviewed defaults cover reasoning, context, and native tools; advanced controls remain available. These are suggestions, not a model-entitlement test.
+3. **Choose your workspace**: Full Control runs as the Host account without isolation; Sandbox requires a successful explicit readiness check. Optionally enter an existing server Project directory, or leave it blank for a projectless conversation. Review the configuration, then choose **Save and start chatting**.
+
+Setup opens one empty first conversation and focuses its composer. It never sends a prompt or makes a model-request test. **Set up later** retains your nonsecret draft without reopening the wizard on every navigation. Refresh and authorization in another tab preserve your choices; secret inputs are not browser-persisted. If a save response is lost, use **Check saved setup and open conversation** before retrying. Partial or changed files remain explicit and are not treated as a completed save.
+
+Existing installations keep their conversations and configuration. **General → Setup & diagnostics** offers focused repair rather than reinitialization. Open **Settings** for General defaults, Agents & models, Capabilities, Environments, Projects, Accounts & API keys, MCP connections, and Advanced configuration. Later provider connection uses the same flow under **Accounts & API keys**.
 
 **Capabilities** enables installed capabilities for a selected Agent after **Save changes**; it is not a global toggle. Reusable agent plugin configurations remain distinct. **Environments** shows configured profiles, built-in read-only environments, and installed providers. **Configure** opens a profile draft for an available provider; provider-specific adapter/settings remain in the configuration file. Installing packages happens on the server, not through these controls.
 

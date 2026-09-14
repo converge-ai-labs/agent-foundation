@@ -24,6 +24,12 @@ Participants see one shared draft and can edit it concurrently. Edits merge rath
 
 Names and colors identify collaborators for interaction and attribution; they are not verified identities. Input submission, approval, cancellation, steering, and other shared controls identify their originating participant where available, without fabricating Agent tool messages for human actions.
 
+## Create-Only Conversation Identity
+
+The existing Thread creation API accepts an optional `thread_id` in the canonical `thread-` plus 32 lowercase hexadecimal format. Omitting it retains server-generated identity. A browser may allocate and retain this identity before creating its first conversation so a lost acknowledgement can be resolved through the ordinary exact Thread read.
+
+Creation is create-only, not an upsert or a permanent request cache. The storage transaction rejects an existing identity without replacing its configuration, title, or initial state. Concurrent requests for one identity can create at most one Thread. A client receiving a conflict or uncertain result reads that exact identity; it never silently allocates another one. Current mutable Thread fields are not interpreted as an immutable creation-request receipt. Thread creation remains separate from prompt admission and starts no Run.
+
 ## Page Presence and Personal Focus
 
 Page presence is available across the authenticated workbench, including when no Thread or shared draft is open. It does not require native computer sharing. The App owns the current participant directory; clients report their own current view and consume detached directory and same-page membership projections.

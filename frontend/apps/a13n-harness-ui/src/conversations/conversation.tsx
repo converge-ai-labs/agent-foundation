@@ -398,6 +398,7 @@ function Conversation({
         )}
         {!thread.archived && (
           <Composer
+            autoFocus={search.get("compose") === "1"}
             threadId={threadId}
             activity={thread.root_activity}
             canRun={detail.data.available_actions?.includes("run") ?? false}

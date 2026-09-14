@@ -15,7 +15,15 @@ function safeLoginUrl(value: string | null | undefined): string | undefined {
     /* Invalid provider URL. */
   }
 }
-function ProviderAccount({ provider }: { provider: "codex" | "grok" }) {
+export function ProviderAccount({
+  provider,
+  inline = false,
+  onReady,
+}: {
+  provider: "codex" | "grok";
+  inline?: boolean;
+  onReady?: (ready: boolean) => void;
+}) {
   const { client } = useTransport();
   const queries = useQueryClient();
   const [session, setSession] = useState<string | null>(
@@ -23,6 +31,19 @@ function ProviderAccount({ provider }: { provider: "codex" | "grok" }) {
       queries.getQueryData<Schema<"LoginStatus">>(["login", provider])
         ?.session_id ?? null,
   );
+  const activeLogin = useQuery({
+    queryKey: ["active-login"],
+    queryFn: ({ signal }) => result(client.GET("/api/auth/logins", { signal })),
+    refetchInterval: (query) => (query.state.data?.session_id ? 2000 : false),
+  });
+  useEffect(() => {
+    const status = activeLogin.data;
+    if (status?.provider === provider && status.session_id !== session) {
+      queries.setQueryData(["login", provider], status);
+      setSession(status.session_id);
+    }
+  }, [activeLogin.data, provider, queries, session]);
+  const [copied, setCopied] = useState(false);
   const [method, setMethod] = useState<"device" | "browser">("device");
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [switchOpen, setSwitchOpen] = useState(false);
@@ -64,6 +85,10 @@ function ProviderAccount({ provider }: { provider: "codex" | "grok" }) {
       setSwitchOpen(false);
       queries.setQueryData(["login", provider], status);
       setSession(status.session_id);
+      queries.setQueryData(["active-login"], status);
+    },
+    onSettled: () => {
+      void queries.invalidateQueries({ queryKey: ["active-login"] });
     },
   });
   const cancel = useMutation({
@@ -75,6 +100,7 @@ function ProviderAccount({ provider }: { provider: "codex" | "grok" }) {
       ),
     onSuccess: (status) => {
       queries.setQueryData(["login", provider], status);
+      void queries.invalidateQueries({ queryKey: ["active-login"] });
     },
   });
   const logout = useMutation({
@@ -96,14 +122,21 @@ function ProviderAccount({ provider }: { provider: "codex" | "grok" }) {
       void queries.invalidateQueries({ queryKey: ["setup"] });
     }
   }, [login.data?.state, queries, provider]);
+  const ready =
+    !!account.data?.usable ||
+    (account.data?.availability === "available" &&
+      account.data.required_action === "refresh");
+  useEffect(() => {
+    onReady?.(ready);
+  }, [onReady, ready]);
   const active =
     !!session &&
     !login.error &&
     (!login.data ||
       ["starting", "waiting"].includes(login.data.state ?? "starting"));
   const url = safeLoginUrl(login.data?.verification_url);
-  return (
-    <Panel title={provider === "codex" ? "Codex account" : "Grok account"}>
+  const content = (
+    <>
       <ErrorNotice
         error={
           account.error ||
@@ -118,36 +151,55 @@ function ProviderAccount({ provider }: { provider: "codex" | "grok" }) {
           ? "Checking account…"
           : account.data?.usable
             ? "Connected"
-            : "Not connected"}
-        {account.data && ` · ${account.data.source} · ${account.data.expiry}`}
+            : ready
+              ? "Account available · refreshes on first use"
+              : "Not connected"}
+        {!inline &&
+          account.data &&
+          ` · ${account.data.source} · ${account.data.expiry}`}
       </p>
-      {account.data?.required_action !== "none" && (
+      {!inline && account.data?.required_action !== "none" && (
         <p>{account.data?.required_action?.replaceAll("_", " ")}</p>
       )}
       <div className={styles.stack}>
-        <ChoiceField
-          label="Login method"
-          value={method}
-          options={[
-            {
-              value: "device",
-              label: "Device code (recommended for remote servers)",
-            },
-            { value: "browser", label: "Browser callback on the server" },
-          ]}
-          onValueChange={(value) => setMethod(value as "device" | "browser")}
-          disabled={active}
-        />
-        {method === "browser" && (
-          <p>
-            The callback must reach the server's loopback listener. For a remote
-            host or container, use device login where supported.
-          </p>
-        )}
+        <details>
+          <summary>Advanced login options</summary>
+          <ChoiceField
+            label="Login method"
+            value={method}
+            options={[
+              {
+                value: "device",
+                label: "Device code (recommended for remote servers)",
+              },
+              { value: "browser", label: "Browser callback on the server" },
+            ]}
+            onValueChange={(value) => setMethod(value as "device" | "browser")}
+            disabled={active}
+          />
+          {method === "browser" && (
+            <p>
+              The callback must reach the server's loopback listener. For a
+              remote host or container, use device login where supported.
+            </p>
+          )}
+        </details>
+        <p>
+          Accounts are saved on this server and shared by everyone using this
+          instance. Connecting does not verify model access or make a model
+          request.
+        </p>
+        {activeLogin.data?.provider &&
+          activeLogin.data.provider !== provider && (
+            <p role="status">
+              A {activeLogin.data.provider} login is in progress. Return to that
+              connection to finish or cancel it.
+            </p>
+          )}
         <div className={styles.actions}>
           <Button
             loading={start.isPending}
-            disabled={active}
+            disabled={active || !!activeLogin.data?.session_id}
             onClick={() => start.mutate(false)}
           >
             {account.data?.usable ? "Reconnect account" : "Connect account"}
@@ -172,7 +224,20 @@ function ProviderAccount({ provider }: { provider: "codex" | "grok" }) {
           )}
           {login.data?.user_code && (
             <p>
-              Device code: <strong>{login.data.user_code}</strong>
+              Device code: <strong>{login.data.user_code}</strong>{" "}
+              <Button
+                variant="outline"
+                onClick={() => {
+                  void navigator.clipboard
+                    .writeText(login.data!.user_code!)
+                    .then(
+                      () => setCopied(true),
+                      () => setCopied(false),
+                    );
+                }}
+              >
+                {copied ? "Copied" : "Copy code"}
+              </Button>
             </p>
           )}
           {login.data?.message && <p>{login.data.message}</p>}
@@ -225,6 +290,13 @@ function ProviderAccount({ provider }: { provider: "codex" | "grok" }) {
       >
         <ErrorNotice error={logout.error} />
       </ModalFrame>
+    </>
+  );
+  return inline ? (
+    <div className={styles.stack}>{content}</div>
+  ) : (
+    <Panel title={provider === "codex" ? "Codex account" : "Grok account"}>
+      {content}
     </Panel>
   );
 }

@@ -86,7 +86,7 @@ from a13n_harness_ui.page_presence import (
     PresenceFrame,
     PresenceReport,
 )
-from a13n_harness_ui.setup import EnvironmentReadiness, SetupStatus
+from a13n_harness_ui.setup import EnvironmentReadiness, SetupModelOptions, SetupModelOptionsRequest, SetupStatus
 from a13n_harness_ui.shared_drafts import DraftCommand, DraftFrame
 from a13n_harness_ui.storage import ThreadConfiguration
 from a13n_harness_ui.storage.usage import ThreadUsageView
@@ -155,6 +155,7 @@ class ListenerStatus(SurfaceModel):
 
 
 class CreateThreadRequest(SurfaceModel):
+    thread_id: str | None = Field(default=None, pattern=r"^thread-[0-9a-f]{32}$")
     defaults: NewThreadDefaults | None = None
     title: str | None = Field(default=None, min_length=1, max_length=200)
 
@@ -438,7 +439,7 @@ def create_webui(
             "host_git_permission_denied",
         }:
             status = 403
-        elif code in {"host_files_partial_failure", "thread_run_active"}:
+        elif code in {"host_files_partial_failure", "thread_run_active", "thread_exists"}:
             status = 409
         elif code == "host_files_io_error":
             status = 500
@@ -818,6 +819,12 @@ def create_webui(
     async def setup(rediscover: bool = False) -> SetupStatus:
         return await app().setup_status(rediscover=rediscover)
 
+    @server.post(
+        "/api/setup/model-options", response_model=SetupModelOptions, openapi_extra=_body(SetupModelOptionsRequest)
+    )
+    async def model_options(request: Request) -> SetupModelOptions:
+        return await app().setup_model_options(await _document(request, SetupModelOptionsRequest))
+
     @server.post("/api/setup/preview", response_model=SetupPreview, openapi_extra=_body(SetupSelection))
     async def preview(request: Request) -> SetupPreview:
         return await app().preview_setup(await _document(request, SetupSelection))
@@ -876,6 +883,10 @@ def create_webui(
     @server.delete("/api/auth/keys/{reference}")
     async def delete_api_key(reference: str) -> None:
         await app().delete_api_key(reference)
+
+    @server.get("/api/auth/logins", response_model=LoginStatus | None)
+    async def active_login() -> LoginStatus | None:
+        return await app().active_login()
 
     @server.post("/api/auth/logins", response_model=LoginStatus, openapi_extra=_body(LoginRequest))
     async def start_login(request: Request) -> LoginStatus:
@@ -1131,7 +1142,7 @@ def create_webui(
     @server.post("/api/threads", response_model=ThreadSummary, openapi_extra=_body(CreateThreadRequest))
     async def create(request: Request) -> ThreadSummary:
         document = await _document(request, CreateThreadRequest)
-        return await app().create_thread(defaults=document.defaults, title=document.title)
+        return await app().create_thread(defaults=document.defaults, title=document.title, thread_id=document.thread_id)
 
     @server.get("/api/threads/{thread_id}", response_model=ThreadDetail)
     async def thread(thread_id: str) -> ThreadDetail:

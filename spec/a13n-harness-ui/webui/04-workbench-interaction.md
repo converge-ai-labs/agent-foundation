@@ -12,13 +12,23 @@ The workbench uses the shared frontend design system with English interface text
 
 1. Open the instance URL and complete the existing key-entry flow if necessary.
 2. Restore this browser's last accessible Project and Thread. A direct Thread link takes precedence. Missing or archived selections lead to a visible navigation choice, not a silently created replacement conversation.
-3. An empty installation offers Add Project and access to existing setup/configuration. Projectless conversation remains an explicit option.
+3. A fresh installation automatically opens the route-backed `/setup` wizard before last-conversation restoration. A configured installation keeps ordinary restoration; an incomplete or broken existing configuration offers focused repair rather than reinitialization. Set up later dismisses automatic entry for this installation, with Continue setup available explicitly. Projectless conversation remains an explicit option.
 4. Add Project collects a name and server directory, with additional roots under an expandable control. It displays that paths belong to the server/container. Without native sharing, path entry still works through validated Project configuration and does not enable a file-browsing API.
 5. New conversation uses the selected Project's effective creation defaults. Agent and Environment choices are visible before first submission; incomplete configuration links directly to the blocking setting.
 
 The left sidebar groups root conversations under Projects. Each Project offers New conversation and Project settings. Conversation rows show title, activity, and attention-needed state. Running, waiting for a decision, and failed states remain distinguishable without opening every Thread. Each conversation row's secondary menu provides Rename, Share, Comments, and Details. These actions belong to that Thread, not to its Project's settings. Archive remains in conversation details and honors the App's active-operation restriction.
 
 Selecting a different conversation is personal navigation. The browser retains each Thread's editing context without cancelling execution or causing collaborators to switch views. An update in another Thread marks its row rather than stealing focus.
+
+## First-Use Wizard
+
+The browser first-use flow follows [Setup and Environment Readiness](../06-setup-and-environment-readiness.md#browser-first-use). It uses a large, centered, viewport-bounded dialog over the subdued workbench on desktop and the full viewport on narrow screens. Three steps share one stable progress header, scrollable content region, and persistent Back/Continue/save footer: Connect, Choose a model, and Workspace. Step changes focus their heading; dismissal and first-conversation entry restore useful keyboard focus. The wizard uses the shared overlay and field primitives in both themes.
+
+Subscription connection is inline and shares account operations with Accounts settings. Device authorization is the default; callback authorization is an explicit advanced option that explains server loopback reachability. The wizard presents verification URL, code/copy, waiting, success, cancellation, expiry, and retry without requiring a detour. API-key entry saves through the existing Host key API under a generated reference, with an explicit immediate-save explanation. Neither connection method treats browser identity as the owner of server credentials.
+
+The Model step uses backend-owned release choices, reasoning/context defaults, and reviewed native-tool recommendations, with optional advanced controls. API connections expose provider, model ID, and applicable base URL instead of requiring raw route syntax. The Workspace step explains Full Control versus Sandbox, offers an optional existing server directory, and shows a concise summary with expandable generated files. Sandbox readiness is bound to every resolved preview path; failed or cancelled preparation never selects Full Control.
+
+Save and start chatting explicitly publishes configuration, reconciles saved files, opens the first conversation once, and focuses its empty composer. It does not send a prompt or test the model. Connected account, saved configuration, prepared environment, and successful model request remain distinct observations. Unknown publication or conversation creation stays recoverable on refresh and never causes blind mutation replay.
 
 ## Participant Awareness
 

@@ -131,6 +131,13 @@ cli: harness-ui-env ## Run Harness UI with workspace-local config/data (CLI_ARGS
 webui: harness-ui-env a13n-harness-ui-assets ## Build and start WebUI with a generated login link (WEBUI_ARGS forwards options)
 	@uv run --locked --env-file "$(HARNESS_UI_ENV)" python -m dev.harness-ui.cli $(CLI_ARGS) webui $(WEBUI_ARGS)
 
+.PHONY: cli-landing webui-landing
+cli-landing: ## Try CLI first-run setup with disposable home/config/data; clean up on exit
+	@uv run --locked python -m dev.harness-ui.landing cli
+
+webui-landing: a13n-harness-ui-assets ## Try WebUI first-run setup with disposable state (WEBUI_ARGS forwards options); Ctrl+C cleans up
+	@uv run --locked python -m dev.harness-ui.landing webui $(WEBUI_ARGS)
+
 harness-dev: harness-env ## Run SDK observation scenarios; initialize .env if missing (HARNESS_ARGS selects a scenario)
 	@uv run --locked --env-file "$(HARNESS_ENV)" opentelemetry-instrument python dev/observation-demo/agent.py $(HARNESS_ARGS)
 
