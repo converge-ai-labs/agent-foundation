@@ -50,6 +50,7 @@ import {
 import { ProjectsPage, ProjectPage } from "../configuration/projects";
 import { ErrorNotice, PageHeader, Panel, TextField } from "./ui";
 import { useLiveWorkbench, type Profile } from "./presence";
+import { SharedPointers } from "./shared-pointers";
 import styles from "./workbench.module.css";
 import { ConversationNavigation } from "../conversations/navigation";
 import { ConversationPage } from "../conversations/conversation";
@@ -177,7 +178,7 @@ export function Workbench({
   );
   const navigation = (
     <>
-      <ConversationNavigation />
+      <ConversationNavigation presence={live.presence} />
       <nav>
         {links.map(({ to, label, icon: Icon }) => (
           <NavLink
@@ -212,6 +213,11 @@ export function Workbench({
   return (
     <Sheet open={menu} onOpenChange={setMenu}>
       <div className={styles.shell}>
+        <SharedPointers
+          socket={live.socket}
+          presence={live.presence}
+          focus={live.focus}
+        />
         <a className={styles.skipLink} href="#main-content">
           Skip to content
         </a>

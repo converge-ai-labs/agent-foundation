@@ -2417,6 +2417,11 @@ export interface components {
              * @default false
              */
             foreground?: boolean;
+            /**
+             * Pointer Enabled
+             * @default false
+             */
+            pointer_enabled?: boolean;
             /** Participant Id */
             participant_id: string;
             /**
@@ -3697,6 +3702,47 @@ export interface components {
              * @default false
              */
             foreground?: boolean;
+            /**
+             * Pointer Enabled
+             * @default false
+             */
+            pointer_enabled?: boolean;
+        };
+        /** PointerPosition */
+        PointerPosition: {
+            /** Anchor */
+            anchor: string;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+        };
+        /** PointerReport */
+        PointerReport: {
+            /**
+             * Kind
+             * @default pointer
+             * @constant
+             */
+            kind?: "pointer";
+            target: components["schemas"]["ConversationPage"];
+            /** @default null */
+            pointer?: components["schemas"]["PointerPosition"] | null;
+        };
+        /** PointerFrame */
+        PointerFrame: {
+            /**
+             * Kind
+             * @default pointers
+             * @constant
+             */
+            kind?: "pointers";
+            /** @default null */
+            target?: components["schemas"]["ConversationPage"] | null;
+            /** Pointers */
+            pointers?: {
+                [key: string]: components["schemas"]["PointerPosition"];
+            };
         };
         /** ErrorBody */
         ErrorBody: {

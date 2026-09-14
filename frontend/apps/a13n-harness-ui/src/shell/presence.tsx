@@ -86,7 +86,8 @@ export function useLiveWorkbench(
             : null,
         }
       : pageFocus(location.pathname, focusedSource),
-    foreground: document.visibilityState === "visible",
+    foreground: document.visibilityState === "visible" && document.hasFocus(),
+    pointer_enabled: true,
   };
 
   useEffect(
@@ -120,9 +121,11 @@ export function useLiveWorkbench(
     let stopped = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
+    let stale: ReturnType<typeof setTimeout> | undefined;
     let failures = 0;
     const send = () => {
-      report.current.foreground = document.visibilityState === "visible";
+      report.current.foreground =
+        document.visibilityState === "visible" && document.hasFocus();
       if (socket.current?.readyState === WebSocket.OPEN)
         socket.current.send(JSON.stringify(report.current));
     };
@@ -144,6 +147,14 @@ export function useLiveWorkbench(
       ws.onmessage = (event) => {
         try {
           const frame: unknown = JSON.parse(String(event.data));
+          // Pointer delivery is consumed by its own lightweight overlay, not the workbench tree.
+          if (
+            typeof frame === "object" &&
+            frame !== null &&
+            "kind" in frame &&
+            frame.kind === "pointers"
+          )
+            return;
           if (
             typeof frame !== "object" ||
             frame === null ||
@@ -153,6 +164,12 @@ export function useLiveWorkbench(
             !Array.isArray(frame.participants)
           )
             throw new Error("Invalid presence frame.");
+          clearTimeout(stale);
+          stale = setTimeout(() => {
+            setPresence(null);
+            setPresenceState("Reconnecting");
+            ws.close(4000, "Presence updates timed out");
+          }, 45000);
           setPresence(frame as Schema<"PresenceFrame">);
           setPresenceState("Live");
           failures = 0;
@@ -162,6 +179,7 @@ export function useLiveWorkbench(
       };
       ws.onclose = (event) => {
         clearInterval(heartbeat);
+        clearTimeout(stale);
         setPresence(null);
         if (stopped) return;
         if (event.code === 4401) {
@@ -174,11 +192,16 @@ export function useLiveWorkbench(
     }
     connect();
     document.addEventListener("visibilitychange", send);
+    window.addEventListener("focus", send);
+    window.addEventListener("blur", send);
     return () => {
       stopped = true;
       clearInterval(heartbeat);
+      clearTimeout(stale);
       clearTimeout(retry);
       document.removeEventListener("visibilitychange", send);
+      window.removeEventListener("focus", send);
+      window.removeEventListener("blur", send);
       socket.current?.close();
       socket.current = null;
     };
@@ -188,5 +211,11 @@ export function useLiveWorkbench(
     if (socket.current?.readyState === WebSocket.OPEN)
       socket.current.send(JSON.stringify(report.current));
   }, [profile, location.pathname, location.search, focusedSource, nativeFocus]);
-  return { summary, presenceState, presence };
+  return {
+    summary,
+    presenceState,
+    presence,
+    socket,
+    focus: report.current.focus,
+  };
 }

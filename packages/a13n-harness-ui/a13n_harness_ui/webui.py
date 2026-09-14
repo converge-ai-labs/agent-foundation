@@ -6,6 +6,7 @@ import base64
 import binascii
 import hmac
 import ipaddress
+import json
 import os
 import secrets
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
@@ -16,7 +17,7 @@ from urllib.parse import quote, urlsplit
 
 import click
 import uvicorn
-from anyio import Event, create_task_group, fail_after, move_on_after
+from anyio import Event, create_task_group, fail_after, move_on_after, sleep
 from fastapi import FastAPI, Query, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
@@ -80,6 +81,8 @@ from a13n_harness_ui.output_comment_models import (
 from a13n_harness_ui.page_presence import (
     PRESENCE_REFRESH_SECONDS,
     PRESENCE_TIMEOUT_SECONDS,
+    PointerFrame,
+    PointerReport,
     PresenceFrame,
     PresenceReport,
 )
@@ -517,14 +520,34 @@ def create_webui(
                         with move_on_after(PRESENCE_REFRESH_SECONDS):
                             await changed.wait()
 
+                async def pointer_output() -> None:
+                    previous: PointerFrame | None = None
+                    while not directory.closed:
+                        changed = directory.pointer_changed
+                        own = directory.participants.get(participant)
+                        if own is not None and own.pointer_enabled:
+                            frame = directory.pointer_snapshot(participant)
+                            if frame != previous:
+                                await socket.send_json(frame.model_dump(mode="json"))
+                                previous = frame
+                        with move_on_after(1):
+                            await changed.wait()
+                        # Coalesce latest positions, without a queue or resource I/O.
+                        await sleep(0.05)
+
                 group.start_soon(output)
+                group.start_soon(pointer_output)
                 try:
                     while True:
                         try:
                             with fail_after(PRESENCE_TIMEOUT_SECONDS):
                                 raw = await receive_text(socket, limit=16384)
-                            report = PresenceReport.model_validate_json(raw)
-                            await app().report_page_presence(participant, report)
+                            payload = json.loads(raw)
+                            if isinstance(payload, dict) and payload.get("kind") == "pointer":
+                                directory.report_pointer(participant, PointerReport.model_validate(payload))
+                            else:
+                                report = PresenceReport.model_validate(payload)
+                                await app().report_page_presence(participant, report)
                         except (ValidationError, ValueError):
                             await socket.send_json(
                                 ErrorEnvelope(
@@ -569,7 +592,10 @@ def create_webui(
                             await socket.close()
                             group.cancel_scope.cancel()
                             return
-                        await changed.wait()
+                        while not changed.is_set():
+                            with move_on_after(1):
+                                await changed.wait()
+                            draft.expire_presence()
 
                 group.start_soon(output)
                 try:
@@ -1364,6 +1390,8 @@ def openapi_document(server: FastAPI) -> dict[str, Any]:
         DraftFrame,
         PresenceReport,
         PresenceFrame,
+        PointerReport,
+        PointerFrame,
         ErrorEnvelope,
     ):
         schema = model.model_json_schema(ref_template="#/components/schemas/{model}")
@@ -1375,6 +1403,8 @@ def openapi_document(server: FastAPI) -> dict[str, Any]:
             "path": "/api/presence/connect",
             "input": {"$ref": "#/components/schemas/PresenceReport"},
             "output": {"$ref": "#/components/schemas/PresenceFrame"},
+            "pointer_input": {"$ref": "#/components/schemas/PointerReport"},
+            "pointer_output": {"$ref": "#/components/schemas/PointerFrame"},
             "error": {"$ref": "#/components/schemas/ErrorEnvelope"},
             "report_timeout_seconds": PRESENCE_TIMEOUT_SECONDS,
         },

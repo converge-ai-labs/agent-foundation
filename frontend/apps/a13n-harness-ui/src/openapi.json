@@ -7241,6 +7241,11 @@
             "title": "Foreground",
             "type": "boolean"
           },
+          "pointer_enabled": {
+            "default": false,
+            "title": "Pointer Enabled",
+            "type": "boolean"
+          },
           "participant_id": {
             "title": "Participant Id",
             "type": "string"
@@ -10701,9 +10706,105 @@
             "default": false,
             "title": "Foreground",
             "type": "boolean"
+          },
+          "pointer_enabled": {
+            "default": false,
+            "title": "Pointer Enabled",
+            "type": "boolean"
           }
         },
         "title": "PresenceReport",
+        "type": "object"
+      },
+      "PointerPosition": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Anchor",
+            "type": "string"
+          },
+          "x": {
+            "maximum": 1,
+            "minimum": 0,
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "maximum": 1,
+            "minimum": 0,
+            "title": "Y",
+            "type": "number"
+          }
+        },
+        "required": [
+          "anchor",
+          "x",
+          "y"
+        ],
+        "title": "PointerPosition",
+        "type": "object"
+      },
+      "PointerReport": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "pointer",
+            "default": "pointer",
+            "title": "Kind",
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ConversationPage"
+          },
+          "pointer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PointerPosition"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "title": "PointerReport",
+        "type": "object"
+      },
+      "PointerFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "pointers",
+            "default": "pointers",
+            "title": "Kind",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConversationPage"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "pointers": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PointerPosition"
+            },
+            "title": "Pointers",
+            "type": "object"
+          }
+        },
+        "title": "PointerFrame",
         "type": "object"
       },
       "ErrorBody": {
@@ -12147,6 +12248,12 @@
       },
       "output": {
         "$ref": "#/components/schemas/PresenceFrame"
+      },
+      "pointer_input": {
+        "$ref": "#/components/schemas/PointerReport"
+      },
+      "pointer_output": {
+        "$ref": "#/components/schemas/PointerFrame"
       },
       "error": {
         "$ref": "#/components/schemas/ErrorEnvelope"
