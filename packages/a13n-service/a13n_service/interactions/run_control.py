@@ -37,6 +37,7 @@ from .attempts import (
     AttemptPreparationAccepted,
     AttemptPreparationRejected,
     AttemptPreparationResult,
+    AttemptUsageExceeded,
 )
 from .domain import Run, RunAttemptYieldReason
 from .harness_control import (
@@ -368,7 +369,12 @@ class RunAttemptControl:
         async with self._authority_lock:
             self._require_open()
             await self._context.authorization.admit_model_request(agent_id=agent_id)
-            await self._execution.increment_model_request(self._context)
+            try:
+                await self._execution.increment_model_request(self._context)
+            except AttemptUsageExceeded as error:
+                # Host budget rejection is final, not a provider transport fault
+                # eligible for Harness model recovery.
+                raise RunError("The Run model usage budget is exhausted.", code="execution_usage_exhausted") from error
 
     async def after_model_response(
         self,

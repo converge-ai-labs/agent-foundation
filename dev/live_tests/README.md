@@ -26,7 +26,7 @@ Tests are grouped by their primary feature, independently of their execution opt
 | `run_recovery/`         | Worker ownership, persistence, budgets, dependency failures and drain            |       9 |             657 |
 | `harness_integration/`  | Service configuration and resources reaching real Harness execution              |      13 |              34 |
 | `skills/`               | Skill authority, publication, retention, lifecycle and materialization           |       6 |              61 |
-| `model/`                | Management, IAM, native protocols, settings, recovery and optional Console       |       7 |              46 |
+| `model/`                | Management, IAM, native protocols, settings, usage faults and optional Console   |       8 |              66 |
 | `protocol/`             | Native and Hosted streams, reconnect and recovery projection                     |       3 |              13 |
 | `iam/`                  | Workspace isolation, current authority and revocation                            |       3 |              10 |
 | `providers/`            | Optional real search, model, environment and Connector accounts                  |       4 |              30 |
@@ -34,7 +34,7 @@ Tests are grouped by their primary feature, independently of their execution opt
 | `performance/`          | Concurrent PG/S3 calls and bounded Service operations                            |       2 |               2 |
 | `infrastructure_tests/` | Offline tests of fixtures, configuration, parsers and cleanup                    |      19 |             310 |
 
-Counts are a collection snapshot: 114 modules and 1,749 parameterized cases, including inherited lifecycle cases and cases skipped unless explicitly enabled. A category does not enable infrastructure: the existing `--live*` fixture gates still apply. Mixed modules remain intact: `test_26_output_and_client_tools.py` and `test_32_multiworker_resources.py` live under `harness_integration/`, while `providers/test_31_real_providers.py` retains its real-account matrix.
+Counts are a collection snapshot: 115 modules and 1,769 parameterized cases, including inherited lifecycle cases and cases skipped unless explicitly enabled. A category does not enable infrastructure: the existing `--live*` fixture gates still apply. Mixed modules remain intact: `test_26_output_and_client_tools.py` and `test_32_multiworker_resources.py` live under `harness_integration/`, while `providers/test_31_real_providers.py` retains its real-account matrix.
 
 Subpackages inherit the root `conftest.py`. Feature-owned helpers live beside their tests; shared lab infrastructure lives in `infrastructure/`. The isolated launcher recursively selects the same first-round filenames and keeps their filename order.
 
@@ -58,6 +58,7 @@ The model suite uses real Control and Worker processes, Native HTTP APIs, migrat
 |     4 | `model/test_authorization.py`          | Native IAM Viewer/Builder permissions; shared Organization resources visible and executable in two Workspaces; concealed foreign scopes and shared writes; Organization/Workspace key race                                                                                  |
 |     8 | `model/test_protocols.py`              | Four native non-streamed Model tests and streamed Runs; Chat Completions/Responses deferred tool round trips with a result generated after the call; structured output                                                                                                      |
 |     3 | `model/test_recovery.py`               | Accepted, replacement-Worker and explicit-Retry snapshots retain API/upstream/settings while reading current Provider connection/credential; subsequent fresh Runs use edits                                                                                                |
+|    20 | `model/test_usage_faults.py`           | Usage before/after stream failures; cancellation before/after a committed receipt; late receipt attribution; Worker death before/after checkpoint; receipt redelivery; input/output token ceilings at zero, below, exact and exceeded boundaries                            |
 |     3 | `model/test_23_model_updates.py`       | Existing acceptance snapshot, same-Run connection rotation and next-request Provider disable                                                                                                                                                                                |
 |     3 | `model/test_console.py`                | Optional Chromium through Vite and Native IAM: connect Provider, catalog/manual entry, parameters, saved connection test, dirty-state test inhibition, edit/reload, then real Worker execution; available, failed and empty catalogs                                        |
 |     1 | `providers/test_model_capabilities.py` | Configured real Provider probe/discovery/description, Model test, actual LLM client-tool call and schema-validated output containing the subsequently supplied random proof                                                                                                 |
@@ -65,8 +66,10 @@ The model suite uses real Control and Worker processes, Native HTTP APIs, migrat
 Additional existing coverage lives in `harness_integration/test_32_multiworker_resources.py` (two Model cases) and `run_recovery/test_09_failures.py` plus `test_42_run_dependency_faults.py` (12 Model cases): authentication/timeout failures, 429/503 bounded recovery or exhaustion, and truncated/malformed/timed-out streams. Stream recovery distinguishes native transport retries, Harness ModelAttempts and durable RunAttempts.
 
 ```sh
-# Docker is required; no cloud credentials or browser required (43 cases).
+# Docker is required; no cloud credentials or browser required (63 cases).
 make live-test-models
+# Focus on durable usage and request-admission boundaries (20 cases).
+make live-test-models LIVE_TEST_ARGS='-k usage_faults'
 # Existing multi-worker and fault regressions:
 uv run --locked python -m pytest dev/live_tests/harness_integration/test_32_multiworker_resources.py --live-management -k model -n 0
 uv run --locked python -m pytest dev/live_tests/run_recovery/test_09_failures.py dev/live_tests/run_recovery/test_42_run_dependency_faults.py --live-round-two -k model -n 0
@@ -82,6 +85,12 @@ Browser journeys bootstrap only an administrator session, then use real browser 
 Real Model smoke tests cap each response at 128 output tokens; the tool/structured-output journey allows 384 and disables parallel tool calls to keep one client handoff. Real configured Model tests require discovery and tool/structured-output support; use the smoke selection alone for a compatible endpoint that intentionally lacks those capabilities. OpenRouter GPT/Gemini/Claude smoke cases are separate from native Google/Anthropic endpoint tests: no direct cloud calls to those providers are implied.
 
 If an explicitly configured local proxy resolves `openrouter.ai` to a non-global address, the disposable lab can narrowly permit that hostname with `LIVE_TEST_MODEL_PRIVATE_ENDPOINT_DOMAINS='["openrouter.ai"]'` before the real-provider command. This existing test-only option does not change production endpoint policy or TLS verification. Do not set it when normal public DNS works.
+
+### Usage fault boundaries
+
+The usage journeys use a separate local TLS model peer so abrupt stream termination reaches the native SDK directly. They compare actual upstream requests, immutable `run_usage_records`, Attempt attribution, sealed operational usage and successful lifecycle-event totals. Worker crash points and receipt redelivery wrap real ingestion outside its database transaction; a test-only, workspace-authorized HTTP reader exposes the retained records. The model lab installs only the fault hooks needed by these journeys.
+
+Cancellation distinguishes a committed receipt from text merely observed in a stream. An already committed receipt remains charged after cancellation. A valid receipt delivered after the Run seals retains its original attribution but cannot rewrite the operational snapshot. Missing usage is never estimated from partial text. The budget matrix checks input and output ceilings independently: zero must prevent the first provider request, exact consumption may finish the current response but must block a subsequent request, and already incurred over-limit tokens must remain recorded. Rejected admission leaves the request counter unchanged and fails the Run with `execution_usage_exhausted`. These are assertions, not a claim that every current implementation passes them; inspect the opted-in run results.
 
 ### Official OpenAI direct tests
 
