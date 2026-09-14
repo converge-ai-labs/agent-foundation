@@ -97,6 +97,11 @@ def main():
                 )
             }
         )
+        if config.get("run_faults", {}).get("skills"):
+            from ..infrastructure.run_faults import Faults
+            from ..skills.fault_host import install
+
+            install(Faults(Path(os.environ["LIVE_TEST_CONFIG"]).parent / "faults", "control"))
         configure_logging(settings)
         serve_app(create_app(settings))
 

@@ -55,3 +55,53 @@ def install(faults):
         return result
 
     EnvironmentSkillMaterializer._publish = publish
+
+    from a13n_service.skills.sources import SkillSourcePreparer
+
+    original_source = SkillSourcePreparer.prepare
+
+    @wraps(original_source)
+    async def source(self, **kwargs):
+        result = await original_source(self, **kwargs)
+        await faults.reach("skill.source_prepared", upload_id=result.upload_id or "github")
+        return result
+
+    SkillSourcePreparer.prepare = source
+
+    if faults.role == "worker":
+        import json
+        import traceback
+
+        from a13n_service.process.attempts import WorkerAttempts
+
+        original_attempt = WorkerAttempts.run
+
+        @wraps(original_attempt)
+        async def attempt(self, context, *args, **kwargs):
+            try:
+                return await original_attempt(self, context, *args, **kwargs)
+            except Exception as error:
+                # Record types and locations only: exception messages can contain credentials.
+                def describe(value):
+                    return {
+                        "type": type(value).__name__,
+                        "frames": [
+                            {"file": frame.filename, "line": frame.lineno, "function": frame.name}
+                            for frame in traceback.extract_tb(value.__traceback__)
+                        ],
+                        "children": [describe(child) for child in value.exceptions]
+                        if isinstance(value, BaseExceptionGroup)
+                        else [],
+                        "cause": describe(value.__cause__) if value.__cause__ is not None else None,
+                    }
+
+                path = faults.root / ("attempt-error-" + context.run_attempt_id + ".json")
+                path.write_text(
+                    json.dumps(
+                        {"run_id": context.run_id, "attempt_id": context.run_attempt_id, "error": describe(error)}
+                    )
+                )
+                path.chmod(0o600)
+                raise
+
+        WorkerAttempts.run = attempt

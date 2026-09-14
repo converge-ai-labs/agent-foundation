@@ -129,7 +129,8 @@ def install(config, role):
             return original_create(replace(self, execution_budget=budget), **kwargs)
 
         NewRunPolicy.create = create
-    _install_queue_faults(faults)
+    if not config["run_faults"].get("skills"):
+        _install_queue_faults(faults)
     _install_attempt_faults(faults, config["run_faults"])
     if "control" in config["run_faults"]:
         from ..control.control_fault_host import install as install_control

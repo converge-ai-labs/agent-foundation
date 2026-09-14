@@ -211,7 +211,12 @@ async def freeze_skill_locks(
         skill_ids=skill_ids,
         for_update=True,
     )
-    revision_ids = tuple(item.revision_id for item in prepared)
+    revision_ids = tuple(
+        {
+            *(item.revision_id for item in prepared),
+            *(skill.current_revision_id for skill in skills.values()),
+        }
+    )
     revisions = tuple(
         (
             await session.scalars(
@@ -237,11 +242,16 @@ async def freeze_skill_locks(
             or revision.skill_id != expected.binding.skill_id
             or revision.version != expected.revision_version
             or revision.content_digest != expected.content_digest
-            or (expected.binding.version is None and skill.current_revision_id != revision.id)
             or (expected.binding.version is not None and expected.binding.version != revision.version)
         ):
             raise SkillSelectionInvalid
         _validate_revision(revision, expected.binding.skill_key)
+        if expected.binding.version is None:
+            current = by_revision_id.get(skill.current_revision_id)
+            if current is None or current.skill_id != skill.id:
+                raise SkillSelectionInvalid
+            _validate_revision(current, expected.binding.skill_key)
+            revision = current
         locks.append(
             SkillRevisionLock(
                 skill_id=skill.id,
