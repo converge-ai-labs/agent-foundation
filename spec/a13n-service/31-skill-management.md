@@ -241,6 +241,8 @@ Unpinned current resolution and Revision publication use the same boundary:
 - when Run acceptance locks and resolves first, it records the old current Revision;
 - when publication advances the head first, acceptance records the new current Revision.
 
+If publication advances an unpinned head after detached preparation, acceptance resolves the current Revision under the same stable Skill identity. If an initial state already contains older locks, Service rebuilds that unaccepted state outside the transaction and retries within a finite bound. This refresh preserves the original AgentRevision, pinned selections, input, and non-Skill configuration; deletion, authority loss, or unrelated invocation drift still rejects acceptance. Continuous publication that exhausts this bound returns `409 run_invocation_changed`, rather than classifying the active Skill as an invalid selection.
+
 Once Run acceptance commits, its exact locks never change.
 
 Tombstone rows, immutable Revision metadata, and package objects are retained internally without a purge deadline to preserve identity, accepted-Run reconstruction, and audit integrity.
