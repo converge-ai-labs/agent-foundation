@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.etags import resource_etag
@@ -16,7 +16,6 @@ from ..connections.domain import Connection, ConnectionCommandRequest
 from .catalog import MCPServer, MCPServerCollection
 from .domain import (
     ConfigureMCPOAuthClientRequest,
-    MCPClientMetadata,
     MCPOAuthClientConfiguration,
     MCPOAuthDiscovery,
     MCPOAuthSetup,
@@ -30,7 +29,6 @@ from .service import MCPConnectionService
 router = APIRouter(tags=["connectivity-management"])
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
 MutationActor = Annotated[AuthenticatedActor, Depends(authenticate_mutation)]
-IssuerKey = Annotated[str, Path(pattern=r"^[0-9a-f]{64}$")]
 
 
 def _connections(request: Request) -> MCPConnectionService:
@@ -85,18 +83,6 @@ async def get_mcp_server(request: Request, actor: Actor, server_key: str) -> MCP
             category=ErrorCategory.unavailable,
         )
     return runtime.mcp_servers.get(server_key)
-
-
-@router.get(
-    "/api/v1/oauth/mcp/client-metadata/{issuer_key}/{redirect_key}.json",
-    response_model=MCPClientMetadata,
-)
-async def mcp_client_metadata(
-    request: Request,
-    issuer_key: IssuerKey,
-    redirect_key: IssuerKey,
-) -> MCPClientMetadata:
-    return _oauth(request).client_metadata(issuer_key, redirect_key)
 
 
 @router.get("/api/v1/connections/{connection_id}/mcp/oauth-client", response_model=MCPOAuthClientConfiguration | None)

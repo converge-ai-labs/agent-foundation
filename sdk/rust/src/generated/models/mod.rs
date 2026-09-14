@@ -332,8 +332,6 @@ pub mod login_request;
 pub use self::login_request::LoginRequest;
 pub mod login_result;
 pub use self::login_result::LoginResult;
-pub mod mcp_client_metadata;
-pub use self::mcp_client_metadata::McpClientMetadata;
 pub mod mcp_server;
 pub use self::mcp_server::McpServer;
 pub mod mcp_server_collection;

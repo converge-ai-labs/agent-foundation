@@ -152,7 +152,6 @@ async def _build_control_runtime(
         storage,
         endpoint_policy,
         secret_protector,
-        public_origin,
         mcp_http_client,
         mcp_servers,
     )
@@ -230,7 +229,6 @@ def _build_mcp_control(
     storage: StorageResources,
     endpoint_policy: EndpointPolicy,
     secret_protector: SecretProtector,
-    public_origin: str | None,
     http_client: httpx2.AsyncClient,
     mcp_servers: MCPServerCatalog,
 ) -> _MCPControl:
@@ -249,7 +247,6 @@ def _build_mcp_control(
         clients.oauth,
         secret_protector,
         discovery,
-        public_origin=public_origin,
         redirect_uris=settings.connectivity.authorization_callback_urls,
         documentation_urls=mcp_servers.documentation_urls(),
         client_name=settings.connectivity.oauth_client_name,

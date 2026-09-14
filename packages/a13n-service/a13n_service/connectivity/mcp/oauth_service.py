@@ -34,7 +34,7 @@ from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from ..connections.handoff import store_material
-from .domain import MCPAuthorizationLaunch, MCPClientMetadata, MCPOAuthClientInput
+from .domain import MCPAuthorizationLaunch, MCPOAuthClientInput
 from .errors import MCPConnectionError
 from .management import (
     audit,
@@ -59,8 +59,6 @@ from .oauth_client import (
     OAuthClientContext,
     OAuthPreparation,
     authorization_url,
-    oauth_client_metadata,
-    redirect_key,
 )
 from .oauth_configuration import (
     OAuthConfiguration,
@@ -113,7 +111,6 @@ class MCPOAuthService:
         protector: SecretProtector,
         discovery: ConnectionDiscovery,
         *,
-        public_origin: str | None,
         redirect_uris: tuple[str, ...],
         documentation_urls: dict[str, str] | None = None,
         client_name: str,
@@ -126,7 +123,6 @@ class MCPOAuthService:
         self._oauth = oauth
         self._protector = protector
         self._discovery = discovery
-        self._public_origin = public_origin.rstrip("/") if public_origin is not None else None
         self._redirect_uris = redirect_uris
         self._documentation_urls = documentation_urls or {}
         self._client_name = client_name
@@ -135,38 +131,16 @@ class MCPOAuthService:
         self._claim_lease_seconds = claim_lease_seconds
         self._clock = clock
 
-    def client_metadata(self, issuer_key_value: str, redirect_key_value: str) -> MCPClientMetadata:
-        redirect_uri = next(
-            (item for item in self._redirect_uris if redirect_key(item) == redirect_key_value),
-            None,
-        )
-        if redirect_uri is None:
-            raise MCPConnectionError(
-                "invalid_redirect_uri", "OAuth redirect URI is not registered.", category=ErrorCategory.not_found
-            )
-        return oauth_client_metadata(self._require_origin(), issuer_key_value, redirect_uri, self._client_name)
-
     @property
     def configuration(self) -> OAuthConfiguration:
         return OAuthConfiguration(
             self._sessions,
             self._oauth,
             self._protector,
-            public_origin=self._public_origin,
             redirect_uris=self._redirect_uris,
             documentation_urls=self._documentation_urls,
             clock=self._clock,
         )
-
-    def _require_origin(self) -> str:
-        if self._public_origin is None:
-            raise MCPConnectionError(
-                "oauth_unavailable",
-                "Interactive OAuth requires a configured public origin.",
-                category=ErrorCategory.unavailable,
-            )
-
-        return self._public_origin
 
     async def authorize(
         self,
@@ -198,7 +172,6 @@ class MCPOAuthService:
         try:
             preparation = await self._oauth.prepare(
                 source.endpoint_url,
-                public_origin=self._public_origin,
                 redirect_uri=source.redirect_uri,
                 client_name=self._client_name,
                 client=source.client,
@@ -589,7 +562,7 @@ class MCPOAuthService:
                             "redirect_uri": preparation.redirect_uri,
                         }
                     ),
-                    source="dynamic" if preparation.registration_endpoint is not None else "metadata_document",
+                    source="dynamic",
                     protector=self._protector,
                     resource_url=preparation.resource_url,
                     token_endpoint=preparation.token_endpoint,

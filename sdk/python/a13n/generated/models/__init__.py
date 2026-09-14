@@ -243,7 +243,6 @@ from .lifecycle_event_payload import LifecycleEventPayload
 from .lifecycle_projection_state import LifecycleProjectionState
 from .login_request import LoginRequest
 from .login_result import LoginResult
-from .mcp_client_metadata import MCPClientMetadata
 from .mcp_server import MCPServer
 from .mcp_server_auth_mode import MCPServerAuthMode
 from .mcp_server_collection import MCPServerCollection
@@ -768,7 +767,6 @@ __all__ = (
     "LifecycleProjectionState",
     "LoginRequest",
     "LoginResult",
-    "MCPClientMetadata",
     "MCPOAuthClientConfiguration",
     "MCPOAuthClientConfigurationGrantType",
     "MCPOAuthClientConfigurationSource",

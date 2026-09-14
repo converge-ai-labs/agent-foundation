@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass, field
 from typing import Any, Literal, cast
@@ -17,7 +16,6 @@ from mcp.client.auth.oauth2 import check_registration_usable
 from mcp.client.auth.utils import (
     build_oauth_authorization_server_metadata_discovery_urls,
     build_protected_resource_metadata_discovery_urls,
-    create_client_info_from_metadata_url,
     create_client_registration_request,
     extract_resource_metadata_from_www_auth,
     extract_scope_from_www_auth,
@@ -40,7 +38,7 @@ from a13n_service.connectivity.http import (
 )
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 
-from .domain import MCP_PROTOCOL_REVISION, MCPClientMetadata, MCPOAuthClientInput, OAuthGrantType, OAuthTokenAuthMethod
+from .domain import MCP_PROTOCOL_REVISION, MCPOAuthClientInput, OAuthGrantType, OAuthTokenAuthMethod
 from .oauth_http import OAuthTransport
 
 _ACTION_REQUIRED_TOKEN_ERRORS = frozenset(
@@ -96,7 +94,7 @@ class OAuthDiscovery:
     resource_metadata: ProtectedResourceMetadata
     token_auth_methods: tuple[OAuthTokenAuthMethod, ...]
     grant_types: tuple[OAuthGrantType, ...]
-    client_registration: Literal["metadata_document", "dynamic", "manual"]
+    client_registration: Literal["dynamic", "manual"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,29 +118,6 @@ def _metadata_issuer_matches(expected: str, actual: object) -> bool:
     # Root URLs share one metadata location; keep its declared spelling for callbacks.
     alternate = urlunsplit(parsed._replace(path="/" if not parsed.path else ""))
     return actual == alternate
-
-
-def issuer_key(issuer: str) -> str:
-    return hashlib.sha256(issuer.encode()).hexdigest()
-
-
-def redirect_key(redirect_uri: str) -> str:
-    return hashlib.sha256(redirect_uri.encode()).hexdigest()
-
-
-def oauth_client_metadata(
-    public_origin: str,
-    issuer_key_value: str,
-    redirect_uri: str,
-    client_name: str,
-) -> MCPClientMetadata:
-    return MCPClientMetadata(
-        client_id=(
-            f"{public_origin}/api/v1/oauth/mcp/client-metadata/{issuer_key_value}/{redirect_key(redirect_uri)}.json"
-        ),
-        client_name=client_name,
-        redirect_uris=(redirect_uri,),
-    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,7 +148,6 @@ class MCPOAuthClient:
         self,
         endpoint_url: str,
         *,
-        public_origin: str | None,
         redirect_uri: str,
         client_name: str,
         client: MCPOAuthClientInput | None = None,
@@ -189,11 +163,6 @@ class MCPOAuthClient:
         if "authorization_code" not in discovered.grant_types:
             raise MCPOAuthError("authorization_code_unsupported")
         metadata = discovered.metadata
-        identity = (
-            oauth_client_metadata(public_origin, issuer_key(discovered.issuer_url), redirect_uri, client_name)
-            if public_origin is not None
-            else None
-        )
         if client is not None and client.issuer_url != discovered.issuer_url:
             raise MCPOAuthError("configured_issuer_mismatch")
         try:
@@ -202,15 +171,11 @@ class MCPOAuthClient:
                 strategy=discovered.client_registration,
                 client=client,
                 supported_auth_methods=discovered.token_auth_methods,
-                client_metadata_url=identity.client_id if identity is not None else None,
                 redirect_uri=redirect_uri,
                 client_name=client_name,
             )
         except MCPOAuthError as error:
-            if client is not None or error.code not in {
-                "client_registration_unsupported",
-                "client_metadata_unavailable",
-            }:
+            if client is not None or error.code != "client_registration_unsupported":
                 raise
             raise MCPOAuthError(
                 "oauth_client_required",
@@ -284,8 +249,7 @@ class MCPOAuthClient:
         self,
         metadata: AuthorizationMetadata,
         *,
-        strategy: Literal["metadata_document", "dynamic", "manual"],
-        client_metadata_url: str | None,
+        strategy: Literal["dynamic", "manual"],
         redirect_uri: str,
         client_name: str,
         client: MCPOAuthClientInput | None,
@@ -293,11 +257,6 @@ class MCPOAuthClient:
     ) -> _ClientRegistration:
         if client is not None:
             return _configured_registration(client, supported_auth_methods)
-        if strategy == "metadata_document":
-            if client_metadata_url is None:
-                raise MCPOAuthError("client_metadata_unavailable")
-            info = create_client_info_from_metadata_url(client_metadata_url)
-            return _registration(info, endpoint=None)
         if strategy == "manual":
             raise MCPOAuthError("client_registration_unsupported")
         endpoint = await self._metadata_endpoint(metadata, "registration_endpoint", required=False)
@@ -721,9 +680,7 @@ def _supported_token_auth_methods(metadata: AuthorizationMetadata) -> tuple[OAut
 def _automatic_registration(
     metadata: AuthorizationMetadata,
     methods: tuple[OAuthTokenAuthMethod, ...],
-) -> Literal["metadata_document", "dynamic", "manual"]:
-    if "none" in methods and metadata.client_id_metadata_document_supported is True:
-        return "metadata_document"
+) -> Literal["dynamic", "manual"]:
     if methods and metadata.registration_endpoint is not None:
         return "dynamic"
     return "manual"

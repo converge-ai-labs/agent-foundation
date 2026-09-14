@@ -1249,17 +1249,14 @@ func (e MCPOAuthClientConfigurationGrantType) Valid() bool {
 
 // Defines values for MCPOAuthClientConfigurationSource.
 const (
-	MCPOAuthClientConfigurationSourceDynamic          MCPOAuthClientConfigurationSource = "dynamic"
-	MCPOAuthClientConfigurationSourceMetadataDocument MCPOAuthClientConfigurationSource = "metadata_document"
-	MCPOAuthClientConfigurationSourcePreRegistered    MCPOAuthClientConfigurationSource = "pre_registered"
+	MCPOAuthClientConfigurationSourceDynamic       MCPOAuthClientConfigurationSource = "dynamic"
+	MCPOAuthClientConfigurationSourcePreRegistered MCPOAuthClientConfigurationSource = "pre_registered"
 )
 
 // Valid indicates whether the value is a known member of the MCPOAuthClientConfigurationSource enum.
 func (e MCPOAuthClientConfigurationSource) Valid() bool {
 	switch e {
 	case MCPOAuthClientConfigurationSourceDynamic:
-		return true
-	case MCPOAuthClientConfigurationSourceMetadataDocument:
 		return true
 	case MCPOAuthClientConfigurationSourcePreRegistered:
 		return true
@@ -1330,9 +1327,8 @@ func (e MCPOAuthClientInputTokenEndpointAuthMethod) Valid() bool {
 
 // Defines values for MCPOAuthDiscoveryClientRegistration.
 const (
-	MCPOAuthDiscoveryClientRegistrationDynamic          MCPOAuthDiscoveryClientRegistration = "dynamic"
-	MCPOAuthDiscoveryClientRegistrationManual           MCPOAuthDiscoveryClientRegistration = "manual"
-	MCPOAuthDiscoveryClientRegistrationMetadataDocument MCPOAuthDiscoveryClientRegistration = "metadata_document"
+	MCPOAuthDiscoveryClientRegistrationDynamic MCPOAuthDiscoveryClientRegistration = "dynamic"
+	MCPOAuthDiscoveryClientRegistrationManual  MCPOAuthDiscoveryClientRegistration = "manual"
 )
 
 // Valid indicates whether the value is a known member of the MCPOAuthDiscoveryClientRegistration enum.
@@ -1341,8 +1337,6 @@ func (e MCPOAuthDiscoveryClientRegistration) Valid() bool {
 	case MCPOAuthDiscoveryClientRegistrationDynamic:
 		return true
 	case MCPOAuthDiscoveryClientRegistrationManual:
-		return true
-	case MCPOAuthDiscoveryClientRegistrationMetadataDocument:
 		return true
 	default:
 		return false
@@ -1390,9 +1384,8 @@ func (e MCPOAuthDiscoveryTokenEndpointAuthMethodsSupported) Valid() bool {
 
 // Defines values for MCPOAuthSetupActionClientRegistration.
 const (
-	MCPOAuthSetupActionClientRegistrationDynamic          MCPOAuthSetupActionClientRegistration = "dynamic"
-	MCPOAuthSetupActionClientRegistrationManual           MCPOAuthSetupActionClientRegistration = "manual"
-	MCPOAuthSetupActionClientRegistrationMetadataDocument MCPOAuthSetupActionClientRegistration = "metadata_document"
+	MCPOAuthSetupActionClientRegistrationDynamic MCPOAuthSetupActionClientRegistration = "dynamic"
+	MCPOAuthSetupActionClientRegistrationManual  MCPOAuthSetupActionClientRegistration = "manual"
 )
 
 // Valid indicates whether the value is a known member of the MCPOAuthSetupActionClientRegistration enum.
@@ -1401,8 +1394,6 @@ func (e MCPOAuthSetupActionClientRegistration) Valid() bool {
 	case MCPOAuthSetupActionClientRegistrationDynamic:
 		return true
 	case MCPOAuthSetupActionClientRegistrationManual:
-		return true
-	case MCPOAuthSetupActionClientRegistrationMetadataDocument:
 		return true
 	default:
 		return false
@@ -4209,16 +4200,6 @@ type LoginResult struct {
 	CsrfToken string      `json:"csrf_token"`
 	Session   AuthSession `json:"session"`
 	User      User        `json:"user"`
-}
-
-// MCPClientMetadata defines model for MCPClientMetadata.
-type MCPClientMetadata struct {
-	ClientId                string    `json:"client_id"`
-	ClientName              string    `json:"client_name"`
-	GrantTypes              *[]string `json:"grant_types,omitempty"`
-	RedirectUris            []string  `json:"redirect_uris"`
-	ResponseTypes           *[]string `json:"response_types,omitempty"`
-	TokenEndpointAuthMethod *string   `json:"token_endpoint_auth_method,omitempty"`
 }
 
 // MCPOAuthClientConfiguration defines model for MCPOAuthClientConfiguration.
@@ -12662,11 +12643,6 @@ type ClientInterface interface {
 	// Corresponds with GET /api/v1/model-provider-types (the `GetModelProviderTypes` operationId).
 	GetModelProviderTypes(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetOauthMcpClientMetadataIssuerKeyRedirectKeyJson Mcp Client Metadata
-	//
-	// Corresponds with GET /api/v1/oauth/mcp/client-metadata/{issuer_key}/{redirect_key}.json (the `GetOauthMcpClientMetadataIssuerKeyRedirectKeyJson` operationId).
-	GetOauthMcpClientMetadataIssuerKeyRedirectKeyJson(ctx context.Context, issuerKey string, redirectKey string, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// GetOrganizations Organizations
 	//
 	// Corresponds with GET /api/v1/organizations (the `GetOrganizations` operationId).
@@ -15939,21 +15915,6 @@ func (c *Client) GetMcpServersServerKey(ctx context.Context, serverKey string, r
 // Corresponds with GET /api/v1/model-provider-types (the `GetModelProviderTypes` operationId).
 func (c *Client) GetModelProviderTypes(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetModelProviderTypesRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// GetOauthMcpClientMetadataIssuerKeyRedirectKeyJson Mcp Client Metadata
-//
-// Corresponds with GET /api/v1/oauth/mcp/client-metadata/{issuer_key}/{redirect_key}.json (the `GetOauthMcpClientMetadataIssuerKeyRedirectKeyJson` operationId).
-func (c *Client) GetOauthMcpClientMetadataIssuerKeyRedirectKeyJson(ctx context.Context, issuerKey string, redirectKey string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonRequest(c.Server, issuerKey, redirectKey)
 	if err != nil {
 		return nil, err
 	}
@@ -23362,47 +23323,6 @@ func NewGetModelProviderTypesRequest(server string) (*http.Request, error) {
 	}
 
 	operationPath := fmt.Sprintf("/api/v1/model-provider-types")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewGetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonRequest constructs an http.Request for the GetOauthMcpClientMetadataIssuerKeyRedirectKeyJson method
-func NewGetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonRequest(server string, issuerKey string, redirectKey string) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "issuer_key", issuerKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "redirect_key", redirectKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/oauth/mcp/client-metadata/%s/%s.json", pathParam0, pathParam1)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -34488,13 +34408,6 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /api/v1/model-provider-types (the `GetModelProviderTypes` operationId).
 	GetModelProviderTypesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetModelProviderTypesResponse, error)
 
-	// GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonWithResponse Mcp Client Metadata
-	//
-	// Returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with GET /api/v1/oauth/mcp/client-metadata/{issuer_key}/{redirect_key}.json (the `GetOauthMcpClientMetadataIssuerKeyRedirectKeyJson` operationId).
-	GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonWithResponse(ctx context.Context, issuerKey string, redirectKey string, reqEditors ...RequestEditorFn) (*GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponse, error)
-
 	// GetOrganizationsWithResponse Organizations
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -41869,83 +41782,6 @@ func (r GetModelProviderTypesResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetModelProviderTypesResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-// GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponse200Headers the declared response headers of an HTTP 200 response for GetOauthMcpClientMetadataIssuerKeyRedirectKeyJson
-type GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponse200Headers struct {
-	XRequestID *string
-}
-
-// GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponse400Headers the declared response headers of an HTTP 400 response for GetOauthMcpClientMetadataIssuerKeyRedirectKeyJson
-type GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponse400Headers struct {
-	XRequestID *string
-}
-
-// GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponseDefaultHeaders the declared response headers of an HTTP default response for GetOauthMcpClientMetadataIssuerKeyRedirectKeyJson
-type GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponseDefaultHeaders struct {
-	RetryAfter *string
-	XRequestID *string
-}
-
-type GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *MCPClientMetadata
-	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *ErrorResponse
-	// JSONDefault the response for an HTTP default `application/json` response
-	JSONDefault *ErrorResponse
-	// Headers200 the parsed response headers for an HTTP 200 response
-	Headers200 *GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponse200Headers
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponse400Headers
-	// HeadersDefault the parsed response headers for an HTTP default response
-	HeadersDefault *GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponseDefaultHeaders
-}
-
-// GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponse) GetJSON200() *MCPClientMetadata {
-	return r.JSON200
-}
-
-// GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponse) GetJSON400() *ErrorResponse {
-	return r.JSON400
-}
-
-// GetJSONDefault returns the response for an HTTP default `application/json` response
-func (r GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponse) GetJSONDefault() *ErrorResponse {
-	return r.JSONDefault
-}
-
-// GetBody returns the raw response body bytes
-func (r GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -56673,19 +56509,6 @@ func (c *ClientWithResponses) GetModelProviderTypesWithResponse(ctx context.Cont
 	return ParseGetModelProviderTypesResponse(rsp)
 }
 
-// GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonWithResponse Mcp Client Metadata
-//
-// Returns a wrapper object for the known response body format(s).
-//
-// Corresponds with GET /api/v1/oauth/mcp/client-metadata/{issuer_key}/{redirect_key}.json (the `GetOauthMcpClientMetadataIssuerKeyRedirectKeyJson` operationId).
-func (c *ClientWithResponses) GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonWithResponse(ctx context.Context, issuerKey string, redirectKey string, reqEditors ...RequestEditorFn) (*GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponse, error) {
-	rsp, err := c.GetOauthMcpClientMetadataIssuerKeyRedirectKeyJson(ctx, issuerKey, redirectKey, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponse(rsp)
-}
-
 // GetOrganizationsWithResponse Organizations
 //
 // Returns a wrapper object for the known response body format(s).
@@ -65719,86 +65542,6 @@ func ParseGetModelProviderTypesResponse(rsp *http.Response) (*GetModelProviderTy
 		response.Headers200 = &headers
 	case true:
 		var headers GetModelProviderTypesResponseDefaultHeaders
-		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.RetryAfter = &value
-		}
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.HeadersDefault = &headers
-	}
-
-	return response, nil
-}
-
-// ParseGetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponse parses an HTTP response from a GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonWithResponse call
-func ParseGetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponse(rsp *http.Response) (*GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MCPClientMetadata
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	switch {
-	case rsp.StatusCode == 200:
-		var headers GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponse200Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers200 = &headers
-	case rsp.StatusCode == 400:
-		var headers GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers400 = &headers
-	case true:
-		var headers GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonResponseDefaultHeaders
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {

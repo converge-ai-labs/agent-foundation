@@ -1067,23 +1067,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/oauth/mcp/client-metadata/{issuer_key}/{redirect_key}.json": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Mcp Client Metadata */
-    get: operations["get_oauth_mcp_client_metadata_issuer_key_redirect_key_json"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/api/v1/organizations": {
     parameters: {
       query?: never;
@@ -5614,34 +5597,6 @@ export interface components {
       session: components["schemas"]["AuthSession"];
       user: components["schemas"]["User"];
     };
-    /** MCPClientMetadata */
-    MCPClientMetadata: {
-      /** Client Id */
-      client_id: string;
-      /** Client Name */
-      client_name: string;
-      /**
-       * Grant Types
-       * @default [
-       *       "authorization_code"
-       *     ]
-       */
-      grant_types?: string[];
-      /** Redirect Uris */
-      redirect_uris: string[];
-      /**
-       * Response Types
-       * @default [
-       *       "code"
-       *     ]
-       */
-      response_types?: string[];
-      /**
-       * Token Endpoint Auth Method
-       * @default none
-       */
-      token_endpoint_auth_method?: string;
-    };
     /** MCPOAuthClientConfiguration */
     MCPOAuthClientConfiguration: {
       /** Client Id */
@@ -5659,7 +5614,7 @@ export interface components {
        * Source
        * @enum {string}
        */
-      source: "pre_registered" | "dynamic" | "metadata_document";
+      source: "pre_registered" | "dynamic";
       /**
        * Token Endpoint Auth Method
        * @enum {string}
@@ -5698,7 +5653,7 @@ export interface components {
        * Client Registration
        * @enum {string}
        */
-      client_registration: "metadata_document" | "dynamic" | "manual";
+      client_registration: "dynamic" | "manual";
       /** Grant Types Supported */
       grant_types_supported: ("authorization_code" | "client_credentials")[];
       /** Issuer Url */
@@ -5718,7 +5673,7 @@ export interface components {
     /** MCPOAuthSetupAction */
     MCPOAuthSetupAction: {
       /** Client Registration */
-      client_registration?: ("metadata_document" | "dynamic" | "manual") | null;
+      client_registration?: ("dynamic" | "manual") | null;
       /** Documentation Url */
       documentation_url?: string | null;
       /**
@@ -11895,51 +11850,6 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ModelProviderDefinitionCollection"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  get_oauth_mcp_client_metadata_issuer_key_redirect_key_json: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        issuer_key: string;
-        redirect_key: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MCPClientMetadata"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       /** @description Service error. */
