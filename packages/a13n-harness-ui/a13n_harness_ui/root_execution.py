@@ -117,7 +117,9 @@ class RootRunExecutor:
         self._live_hub = live_hub
         self._cleanup_timeout_seconds = cleanup_timeout_seconds
         self._thread_files = thread_files
-        self._root_capability_factory: Callable[[str], AbstractCapability[AgentContext]] | None = None
+        self._root_capability_factory: Callable[[ResolvedRunComposition], AbstractCapability[AgentContext]] | None = (
+            None
+        )
 
     def replace_subscription_sources(self, sources: Mapping[str, SubscriptionSource]) -> None:
         """Apply account rediscovery to future Runs; existing resolvers retain their sources."""
@@ -125,7 +127,7 @@ class RootRunExecutor:
 
     def set_root_capability_factory(
         self,
-        factory: Callable[[str], AbstractCapability[AgentContext]],
+        factory: Callable[[ResolvedRunComposition], AbstractCapability[AgentContext]],
     ) -> None:
         if self._root_capability_factory is not None:
             raise RuntimeError("Root Thread Capability factory is already configured")
@@ -185,7 +187,7 @@ class RootRunExecutor:
                 pricing_catalog=pricing_catalog,
                 subagent_operator=self._subagent_operator,
                 root_capabilities=(
-                    () if self._root_capability_factory is None else (self._root_capability_factory(thread.thread_id),)
+                    () if self._root_capability_factory is None else (self._root_capability_factory(published.value),)
                 ),
                 subscription_sources=self._subscription_sources,
             )

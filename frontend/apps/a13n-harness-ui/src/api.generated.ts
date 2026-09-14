@@ -1336,6 +1336,7 @@ export interface components {
             project_id: string | null;
             /** Project Roots */
             project_roots: string[];
+            webui_sidekick?: components["schemas"]["SidekickConfiguration"] | null;
             agent: components["schemas"]["CapturedAgentSelection"];
             /** Capability Ids */
             capability_ids: string[];
@@ -2979,6 +2980,16 @@ export interface components {
             environment_profile: string;
             /** Diagnostic */
             diagnostic?: string | null;
+        };
+        /**
+         * SidekickConfiguration
+         * @description Instruction-guided collaboration; omitted Agent inherits the calling Agent.
+         */
+        SidekickConfiguration: {
+            agent?: components["schemas"]["ResourceId"] | null;
+            model?: components["schemas"]["ResourceId"] | null;
+        } & {
+            [key: string]: components["schemas"]["JsonValue"];
         };
         /**
          * StoreKind

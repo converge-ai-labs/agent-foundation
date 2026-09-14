@@ -13,9 +13,11 @@ from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.toolsets import FunctionToolset
 
-from a13n_harness_ui.errors import HarnessUiError
+from a13n_harness_ui.composition import CompositionAcceptanceService, ResolvedRunComposition
+from a13n_harness_ui.configuration.discovery import ResourceKind, resource_page
+from a13n_harness_ui.errors import ConfigurationError, HarnessUiError, ThreadError
 from a13n_harness_ui.root_run import RootRunCoordinator
-from a13n_harness_ui.surfaces import NewThreadDefaults, ThreadSummary
+from a13n_harness_ui.surfaces import NewThreadDefaults, RunModelOverrides, ThreadSummary
 from a13n_harness_ui.thread_projection import ThreadProjectionService
 
 _THREAD_CAPABILITY_ID = "a13n.harness-ui.thread-collaboration"
@@ -40,10 +42,35 @@ class ThreadToolController:
         projections: ThreadProjectionService,
         root_runs: RootRunCoordinator,
         create_thread: ThreadCreator,
+        configurations: CompositionAcceptanceService,
     ) -> None:
         self._projections = projections
         self._root_runs = root_runs
         self._create_thread = create_thread
+        self._configurations = configurations
+
+    async def resources(
+        self, *, kind: ResourceKind, query: str | None, cursor: str | None, limit: int
+    ) -> dict[str, Any]:
+        source = await self._configurations.current()
+        if source is None:
+            raise ConfigurationError("No configuration has been accepted.", code="configuration_missing")
+        return resource_page(source, kind=kind, query=query, cursor=cursor, limit=limit)
+
+    async def get_project(self, project_id: str) -> dict[str, Any]:
+        source = await self._configurations.current()
+        project = None if source is None else source.projects.get(project_id)
+        if source is None or project is None:
+            raise ThreadError("The selected Project is unavailable.", code="project_missing")
+        return {
+            "generation_digest": source.source_digest,
+            "project": {
+                "id": project.id,
+                "name": project.name,
+                "roots": [root.path for root in project.roots],
+                "defaults": project.defaults.model_dump(mode="json", include=set(type(project.defaults).model_fields)),
+            },
+        }
 
     async def list_threads(
         self,
@@ -51,8 +78,12 @@ class ThreadToolController:
         query: str | None,
         cursor: str | None,
         limit: int,
+        project_id: str | None = None,
+        include_archived: bool = False,
     ) -> dict[str, Any]:
-        page = await self._projections.list_threads(query=query, cursor=cursor, limit=limit)
+        page = await self._projections.list_threads(
+            query=query, cursor=cursor, limit=limit, project_id=project_id, include_archived=include_archived
+        )
         return page.model_dump(mode="json")
 
     async def get_thread(
@@ -73,8 +104,12 @@ class ThreadToolController:
             "transcript": transcript.model_dump(mode="json"),
         }
 
-    async def run_thread(self, *, thread_id: str, prompt: str) -> dict[str, Any]:
-        receipt = await self._root_runs.submit_prompt(thread_id=thread_id, prompt=prompt)
+    async def run_thread(self, *, thread_id: str, prompt: str, model_id: str | None = None) -> dict[str, Any]:
+        receipt = await self._root_runs.submit_prompt(
+            thread_id=thread_id,
+            prompt=prompt,
+            model_overrides=RunModelOverrides(model_id=model_id) if model_id is not None else None,
+        )
         return receipt.model_dump(mode="json")
 
     async def create_thread(
@@ -84,26 +119,62 @@ class ThreadToolController:
         prompt: str,
         title: str | None,
         agent_id: str | None,
+        project_id: str | None = "current",
+        model_id: str | None = None,
     ) -> dict[str, Any]:
+        model_overrides = RunModelOverrides(model_id=model_id) if model_id is not None else None
         source = await self._projections.detail(source_thread_id)
         configuration = source.thread.configuration
-        created = await self._create_thread(
-            defaults=NewThreadDefaults(
+        if project_id == "current" and agent_id is None:
+            defaults = NewThreadDefaults(
                 project_id=configuration.project_id,
-                agent_id=agent_id or configuration.agent_source.id,
+                agent_id=configuration.agent_source.id,
                 environment_profile_id=configuration.environment_profile_id,
                 harness_plugin_ids=configuration.harness_plugin_ids,
                 environment_run_extension_ids=configuration.environment_run_extension_ids,
                 mcp_server_ids=configuration.mcp_server_ids,
-            ),
-            title=title,
+            )
+        else:
+            # Explicit selections use normal Project/Agent defaults, not the source's MCP or tool selection.
+            defaults = NewThreadDefaults(
+                project_id=configuration.project_id if project_id == "current" else project_id,
+                agent_id=agent_id,
+            )
+        created = await self._create_thread(defaults=defaults, title=title)
+        prompt = (
+            f"Task from Thread {source_thread_id}. This is an independent root Thread, not a subagent.\n"
+            f"Report findings, blockers and final results to {source_thread_id} with send_thread_message. "
+            "Do not send acknowledgements back and forth or delegate the same task back to its requester.\n\n"
+            f"{prompt}"
         )
         try:
-            receipt = await self.run_thread(thread_id=created.thread_id, prompt=prompt)
+            receipt = await self._root_runs.submit_prompt(
+                thread_id=created.thread_id, prompt=prompt, model_overrides=model_overrides
+            )
         except HarnessUiError as exc:
             # Creation and run admission are separate durable effects. Never hide the created identity.
             return {**_failure(exc, "thread_run_failed"), "thread_id": created.thread_id}
-        return {"ok": True, "thread_id": created.thread_id, "receipt": receipt}
+        return {"ok": True, "thread_id": created.thread_id, "receipt": receipt.model_dump(mode="json")}
+
+    async def send_thread_message(self, *, source_thread_id: str, thread_id: str, message: str) -> dict[str, Any]:
+        detail = await self._projections.detail(thread_id)
+        if detail.thread.parent_thread_id is not None:
+            raise ThreadError("Child Threads use parent-scoped delegation controls.", code="child_thread_scoped")
+        if detail.thread.archived:
+            raise ThreadError("An archived Thread cannot receive messages.", code="thread_archived")
+        message = f"Message from Thread {source_thread_id}:\n\n{message}"
+        operation = await self._root_runs.active(thread_id)
+        if operation is not None:
+            # Resolve once. A rejected steer never falls through into a different operation.
+            result = await self._root_runs.steer(receipt_id=operation.receipt.receipt_id, message=message)
+            return {"ok": result.accepted, "mode": "steer", **result.model_dump(mode="json")}
+        if detail.deferred_requests:
+            raise ThreadError(
+                "Resolve this Thread's pending decisions before sending a message.", code="thread_deferred_pending"
+            )
+        # Admission serializes concurrent sends. If another operation wins, report its conflict without retrying.
+        receipt = await self._root_runs.submit_prompt(thread_id=thread_id, prompt=message)
+        return {"ok": True, "mode": "run", "receipt": receipt.model_dump(mode="json")}
 
     async def steer_thread(self, *, thread_id: str, message: str) -> dict[str, Any]:
         operation = await self._root_runs.active(thread_id)
@@ -122,6 +193,7 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
 
     controller: ThreadToolController
     source_thread_id: str
+    composition: ResolvedRunComposition | None = None
     id: str | None = _THREAD_CAPABILITY_ID
 
     def __post_init__(self) -> None:
@@ -130,11 +202,45 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
         if not self.source_thread_id:
             raise ValueError("source_thread_id must not be blank")
 
+    def get_instructions(self) -> str:
+        instructions = (
+            "Use get_thread() to inspect your own Thread and its Project; current_run describes the captured "
+            "configuration, while thread.configuration describes next-Run selections. "
+            "list_projects, list_agents and list_models discover accepted resources, not proven model connectivity. "
+            "Cross-Thread work creates independent root conversations, not delegated child executions. "
+            "create_thread and run_thread return admission receipts, not completed work. Inspect progress with get_thread. "
+            "send_thread_message reports to another root: it steers an active operation or starts an idle Thread. "
+            "A positive result means acceptance only, not processing or saved delivery. A rejected or uncertain send "
+            "must be reconciled, not blindly retried. Do not create acknowledgement loops or delegate a task back to its requester."
+        )
+        if self.composition is not None and (sidekick := self.composition.webui_sidekick) is not None:
+            agent_id = sidekick.agent or self.composition.root.source_id
+            model_selection = f", model_id={sidekick.model!r}" if sidekick.model is not None else ""
+            instructions += (
+                f"\nSidekick is enabled. For useful independent work, prefer create_thread(agent_id={agent_id!r}"
+                f"{model_selection}, prompt=...). An omitted Sidekick Agent inherits your current Agent; its Model "
+                "override applies only to the requested Run. Give a bounded task and necessary context; inspect "
+                "results before integrating them. Other configured Agents and Models remain selectable. "
+                "If you are already executing another Thread's task, complete it and report to the requester "
+                "rather than creating another Sidekick for the same task. Do not create work merely because enabled."
+            )
+        return instructions
+
     def get_toolset(self) -> FunctionToolset[AgentContext]:
         return FunctionToolset(
             tools=[
                 _tool(self.list_threads, name="list_threads", effects={"read"}),
                 _tool(self.get_thread, name="get_thread", effects={"read"}),
+                _tool(self.list_projects, name="list_projects", effects={"read"}),
+                _tool(self.get_project, name="get_project", effects={"read"}),
+                _tool(self.list_agents, name="list_agents", effects={"read"}),
+                _tool(self.list_models, name="list_models", effects={"read"}),
+                _tool(
+                    self.send_thread_message,
+                    name="send_thread_message",
+                    effects={"read", "write", "external_communication"},
+                    idempotency="none",
+                ),
                 _tool(
                     self.create_thread,
                     name="create_thread",
@@ -163,12 +269,17 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
         query: str | None = None,
         cursor: str | None = None,
         limit: int = Field(default=20, ge=1, le=100),
+        project_id: str | None = None,
+        include_archived: bool = False,
     ) -> dict[str, Any]:
+        """List root Threads across this App, optionally filtered by an exact Project ID."""
         self._require_context(ctx)
         try:
             return {
                 "ok": True,
-                **await self.controller.list_threads(query=query, cursor=cursor, limit=limit),
+                **await self.controller.list_threads(
+                    query=query, cursor=cursor, limit=limit, project_id=project_id, include_archived=include_archived
+                ),
             }
         except (HarnessUiError, ValueError) as exc:
             return _failure(exc, "thread_list_failed")
@@ -176,13 +287,15 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
     async def get_thread(
         self,
         ctx: RunContext[AgentContext],
-        thread_id: str,
+        thread_id: str | None = None,
         history_cursor: str | None = None,
         history_limit: int = Field(default=50, ge=1, le=100),
     ) -> dict[str, Any]:
+        """Inspect status and saved history; omit thread_id to inspect your own Project and selections."""
         self._require_context(ctx)
+        thread_id = thread_id or self.source_thread_id
         try:
-            return {
+            result = {
                 "ok": True,
                 **await self.controller.get_thread(
                     thread_id=thread_id,
@@ -190,6 +303,15 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
                     history_limit=history_limit,
                 ),
             }
+            if thread_id == self.source_thread_id and self.composition is not None:
+                result["current_run"] = {
+                    "project_id": self.composition.project_id,
+                    "project_roots": list(self.composition.project_roots),
+                    "agent_id": self.composition.root.source_id,
+                    "model_id": self.composition.root.model.model_id,
+                    "generation_digest": self.composition.generation_digest,
+                }
+            return result
         except (HarnessUiError, ValueError) as exc:
             return _failure(exc, "thread_get_failed")
 
@@ -198,8 +320,9 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
         ctx: RunContext[AgentContext],
         thread_id: str,
         prompt: str,
+        model_id: str | None = None,
     ) -> dict[str, Any]:
-        """Start another idle Thread and return its admission receipt without waiting for completion."""
+        """Start another idle Thread; optionally override its Model for this Run without changing its Agent."""
         self._require_context(ctx)
         if thread_id == self.source_thread_id:
             return _failure_code(
@@ -207,9 +330,9 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
                 "A Thread cannot recursively run itself from its active root invocation.",
             )
         try:
-            receipt = await self.controller.run_thread(thread_id=thread_id, prompt=prompt)
+            receipt = await self.controller.run_thread(thread_id=thread_id, prompt=prompt, model_id=model_id)
             return {"ok": True, "receipt": receipt}
-        except HarnessUiError as exc:
+        except (HarnessUiError, ValueError) as exc:
             return _failure(exc, "thread_run_failed")
 
     async def create_thread(
@@ -218,8 +341,15 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
         prompt: str,
         title: str | None = None,
         agent_id: str | None = None,
+        project_id: str | None = "current",
+        model_id: str | None = None,
     ) -> dict[str, Any]:
-        """Create work in this Thread's Project and return immediately after run admission.
+        """Create independent work with a return address and return immediately after run admission.
+
+        project_id='current' keeps this Project; null selects no Project; an ID selects another Project.
+        With neither Project nor Agent changed, inherit this Thread's selections. Explicit selections
+        use normal Project/Agent defaults instead. model_id overrides the first Run only; it never edits
+        the Agent or sticky Thread selections. Discover IDs using list_projects, list_agents and list_models.
 
         The returned receipt is not completion. Use get_thread to inspect progress.
         If admission fails after creation, the returned thread_id remains valid; do not create a duplicate.
@@ -233,8 +363,10 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
                 prompt=prompt,
                 title=title,
                 agent_id=agent_id,
+                project_id=project_id,
+                model_id=model_id,
             )
-        except HarnessUiError as exc:
+        except (HarnessUiError, ValueError) as exc:
             return _failure(exc, "thread_create_failed")
 
     async def steer_thread(
@@ -254,6 +386,78 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
             return {"ok": result["accepted"], **result}
         except HarnessUiError as exc:
             return _failure(exc, "thread_steer_failed")
+
+    async def list_projects(
+        self,
+        ctx: RunContext[AgentContext],
+        query: str | None = None,
+        cursor: str | None = None,
+        limit: int = Field(default=20, ge=1, le=100),
+    ) -> dict[str, Any]:
+        """Discover configured Projects by name or ID. Use get_project for roots and creation defaults."""
+        self._require_context(ctx)
+        return await self._resources(kind="projects", query=query, cursor=cursor, limit=limit)
+
+    async def get_project(self, ctx: RunContext[AgentContext], project_id: str) -> dict[str, Any]:
+        """Inspect a configured Project's roots and creation defaults, without changing your Environment."""
+        self._require_context(ctx)
+        try:
+            return {"ok": True, **await self.controller.get_project(project_id)}
+        except HarnessUiError as exc:
+            return _failure(exc, "project_get_failed")
+
+    async def list_agents(
+        self,
+        ctx: RunContext[AgentContext],
+        query: str | None = None,
+        cursor: str | None = None,
+        limit: int = Field(default=20, ge=1, le=100),
+    ) -> dict[str, Any]:
+        """Discover configured root Agents, their Model IDs and selected Capability IDs, not child roster names."""
+        self._require_context(ctx)
+        return await self._resources(kind="agents", query=query, cursor=cursor, limit=limit)
+
+    async def list_models(
+        self,
+        ctx: RunContext[AgentContext],
+        query: str | None = None,
+        cursor: str | None = None,
+        limit: int = Field(default=20, ge=1, le=100),
+    ) -> dict[str, Any]:
+        """Discover configured Model IDs, names and routes, without credentials or a connectivity check."""
+        self._require_context(ctx)
+        return await self._resources(kind="models", query=query, cursor=cursor, limit=limit)
+
+    async def _resources(
+        self, *, kind: ResourceKind, query: str | None, cursor: str | None, limit: int
+    ) -> dict[str, Any]:
+        try:
+            return {"ok": True, **await self.controller.resources(kind=kind, query=query, cursor=cursor, limit=limit)}
+        except HarnessUiError as exc:
+            return _failure(exc, "resource_list_failed")
+
+    async def send_thread_message(
+        self,
+        ctx: RunContext[AgentContext],
+        thread_id: str,
+        message: str,
+    ) -> dict[str, Any]:
+        """Report to another root with source attribution; steer if active or start a new turn if idle.
+
+        Returns acceptance, not processing or saved delivery. No offline queue, automatic retry or
+        fallback to a replacement operation. Inspect a rejected/uncertain send before submitting again.
+        """
+        self._require_context(ctx)
+        if thread_id == self.source_thread_id:
+            return _failure_code("thread_recursive_message", "A Thread cannot send itself a message during its Run.")
+        if not message.strip():
+            return _failure_code("thread_message_empty", "A non-empty message is required.")
+        try:
+            return await self.controller.send_thread_message(
+                source_thread_id=self.source_thread_id, thread_id=thread_id, message=message
+            )
+        except HarnessUiError as exc:
+            return _failure(exc, "thread_message_failed")
 
     def _require_context(self, ctx: RunContext[AgentContext]) -> None:
         if ctx.deps.thread_id != self.source_thread_id:

@@ -2354,11 +2354,13 @@ async def open_harness_ui_app(
                     projections=projections,
                     root_runs=root_runs,
                     create_thread=app.create_thread,
+                    configurations=configurations,
                 )
                 root_executor.set_root_capability_factory(
-                    lambda thread_id: ThreadCollaborationCapability(
+                    lambda composition: ThreadCollaborationCapability(
                         controller=thread_tools,
-                        source_thread_id=thread_id,
+                        source_thread_id=composition.thread_id,
+                        composition=composition,
                     )
                 )
             try:

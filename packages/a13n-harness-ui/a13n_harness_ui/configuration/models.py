@@ -179,6 +179,17 @@ class SecurityConfiguration(ConfigurationModel):
     shell_review: ShellReviewConfiguration = Field(default_factory=ShellReviewConfiguration)
 
 
+class SidekickConfiguration(ConfigurationModel):
+    """Instruction-guided collaboration; omitted Agent inherits the calling Agent."""
+
+    agent: ResourceId | None = None
+    model: ResourceId | None = None
+
+
+class WebUiConfiguration(ConfigurationModel):
+    sidekick: SidekickConfiguration | None = None
+
+
 class HarnessUiDocument(ConfigurationModel):
     """Root ``a13n-harness-ui.yaml`` document."""
 
@@ -190,6 +201,7 @@ class HarnessUiDocument(ConfigurationModel):
     tools: ToolsConfiguration = Field(default_factory=ToolsConfiguration)
     security: SecurityConfiguration = Field(default_factory=SecurityConfiguration)
     subagents: SubagentsConfiguration = Field(default_factory=SubagentsConfiguration)
+    webui: WebUiConfiguration = Field(default_factory=WebUiConfiguration)
 
 
 class EnvironmentVariableSource(StrictModel):
@@ -633,6 +645,12 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
         defaults = self.document.defaults
         _require_reference(defaults.project, self.projects, "defaults.project")
         _require_reference(defaults.agent, self.agents, "defaults.agent")
+        sidekick = self.document.webui.sidekick
+        if sidekick is not None:
+            _require_reference(sidekick.agent, self.agents, "webui.sidekick.agent")
+            _require_reference(sidekick.model, self.models, "webui.sidekick.model")
+            if sidekick.agent is not None and sidekick.model is None and self.agents[sidekick.agent].model is None:
+                raise ValueError("Sidekick requires an Agent Model or a webui.sidekick.model override")
         if (
             defaults.environment_profile is not None
             and built_in_environment_profile(defaults.environment_profile) is None

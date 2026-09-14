@@ -8,6 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { parse } from "yaml";
 import { BrowserApp } from "./app";
 import { onlineManager } from "@tanstack/react-query";
 
@@ -802,4 +803,108 @@ it("keeps a generated collaboration name stable when the workbench is reopened",
   component.unmount();
   render(<BrowserApp />);
   await screen.findByRole("button", { name: label });
+});
+
+it("configures Sidekick in General without changing defaults or starting conversations", async () => {
+  window.history.replaceState(null, "", "/settings");
+  const rootSource = {
+    ...source,
+    relative_path: "custom-root.yaml",
+    resource_kind: "root",
+    resource_ids: [],
+  };
+  let content =
+    '# Keep this comment\nschema_version: "1"\ndefaults: {agent: agent-assistant}\nprocess: {log_level: DEBUG}\nwebui: {custom: keep}\n';
+  let writes = 0;
+  let submissions = 0;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      const path = decodeURIComponent(new URL(request.url).pathname);
+      if (path === "/api/configuration/sources")
+        return json({
+          generation_digest: "g",
+          sources: [
+            rootSource,
+            {
+              ...source,
+              relative_path: "models/worker.yaml",
+              resource_kind: "model",
+              resource_ids: ["model-worker"],
+            },
+          ],
+        });
+      if (path === "/api/configuration/sources/custom-root.yaml") {
+        if (request.method === "PUT") {
+          content = (await request.json()).content;
+          writes += 1;
+          return json({ source_digest: `saved-${writes}` });
+        }
+        return json({
+          ...rootSource,
+          source_digest: `saved-${writes}`,
+          content,
+        });
+      }
+      if (path === "/api/selectors")
+        return json({
+          agents: [
+            {
+              agent_id: "agent-assistant",
+              name: "Assistant",
+              model_id: "model-main",
+            },
+            {
+              agent_id: "agent-worker",
+              name: "Worker",
+              model_id: "model-worker",
+            },
+            { agent_id: "agent-empty", name: "No model", model_id: null },
+          ],
+          environments: [],
+          harness_plugins: [],
+          environment_run_extensions: [],
+          mcp_servers: [],
+        });
+      if (request.method === "POST" && path.startsWith("/api/threads"))
+        submissions += 1;
+      return fixture(request);
+    }),
+  );
+  render(<BrowserApp />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("combobox", { name: "Sidekick" }));
+  await user.click(await screen.findByRole("option", { name: "Enabled" }));
+  expect(
+    screen.getByRole("combobox", { name: "Sidekick agent" }).textContent,
+  ).toContain("Inherit current agent");
+  await user.click(screen.getByRole("combobox", { name: "Sidekick model" }));
+  await user.click(await screen.findByRole("option", { name: "model-worker" }));
+  expect(parse(content).webui.sidekick).toBeUndefined();
+  await user.click(screen.getByRole("combobox", { name: "Sidekick agent" }));
+  await user.click(await screen.findByRole("option", { name: "Worker" }));
+  expect(writes).toBe(0);
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(writes).toBe(1));
+  expect(parse(content).webui.sidekick).toEqual({
+    agent: "agent-worker",
+    model: "model-worker",
+  });
+  expect(content).toContain("agent-assistant");
+  expect(content).toContain("Keep this comment");
+  expect(content).toContain("DEBUG");
+  expect(content).toContain("custom: keep");
+  await waitFor(() =>
+    expect(
+      screen.getByRole("combobox", { name: "Sidekick agent" }).textContent,
+    ).toContain("Worker"),
+  );
+  await user.click(screen.getByRole("combobox", { name: "Sidekick" }));
+  await user.click(await screen.findByRole("option", { name: "Disabled" }));
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(writes).toBe(2));
+  expect(parse(content).webui.sidekick).toBeNull();
+  expect(content).toContain("custom: keep");
+  expect(content).toContain("agent-assistant");
+  expect(submissions).toBe(0);
 });

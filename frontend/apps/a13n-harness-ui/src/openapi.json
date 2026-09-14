@@ -4295,6 +4295,16 @@
             "type": "array",
             "title": "Project Roots"
           },
+          "webui_sidekick": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SidekickConfiguration"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "agent": {
             "$ref": "#/components/schemas/CapturedAgentSelection"
           },
@@ -8701,6 +8711,36 @@
           "environment_profile"
         ],
         "title": "SetupStatus"
+      },
+      "SidekickConfiguration": {
+        "properties": {
+          "agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue"
+        },
+        "type": "object",
+        "title": "SidekickConfiguration",
+        "description": "Instruction-guided collaboration; omitted Agent inherits the calling Agent."
       },
       "StoreKind": {
         "type": "string",
