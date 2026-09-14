@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from .context_activity import ContextActivity
+from .input_display import composer_piece
 from .panels import capability_panel, shell_outcome, shell_result_preview, tool_arguments, tool_preview, tool_result
 from .tool_rows import (
     CONTEXT_TOOLS,
@@ -235,6 +236,7 @@ class StreamRenderer:
         self.tasks = TaskPanel()
         self._notes: NotePage | None = None
         self._local_inputs: dict[str, int] = {}
+        self._composer_inputs: dict[tuple[str, str], tuple[int, set[int]]] = {}
         self._messages: dict[tuple[str, str, str], int] = {}
         self._limit = limit
         self._pending: list[str] = []
@@ -616,6 +618,35 @@ class StreamRenderer:
                 return
         metadata = ContentMetadata.from_native(payload.get("metadata"))
         if not metadata.display:
+            return
+        piece = composer_piece(metadata)
+        if piece is not None and payload.get("role") == "user":
+            assert metadata.source_id is not None
+            if (not child and metadata.source_id in self._local_inputs) or (child and self.status.mode != "detailed"):
+                return
+            index, label = piece
+            key = (run_id, metadata.source_id)
+            state = self._composer_inputs.get(key)
+            if state is not None and index in state[1]:
+                return
+            media = event_type == "CUSTOM" and payload.get("name") == "a13n.input.media"
+            if event_type == "TEXT_MESSAGE_CONTENT" or media:
+                text = f"[{label}]" if label else str(payload.get("delta") or "")
+                if not text:
+                    return
+                self.finish()
+                if state is None or not self.transcript.extend(state[0], terminal_text(text)):
+                    prefix = f"> Subagent {terminal_text(execution_id or run_id)} · " if child else "> "
+                    state = (self.transcript.append(prefix + terminal_text(text), kind="user"), set())
+                    self._composer_inputs[key] = state
+                    while len(self._composer_inputs) > 128:
+                        self._composer_inputs.pop(next(iter(self._composer_inputs)))
+                if label or media:
+                    state[1].add(index)
+                self.append(text, display=False)
+            elif event_type == "TEXT_MESSAGE_END" and state is not None:
+                state[1].add(index)
+                self.transcript.complete(state[0])
             return
         native_state = None
         if event_type == "CUSTOM" and payload.get("name") == "a13n.pydantic_ai.function_tool_result":

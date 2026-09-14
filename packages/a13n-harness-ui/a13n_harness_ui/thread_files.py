@@ -49,12 +49,31 @@ class AttachmentUpload:
 
 
 @dataclass(frozen=True, slots=True)
-class ComposerInput:
-    """Expanded authored text plus attachments; no terminal placeholders on the wire."""
+class ComposerAttachment:
+    """An ordered draft attachment, resolved by the App before Harness admission."""
 
-    text: str
-    attachments: tuple[AttachmentUpload, ...] = ()
+    upload: AttachmentUpload
+    label: str
+
+
+@dataclass(frozen=True, slots=True)
+class ComposerInput:
+    """Ordered authored content; editor tokens never cross this boundary."""
+
+    parts: tuple[str | ComposerAttachment, ...]
     source_id: str | None = None
+
+    @property
+    def text(self) -> str:
+        return "".join(part for part in self.parts if isinstance(part, str))
+
+    @property
+    def attachments(self) -> tuple[AttachmentUpload, ...]:
+        return tuple(part.upload for part in self.parts if isinstance(part, ComposerAttachment))
+
+    @property
+    def display_text(self) -> str:
+        return "".join(part if isinstance(part, str) else f"[{part.label}]" for part in self.parts)
 
 
 @contextmanager

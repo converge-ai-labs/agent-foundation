@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal
+from uuid import uuid4
 
 import httpx2
 from a13n_environment import EnvironmentProvider
@@ -1407,51 +1408,83 @@ class HarnessUiApp:
     async def _prepare_input(
         self, thread_id: str, prompt: RunInputValue | ComposerInput, attachment_ids: tuple[str, ...]
     ) -> RunInputValue:
-        if isinstance(prompt, ComposerInput):
-            if not prompt.text.strip() and not prompt.attachments and not attachment_ids:
-                raise ValueError("A root message must not be blank.")
-            if len(prompt.attachments) + len(attachment_ids) > MAX_ATTACHMENTS:
-                raise ValueError("An input supports up to eight attachments.")
-            if sum(len(item.data) for item in prompt.attachments) > MAX_INPUT_BYTES:
-                raise ValueError("An input supports up to 20 MiB of attachments.")
-            staged = tuple([await self._thread_files.stage(thread_id, upload) for upload in prompt.attachments])
-            attachment_ids += tuple(item.attachment_id for item in staged)
-            prompt = (TextContent(prompt.text, metadata={"source_id": prompt.source_id}),)
-        if len(attachment_ids) > MAX_ATTACHMENTS:
+        uploads = prompt.attachments if isinstance(prompt, ComposerInput) else ()
+        if len(uploads) + len(attachment_ids) > MAX_ATTACHMENTS:
             raise ValueError("An input supports up to eight attachments.")
         attachments = [await self._thread_files.read(thread_id, item) for item in attachment_ids]
-        if sum(item.size for item, _ in attachments) > MAX_INPUT_BYTES:
+        if sum(len(item.data) for item in uploads) + sum(item.size for item, _ in attachments) > MAX_INPUT_BYTES:
             raise ValueError("An input supports up to 20 MiB of attachments.")
-        parts: list[UserContent] = [prompt] if isinstance(prompt, str) else list(prompt)
+        parts: list[UserContent] = []
+        if isinstance(prompt, ComposerInput):
+            if not prompt.text.strip() and not uploads and not attachments:
+                raise ValueError("A root message must not be blank.")
+            source_id = prompt.source_id or f"input-{uuid4().hex}"
+            for index, part in enumerate(prompt.parts):
+                if isinstance(part, str):
+                    if part:
+                        parts.append(
+                            TextContent(
+                                part, metadata={"source_id": source_id, "harness_ui": {"composer": {"index": index}}}
+                            )
+                        )
+                else:
+                    item = await self._thread_files.stage(thread_id, part.upload)
+                    parts.extend(
+                        await self._attachment_input(
+                            thread_id, item, part.upload.data, source_id=source_id, index=index, label=part.label
+                        )
+                    )
+        else:
+            parts.extend([prompt] if isinstance(prompt, str) else prompt)
         for item, data in attachments:
-            # Retention precedes scheduling. A failed admission can leave a retained
-            # orphan, but can never leave an accepted Run referencing pruneable input.
-            await self._thread_files.retain(thread_id, item.attachment_id)
-            path = f"attachments/{item.attachment_id}/content"
-            metadata = {"harness_ui": {"attachment": item.model_dump(), "mount": "thread-files", "path": path}}
-            if isinstance(item.source, CommentContextSource):
-                captured_text = context_text(item.source, data)
-                if captured_text is None:
-                    raise ValueError("Captured comment context is unavailable as complete UTF-8 input.")
-                parts.append(TextContent(captured_text, metadata=metadata))
-                continue
-            source_description = (
-                "" if item.source is None else f" Selected Host source: {item.source.model_dump_json()}."
-            )
-            parts.append(
-                TextContent(
-                    f"Attachment {item.name!r} ({item.media_type}): {path} on the thread-files Environment mount.{source_description}",
-                    metadata=metadata,
-                )
-            )
-            if item.source is not None:
-                captured_text = context_text(item.source, data)
-                if captured_text is not None:
-                    parts.append(TextContent(captured_text, metadata=metadata))
-            if item.media_type.startswith("image/"):
-                parts.append(BinaryContent(data=data, media_type=item.media_type, vendor_metadata=metadata))
+            parts.extend(await self._attachment_input(thread_id, item, data))
         await self._thread_files.touch(thread_id)
         return detach_input(tuple(parts))
+
+    async def _attachment_input(
+        self,
+        thread_id: str,
+        item: ThreadAttachment,
+        data: bytes,
+        *,
+        source_id: str | None = None,
+        index: int = 0,
+        label: str | None = None,
+    ) -> list[UserContent]:
+        # Retain before admission, so accepted input never references draft scratch.
+        await self._thread_files.retain(thread_id, item.attachment_id)
+        path = f"attachments/{item.attachment_id}/content"
+        namespace: dict[str, Any] = {"attachment": item.model_dump(), "mount": "thread-files", "path": path}
+        metadata: dict[str, Any] = {"harness_ui": namespace}
+        if source_id is not None:
+            metadata["source_id"] = source_id
+            namespace["composer"] = {"index": index, "label": label}
+        if isinstance(item.source, CommentContextSource):
+            captured_text = context_text(item.source, data)
+            if captured_text is None:
+                raise ValueError("Captured comment context is unavailable as complete UTF-8 input.")
+            return [TextContent(captured_text, metadata=metadata)]
+        source_description = "" if item.source is None else f" Selected Host source: {item.source.model_dump_json()}."
+        is_image = item.media_type.startswith("image/")
+        # The model sees the label beside the real image; display metadata alone
+        # cannot teach the model what the user's 'image#2' refers to.
+        name = f"{label} ({item.name!r})" if label else repr(item.name)
+        description_metadata = {**metadata, "display": False} if source_id and is_image else metadata
+        parts: list[UserContent] = [
+            TextContent(
+                f"Attachment {name} ({item.media_type}): {path} on the thread-files Environment mount.{source_description}",
+                metadata=description_metadata,
+            )
+        ]
+        if item.source is not None:
+            captured_text = context_text(item.source, data)
+            if captured_text is not None:
+                parts.append(
+                    TextContent(captured_text, metadata={**metadata, "display": False} if source_id else metadata)
+                )
+        if is_image:
+            parts.append(BinaryContent(data=data, media_type=item.media_type, vendor_metadata=metadata))
+        return parts
 
     async def submit_thread(
         self,

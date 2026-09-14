@@ -243,7 +243,6 @@ Type these in the terminal composer, not your shell. Tab completes supported syn
 | `/mouse [on\|off]`                      | —       | Yes        | Toggle wheel capture; off preserves native selection/copy.                |
 | `/attach path`                          | —       | Yes        | Attach a file or image to the current draft.                              |
 | `/paste-image`                          | —       | Yes        | Read clipboard images explicitly.                                         |
-| `/remove index\|all`                    | —       | Yes        | Remove one attachment or all attachments from the current draft.          |
 | `/recover`                              | —       | No         | Restore an unsent prompt.                                                 |
 | `/status`                               | —       | Yes        | Show model, context, environment, and subscription usage.                 |
 | `/ps`                                   | —       | Yes        | Inspect observed background processes and their last reported status.     |

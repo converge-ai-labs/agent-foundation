@@ -64,7 +64,7 @@ async def test_enter_targets_exact_run_and_preserves_rejected_guidance(reject: b
             assert received == [("receipt-original", "change direction")]
             if reject and new_draft:
                 assert shell.composer.text == "next draft"
-                assert shell._recoverable == (Document("change direction", 16), ())
+                assert shell._recoverable == Document("change direction", 16)
             elif reject:
                 assert shell.composer.text == "change direction"
             else:
@@ -100,14 +100,14 @@ async def test_enter_preserves_draft_when_operation_cannot_accept_it(blocked: st
         if blocked == "images":
             data = BytesIO()
             Image.new("RGB", (1, 1)).save(data, format="PNG")
-            shell.images = (image_bytes("draft.png", data.getvalue()),)
+            shell.insert_attachments((image_bytes("draft.png", data.getvalue()),))
         images = shell.images
         terminal = asyncio.create_task(shell.app.run_async())
         try:
             await _until(lambda: shell.app.is_running)
             pipe.send_text("keep this\r")
             await _until(lambda: bool(shell.renderer.transcript.blocks))
-            assert shell.composer.text == "keep this"
+            assert shell.inline.compile(shell.composer.text).text == "keep this"
             assert shell.images == images
             assert shell._input_task is None
         finally:

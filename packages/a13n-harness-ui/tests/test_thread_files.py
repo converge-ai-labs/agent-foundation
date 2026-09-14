@@ -14,7 +14,7 @@ from a13n_harness_ui.interactive.backend import SessionBackend
 from a13n_harness_ui.interactive.pastes import PendingPastes
 from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
-from a13n_harness_ui.thread_files import AttachmentUpload, ComposerInput, ThreadFiles
+from a13n_harness_ui.thread_files import AttachmentUpload, ComposerAttachment, ComposerInput, ThreadFiles
 from anyio import fail_after, sleep, to_thread
 from PIL import Image
 from pydantic_ai import BinaryContent
@@ -150,6 +150,8 @@ async def test_composer_inputs_survive_restart_and_scratch_prune(
     path = await _seed(tmp_path, monkeypatch)
     image = BytesIO()
     Image.new("RGB", (2, 2), "white").save(image, format="PNG")
+    second_image = BytesIO()
+    Image.new("RGB", (2, 2), "red").save(second_image, format="PNG")
     observed = []
 
     async def stream_model(messages, info):
@@ -169,10 +171,14 @@ async def test_composer_inputs_survive_restart_and_scratch_prune(
         await backend.execute(
             StreamRenderer(backend.status),
             prompt=ComposerInput(
-                text=text,
-                attachments=(
-                    AttachmentUpload("clipboard.png", image.getvalue()),
-                    AttachmentUpload("notes.txt", b"notes"),
+                parts=(
+                    text,
+                    ComposerAttachment(AttachmentUpload("clipboard.png", image.getvalue()), "image#1"),
+                    " compare with ",
+                    ComposerAttachment(AttachmentUpload("second.png", second_image.getvalue()), "image#2"),
+                    " using ",
+                    ComposerAttachment(AttachmentUpload("notes.txt", b"notes"), "file#3"),
+                    " end",
                 ),
                 source_id="input-composer-test",
             ),
@@ -184,9 +190,9 @@ async def test_composer_inputs_survive_restart_and_scratch_prune(
         assert "clipboard.png" in serialized and "notes.txt" in serialized
         assert "input-composer-test" in serialized
         retained = tuple((tmp_path / "data/threads" / thread_id / "attachments").iterdir())
-        assert len(retained) == 2
+        assert len(retained) == 3
         with pytest.raises(ValueError, match="blank"):
-            await app.submit_thread(thread_id=thread_id, prompt=ComposerInput(""))
+            await app.submit_thread(thread_id=thread_id, prompt=ComposerInput(()))
     scratch = tmp_path / "data/threads" / thread_id / "tmp"
     _expire(scratch)
     async with open_harness_ui_app(settings, configuration_path=path) as app:
@@ -194,7 +200,20 @@ async def test_composer_inputs_survive_restart_and_scratch_prune(
         assert all(item.is_dir() for item in retained)
         for item in retained:
             metadata, data = await app.read_thread_attachment(thread_id=thread_id, attachment_id=item.name)
-            assert data == (image.getvalue() if metadata.name == "clipboard.png" else b"notes")
+            assert (
+                data
+                == {"clipboard.png": image.getvalue(), "second.png": second_image.getvalue(), "notes.txt": b"notes"}[
+                    metadata.name
+                ]
+            )
+        from a13n_harness_ui.interactive.history import restore_transcript
+
+        history = StreamRenderer(Status())
+        restore_transcript(history, await app.get_thread_transcript(thread_id=thread_id))
+        sources = [block.source for block in history.transcript.blocks.values()]
+        assert "> " + text + "[image#1] compare with [image#2] using [file#3] end" in sources
+        assert not any("attachments/" in source or "image/png" in source for source in sources)
+        history.transcript.close()
         receipt = await app.submit_thread(thread_id=thread_id, prompt="Recall both inputs")
         await app.wait_root_operation(receipt.receipt_id)
     assert len(observed) == 2
@@ -208,6 +227,13 @@ async def test_composer_inputs_survive_restart_and_scratch_prune(
     ]
     assert any(isinstance(item, BinaryContent) and item.data == image.getvalue() for item in contents)
     assert any(isinstance(item, TextContent) and item.content == text for item in contents)
+    authored = [
+        item.content if isinstance(item, TextContent) else item.data
+        for item in contents
+        if isinstance(item, BinaryContent)
+        or (isinstance(item, TextContent) and item.content in {text, " compare with ", " using ", " end"})
+    ]
+    assert authored == [text, image.getvalue(), " compare with ", second_image.getvalue(), " using ", " end"]
 
 
 @pytest.mark.anyio
