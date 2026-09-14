@@ -88,7 +88,14 @@ async def test_skill_publication_refreshes_successor_state(skills: SkillJourney,
     else:
         path = f"/api/v1/threads/{thread['id']}/runs"
         body = {"expected_thread_version": thread["version"], "input": skills.live.start_body(later)["input"]}
-    barrier = skills.arm("skill.acceptance_prepared", agent_id=agent["agent"]["id"])
+    barriers = [
+        skills.arm("skill.acceptance_prepared", role=role, agent_id=agent["agent"]["id"])
+        for role in (("control", "worker") if operation == "queue" else ("control",))
+    ]
+
+    async def prepared():
+        return any((barrier / "hit-1.json").exists() for barrier in barriers)
+
     task = None
     try:
         if operation == "queue":
@@ -98,9 +105,10 @@ async def test_skill_publication_refreshes_successor_state(skills: SkillJourney,
             await skills.live.release(source_case)
         else:
             task = asyncio.create_task(skills.live.http.post(path, json=body, headers={"Idempotency-Key": uuid4().hex}))
-        await skills.reached(barrier)
+        await skills.live.wait(prepared, bool, "Skill successor acceptance barrier")
         await publish_skill(skills, key, "DOCUMENT_TWO", "ATTACHMENT_TWO", previous=first["skill"])
-        skills.release(barrier)
+        for barrier in barriers:
+            skills.release(barrier)
         if operation == "queue":
             settled = await skills.live.wait(
                 lambda: skills.live.request("GET", "/api/v1/queued-submissions/" + queued["queued_submission_id"]),
@@ -118,7 +126,8 @@ async def test_skill_publication_refreshes_successor_state(skills: SkillJourney,
             run_id = receipt["run_id"]
         assert "ATTACHMENT_TWO" in (await skills.live.finish(run_id))["output_text"]
     finally:
-        skills.release(barrier)
+        for barrier in barriers:
+            skills.release(barrier)
         if task:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
