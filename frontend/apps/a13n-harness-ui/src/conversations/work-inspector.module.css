@@ -1,0 +1,147 @@
+.strip {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  max-width: 860px;
+  width: 100%;
+  margin: 0 auto 6px;
+  color: var(--a13n-secondary);
+  min-width: 0;
+}
+.strip button[data-popup-open] {
+  color: var(--a13n-text);
+  background: var(--a13n-surface);
+}
+.count {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--a13n-secondary);
+}
+.active {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.active > svg {
+  flex-shrink: 0;
+}
+.popup {
+  width: min(600px, calc(100vw - 24px));
+  max-height: min(640px, calc(100dvh - 40px));
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.popup > [data-slot="popover-viewport"] {
+  max-height: min(640px, calc(100dvh - 40px), var(--available-height));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.heading h2 {
+  font-size: 14px;
+  font-weight: 500;
+}
+.caption {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  margin: 0 0 12px;
+}
+.tasks {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.tasks li {
+  display: flex;
+  align-items: start;
+  gap: 10px;
+  padding: 10px 0;
+}
+.tasks li + li {
+  border-top: 1px solid var(--a13n-border);
+}
+.tasks li > svg {
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+.tasks details {
+  flex: 1;
+  min-width: 0;
+}
+.tasks summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.tasks p {
+  margin: 8px 0;
+}
+.tasks dl {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+}
+.tasks dl > div {
+  display: flex;
+  gap: 12px;
+}
+.tasks dt {
+  width: 72px;
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
+}
+.tasks dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.tasks summary:focus-visible,
+.notes summary:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: 3px;
+}
+.in_progress {
+  color: var(--info-foreground);
+}
+.pending,
+.completed {
+  color: var(--a13n-secondary);
+}
+.notes > details {
+  padding: 10px 0;
+}
+.notes > details + details {
+  border-top: 1px solid var(--a13n-border);
+}
+.notes summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.notes details > div {
+  margin-top: 12px;
+}
+.loading {
+  display: grid;
+  gap: 12px;
+  padding: 16px 0;
+}
+@media (max-width: 700px) {
+  .active {
+    display: none;
+  }
+  .strip {
+    justify-content: space-between;
+  }
+}

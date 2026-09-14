@@ -216,6 +216,7 @@ class RunAttemptExecutor[OutputT]:
                     elif isinstance(error, (PluginSelectionError, AgentDefinitionReconstructionError)):
                         code = error.reason
                     elif isinstance(error, RunError) and error.code in {
+                        "execution_usage_exhausted",
                         "environment_required",
                         "search_provider_unavailable",
                         "web_operation_unavailable",
@@ -234,7 +235,14 @@ class RunAttemptExecutor[OutputT]:
                     ):
                         finalization = await self._control.fail_execution(
                             self._committer,
-                            SafeFailure(code=code, message="The RunAttempt could not complete execution."),
+                            SafeFailure(
+                                code=code,
+                                message=(
+                                    "The Run model usage budget is exhausted."
+                                    if code == "execution_usage_exhausted"
+                                    else "The RunAttempt could not complete execution."
+                                ),
+                            ),
                         )
                         _observe_receipt(span, finalization)
                 finally:

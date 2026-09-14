@@ -8,6 +8,11 @@ import { ConversationConfiguration } from "./configuration";
 import { MessageText } from "./message-text";
 import { ChildSavedOutputs } from "./comments";
 import { useThreads } from "./queries";
+import type { FocusDisplay } from "./stream";
+import { LiveOutput } from "./transcript";
+import { ToolActivity } from "./tool-call";
+import { sourceText } from "./tool-presentation";
+import { useChildControlState } from "./child-controls";
 import styles from "./conversation.module.css";
 
 export function ConversationDetails({
@@ -175,15 +180,9 @@ function Operation({ receipt }: { receipt?: string | null }) {
     </section>
   );
 }
-function Children({
-  threadId,
-  reconcile,
-}: {
-  threadId: string;
-  reconcile: () => void;
-}) {
+export function useChildExecutions(threadId: string) {
   const { client } = useTransport();
-  const children = useInfiniteQuery({
+  return useInfiniteQuery({
     queryKey: ["thread", threadId, "children"],
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
@@ -198,9 +197,21 @@ function Children({
       ),
     getNextPageParam: (page) => page.next_cursor ?? undefined,
   });
+}
+export function Children({
+  threadId,
+  reconcile,
+  display,
+}: {
+  threadId: string;
+  reconcile: () => void;
+  display?: FocusDisplay;
+}) {
+  const children = useChildExecutions(threadId);
   return (
-    <section>
-      <h3>Child executions</h3>
+    <section className={styles.children}>
+      {!display && <h3>Child executions</h3>}
+      {children.isPending && <p role="status">Loading subagents…</p>}
       <ErrorNotice
         error={children.error}
         retry={() => void children.refetch()}
@@ -208,7 +219,12 @@ function Children({
       {children.data?.pages
         .flatMap((page) => page.executions)
         .map((child) => (
-          <Child key={child.execution_id} child={child} reconcile={reconcile} />
+          <Child
+            key={child.execution_id}
+            child={child}
+            reconcile={reconcile}
+            live={display?.childOutput(child)}
+          />
         ))}
       {children.data?.pages[0].total === 0 && <p>No child executions.</p>}
       {children.hasNextPage && (
@@ -226,14 +242,21 @@ function Children({
 export function Child({
   child,
   reconcile,
+  live,
 }: {
   child: Schema<"ChildExecutionView">;
   reconcile: () => void;
+  live?: FocusDisplay;
 }) {
   const { client } = useTransport();
   const [open, setOpen] = useState(false);
-  const [instruction, setInstruction] = useState("");
-  const [unknown, setUnknown] = useState(false);
+  const { state: controlState, update: updateControl } = useChildControlState(
+    child.parent_thread_id,
+    child.execution_id,
+  );
+  const { instruction, unknown, pending } = controlState;
+  const setInstruction = (value: string) =>
+    updateControl({ instruction: value });
   const path = {
     thread_id: child.parent_thread_id,
     execution_id: child.execution_id,
@@ -269,17 +292,27 @@ export function Child({
               { params: { path }, body: { prompt: instruction } },
             ),
           ),
+    onMutate: () =>
+      updateControl({ pending: true, error: undefined, outcome: undefined }),
     onSuccess: (outcome, action) => {
       if (outcome.execution_id !== child.execution_id) {
-        setUnknown(true);
+        updateControl({ unknown: true });
         return;
       }
-      if (outcome.accepted && action === "steer") setInstruction("");
+      updateControl({
+        outcome,
+        ...(outcome.accepted && action === "steer" ? { instruction: "" } : {}),
+      });
     },
-    onError: (error) => {
-      if (!(error instanceof ApiError) || error.status >= 500) setUnknown(true);
+    onError: (error) =>
+      updateControl({
+        error,
+        unknown: !(error instanceof ApiError) || error.status >= 500,
+      }),
+    onSettled: () => {
+      updateControl({ pending: false });
+      reconcile();
     },
-    onSettled: reconcile,
   });
   return (
     <details
@@ -294,97 +327,157 @@ export function Child({
           ? " · control unavailable"
           : ""}
       </summary>
-      <small>
-        {child.execution_id} · segment {child.segment_index}
-      </small>
-      {child.failure && <p role="alert">{child.failure.message}</p>}
-      <MessageText text={child.activity.output_preview ?? ""} />
-      {child.activity.output_truncated && (
-        <p>Live preview truncated. Inspect retained child output below.</p>
-      )}
-      {!!child.activity.active_tool_calls?.length && (
-        <details>
-          <summary>Active tools</summary>
-          <pre className={styles.code}>
-            {JSON.stringify(child.activity.active_tool_calls, null, 2)}
-          </pre>
-        </details>
-      )}
-      <ChildSavedOutputs
-        threadId={child.parent_thread_id}
-        executionId={child.execution_id}
-      />
-      <ErrorNotice error={review.error || control.error} />
-      {review.data && (
-        <details>
-          <summary>{review.data.title}</summary>
-          <p>{review.data.summary || review.data.unavailable_reason}</p>
-          <pre className={styles.code}>
-            {review.data.content || JSON.stringify(review.data.value, null, 2)}
-          </pre>
-          {(review.data.truncated || review.data.omitted) && (
-            <p>Some content was omitted by the server.</p>
+      {open && (
+        <>
+          <small>
+            {child.execution_id} · segment {child.segment_index}
+          </small>
+          <dl className={styles.detailGrid}>
+            <div>
+              <dt>Started</dt>
+              <dd>{new Date(child.created_at).toLocaleString()}</dd>
+            </div>
+            <div>
+              <dt>Completed</dt>
+              <dd>
+                {child.completed_at
+                  ? new Date(child.completed_at).toLocaleString()
+                  : "Not completed"}
+              </dd>
+            </div>
+          </dl>
+          {live && (
+            <div className={styles.childLive}>
+              <LiveOutput
+                blocks={[...live.blocks.values()]}
+                gap={live.gap}
+                label="Observed child output since focus · not saved history"
+              />
+            </div>
           )}
-        </details>
-      )}
-      {child.available_actions?.includes("steer") && (
-        <div className={styles.form}>
-          <TextField
-            label={`Instruction for ${child.subagent_name}`}
-            value={instruction}
-            onChange={setInstruction}
-            disabled={control.isPending || unknown}
+          {child.failure && <p role="alert">{child.failure.message}</p>}
+          <details className={styles.activity} open={!live}>
+            <summary>Latest activity snapshot</summary>
+            <MessageText text={child.activity.output_preview ?? ""} />
+            {child.activity.output_truncated && (
+              <p>
+                Activity preview truncated. Inspect retained child output below.
+              </p>
+            )}
+            {[
+              ...(child.activity.recent_tool_calls ?? []),
+              ...(child.activity.active_tool_calls ?? []),
+            ].map((tool) => (
+              <ToolActivity
+                key={tool.tool_call_id}
+                tools={[
+                  {
+                    id: tool.tool_call_id,
+                    name: tool.tool_name,
+                    input: sourceText(tool.arguments),
+                    result:
+                      tool.result === null || tool.result === undefined
+                        ? undefined
+                        : sourceText(tool.result),
+                    inputComplete: tool.status !== "running",
+                    outcome:
+                      tool.status === "running" ? undefined : tool.status,
+                    stopped: child.persisted_status !== "running",
+                    failure:
+                      tool.status === "failed" ? "Tool failed" : undefined,
+                  },
+                ]}
+              />
+            ))}
+            {!!child.activity.dropped_tool_calls && (
+              <p>
+                {child.activity.dropped_tool_calls} earlier tool calls outside
+                this snapshot.
+              </p>
+            )}
+          </details>
+          <ChildSavedOutputs
+            threadId={child.parent_thread_id}
+            executionId={child.execution_id}
           />
-          <Button
-            variant="outline"
-            disabled={!instruction.trim() || control.isPending || unknown}
-            onClick={() => control.mutate("steer")}
-          >
-            Send child instruction
-          </Button>
-        </div>
-      )}
-      {child.available_actions?.includes("cancel") && (
-        <Button
-          variant="outline"
-          disabled={control.isPending || unknown}
-          onClick={() => control.mutate("cancel")}
-        >
-          Stop child
-        </Button>
-      )}
-      {unknown && (
-        <div className={styles.warning}>
-          <p>
-            Acknowledgement unavailable. The child may already have received
-            this control. Your instruction is retained; no retry was sent.
-          </p>
-          <Button
-            variant="outline"
-            onClick={() => {
-              reconcile();
-              void review.refetch();
-            }}
-          >
-            Refresh child state
-          </Button>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setUnknown(false);
-              control.reset();
-            }}
-          >
-            I checked the execution; allow a new control
-          </Button>
-        </div>
-      )}
-      {control.data && !unknown && (
-        <p role="status">
-          {control.data.accepted
-            ? "Control accepted."
-            : "This execution did not accept the control."}
-        </p>
+          <ErrorNotice error={review.error || controlState.error} />
+          {review.data && (
+            <details>
+              <summary>{review.data.title}</summary>
+              <p>{review.data.summary || review.data.unavailable_reason}</p>
+              <pre className={styles.code}>
+                {review.data.content ||
+                  JSON.stringify(review.data.value, null, 2)}
+              </pre>
+              {(review.data.truncated || review.data.omitted) && (
+                <p>Some content was omitted by the server.</p>
+              )}
+            </details>
+          )}
+          {child.available_actions?.includes("steer") && (
+            <div className={styles.form}>
+              <TextField
+                label={`Instruction for ${child.subagent_name}`}
+                value={instruction}
+                onChange={setInstruction}
+                disabled={pending || unknown}
+              />
+              <Button
+                variant="outline"
+                disabled={!instruction.trim() || pending || unknown}
+                onClick={() => control.mutate("steer")}
+              >
+                Send child instruction
+              </Button>
+            </div>
+          )}
+          {child.available_actions?.includes("cancel") && (
+            <Button
+              variant="outline"
+              disabled={pending || unknown}
+              onClick={() => control.mutate("cancel")}
+            >
+              Stop child
+            </Button>
+          )}
+          {unknown && (
+            <div className={styles.warning}>
+              <p>
+                Acknowledgement unavailable. The child may already have received
+                this control. Your instruction is retained; no retry was sent.
+              </p>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  reconcile();
+                  void review.refetch();
+                }}
+              >
+                Refresh child state
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  updateControl({
+                    unknown: false,
+                    error: undefined,
+                    outcome: undefined,
+                  });
+                  control.reset();
+                }}
+              >
+                I checked the execution; allow a new control
+              </Button>
+            </div>
+          )}
+          {controlState.outcome && !unknown && (
+            <p role="status">
+              {controlState.outcome.accepted
+                ? "Control accepted."
+                : "This execution did not accept the control."}
+            </p>
+          )}
+        </>
       )}
     </details>
   );

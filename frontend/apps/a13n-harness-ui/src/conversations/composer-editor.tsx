@@ -148,12 +148,12 @@ export function ComposerEditor({
           },
           ".cm-content": {
             fontFamily: "inherit",
-            minHeight: "100px",
-            padding: "26px 4px 14px",
+            minHeight: "44px",
+            padding: "20px 0 4px",
             lineHeight: "1.6",
           },
           ".cm-scroller": {
-            maxHeight: "280px",
+            maxHeight: "240px",
             overflow: "auto",
             fontFamily: "inherit",
           },

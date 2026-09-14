@@ -220,9 +220,49 @@ export function describeTool(tool: ToolView) {
       label = "Run code";
       kind = "code";
       break;
+    case "task_create":
+      label = "Create task";
+      summary = text(args.subject);
+      break;
+    case "task_update":
+      label = "Update task";
+      summary = [text(args.task_id), text(args.status).replaceAll("_", " ")]
+        .filter(Boolean)
+        .join(" · ");
+      break;
+    case "task_get":
+    case "task_list":
+      label = tool.name === "task_get" ? "Inspect task" : "List tasks";
+      summary = text(args.task_id);
+      break;
+    case "note_write":
+    case "note_delete":
+    case "note_get":
+      label =
+        tool.name === "note_write"
+          ? "Update note"
+          : tool.name === "note_delete"
+            ? "Delete note"
+            : "Read notes";
+      summary = text(args.key);
+      break;
     case "delegate":
       label = "Delegate";
       summary = text(args.subagent_name);
+      break;
+    case "subagent_info":
+    case "wait_subagent":
+    case "steer_subagent":
+    case "cancel_subagent":
+    case "resume_subagent":
+      label = {
+        subagent_info: "Inspect subagent",
+        wait_subagent: "Wait for subagents",
+        steer_subagent: "Guide subagent",
+        cancel_subagent: "Stop subagent",
+        resume_subagent: "Resume subagent",
+      }[tool.name];
+      summary = text(args.execution_id);
       break;
     case "call":
       if (
@@ -386,8 +426,32 @@ export function hostLookupPath(path: string): string | undefined {
 }
 
 export const MAX_ACTIVITY_TOOLS = 16;
-export type ActivityKind = "explore" | "shell" | "web" | "edit";
+export type ActivityKind =
+  "explore" | "shell" | "web" | "edit" | "work" | "subagents";
 export function activityKind(tool: ToolView): ActivityKind | undefined {
+  if (
+    [
+      "task_create",
+      "task_update",
+      "task_get",
+      "task_list",
+      "note_write",
+      "note_delete",
+      "note_get",
+    ].includes(tool.name)
+  )
+    return "work";
+  if (
+    [
+      "delegate",
+      "subagent_info",
+      "wait_subagent",
+      "steer_subagent",
+      "cancel_subagent",
+      "resume_subagent",
+    ].includes(tool.name)
+  )
+    return "subagents";
   const kind = describeTool(tool).kind;
   if (kind === "edit" || kind === "shell" || kind === "web") return kind;
   if (kind === "file" || kind === "search") return "explore";
@@ -452,7 +516,9 @@ export function activitySummary(tools: ToolView[]) {
       ].includes(info.phase),
   );
   let title: string;
-  if (kind === "edit")
+  if (kind === "work" || kind === "subagents")
+    title = `${kind === "work" ? "Tasks & notes" : "Subagents"} · ${count(tools.length, "operation")}`;
+  else if (kind === "edit")
     title = `File changes · ${files ? count(files, "file") : count(tools.length, "operation")}`;
   else if (kind === "shell") {
     const commands = tools.filter((tool) => tool.name === "shell_exec").length;

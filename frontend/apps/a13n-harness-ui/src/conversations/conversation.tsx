@@ -18,6 +18,7 @@ import { readPreference, writePreference } from "../shell/preferences";
 import { Composer, useDraft } from "./composer";
 import { Decisions } from "./decisions";
 import { ConversationDetails } from "./details";
+import { WorkInspector } from "./work-inspector";
 import { Discussion } from "./comments";
 import { useHistory, useThread } from "./queries";
 import { FocusDisplay, showFocusedOutput, watchThread } from "./stream";
@@ -84,6 +85,7 @@ function Conversation({
   const reconcile = useCallback(() => {
     void queries.invalidateQueries({ queryKey: ["thread", threadId] });
     void queries.invalidateQueries({ queryKey: ["threads"] });
+    void queries.invalidateQueries({ queryKey: ["child-saved-output"] });
   }, [queries, threadId]);
   useEffect(() => {
     let paint: ReturnType<typeof setTimeout> | undefined;
@@ -339,13 +341,22 @@ function Conversation({
                 Load earlier messages
               </Button>
             )}
-            {entries.map((entry) => (
+            {entries.map((entry, index) => (
               <div
                 key={`${continuation}:${entry.position}`}
                 data-presence-anchor={`entry:${continuation}:${entry.position}`}
               >
                 <SavedEntry
                   entry={entry}
+                  continuation={
+                    index > 0 &&
+                    !entries[index - 1].parts.some(
+                      (part) => part.kind === "user" || part.kind === "media",
+                    ) &&
+                    !entry.parts.some(
+                      (part) => part.kind === "user" || part.kind === "media",
+                    )
+                  }
                   toolGroups={toolGroups}
                   threadId={threadId}
                 />
@@ -396,6 +407,13 @@ function Conversation({
             New output
           </Button>
         )}
+        <WorkInspector
+          threadId={threadId}
+          continuation={detail.data.continuation_id}
+          display={display}
+          live={showLive}
+          reconcile={reconcile}
+        />
         {!thread.archived && (
           <Composer
             autoFocus={search.get("compose") === "1"}
