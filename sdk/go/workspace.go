@@ -5,7 +5,7 @@ import (
 	"errors"
 )
 
-// WorkspaceClient binds search operations to the authenticated immutable Workspace ID.
+// WorkspaceClient binds Web operations to the authenticated immutable Workspace ID.
 // It shares the parent's transport and is closed when the parent Client is closed.
 type WorkspaceClient struct {
 	client *Client

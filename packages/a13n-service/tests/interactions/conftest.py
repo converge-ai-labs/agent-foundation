@@ -8,9 +8,11 @@ import pytest
 from a13n_harness import HarnessState
 from a13n_service.agents.domain import (
     AgentConfig,
+    AgentRunOverride,
     EffectiveAgentConfig,
     EffectiveAgentModel,
 )
+from a13n_service.agents.invocation import merge_agent_run_override
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.agents.toolsets import default_toolsets
 from a13n_service.database.metadata import service_metadata
@@ -69,8 +71,12 @@ def agent_config() -> AgentConfig:
     )
 
 
-def effective_agent_config() -> EffectiveAgentConfig:
+def effective_agent_config(*, assets_enabled: bool = False) -> EffectiveAgentConfig:
     base = agent_config()
+    override = None
+    if assets_enabled:
+        override = AgentRunOverride(toolsets={"assets": base.toolsets["assets"].model_copy(update={"enabled": True})})
+    merged = merge_agent_run_override(base, override)
     execution = ModelExecutionSnapshot(
         model_id=MODEL_ID,
         model_key=MODEL_KEY,
@@ -80,18 +86,18 @@ def effective_agent_config() -> EffectiveAgentConfig:
     candidate = EffectiveAgentConfig(
         resolved_model=EffectiveAgentModel(
             execution=execution,
-            settings=base.model.settings,
-            characteristics=base.model.characteristics,
+            settings=merged.model.settings,
+            characteristics=merged.model.characteristics,
         ),
-        instructions=base.instructions,
-        input_adapter=base.input_adapter,
-        toolsets=base.toolsets,
-        reviewer=base.reviewer,
-        client_tools=base.client_tools,
-        output_spec=base.output_spec,
-        retries=base.retries,
-        secret_requirements=base.secret_requirements,
-        protocol=base.protocol,
+        instructions=merged.instructions,
+        input_adapter=merged.input_adapter,
+        toolsets=merged.toolsets,
+        reviewer=merged.reviewer,
+        client_tools=merged.client_tools,
+        output_spec=merged.output_spec,
+        retries=merged.retries,
+        secret_requirements=merged.secret_requirements,
+        protocol=merged.protocol,
         content_digest="0" * 64,
     )
     payload = candidate.model_dump(mode="json", by_alias=True, exclude={"content_digest"})

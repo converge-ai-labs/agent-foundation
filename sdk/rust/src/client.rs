@@ -96,7 +96,7 @@ impl Client {
         })
     }
     /// Execute generated operations with the same pool, authentication and
-    /// cancellation as the Search facade. For binary responses, consume the
+    /// cancellation as the Web facade. For binary responses, consume the
     /// body inside the async closure so close() also cancels stream delivery.
     pub async fn execute<T, E>(
         &self,
@@ -287,7 +287,7 @@ impl Client {
         request: &CreateWebProviderRequest,
     ) -> Result<Representation<WebProvider>, Error> {
         let mut body = serde_json::to_value(request).map_err(|_| Error::InvalidInput)?;
-        body["credential"] = Value::String(request.credential.0.clone());
+        body["credential"] = credential_value(&request.credential);
         self.request(Method::POST, &scope.segments(), Some(body), None, None)
             .await
     }
@@ -300,7 +300,7 @@ impl Client {
     ) -> Result<Representation<WebProvider>, Error> {
         let mut body = serde_json::to_value(request).map_err(|_| Error::InvalidInput)?;
         if let Some(credential) = &request.credential {
-            body["credential"] = Value::String(credential.0.clone());
+            body["credential"] = credential_value(credential);
         }
         let mut path = scope.segments().to_vec();
         path.push(provider_id);
@@ -334,6 +334,16 @@ impl Client {
             .await
     }
 }
+
+fn credential_value(credentials: &std::collections::BTreeMap<String, Secret>) -> Value {
+    Value::Object(
+        credentials
+            .iter()
+            .map(|(name, value)| (name.clone(), Value::String(value.0.clone())))
+            .collect(),
+    )
+}
+
 impl Drop for Client {
     fn drop(&mut self) {
         self.close();

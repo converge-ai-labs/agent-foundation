@@ -42,7 +42,7 @@ func TestWebConfiguration(t *testing.T) {
 		t.Log("Toolset omission/null/object serialization verified")
 	})
 }
-func TestSearchAccounts(t *testing.T) {
+func TestWebAccounts(t *testing.T) {
 	Convey("Scoped account writes keep credentials wire-only and preserve ETags", t, func() {
 		var paths []string
 		var bodies []map[string]any
@@ -64,7 +64,9 @@ func TestSearchAccounts(t *testing.T) {
 		client, err := a13n.NewClient("https://service.example/prefix", a13n.NewSecret("service-token"), transport)
 		So(err, ShouldBeNil)
 		defer client.Close()
-		request := a13n.CreateWebProviderRequest{Type: "brave", Name: "Research", Credential: a13n.NewSecret("test-secret")}
+		request := a13n.CreateWebProviderRequest{
+			Type: "brave", Name: "Research", Credential: map[string]a13n.Secret{"api_key": a13n.NewSecret("test-secret")},
+		}
 		raw, err := json.Marshal(request)
 		So(err, ShouldBeNil)
 		So(string(raw)+fmt.Sprintf("%+v %#v", request, request), ShouldNotContainSubstring, "test-secret")
@@ -73,7 +75,7 @@ func TestSearchAccounts(t *testing.T) {
 		So(result.ETag, ShouldEqual, `"v1"`)
 		So(result.RequestID, ShouldEqual, "req_test")
 		So(result.Value.ID, ShouldEqual, "wprov_test")
-		So(bodies[0]["credential"], ShouldEqual, "test-secret")
+		So(bodies[0]["credential"], ShouldResemble, map[string]any{"api_key": "test-secret"})
 		raw, err = json.Marshal(result)
 		So(err, ShouldBeNil)
 		So(string(raw), ShouldNotContainSubstring, "unexpected-secret")
@@ -87,7 +89,7 @@ func TestSearchAccounts(t *testing.T) {
 		t.Log("Create, update, organization routing, ETag, and redaction verified")
 	})
 }
-func TestSearchCollections(t *testing.T) {
+func TestWebCollections(t *testing.T) {
 	Convey("Catalog, account pages, references, and probes retain Native meaning", t, func() {
 		calls := 0
 		transport := roundTrip(func(req *http.Request) (*http.Response, error) {
@@ -133,7 +135,7 @@ func TestSearchCollections(t *testing.T) {
 		So(calls, ShouldEqual, 5)
 	})
 }
-func TestUncertainSearchMutations(t *testing.T) {
+func TestUncertainWebMutations(t *testing.T) {
 	Convey("Create, rotation, and probes are never replayed after a transport failure", t, func() {
 		calls := 0
 		client, err := a13n.NewClient("https://service.example", a13n.NewSecret("token"), roundTrip(func(req *http.Request) (*http.Response, error) {
@@ -143,10 +145,10 @@ func TestUncertainSearchMutations(t *testing.T) {
 		So(err, ShouldBeNil)
 		defer client.Close()
 		ctx := context.Background()
-		secret := a13n.NewSecret("test-secret")
-		_, err = client.CreateWebProvider(ctx, scope, a13n.CreateWebProviderRequest{Type: "exa", Name: "Research", Credential: secret})
+		credential := map[string]a13n.Secret{"api_key": a13n.NewSecret("test-secret")}
+		_, err = client.CreateWebProvider(ctx, scope, a13n.CreateWebProviderRequest{Type: "exa", Name: "Research", Credential: credential})
 		So(err, ShouldEqual, a13n.ErrTransport)
-		_, err = client.UpdateWebProvider(ctx, scope, "wprov_test", `"v1"`, a13n.UpdateWebProviderRequest{Credential: &secret})
+		_, err = client.UpdateWebProvider(ctx, scope, "wprov_test", `"v1"`, a13n.UpdateWebProviderRequest{Credential: credential})
 		So(err, ShouldEqual, a13n.ErrTransport)
 		_, err = client.TestWebProvider(ctx, scope, "wprov_test")
 		So(err, ShouldEqual, a13n.ErrTransport)
@@ -154,7 +156,7 @@ func TestUncertainSearchMutations(t *testing.T) {
 		So(err.Error(), ShouldNotContainSubstring, "sensitive")
 	})
 }
-func TestSearchErrorsAndClose(t *testing.T) {
+func TestWebErrorsAndClose(t *testing.T) {
 	Convey("Errors are bounded and client shutdown cancels in-flight delivery", t, func() {
 		client, err := a13n.NewClient("https://service.example", a13n.NewSecret("token"), roundTrip(func(req *http.Request) (*http.Response, error) {
 			return response(412, `{"error":{"code":"precondition_failed","message":"Changed","request_id":"req_test"}}`), nil

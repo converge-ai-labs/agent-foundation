@@ -168,13 +168,13 @@ type Representation[T any] struct {
 type CreateWebProviderRequest struct {
 	Type          string                     `json:"type"`
 	Name          string                     `json:"name"`
-	Credential    Secret                     `json:"-"`
+	Credential    map[string]Secret          `json:"-"`
 	Configuration map[string]json.RawMessage `json:"configuration,omitempty"`
 	Enabled       *bool                      `json:"enabled,omitempty"`
 }
 type UpdateWebProviderRequest struct {
 	Name          *string                    `json:"name,omitempty"`
-	Credential    *Secret                    `json:"-"`
+	Credential    map[string]Secret          `json:"-"`
 	Configuration map[string]json.RawMessage `json:"configuration,omitempty"`
 	Enabled       *bool                      `json:"enabled,omitempty"`
 }

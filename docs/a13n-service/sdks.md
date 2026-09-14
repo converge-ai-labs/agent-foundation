@@ -94,7 +94,7 @@ async def search_accounts(base_url: str, token: str):
         return page.items, page.next_cursor
 ```
 
-`Client(base_url, token, *, timeout=30, transport=None)` owns its supplied `httpx2.AsyncBaseTransport`. It does not follow redirects or trust environment proxy configuration. Search facade responses are bounded to 1 MiB. Lists default to 100 unless you supply a limit; follow returned cursors explicitly.
+`Client(base_url, token, *, timeout=30, transport=None)` owns its supplied `httpx2.AsyncBaseTransport`. It does not follow redirects or trust environment proxy configuration. Web facade responses are bounded to 1 MiB. Lists default to 100 unless you supply a limit; follow returned cursors explicitly.
 
 Detail/create/update return `Representation(value, etag, request_id)`. Collection/probe operations return their own values. Updates require a non-weak ETag. `ApiError` carries status/code/message/details/request ID/retry guidance; `ProtocolError` covers invalid, oversized, or schema-invalid responses; `TransportError` can leave mutation outcome unknown. No automatic SDK retries occur.
 
@@ -102,18 +102,18 @@ Use `aclose()` or an async context manager. Closing cancels local requests, clea
 
 ## Go and Rust
 
-| Behavior              | Go                                                                  | Rust                                             |
-| --------------------- | ------------------------------------------------------------------- | ------------------------------------------------ |
-| Constructor           | `NewClient(baseURL, Secret, http.RoundTripper)`                     | `Client::new(base_url, Secret)`                  |
-| Credentials           | `NewSecret(value)`                                                  | `Secret::new(value)`                             |
-| Injected transport    | Owned supplied RoundTripper; nil clones the default                 | No public injection/transport builder            |
-| Timeout               | 30 seconds; per-call context also applies                           | 30 seconds; dropping a request future cancels it |
-| Retry policy          | No SDK retry loop; underlying transport behavior is separate        | Explicit retry-never policy                      |
-| Redirects             | Not followed                                                        | Not followed                                     |
-| Proxy behavior        | Cloned Go default transport retains its normal environment handling | Explicit `no_proxy()`                            |
-| Search response bound | 1 MiB                                                               | 1 MiB                                            |
-| List default          | Zero option omits limit; Service default 50                         | `None` omits limit; Service default 50           |
-| Close                 | `Close()` cancels lifetime and closes idle connections              | `close()` cancels requests and releases the pool |
+| Behavior           | Go                                                                  | Rust                                             |
+| ------------------ | ------------------------------------------------------------------- | ------------------------------------------------ |
+| Constructor        | `NewClient(baseURL, Secret, http.RoundTripper)`                     | `Client::new(base_url, Secret)`                  |
+| Credentials        | `map[string]Secret{"api_key": NewSecret(value)}`                    | `BTreeMap<String, Secret>`                       |
+| Injected transport | Owned supplied RoundTripper; nil clones the default                 | No public injection/transport builder            |
+| Timeout            | 30 seconds; per-call context also applies                           | 30 seconds; dropping a request future cancels it |
+| Retry policy       | No SDK retry loop; underlying transport behavior is separate        | Explicit retry-never policy                      |
+| Redirects          | Not followed                                                        | Not followed                                     |
+| Proxy behavior     | Cloned Go default transport retains its normal environment handling | Explicit `no_proxy()`                            |
+| Web response bound | 1 MiB                                                               | 1 MiB                                            |
+| List default       | Zero option omits limit; Service default 50                         | `None` omits limit; Service default 50           |
+| Close              | `Close()` cancels lifetime and closes idle connections              | `close()` cancels requests and releases the pool |
 
 Go operations take `context.Context`; Workspace binding shares the parent lifetime. `Representation[T]` preserves `ETag` and `RequestID`. Handle `ApiError`, `ErrTransport`, `ErrProtocol`, and `ErrClosed`; caller cancellation propagates its context error.
 
@@ -123,13 +123,13 @@ See the source package READMEs for language-native examples: [Python](https://gi
 
 ## Generated low-level HTTP
 
-Python imports models and operation modules from `a13n.generated`. Run `await client.execute(lambda api: operation.asyncio_detailed(..., client=api))`. The returned response retains status, headers, raw content and the typed success/error union. Request models are attrs classes, separate from the stable Pydantic Search facade. Use generated enums in constructors; `UNSET` omits a field and `None` sends null. For binary upload, `File(payload=binary_file)` is sent in bounded async chunks. For download, use `async with client.stream(operation.build_request(...))` and consume `aiter_bytes()` inside the context.
+Python imports models and operation modules from `a13n.generated`. Run `await client.execute(lambda api: operation.asyncio_detailed(..., client=api))`. The returned response retains status, headers, raw content and the typed success/error union. Request models are attrs classes, separate from the stable Pydantic Web facade. Use generated enums in constructors; `UNSET` omits a field and `None` sends null. For binary upload, `File(payload=binary_file)` is sent in bounded async chunks. For download, use `async with client.stream(operation.build_request(...))` and consume `aiter_bytes()` inside the context.
 
 Go imports full schemas from the module's `generated` package. `client.API()` returns the generated operations over the same transport. `WithResponse` methods decode typed status-specific bodies and retain the underlying response headers. Raw methods return `*http.Response` for streaming; callers close its body. Nullable fields use `nullable.Nullable[T]`, and generated union methods expose typed branches.
 
 Rust imports `a13n::generated::{apis, models}` and uses `client.execute(async |api| operation(api, ...).await).await`. Ordinary JSON results contain `data`, `status` and `headers`; generated operation errors preserve their response evidence. Optional nullable fields use `Option<Option<T>>`. Binary response bodies must be consumed inside the closure to stay within owner cancellation.
 
-These entry points share the Search client's authentication, pool and lifetime, but retain low-level result types rather than the Search facade's error mapping or 1 MiB JSON response bound. They perform no automatic mutation retries. Low-level generated bindings are not complete JSON Schema validators, pagination workflows, SSE reconnectors, or WebSocket clients. `RunStatus` preserves unknown strings in Python/Rust without opening closed union discriminator tags. Use the actual returned status and the documented schema's error union rather than assuming that completion implies success.
+These entry points share the Web client's authentication, pool and lifetime, but retain low-level result types rather than the Web facade's error mapping or 1 MiB JSON response bound. They perform no automatic mutation retries. Low-level generated bindings are not complete JSON Schema validators, pagination workflows, SSE reconnectors, or WebSocket clients. `RunStatus` preserves unknown strings in Python/Rust without opening closed union discriminator tags. Use the actual returned status and the documented schema's error union rather than assuming that completion implies success.
 
 ## Compatibility and development
 

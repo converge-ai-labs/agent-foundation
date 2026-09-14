@@ -90,7 +90,9 @@ def test_scoped_crud_etags_and_credentials_are_wire_only():
                 headers={"ETag": '"v1"', "X-Request-ID": "req_test"},
             )
 
-        creation = CreateWebProviderRequest(type="brave", name="Research", credential=SecretStr("test-secret"))
+        creation = CreateWebProviderRequest(
+            type="brave", name="Research", credential={"api_key": SecretStr("test-secret")}
+        )
         assert "test-secret" not in repr(creation) + creation.model_dump_json()
         async with Client(
             "https://service.example/prefix", "service-token", transport=httpx2.MockTransport(respond)
@@ -98,7 +100,7 @@ def test_scoped_crud_etags_and_credentials_are_wire_only():
             result = await client.create_web_provider(SCOPE, creation)
             assert result.etag == '"v1"' and result.request_id == "req_test"
             assert "unexpected-secret" not in repr(result) + result.model_dump_json()
-            assert json.loads(requests[-1].content)["credential"] == "test-secret"
+            assert json.loads(requests[-1].content)["credential"] == {"api_key": "test-secret"}
             await client.update_web_provider(
                 SCOPE, result.value.id, result.etag, UpdateWebProviderRequest(enabled=False)
             )
@@ -174,11 +176,16 @@ def test_uncertain_mutations_never_replay_or_expose_transport_errors(operation):
                 if operation == "create":
                     await client.create_web_provider(
                         SCOPE,
-                        CreateWebProviderRequest(type="exa", name="Research", credential=SecretStr("test-secret")),
+                        CreateWebProviderRequest(
+                            type="exa", name="Research", credential={"api_key": SecretStr("test-secret")}
+                        ),
                     )
                 elif operation == "update":
                     await client.update_web_provider(
-                        SCOPE, "wprov_test", '"v1"', UpdateWebProviderRequest(credential=SecretStr("test-secret"))
+                        SCOPE,
+                        "wprov_test",
+                        '"v1"',
+                        UpdateWebProviderRequest(credential={"api_key": SecretStr("test-secret")}),
                     )
                 else:
                     await client.test_web_provider(SCOPE, "wprov_test")

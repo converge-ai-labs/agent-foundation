@@ -91,9 +91,6 @@ Python, Go, Rust, and TypeScript expose Web Provider management and typed Toolse
 import os
 
 from a13n import Client, CreateWebProviderRequest
-from pydantic import SecretStr
-
-
 async def create_provider():
     async with Client(os.environ["A13N_URL"], os.environ["A13N_TOKEN"]) as client:
         workspace = await client.workspace()
@@ -101,7 +98,7 @@ async def create_provider():
             CreateWebProviderRequest(
                 type="exa",
                 name="Research Web",
-                credential=SecretStr(os.environ["EXA_API_KEY"]),
+                credential={"api_key": os.environ["EXA_API_KEY"]},
             )
         )
         return saved.value.id, saved.etag

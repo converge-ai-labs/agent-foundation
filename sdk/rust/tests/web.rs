@@ -1,5 +1,6 @@
 use a13n::*;
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -19,6 +20,10 @@ struct Server {
     url: String,
     requests: mpsc::UnboundedReceiver<Request>,
     task: JoinHandle<()>,
+}
+
+fn credentials(value: &str) -> BTreeMap<String, Secret> {
+    BTreeMap::from([("api_key".into(), Secret::new(value))])
 }
 impl Drop for Server {
     fn drop(&mut self) {
@@ -114,7 +119,7 @@ fn toolset_configuration_is_lossless_and_tri_state() {
         serde_json::to_value(config).unwrap(),
         json!({"toolsets":null})
     );
-    let request = CreateWebProviderRequest::new("brave", "Research", Secret::new("test-secret"));
+    let request = CreateWebProviderRequest::new("brave", "Research", credentials("test-secret"));
     assert!(
         !format!("{request:?} {}", serde_json::to_string(&request).unwrap())
             .contains("test-secret")
@@ -125,7 +130,7 @@ fn toolset_configuration_is_lossless_and_tri_state() {
 async fn account_crud_preserves_scope_etags_and_write_only_credentials() {
     let mut server = server(|_| Some((200, provider()))).await;
     let client = Client::new(&server.url, Secret::new("service-token")).unwrap();
-    let request = CreateWebProviderRequest::new("brave", "Research", Secret::new("test-secret"));
+    let request = CreateWebProviderRequest::new("brave", "Research", credentials("test-secret"));
     let result = client
         .create_web_provider(&scope(), &request)
         .await
@@ -135,7 +140,7 @@ async fn account_crud_preserves_scope_etags_and_write_only_credentials() {
     assert!(!format!("{result:?}").contains("unexpected-secret"));
     let sent = server.requests.recv().await.unwrap();
     assert_eq!(sent.method, "POST");
-    assert_eq!(sent.body["credential"], "test-secret");
+    assert_eq!(sent.body["credential"], json!({"api_key":"test-secret"}));
     assert!(sent.headers.contains("authorization: bearer service-token"));
     client
         .update_web_provider(
@@ -243,7 +248,7 @@ async fn uncertain_mutations_are_not_replayed() {
         client
             .create_web_provider(
                 &scope(),
-                &CreateWebProviderRequest::new("exa", "Research", Secret::new("test-secret"))
+                &CreateWebProviderRequest::new("exa", "Research", credentials("test-secret"))
             )
             .await,
         Err(Error::Transport)
@@ -255,7 +260,7 @@ async fn uncertain_mutations_are_not_replayed() {
                 "wprov_test",
                 "\"v1\"",
                 &UpdateWebProviderRequest {
-                    credential: Some(Secret::new("test-secret")),
+                    credential: Some(credentials("test-secret")),
                     ..Default::default()
                 }
             )

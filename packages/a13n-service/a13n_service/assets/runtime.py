@@ -17,9 +17,7 @@ from pydantic_ai.toolsets import FunctionToolset
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.agents.domain import AgentConfig
 from a13n_service.agents.models import AgentRevisionRecord
-from a13n_service.agents.toolsets import enabled_tool
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, WorkspaceAction, authorize_agent, authorize_workspace
 from a13n_service.iam.domain import AuthorizationError, PrincipalType
 from a13n_service.interactions.attempts import (
@@ -176,7 +174,6 @@ class AssetRuntime:
             or revision.organization_id != run.organization_id
             or revision.workspace_id != selection.workspace_id
             or revision.agent_id != selection.agent_id
-            or enabled_tool(AgentConfig.model_validate(revision.config).toolsets, "assets", "publish") is None
         ):
             raise asset_content_invalid()
         actor = AuthenticatedActor(

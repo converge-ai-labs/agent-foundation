@@ -130,7 +130,7 @@ class CreateWebProviderRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     type: Literal["brave", "exa"]
     name: str
-    credential: SecretStr = Field(repr=False)
+    credential: dict[str, SecretStr] = Field(repr=False)
     configuration: dict[str, JsonValue] = Field(default_factory=dict)
     enabled: bool = True
 
@@ -140,4 +140,4 @@ class UpdateWebProviderRequest(BaseModel):
     name: str | None = None
     configuration: dict[str, JsonValue] | None = None
     enabled: bool | None = None
-    credential: SecretStr | None = Field(default=None, repr=False)
+    credential: dict[str, SecretStr] | None = Field(default=None, repr=False)

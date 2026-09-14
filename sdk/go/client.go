@@ -176,7 +176,7 @@ func (client *Client) CreateWebProvider(ctx context.Context, scope WebProviderSc
 	if err != nil {
 		return Representation[WebProvider]{}, err
 	}
-	body := map[string]any{"type": value.Type, "name": value.Name, "credential": value.Credential.value}
+	body := map[string]any{"type": value.Type, "name": value.Name, "credential": revealSecrets(value.Credential)}
 	if value.Configuration != nil {
 		body["configuration"] = value.Configuration
 	}
@@ -204,9 +204,17 @@ func (client *Client) UpdateWebProvider(ctx context.Context, scope WebProviderSc
 		body["enabled"] = *value.Enabled
 	}
 	if value.Credential != nil {
-		body["credential"] = value.Credential.value
+		body["credential"] = revealSecrets(value.Credential)
 	}
 	return request[WebProvider](ctx, client, "PATCH", path, etag, nil, body)
+}
+
+func revealSecrets(values map[string]Secret) map[string]string {
+	revealed := make(map[string]string, len(values))
+	for name, value := range values {
+		revealed[name] = value.value
+	}
+	return revealed
 }
 func (client *Client) TestWebProvider(ctx context.Context, scope WebProviderScope, providerID string) (Representation[WebProviderTestResult], error) {
 	path, err := webProviderPath(scope, providerID, "/test")

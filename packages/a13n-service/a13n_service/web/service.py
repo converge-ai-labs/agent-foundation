@@ -93,7 +93,7 @@ class WebProviderService:
                     created_at=now,
                     updated_at=now,
                 )
-                record.replace_credential(json.dumps(credentials.model_dump(mode="json")), self.protector)
+                record.replace_credential(json.dumps(credentials), self.protector)
                 session.add(record)
                 self.audit(session, actor, record, "create", tuple(request.model_fields_set))
                 await session.flush()
@@ -146,7 +146,7 @@ class WebProviderService:
                         changes.append(key)
                 if request.credential is not None:
                     credentials = self._validate_credentials(record.type, request.credential)
-                    record.replace_credential(json.dumps(credentials.model_dump(mode="json")), self.protector)
+                    record.replace_credential(json.dumps(credentials), self.protector)
                     changes.append("credential")
                 if changes:
                     record.normalized_name = record.name.casefold()
@@ -170,9 +170,9 @@ class WebProviderService:
                 category=ErrorCategory.invalid_request,
             ) from error
 
-    def _validate_credentials(self, provider_type: str, value: object):
+    def _validate_credentials(self, provider_type: str, value: object) -> dict[str, object]:
         try:
-            return self.registry.validate_credentials(provider_type, value)
+            return self.registry.credential_payload(provider_type, value)
         except ValueError as error:
             raise WebProviderError(
                 "web_provider_credential_invalid",

@@ -7,10 +7,10 @@ from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from anyio import move_on_after
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretBytes, SecretStr, TypeAdapter
 
 from a13n_service.provider_plugins.api import WebProviderRegistration, WebProviderRuntime
 
@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("a13n_service.web.registry")
 _RUNTIME_CLEANUP_TIMEOUT_SECONDS = 1
+_JSON_SERIALIZER = TypeAdapter(Any)
 
 
 class WebProviderRegistry:
@@ -46,6 +47,16 @@ class WebProviderRegistry:
 
     def validate_credentials(self, provider_type: str, value: object) -> BaseModel:
         return self.require(provider_type).credential_model.model_validate(value)
+
+    def credential_payload(self, provider_type: str, value: object) -> dict[str, object]:
+        """Validate credentials and reveal secret fields only for encrypted persistence."""
+
+        credentials = self.validate_credentials(provider_type, value)
+        revealed = _reveal_secrets(credentials.model_dump(mode="python", by_alias=True))
+        payload = _JSON_SERIALIZER.dump_python(revealed, mode="json")
+        if not isinstance(payload, dict):
+            raise TypeError("Web Provider credentials must serialize as an object")
+        return payload
 
     @asynccontextmanager
     async def runtime(self, provider_type: str) -> AsyncIterator[WebProviderRuntime]:
@@ -111,6 +122,18 @@ def built_in_web_provider_registry(*, transport: WebProviderTransport | None = N
             for registration in registrations
         )
     return WebProviderRegistry(registrations)
+
+
+def _reveal_secrets(value: object) -> object:
+    if isinstance(value, SecretStr):
+        return value.get_secret_value()
+    if isinstance(value, SecretBytes):
+        return value.get_secret_value().decode("utf-8")
+    if isinstance(value, dict):
+        return {key: _reveal_secrets(item) for key, item in value.items()}
+    if isinstance(value, list | tuple | set | frozenset):
+        return [_reveal_secrets(item) for item in value]
+    return value
 
 
 __all__ = ["WebProviderRegistry", "built_in_web_provider_registry"]

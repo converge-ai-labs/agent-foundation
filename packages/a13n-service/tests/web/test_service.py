@@ -1,15 +1,27 @@
+import a13n_service.web.probe as probe_module
 import httpx2
 import pytest
+from a13n_harness.capabilities.web import (
+    WebProviderError as HarnessWebProviderError,
+)
+from a13n_harness.capabilities.web import (
+    WebScrapeResult,
+    WebSearchResponse,
+)
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthorizationError
 from a13n_service.iam.models import RoleBindingRecord, SecurityAuditRecord, WorkspaceRecord
+from a13n_service.provider_plugins import WebProviderRegistration
 from a13n_service.storage import transaction
 from a13n_service.temporal import utc_now
 from a13n_service.web.cleanup import WebProviderOwnerCleanup
 from a13n_service.web.domain import CreateWebProviderRequest, UpdateWebProviderRequest
 from a13n_service.web.models import WebProviderRecord
 from a13n_service.web.probe import test_account as probe_account
+from a13n_service.web.registry import WebProviderRegistry
 from a13n_service.web.resources import WebProviderError
+from a13n_service.web.service import WebProviderService
+from pydantic import BaseModel, ConfigDict, SecretStr
 from sqlalchemy import select
 
 from ..models.conftest import WORKSPACE_ID, actor, protector
@@ -17,6 +29,58 @@ from ..resource_scope_helpers import organization_admin, sibling_workspace
 from .test_adapters import transport
 
 pytestmark = pytest.mark.anyio
+
+
+class _EmptyConfiguration(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class _NestedCredentials(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    api_key: SecretStr
+    nested: dict[str, SecretStr]
+    tenant: str | None = "default"
+
+
+class _ProbeRuntime:
+    def __init__(self, *, failure: str | None = None) -> None:
+        self.calls: list[str] = []
+        self.closed = 0
+        self.failure = failure
+        self.credentials: list[_NestedCredentials] = []
+
+    async def search(self, *, credentials, **_kwargs):
+        self.calls.append("search")
+        self.credentials.append(_NestedCredentials.model_validate(credentials))
+        if self.failure is not None:
+            raise HarnessWebProviderError(self.failure)
+        return WebSearchResponse(results=())
+
+    async def scrape(self, *, credentials, request, policy, **_kwargs):
+        self.calls.append("scrape")
+        self.credentials.append(_NestedCredentials.model_validate(credentials))
+        await policy.authorize(request.url, purpose="scrape")
+        if self.failure is not None:
+            raise HarnessWebProviderError(self.failure)
+        return WebScrapeResult(content="", source_url=request.url, canonical_url=request.url)
+
+    async def aclose(self) -> None:
+        self.closed += 1
+
+
+def _custom_service(web_sessions, secret_protector, runtime, *, search: bool, scrape: bool) -> WebProviderService:
+    registration = WebProviderRegistration(
+        type="custom_web",
+        display_name="Custom Web",
+        configuration_model=_EmptyConfiguration,
+        credential_model=_NestedCredentials,
+        setup_url="https://example.com/setup",
+        factory=lambda: runtime,
+        supports_search=search,
+        supports_scrape=scrape,
+    )
+    return WebProviderService(web_sessions, secret_protector, WebProviderRegistry((registration,)))
 
 
 async def create(service, name="Search", **kwargs):
@@ -73,6 +137,56 @@ async def test_secrets_etags_rotation_and_noop(web_service, web_sessions) -> Non
     with pytest.raises(WebProviderError) as duplicate:
         await create(web_service, "SEARCH")
     assert duplicate.value.code == "web_provider_name_conflict"
+
+
+async def test_nested_secret_credentials_survive_create_rotation_and_runtime(web_sessions) -> None:
+    secret_protector = protector()
+    runtime = _ProbeRuntime()
+    service = _custom_service(web_sessions, secret_protector, runtime, search=True, scrape=False)
+    account = await service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=CreateWebProviderRequest(
+            type="custom_web",
+            name="Custom",
+            credential={"api_key": "initial-secret", "nested": {"token": "nested-secret"}, "tenant": None},
+        ),
+    )
+    assert "secret" not in account.model_dump_json()
+    async with transaction(web_sessions) as session:
+        record = await session.get(WebProviderRecord, account.id)
+        saved = record.credential_snapshot().decrypt(secret_protector)
+        assert "initial-secret" in saved and "nested-secret" in saved and "**********" not in saved
+
+    rotated = await service.update(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        provider_id=account.id,
+        if_match=resource_etag(account.id, account.updated_at),
+        request=UpdateWebProviderRequest(
+            credential={"api_key": "rotated-secret", "nested": {"token": "rotated-nested"}, "tenant": None}
+        ),
+    )
+    result = await probe_account(
+        service,
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        provider_id=rotated.id,
+    )
+    assert result.success and runtime.calls == ["search"] and runtime.closed == 1
+    assert runtime.credentials[0].api_key.get_secret_value() == "rotated-secret"
+    assert runtime.credentials[0].nested["token"].get_secret_value() == "rotated-nested"
+    assert runtime.credentials[0].tenant is None
+
+    with pytest.raises(WebProviderError) as invalid:
+        await service.update(
+            actor=actor(),
+            workspace_id=WORKSPACE_ID,
+            provider_id=account.id,
+            if_match=resource_etag(rotated.id, rotated.updated_at),
+            request=UpdateWebProviderRequest(credential={"api_key": "must-not-leak", "nested": {"token": None}}),
+        )
+    assert "must-not-leak" not in str(invalid.value)
 
 
 async def test_scope_visibility_owning_mutations_and_pagination(web_service, web_sessions) -> None:
@@ -157,6 +271,71 @@ async def test_saved_probe_one_dispatch_and_concurrent_changes(web_service, web_
             transport=transport(changed),
         )
     assert conflict.value.code == "web_provider_changed"
+
+
+@pytest.mark.parametrize(
+    ("search", "scrape", "expected"),
+    [(True, False, "search"), (False, True, "scrape"), (True, True, "search")],
+)
+async def test_saved_probe_chooses_one_supported_operation_and_reauthorizes(
+    web_sessions,
+    monkeypatch,
+    search,
+    scrape,
+    expected,
+) -> None:
+    runtime = _ProbeRuntime()
+    service = _custom_service(web_sessions, protector(), runtime, search=search, scrape=scrape)
+    account = await service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=CreateWebProviderRequest(
+            type="custom_web",
+            name="Probe",
+            credential={"api_key": "secret", "nested": {"token": "nested"}},
+        ),
+    )
+    authorize_scope = probe_module.authorize_scope
+    authorizations = 0
+
+    async def tracked_authorize_scope(*args, **kwargs):
+        nonlocal authorizations
+        authorizations += 1
+        return await authorize_scope(*args, **kwargs)
+
+    monkeypatch.setattr(probe_module, "authorize_scope", tracked_authorize_scope)
+    result = await probe_account(
+        service,
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        provider_id=account.id,
+    )
+    assert result.success
+    assert runtime.calls == [expected]
+    assert runtime.closed == 1
+    assert authorizations == 3  # Initial snapshot, post-dispatch reauthorization, and audit lock.
+
+
+async def test_saved_probe_reports_failure_and_closes_runtime(web_sessions) -> None:
+    runtime = _ProbeRuntime(failure="web_scrape_unavailable")
+    service = _custom_service(web_sessions, protector(), runtime, search=False, scrape=True)
+    account = await service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=CreateWebProviderRequest(
+            type="custom_web",
+            name="Failing",
+            credential={"api_key": "secret", "nested": {"token": "nested"}},
+        ),
+    )
+    result = await probe_account(
+        service,
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        provider_id=account.id,
+    )
+    assert not result.success and result.code == "web_scrape_unavailable"
+    assert runtime.calls == ["scrape"] and runtime.closed == 1
 
 
 async def test_workspace_cleanup_erases_material_but_retains_identity(web_service, web_sessions) -> None:

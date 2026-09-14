@@ -21,7 +21,7 @@ SDK language versions and implemented coverage are independent:
 | Python, Go, Rust | Generated complete Native HTTP bindings, plus the compatible Web Provider facade and Workspace binding |
 | Companion CLI    | Help/version only                                                                                      |
 
-The three Search facades preserve search-only Agent configuration/Run override fields; their separate generated models cover the full ordinary HTTP contract. SSE and WebSocket recovery remain implemented only by TypeScript. See [Service SDKs](../docs/a13n-service/sdks.md) for examples, constructor options, timeouts, retries, errors, pagination, binary transfer, and shutdown boundaries.
+The Python, Go, and Rust Web facades preserve Toolset Agent configuration/Run override fields; their separate generated models cover the full ordinary HTTP contract. SSE and WebSocket recovery remain implemented only by TypeScript. See [Service SDKs](../docs/a13n-service/sdks.md) for examples, constructor options, timeouts, retries, errors, pagination, binary transfer, and shutdown boundaries.
 
 All languages consume `sdk/openapi.json`. `make sdk-generate` exports Service and regenerates the bindings; `make sdk-generated-check` checks the same result without changing committed files. Local pre-commit regeneration and CI consistency are described in [Native SDK generation](codegen/README.md).
 
@@ -40,4 +40,4 @@ The CLI releases as six platform-specific binary archives plus `SHA256SUMS` thro
 
 Service Agent configuration uses `connection_tools` arrays. Entries contain `connection_id`, optional `tools`, `defer_loading` (default `false`), `permission` (default `inherit`), and optional exact per-tool `permissions`. An omitted or null entry-level `tools` selects all tools; an empty array selects none. Run overrides inherit omitted categories and replace supplied arrays, including clearing with `[]`. Category-level null, aliases, `exposure`, and inline credentials are invalid.
 
-The TypeScript generated Native types preserve these distinctions. Python, Go, and Rust preserve unknown Service-owned fields in their search-only wrappers but do not locally validate the full external-tool configuration. Do not translate the removed alias-keyed shape. See [External tools](../docs/a13n-service/external-tools.md) for request examples and execution semantics.
+The TypeScript generated Native types preserve these distinctions. Python, Go, and Rust preserve unknown Service-owned fields in their Web wrappers but do not locally validate the full external-tool configuration. Do not translate the removed alias-keyed shape. See [External tools](../docs/a13n-service/external-tools.md) for request examples and execution semantics.

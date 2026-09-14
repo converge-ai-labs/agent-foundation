@@ -22,7 +22,7 @@ print(a13n.__version__)
 
 ## Web Provider accounts
 
-Bind API Key operations with `await client.workspace()`. This reads `/api/v1/auth/context` once and returns search operations without a Workspace argument. The binding uses the immutable Workspace ID and shares the parent transport and shutdown. The parent client retains explicit `WebProviderScope` operations; Service always enforces the credential boundary.
+Bind API Key operations with `await client.workspace()`. This reads `/api/v1/auth/context` once and returns Web operations without a Workspace argument. The binding uses the immutable Workspace ID and shares the parent transport and shutdown. The parent client retains explicit `WebProviderScope` operations; Service always enforces the credential boundary.
 
 ```python
 from a13n import AgentRunOverride, Client, SearchToolConfiguration, ToolSelection, ToolsetSelection
@@ -52,7 +52,7 @@ replace = AgentRunOverride(
 ).to_wire()
 ```
 
-Use `CreateWebProviderRequest` / `UpdateWebProviderRequest` and `pydantic.SecretStr` for write-only credential input. Ordinary model diagnostics redact the key; the client reveals it only while serializing an authorized request. `test_web_provider` sends one quota-consuming probe only when called. Use `aclose()` or an async context manager to release the transport.
+Use `CreateWebProviderRequest` / `UpdateWebProviderRequest` with a field-name-to-`pydantic.SecretStr` credential dictionary, such as `{"api_key": SecretStr(value)}`. Ordinary model diagnostics redact the values; the client reveals them only while serializing an authorized request. `test_web_provider` sends one quota-consuming probe only when called. Use `aclose()` or an async context manager to release the transport.
 
 ## Generated HTTP operations
 

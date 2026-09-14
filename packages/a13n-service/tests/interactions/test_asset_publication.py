@@ -35,7 +35,15 @@ from sqlalchemy import delete, select
 
 from tests.lifecycle_support import test_lifecycle_writer
 
-from .conftest import AGENT_ID, AGENT_REVISION_ID, NOW, ORGANIZATION_ID, USER_ID, WORKSPACE_ID
+from .conftest import (
+    AGENT_ID,
+    AGENT_REVISION_ID,
+    NOW,
+    ORGANIZATION_ID,
+    USER_ID,
+    WORKSPACE_ID,
+    effective_agent_config,
+)
 from .test_attempt_execution import _accept_root, _authority, _worker
 from .test_harness_runtime import _environment
 from .worker_helpers import prepare_permissions
@@ -66,12 +74,11 @@ class PublicationFixture:
 
 
 async def _fixture(sessions, objects, tmp_path):
-    _, run, _ = await _accept_root(sessions, objects)
+    _, run, _ = await _accept_root(sessions, objects, config=effective_agent_config(assets_enabled=True))
     async with transaction(sessions) as session:
         revision = await session.get(AgentRevisionRecord, AGENT_REVISION_ID)
-        toolsets = dict(revision.config["toolsets"])
-        toolsets["assets"] = {**toolsets["assets"], "enabled": True}
-        revision.config = {**revision.config, "toolsets": toolsets}
+        assert revision is not None
+        assert not revision.config["toolsets"]["assets"]["enabled"]
         session.add(
             UserRecord(
                 id=USER_ID,
@@ -221,11 +228,7 @@ async def test_stale_or_unselected_publication_creates_no_asset(publication, tmp
             attempt = await session.get(RunAttemptRecord, publication.authority.run_attempt_id)
             attempt.lease_expires_at = NOW
     else:
-        async with transaction(publication.sessions) as session:
-            revision = await session.get(AgentRevisionRecord, AGENT_REVISION_ID)
-            toolsets = dict(revision.config["toolsets"])
-            toolsets["assets"] = {**toolsets["assets"], "enabled": False}
-            revision.config = {**revision.config, "toolsets": toolsets}
+        publication.selection = replace(publication.selection, effective_config_digest="0" * 64)
     async with _files(tmp_path / "env") as environment:
         with pytest.raises((AttemptAuthorityError, AssetError)):
             await publication.publish(environment)

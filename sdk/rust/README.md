@@ -21,11 +21,11 @@ use a13n as service_client;
 
 ## Web Provider accounts
 
-Bind API Key operations with `client.workspace().await?`. This reads `/api/v1/auth/context` once and returns search operations without a Workspace argument. The binding uses the immutable Workspace ID and shares the parent transport and shutdown. The parent client retains explicit `WebProviderScope` operations; Service always enforces the credential boundary.
+Bind API Key operations with `client.workspace().await?`. This reads `/api/v1/auth/context` once and returns Web operations without a Workspace argument. The binding uses the immutable Workspace ID and shares the parent transport and shutdown. The parent client retains explicit `WebProviderScope` operations; Service always enforces the credential boundary.
 
 Create an async bearer client with `Client::new(base_url, Secret::new(token))`. `web_providers` returns a `Representation<Page<WebProvider>>`; use `WebProviderListOptions` for cursor pagination and exact filters. `update_web_provider` requires the current account ETag. `test_web_provider` sends one quota-consuming probe only when called. Drop a request future to cancel that request; call `close()` to cancel all local delivery and release the pool.
 
-Credential request fields use `Secret`, whose Debug, Display, and ordinary serialization forms are redacted. `AgentRunOverride.toolsets` uses `Optional::Omitted` to inherit; a supplied `web` entry replaces that complete Toolset, and `enabled: Some(false)` disables it. `ToolPermission::Inherit` preserves the authored `inherit` setting. Configuration JSON round-trips preserve other fields in `fields`.
+Credential request fields use a `BTreeMap<String, Secret>`, such as `BTreeMap::from([("api_key".into(), Secret::new(value))])`; ordinary serialization and diagnostics redact its values. `AgentRunOverride.toolsets` uses `Optional::Omitted` to inherit; a supplied `web` entry replaces that complete Toolset, and `enabled: Some(false)` disables it. `ToolPermission::Inherit` preserves the authored `inherit` setting. Configuration JSON round-trips preserve other fields in `fields`.
 
 ## Generated HTTP operations
 
@@ -38,7 +38,7 @@ let workspace_id = response.data.workspace_id;
 let request_id = response.headers.get("X-Request-ID");
 ```
 
-`generated::models` contains complete typed HTTP schemas. Optional nullable fields use `Option<Option<T>>`: `None` omits, `Some(None)` sends null. Typed enums preserve real unions; boolean constants remain JSON booleans. Generated errors retain status, headers, raw content, and a typed error entity. Handle `CallError::Operation` separately from owner shutdown. JSON operations expose generated `Response<T>` rather than the Search facade's error mapping or 1 MiB response bound.
+`generated::models` contains complete typed HTTP schemas. Optional nullable fields use `Option<Option<T>>`: `None` omits, `Some(None)` sends null. Typed enums preserve real unions; boolean constants remain JSON booleans. Generated errors retain status, headers, raw content, and a typed error entity. Handle `CallError::Operation` separately from owner shutdown. JSON operations expose generated `Response<T>` rather than the Web facade's error mapping or 1 MiB response bound.
 
 `execute` borrows a configuration over the parent's reqwest pool and cancellation token. Binary downloads return a streaming reqwest response; consume it inside the async closure so `close()` covers delivery. File uploads stream from a caller-supplied path. Generated standalone configurations have independent ownership; the facade never silently allocates one as a parallel transport.
 

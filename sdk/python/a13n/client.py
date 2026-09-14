@@ -109,7 +109,7 @@ class Client:
             transport=transport,
         )
 
-        # Generated operations and the stable Search facade share one pool.
+        # Generated operations and the stable Web facade share one pool.
         self._api = AuthenticatedClient(base_url=base_url, token="").set_async_httpx_client(self._http)
 
     async def execute[T](self, operation: Callable[[AuthenticatedClient], Awaitable[Response[T]]]) -> Response[T]:
@@ -183,7 +183,7 @@ class Client:
         payload = body.model_dump(mode="json", exclude_unset=True) if body else None
         if isinstance(body, CreateWebProviderRequest | UpdateWebProviderRequest) and body.credential is not None:
             assert payload is not None
-            payload["credential"] = body.credential.get_secret_value()
+            payload["credential"] = {name: value.get_secret_value() for name, value in body.credential.items()}
         task = asyncio.current_task()
         if task:
             self._tasks.add(task)
