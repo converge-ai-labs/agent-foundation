@@ -71,7 +71,9 @@ export function Workbench({
   const status = statusQuery.data ?? initialStatus;
   const [theme, setTheme] = useState(() => readPreference("theme", "light"));
   const [profile, setProfile] = useState<Profile>(() => ({
-    display_name: readPreference("display-name", ""),
+    display_name:
+      readPreference("display-name", "").trim() ||
+      `Guest ${crypto.randomUUID().slice(0, 6)}`,
     color: readPreference("color", "#64748b"),
   }));
   const [nativeFocus, setNativeFocus] = useState<Schema<"PageTarget"> | null>(
@@ -79,6 +81,11 @@ export function Workbench({
   );
   const sources = useSources();
   const [peopleOpen, setPeopleOpen] = useState(false);
+  const [displayName, setDisplayName] = useState(profile.display_name);
+  const openPeople = () => {
+    setDisplayName(profile.display_name);
+    setPeopleOpen(true);
+  };
   const [menu, setMenu] = useState(false);
   const live = useLiveWorkbench(
     profile,
@@ -128,11 +135,11 @@ export function Workbench({
     document.documentElement.classList.toggle("dark", theme === "dark");
     writePreference("theme", theme);
   }, [theme]);
-  const updateProfile = (next: Profile) => {
-    setProfile(next);
-    writePreference("display-name", next.display_name);
-    writePreference("color", next.color);
-  };
+  useEffect(() => {
+    writePreference("display-name", profile.display_name);
+    writePreference("color", profile.color);
+  }, [profile]);
+  const updateProfile = (next: Profile) => setProfile(next);
   const links = [
     { to: "/", label: "Overview", icon: House },
     { to: "/settings", label: "Settings", icon: Gear },
@@ -157,7 +164,7 @@ export function Workbench({
       </nav>
       <div className={styles.sidebarFooter}>
         <div className={styles.actions}>
-          <Button variant="ghost" onClick={() => setPeopleOpen(true)}>
+          <Button variant="ghost" onClick={openPeople}>
             <Users />
             <span>{live.presence?.participants.length ?? 0} online</span>
           </Button>
@@ -227,6 +234,27 @@ export function Workbench({
               retry={() => void statusQuery.refetch()}
             />
             <NativeWorkspace
+              profile={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={styles.profileButton}
+                  title={`${profile.display_name} · Edit collaboration name`}
+                  aria-label={`Your collaboration name: ${profile.display_name}`}
+                  onClick={openPeople}
+                >
+                  <span
+                    className={styles.profileAvatar}
+                    style={{ backgroundColor: profile.color }}
+                    aria-hidden="true"
+                  >
+                    {Array.from(profile.display_name)[0]?.toUpperCase()}
+                  </span>
+                  <span className={styles.profileName}>
+                    {profile.display_name}
+                  </span>
+                </Button>
+              }
               navigation={
                 <SheetTrigger
                   render={
@@ -320,16 +348,35 @@ export function Workbench({
           closeLabel="Close"
         >
           <div className={styles.stack}>
-            <TextField
-              label="Your display name"
-              value={profile.display_name}
-              onChange={(display_name) =>
-                updateProfile({
-                  ...profile,
-                  display_name: display_name.slice(0, 80),
-                })
-              }
-            />
+            <form
+              className={styles.profileForm}
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (
+                  !displayName.trim() ||
+                  Array.from(displayName.trim()).length > 80
+                )
+                  return;
+                updateProfile({ ...profile, display_name: displayName.trim() });
+                setPeopleOpen(false);
+              }}
+            >
+              <TextField
+                label="Your display name"
+                value={displayName}
+                onChange={setDisplayName}
+              />
+              <Button
+                type="submit"
+                variant="outline"
+                disabled={
+                  !displayName.trim() ||
+                  Array.from(displayName.trim()).length > 80
+                }
+              >
+                Save name
+              </Button>
+            </form>
             <ChoiceField
               label="Your color"
               value={profile.color}

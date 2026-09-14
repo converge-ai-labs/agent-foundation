@@ -1,7 +1,7 @@
 import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { matchPath, useLocation } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Button, ChoiceField } from "a13n-ui";
+import { Button } from "a13n-ui";
 import {
   Folder,
   GitDiff,
@@ -16,8 +16,13 @@ import {
 import { ApiError, result, type Schema } from "../transport/client";
 import { useProjects, useStatus, useTransport } from "../transport/context";
 import { ErrorNotice, TextField } from "../shell/ui";
-import { readPreference, writePreference } from "../shell/preferences";
-import { FileBuffers, basename, breadcrumbs, parentPath } from "./buffer";
+import {
+  FileBuffers,
+  basename,
+  breadcrumbs,
+  parentPath,
+  withinRoot,
+} from "./buffer";
 import { Files } from "./files";
 import { FileView } from "./file-view";
 import { Changes, DiffView, type DiffSelection } from "./changes";
@@ -31,9 +36,11 @@ export function NativeWorkspace({
   onFocus,
   unauthorized,
   navigation,
+  profile,
 }: {
   children: ReactNode;
   navigation?: ReactNode;
+  profile?: ReactNode;
   onFocus: (target: Schema<"PageTarget"> | null) => void;
   unauthorized: () => void;
 }) {
@@ -46,33 +53,62 @@ export function NativeWorkspace({
   const threadId = matchPath("/threads/:threadId", location.pathname)?.params
     .threadId;
   const thread = useThread(threadId ?? "");
-  const [expanded, setExpanded] = useState(false);
   const isWorkspace = location.pathname === "/" || !!threadId;
+  const projectLoading = !!threadId && (thread.isPending || projects.isPending);
+  const resolvedProject = projects.data?.find(
+    (item) => item.project_id === thread.data?.thread.configuration?.project_id,
+  );
+  // Settings hides native views without replacing their current Project context.
+  const retainedProject = useRef<Schema<"ProjectSummary"> | undefined>(
+    undefined,
+  );
+  if (isWorkspace && !projectLoading) retainedProject.current = resolvedProject;
+  const project = isWorkspace ? resolvedProject : retainedProject.current;
+  const projectId = project?.project_id;
+  const projectRoot = project?.roots[0] ?? "";
+  const [expanded, setExpanded] = useState(false);
   const [view, setView] = useState<"page" | "file" | "diff">("page");
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [focusedArea, setFocusedArea] = useState<
     "page" | "native" | "explorer" | "terminal"
   >("page");
   const [terminalId, setTerminalId] = useState("");
+  const [activeTerminalId, setActiveTerminalId] = useState("");
   const [terminalOpened, setTerminalOpened] = useState(false);
   const pageElement = useRef<HTMLDivElement>(null);
   const paneElement = useRef<HTMLElement>(null);
   const editorElement = useRef<HTMLDivElement>(null);
   const [paneLink, setPaneLink] = useState("");
   const [pane, setPane] = useState<"files" | "changes" | null>(null);
-  const [directory, setDirectory] = useState(() =>
-    readPreference("native-directory", ""),
-  );
+  const [directory, setDirectory] = useState("");
+  const [root, setRoot] = useState("");
   const [path, setPath] = useState("");
   const [fileTabs, setFileTabs] = useState<string[]>([]);
-  const [address, setAddress] = useState(directory);
   const [error, setError] = useState<unknown>(null);
   const [opening, setOpening] = useState(false);
   const [selected, select] = useState<DiffSelection | null>(null);
   const openingRequest = useRef<AbortController | null>(null);
+  const appliedProject = useRef<string | null>(null);
   const refresh = () => {
     void queries.invalidateQueries({ queryKey: ["native"] });
   };
+  useEffect(() => {
+    if (projectLoading) return;
+    const context = `${projectId ?? ""}:${projectRoot}`;
+    if (appliedProject.current === context) return;
+    appliedProject.current = context;
+    openingRequest.current?.abort();
+    setOpening(false);
+    setError(null);
+    setRoot(projectRoot);
+    setDirectory(projectRoot);
+    setPath("");
+    setFileTabs([]);
+    select(null);
+    setView("page");
+    setPaneLink("");
+    setTerminalId("");
+  }, [projectId, projectRoot, projectLoading]);
   useEffect(() => {
     setOpening(false);
     return () => openingRequest.current?.abort();
@@ -131,6 +167,7 @@ export function NativeWorkspace({
       if (controller.signal.aborted) return;
       const nextDirectory = isDirectory ? target : parentPath(target);
       setDirectory(nextDirectory);
+      if (!root) setRoot(nextDirectory);
       if (!isDirectory) {
         setPath(target);
         setView("file");
@@ -141,8 +178,6 @@ export function NativeWorkspace({
         setFileTabs((tabs) =>
           tabs.includes(target) ? tabs : [...tabs, target],
         );
-      setAddress(nextDirectory);
-      writePreference("native-directory", nextDirectory);
       if (isDirectory) {
         setView("page");
         setFocusedArea("explorer");
@@ -154,7 +189,7 @@ export function NativeWorkspace({
     }
   };
   useEffect(() => {
-    if (!isWorkspace) return;
+    if (!isWorkspace || projectLoading) return;
     const link = nativeLink(location.search);
     if (link.pane && link.path && status.data?.features?.host_files) {
       setPane(link.pane);
@@ -166,7 +201,7 @@ export function NativeWorkspace({
         setOpening(false);
         setError(null);
         setDirectory(link.path);
-        setAddress(link.path);
+        setRoot(link.path);
         if (link.diffPath && link.comparison) {
           setView("diff");
         } else {
@@ -191,9 +226,13 @@ export function NativeWorkspace({
       setTerminalOpened(true);
     }
     // Navigation never creates a session, claims control or adds model input.
-    // Personal native selection otherwise survives ordinary Thread navigation.
+    // Explicit file/Changes links override defaults; terminals remain Project-scoped.
   }, [
     isWorkspace,
+    projectLoading,
+    projectId,
+    projectRoot,
+    location.pathname,
     location.search,
     status.data?.features?.host_files,
     status.data?.features?.host_terminal,
@@ -211,10 +250,10 @@ export function NativeWorkspace({
   const nativeTarget = (): Schema<"PageTarget"> | null =>
     pane === "files" && directory
       ? { kind: "file", path: directory }
-      : pane === "changes" && directory
+      : pane === "changes" && root
         ? {
             kind: "changes",
-            repository_root: directory,
+            repository_root: root,
           }
         : null;
   useEffect(() => {
@@ -234,8 +273,11 @@ export function NativeWorkspace({
               : nativeTarget()
           : focusedArea === "explorer"
             ? nativeTarget()
-            : focusedArea === "terminal" && terminalOpen && terminalId
-              ? { kind: "terminal", terminal_id: terminalId }
+            : focusedArea === "terminal" &&
+                terminalOpen &&
+                activeTerminalId &&
+                activeTerminalId === terminalId
+              ? { kind: "terminal", terminal_id: activeTerminalId }
               : null,
     );
   }, [
@@ -245,9 +287,11 @@ export function NativeWorkspace({
     pane,
     path,
     directory,
+    root,
     selected,
     terminalOpen,
     terminalId,
+    activeTerminalId,
     onFocus,
   ]);
   const focusCenter = () => {
@@ -264,16 +308,6 @@ export function NativeWorkspace({
     focusCenter();
     refresh();
   };
-  const roots =
-    projects.data?.flatMap((project) =>
-      project.roots.map((root) => ({
-        value: root,
-        label: `${project.name} · ${root}`,
-      })),
-    ) ?? [];
-  const uniqueRoots = [
-    ...new Map(roots.map((root) => [root.value, root])).values(),
-  ];
   const show = (next: "files" | "changes") => {
     cancelOpening();
     if (pane === next) {
@@ -286,7 +320,10 @@ export function NativeWorkspace({
     if (window.matchMedia("(max-width: 999px)").matches) setTerminalOpen(false);
     requestAnimationFrame(() => paneElement.current?.focus());
     refresh();
-    if (!directory && uniqueRoots[0]) void open(uniqueRoots[0].value);
+    if (next === "changes") {
+      setDirectory(root);
+      select(null);
+    }
   };
   return (
     <div
@@ -348,6 +385,7 @@ export function NativeWorkspace({
             )}
           </div>
         )}
+        {profile}
       </header>
       <div className={styles.layout}>
         <div className={styles.center}>
@@ -491,9 +529,9 @@ export function NativeWorkspace({
                 )}
               </nav>
             )}
-            {(error || projects.error || opening) && (
+            {(error || projects.error || thread.error || opening) && (
               <div className={styles.paneFeedback}>
-                <ErrorNotice error={error || projects.error} />
+                <ErrorNotice error={error || projects.error || thread.error} />
                 {opening && <p role="status">Opening path…</p>}
               </div>
             )}
@@ -533,7 +571,17 @@ export function NativeWorkspace({
             )}
 
             {view === "page" &&
-              (!status.data?.features?.host_files ? (
+              (projectLoading ? (
+                <p className={styles.empty} role="status">
+                  Loading project…
+                </p>
+              ) : !(pane === "files" ? directory : root) ? (
+                <p className={styles.empty}>
+                  {project
+                    ? "This project has no folders configured."
+                    : "Open a conversation in a project to see its files and changes."}
+                </p>
+              ) : !status.data?.features?.host_files ? (
                 <div className={styles.empty}>
                   <h3>Native sharing is disabled</h3>
                   <p>
@@ -543,55 +591,39 @@ export function NativeWorkspace({
                 </div>
               ) : (
                 <>
-                  <details className={styles.location} open={!directory}>
-                    <summary title={directory}>
-                      {directory || "Choose a server location"}
-                    </summary>
-                    <div className={styles.locationFields}>
-                      {!!uniqueRoots.length && (
-                        <ChoiceField
-                          label="Project root"
-                          value={
-                            uniqueRoots.some((root) => root.value === directory)
-                              ? directory
-                              : ""
-                          }
-                          options={[
-                            { value: "", label: "Choose a project root…" },
-                            ...uniqueRoots,
-                          ]}
-                          onValueChange={(value) => {
-                            if (value) void open(value);
-                          }}
-                        />
-                      )}
-                      <form
-                        className={styles.address}
-                        onSubmit={(event) => {
-                          event.preventDefault();
-                          void open(address);
-                        }}
+                  <div className={styles.location}>
+                    <strong title={root}>{project?.name}</strong>
+                    {project && project.roots.length > 1 && (
+                      <nav
+                        className={styles.breadcrumbs}
+                        aria-label="Project folders"
                       >
-                        <TextField
-                          label="Folder or file path"
-                          value={address}
-                          onChange={setAddress}
-                        />
-                        <Button
-                          variant="outline"
-                          type="submit"
-                          size="sm"
-                          disabled={!address || opening}
-                        >
-                          Open
-                        </Button>
-                      </form>
-                      {!!directory && (
-                        <nav
-                          className={styles.breadcrumbs}
-                          aria-label="Native path breadcrumbs"
-                        >
-                          {breadcrumbs(directory).map((part) => (
+                        {project.roots.map((folder) => (
+                          <button
+                            key={folder}
+                            title={folder}
+                            aria-pressed={root === folder}
+                            onClick={() => {
+                              cancelOpening();
+                              setRoot(folder);
+                              setDirectory(folder);
+                              select(null);
+                              setError(null);
+                            }}
+                          >
+                            {basename(folder)}
+                          </button>
+                        ))}
+                      </nav>
+                    )}
+                    {pane === "files" && (
+                      <nav
+                        className={styles.breadcrumbs}
+                        aria-label="Native path breadcrumbs"
+                      >
+                        {breadcrumbs(directory)
+                          .filter((part) => withinRoot(part, root))
+                          .map((part) => (
                             <button
                               type="button"
                               key={part}
@@ -601,21 +633,21 @@ export function NativeWorkspace({
                               {basename(part)}
                             </button>
                           ))}
-                        </nav>
-                      )}
-                    </div>
-                  </details>
+                      </nav>
+                    )}
+                  </div>
                   <div className={`${styles.paneBody} a13n-scrollbar`}>
                     {pane === "files" ? (
                       <Files
                         directory={directory}
+                        roots={project?.roots}
                         path={path}
                         open={(target) => void open(target)}
                         refresh={refresh}
                       />
                     ) : (
                       <Changes
-                        path={directory}
+                        path={root}
                         selected={selected}
                         select={(next) => {
                           cancelOpening();
@@ -631,12 +663,6 @@ export function NativeWorkspace({
                         }}
                       />
                     )}
-                    {!directory && (
-                      <p>
-                        Choose a configured root or enter an absolute server
-                        path. No Project or Run is required for native access.
-                      </p>
-                    )}
                   </div>
                 </>
               ))}
@@ -650,9 +676,12 @@ export function NativeWorkspace({
           onPointerDown={() => setFocusedArea("terminal")}
         >
           <TerminalPanel
-            visible={isWorkspace && terminalOpen}
-            directory={directory}
+            visible={isWorkspace && terminalOpen && !projectLoading}
+            directory={project?.roots.includes(root) ? root : projectRoot}
+            projectId={project?.project_id ?? ""}
+            projectName={project?.name}
             selected={terminalId}
+            onActive={setActiveTerminalId}
             select={(id) => {
               setTerminalId(id);
               setFocusedArea(id ? "terminal" : "page");

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
+import { useEffect } from "react";
 import {
   cleanup,
   fireEvent,
@@ -15,8 +16,17 @@ import { NativeWorkspace } from "./workspace";
 import { FileBuffers } from "./buffer";
 
 vi.mock("./files", () => ({
-  Files: ({ path, open }: { path: string; open: (path: string) => void }) => (
+  Files: ({
+    path,
+    directory,
+    open,
+  }: {
+    path: string;
+    directory: string;
+    open: (path: string) => void;
+  }) => (
     <div>
+      <p>Folder {directory}</p>
       <p>Selected {path}</p>
       <button onClick={() => open("/native/second.txt")}>
         Open second file
@@ -72,46 +82,97 @@ vi.mock("./changes", () => ({
 vi.mock("./terminal", () => ({
   TerminalPanel: ({
     visible,
+    directory,
+    projectId,
+    selected,
     select,
+    onActive,
   }: {
     visible: boolean;
+    directory: string;
+    projectId: string;
+    selected: string;
     select: (id: string) => void;
-  }) => (
-    <section hidden={!visible}>
-      <button onClick={() => select("")}>Close selected terminal</button>
-    </section>
-  ),
+    onActive: (id: string) => void;
+  }) => {
+    useEffect(() => {
+      onActive(
+        visible && projectId && selected === "terminal-current" ? selected : "",
+      );
+    }, [visible, projectId, selected, onActive]);
+    return (
+      <section hidden={!visible}>
+        <p>
+          Terminal context {projectId} · {directory}
+        </p>
+        <button onClick={() => select("")}>Close selected terminal</button>
+      </section>
+    );
+  },
 }));
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  localStorage.clear();
 });
 function setup(
   initial: string,
   sharing = true,
   metadata?: Promise<{ data: { kind: string } }>,
+  currentProject: string | null = "project-one",
+  otherProject: string | null = currentProject,
 ) {
   vi.stubGlobal("matchMedia", () => ({ matches: false }));
   const focus = vi.fn();
-  const get = vi.fn(async (url: string) =>
-    url === "/api/host/files/metadata" && metadata
-      ? metadata
-      : {
-          data:
-            url === "/api/status"
-              ? {
-                  features: {
-                    host_files: sharing,
-                    host_git: sharing,
-                    host_terminal: sharing,
-                  },
-                }
-              : url === "/api/projects"
-                ? []
-                : url === "/api/threads/{thread_id}"
-                  ? { thread: { title: "Current conversation" } }
-                  : { kind: "file" },
-        },
+  const get = vi.fn(
+    async (
+      url: string,
+      options?: { params?: { path?: { thread_id?: string } } },
+    ) =>
+      url === "/api/host/files/metadata" && metadata
+        ? metadata
+        : {
+            data:
+              url === "/api/status"
+                ? {
+                    features: {
+                      host_files: sharing,
+                      host_git: sharing,
+                      host_terminal: sharing,
+                    },
+                  }
+                : url === "/api/projects"
+                  ? [
+                      {
+                        project_id: "project-unrelated",
+                        name: "Unrelated",
+                        roots: ["/unrelated"],
+                      },
+                      {
+                        project_id: "project-one",
+                        name: "Current project",
+                        roots: ["/native"],
+                      },
+                      {
+                        project_id: "project-two",
+                        name: "Other project",
+                        roots: ["/other"],
+                      },
+                    ]
+                  : url === "/api/threads/{thread_id}"
+                    ? {
+                        thread: {
+                          title: "Current conversation",
+                          configuration: {
+                            project_id:
+                              options?.params?.path?.thread_id === "other"
+                                ? otherProject
+                                : currentProject,
+                          },
+                        },
+                      }
+                    : { kind: "file" },
+          },
   );
   const transport = { client: { GET: get } } as unknown as Transport;
   const queries = new QueryClient({
@@ -447,3 +508,77 @@ it("shows pending and failed file opens beside the retained diff instead of hidi
   ).toBe("true");
   expect(screen.queryByText("Opening path…")).toBeNull();
 });
+
+it("Files, Changes and new-terminal context follow the current Project instead of a remembered folder or the first Project", async () => {
+  localStorage.setItem("a13n-harness-ui.native-directory", "/unrelated");
+  setup("/threads/current", true, undefined, "project-one", "project-two");
+  fireEvent.click(await screen.findByRole("button", { name: "Files" }));
+  await screen.findByText("Folder /native");
+  expect(screen.queryByLabelText("Folder or file path")).toBeNull();
+  expect(screen.queryByLabelText("Project root")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Changes" }));
+  await screen.findByText("Repository /native · Diff");
+  fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+  await screen.findByText("Terminal context project-one · /native");
+  fireEvent.click(screen.getByRole("button", { name: "Another conversation" }));
+  await screen.findByText("Repository /other · Diff");
+  await screen.findByText("Terminal context project-two · /other");
+  fireEvent.click(screen.getByRole("button", { name: "Files" }));
+  await screen.findByText("Folder /other");
+});
+
+it("a conversation without a Project does not pick another Project's folder", async () => {
+  const { get } = setup("/threads/current", true, undefined, null);
+  fireEvent.click(await screen.findByRole("button", { name: "Files" }));
+  await screen.findByText(
+    "Open a conversation in a project to see its files and changes.",
+  );
+  expect(screen.queryByText(/Folder \/unrelated/)).toBeNull();
+  expect(
+    get.mock.calls.some(([url]) => url === "/api/host/files/metadata"),
+  ).toBe(false);
+});
+
+it.each(["directory", "file", "repository", "diff"])(
+  "explicit projectless %s links retain their explorer without a folder chooser",
+  async (target) => {
+    setup(
+      target === "directory" || target === "file"
+        ? `/?native=files&native_path=${encodeURIComponent(target === "file" ? "/native/first.txt" : "/native")}`
+        : `/?native=changes&native_path=%2Fnative${target === "diff" ? "&diff_path=first.txt&comparison=staged" : ""}`,
+      true,
+      target === "directory"
+        ? Promise.resolve({ data: { kind: "directory" } })
+        : undefined,
+      null,
+    );
+    if (target === "file" || target === "diff") {
+      await screen.findByText(
+        target === "file" ? "Editor /native/first.txt" : "Patch first.txt",
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Back to explorer" }));
+    }
+    await screen.findByText(
+      target === "directory" || target === "file"
+        ? "Folder /native"
+        : target === "diff"
+          ? "Repository /native · Diff first.txt"
+          : "Repository /native · Diff",
+    );
+    expect(screen.queryByLabelText("Folder or file path")).toBeNull();
+  },
+);
+
+it.each([
+  "/threads/current?terminal=terminal-foreign",
+  "/?terminal=terminal-current",
+])(
+  "an unavailable terminal link never publishes terminal focus: %s",
+  async (url) => {
+    const { focus } = setup(url);
+    await screen.findByText(/Terminal context/);
+    expect(
+      focus.mock.calls.some(([target]) => target?.kind === "terminal"),
+    ).toBe(false);
+  },
+);

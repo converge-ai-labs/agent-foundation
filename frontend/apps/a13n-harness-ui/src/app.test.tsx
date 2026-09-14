@@ -763,3 +763,39 @@ it("edits project defaults directly while preserving unknown project fields", as
   expect(saved).toContain("retain: true");
   expect(saved).toContain("/test");
 });
+
+it("generates a visible collaboration name, remembers it across visits, and lets the user save a nonempty replacement", async () => {
+  localStorage.setItem("a13n-harness-ui.api-key", "test-key");
+  const component = render(<BrowserApp />);
+  const profile = await screen.findByRole("button", {
+    name: /^Your collaboration name: Guest /,
+  });
+  const generated = localStorage.getItem("a13n-harness-ui.display-name");
+  expect(generated).toMatch(/^Guest [a-f0-9]{6}$/);
+  fireEvent.click(profile);
+  const input = await screen.findByLabelText("Your display name");
+  fireEvent.change(input, { target: { value: "   " } });
+  expect(
+    screen.getByRole("button", { name: "Save name" }).hasAttribute("disabled"),
+  ).toBe(true);
+  expect(localStorage.getItem("a13n-harness-ui.display-name")).toBe(generated);
+  fireEvent.change(input, { target: { value: "  Alex  " } });
+  fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+  await screen.findByRole("button", { name: "Your collaboration name: Alex" });
+  expect(localStorage.getItem("a13n-harness-ui.display-name")).toBe("Alex");
+  component.unmount();
+  render(<BrowserApp />);
+  await screen.findByRole("button", { name: "Your collaboration name: Alex" });
+});
+
+it("keeps a generated collaboration name stable when the workbench is reopened", async () => {
+  localStorage.setItem("a13n-harness-ui.api-key", "test-key");
+  const component = render(<BrowserApp />);
+  const first = await screen.findByRole("button", {
+    name: /^Your collaboration name: Guest /,
+  });
+  const label = first.getAttribute("aria-label")!;
+  component.unmount();
+  render(<BrowserApp />);
+  await screen.findByRole("button", { name: label });
+});

@@ -65,6 +65,43 @@
   color: var(--a13n-text);
   font-weight: 500;
 }
+.profileButton {
+  max-width: 180px;
+  min-width: 0;
+  flex-shrink: 0;
+  gap: 6px;
+}
+.profileAvatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  color: white;
+  font-size: 11px;
+}
+.profileName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profileForm {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+}
+.profileForm > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+@media (max-width: 700px) {
+  .profileButton {
+    max-width: 112px;
+    padding-inline: 4px;
+  }
+}
 .sidebarFooter {
   margin-top: auto;
   padding: 12px 8px 0;
