@@ -97,6 +97,7 @@ const ModalSurface = memo(
     return (
       <DialogPopup
         data-a13n-modal
+        data-size={size}
         className={cn(size === "lg" && "sm:max-w-[45rem]")}
         finalFocus={finalFocus}
         placement={placement}

@@ -285,7 +285,6 @@ export function TraceDetail({ traceId }: { traceId: string }) {
               return (
                 <ModalFrame
                   key={observation.id}
-                  placement="top"
                   trigger={
                     <Button
                       className={styles.observation}

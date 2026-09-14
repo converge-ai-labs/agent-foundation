@@ -359,16 +359,20 @@ async def test_failed_admission_preserves_images_and_next_draft_is_not_overwritt
         shell.backend = Backend()
         shell.ready = True
         image = image_bytes("one.png", _png())
-        shell.images = (image,)
-        shell.send_prompt("inspect")
+        shell.insert_attachments((image,))
+        shell.composer.buffer.insert_text("inspect", fire_event=False)
+        original_draft = shell.composer.buffer.document
+        shell._submitted_draft = original_draft
+        shell.composer.buffer.reset()
+        shell.send_prompt(original_draft.text)
         await started.wait()
         shell.composer.buffer.document = Document("next draft")
         fail.set()
         await shell.job
         assert shell.composer.text == "next draft"
-        assert shell._recoverable == (Document("inspect", 7), (image,))
+        assert shell._recoverable == original_draft
         await shell.command(shell.registry.parse("/recover"))
-        assert shell.composer.text == "inspect"
+        assert shell.composer.buffer.document == original_draft
         assert shell.images == (image,)
 
 
@@ -407,14 +411,15 @@ async def test_menu_escape_and_multiline_paste_preserve_draft_and_images() -> No
             await initialized.wait()
             await asyncio.sleep(0.05)
             shell.composer.buffer.document = Document("unsent", 2)
-            shell.images = (image_bytes("draft.png", _png()),)
+            shell.insert_attachments((image_bytes("draft.png", _png()),))
+            draft = shell.composer.buffer.document
             await shell.command(shell.registry.parse("/model"))
             assert shell.images == ()
             pipe.send_text("\x1b")
             async with asyncio.timeout(3):
                 while shell.menu_handler is not None:
                     await asyncio.sleep(0.01)
-            assert shell.composer.buffer.document == Document("unsent", 2)
+            assert shell.composer.buffer.document == draft
             assert len(shell.images) == 1
             pipe.send_text("\x03\x1b[200~a\nb\x1b[201~")
             await asyncio.sleep(0.1)
@@ -443,7 +448,8 @@ async def test_cancel_during_menu_action_restores_saved_text_and_images() -> Non
         original = Document("original draft", 3)
         image = image_bytes("original.png", _png())
         shell.composer.buffer.document = original
-        shell.images = (image,)
+        shell.insert_attachments((image,))
+        original = shell.composer.buffer.document
         shell.open_menu("Import", (Choice("yes", "Import"),), action)
         shell._input_task = asyncio.create_task(shell.menu_answer("1"))
         await entered.wait()
@@ -489,16 +495,23 @@ async def test_failed_send_recovery_fences_next_drafts_pending_clipboard(monkeyp
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
         shell = CliShell(CliRequest())
         shell.backend = Backend()
-        shell.images = (original,)
-        shell.send_prompt("original prompt")
+        shell.composer.buffer.document = Document("original prompt", 15)
+        shell.insert_attachments((original,))
+        original_draft = shell.composer.buffer.document
+        shell._submitted_draft = original_draft
+        shell.composer.buffer.reset()
+        shell.send_prompt(original_draft.text)
         await started.wait()
         paste = asyncio.create_task(shell.acquire_images())
         await asyncio.to_thread(entered.wait, 3)
         fail.set()
         await shell.job
+        # A pending paste is a real new draft. Failed input must not overwrite it.
+        assert shell._recoverable == original_draft
+        await shell.command(shell.registry.parse("/recover"))
         release.set()
         await paste
-        assert shell.composer.text == "original prompt"
+        assert shell.composer.buffer.document == original_draft
         assert shell.images == (original,)
 
 

@@ -48,13 +48,48 @@ class AttachmentUpload:
     source: CapturedSource | None = None
 
 
+def composer_attachment_label(label: str, name: str | None = None) -> str:
+    """Format a compact file label consistently before and after admission."""
+    if not label.startswith("file#") or not name:
+        return label
+    # Match retained attachment names; never expose a supplied parent path or
+    # allow a filename to introduce terminal controls or extra composer lines.
+    name = Path(name.replace("\\", "/")).name
+    name = "".join(char for char in name if char.isprintable())[:160]
+    if len(name) > 44:
+        name = name[:27] + "…" + name[-16:]
+    return f"{label}: {name}" if name else label
+
+
+@dataclass(frozen=True, slots=True)
+class ComposerAttachment:
+    """An ordered draft attachment, resolved by the App before Harness admission."""
+
+    upload: AttachmentUpload
+    label: str
+
+
 @dataclass(frozen=True, slots=True)
 class ComposerInput:
-    """Expanded authored text plus attachments; no terminal placeholders on the wire."""
+    """Ordered authored content; editor tokens never cross this boundary."""
 
-    text: str
-    attachments: tuple[AttachmentUpload, ...] = ()
+    parts: tuple[str | ComposerAttachment, ...]
     source_id: str | None = None
+
+    @property
+    def text(self) -> str:
+        return "".join(part for part in self.parts if isinstance(part, str))
+
+    @property
+    def attachments(self) -> tuple[AttachmentUpload, ...]:
+        return tuple(part.upload for part in self.parts if isinstance(part, ComposerAttachment))
+
+    @property
+    def display_text(self) -> str:
+        return "".join(
+            part if isinstance(part, str) else f"[{composer_attachment_label(part.label, part.upload.name)}]"
+            for part in self.parts
+        )
 
 
 @contextmanager

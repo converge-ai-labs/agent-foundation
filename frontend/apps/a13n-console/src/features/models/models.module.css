@@ -71,6 +71,14 @@
   display: grid;
   min-width: 0;
 }
+.modelEditor .modelForm {
+  gap: 18px;
+}
+.catalogFallback {
+  justify-self: start;
+  color: var(--a13n-text);
+  background: var(--a13n-surface);
+}
 .connectionFields,
 .editIdentity,
 .identityFields,
@@ -80,19 +88,19 @@
   min-width: 0;
 }
 .identityFields {
-  padding-top: 20px;
-  border-top: 1px solid var(--a13n-border-soft);
+  gap: 14px;
 }
 .providerSummary {
-  padding: 14px 16px;
+  padding: 10px 12px;
   border-radius: 10px;
   background: var(--a13n-surface);
 }
 .providerSummary strong {
-  font-size: 14px;
+  font-size: 13px;
 }
 .modelForm > [data-a13n-form-actions] {
-  border-top: 1px solid var(--a13n-border-soft);
+  border-top: 0;
+  margin-top: 0;
 }
 
 .editForm {

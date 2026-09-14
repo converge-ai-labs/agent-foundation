@@ -418,17 +418,18 @@ async def test_rejected_resume_preserves_images_and_command(tmp_path: Path, newe
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
         shell = CliShell(CliRequest(), directory=tmp_path)
         shell.backend = backend
-        shell.images = (image,)
+        shell.insert_attachments((image,))
+        original_draft = shell.composer.buffer.document
         await shell.command(shell.registry.parse("/resume missing"))
         if newer_draft:
             shell.composer.buffer.document = Document("new draft")
         release.set()
         await shell.job
-        assert shell.images == (image,)
-        assert shell.composer.text == ("new draft" if newer_draft else "/resume missing")
+        assert shell.images == (() if newer_draft else (image,))
+        assert shell.composer.text == ("new draft" if newer_draft else original_draft.text)
         if newer_draft:
             await shell.command(shell.registry.parse("/recover"))
-            assert shell.composer.text == "/resume missing"
+            assert shell.composer.buffer.document == original_draft
             assert shell.images == (image,)
 
 

@@ -12,6 +12,7 @@ import { type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { modelApi, type ModelScope } from "./api";
 import { ModelForm } from "./model-form";
+import styles from "./models.module.css";
 
 export function ModelEditor({
   scope,
@@ -46,7 +47,6 @@ export function ModelEditor({
   return (
     <ModalFrame
       {...modalProps}
-      placement="top"
       trigger={
         controlledOpen === undefined ? (
           <ResourceEditorButton
@@ -67,26 +67,28 @@ export function ModelEditor({
       }
       closeLabel={t("Close")}
     >
-      {open &&
-        (modelId && model.isPending ? (
-          <Loading variant="form" rows={5} />
-        ) : model.error && !model.data ? (
-          <ErrorNotice error={model.error} />
-        ) : (
-          <ModelForm
-            key={generation}
-            reload={async () => {
-              const result = await model.refetch();
-              if (!result.error) setGeneration((value) => value + 1);
-            }}
-            scope={scope}
-            resource={modelId ? model.data : undefined}
-            providerId={providerId}
-            candidate={candidate}
-            onSaved={onSaved}
-            close={() => setOpen(false)}
-          />
-        ))}
+      <div className={styles.modelEditor}>
+        {open &&
+          (modelId && model.isPending ? (
+            <Loading variant="form" rows={5} />
+          ) : model.error && !model.data ? (
+            <ErrorNotice error={model.error} />
+          ) : (
+            <ModelForm
+              key={generation}
+              reload={async () => {
+                const result = await model.refetch();
+                if (!result.error) setGeneration((value) => value + 1);
+              }}
+              scope={scope}
+              resource={modelId ? model.data : undefined}
+              providerId={providerId}
+              candidate={candidate}
+              onSaved={onSaved}
+              close={() => setOpen(false)}
+            />
+          ))}
+      </div>
     </ModalFrame>
   );
 }

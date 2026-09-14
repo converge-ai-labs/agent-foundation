@@ -120,3 +120,73 @@ def test_release_images_prepare_real_metadata_before_building() -> None:
         assert preparation < build
     sandbox = (ROOT / "deploy/containers/sandbox/Dockerfile").read_text()
     assert 'test "$(a13n-envd --version)" = "a13n-envd $BUILD_VERSION"' in sandbox
+
+
+@pytest.mark.parametrize(
+    "package",
+    [
+        "a13n-envd-client",
+        "a13n-environment",
+        "a13n-harness",
+        "a13n-stream-protocol",
+        "a13n-harness-ui",
+        "a13n-logging",
+        "a13n-service",
+    ],
+)
+@pytest.mark.parametrize("suffix", ["tests/test_example.py", "tests/conftest.py", "tests/fixtures/data.json"])
+@pytest.mark.parametrize("workflow_name,event", [("images.yml", "push"), ("ci-containers.yml", "pull_request")])
+def test_package_tests_do_not_trigger_images(package: str, suffix: str, workflow_name: str, event: str) -> None:
+    workflow = yaml.safe_load((ROOT / ".github/workflows" / workflow_name).read_text())
+    path = Path(f"packages/{package}/{suffix}")
+    assert not any(path.full_match(pattern) for pattern in workflow[True][event]["paths"])
+    step = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "filter")
+    filters = yaml.safe_load(step["with"]["filters"])
+    assert not any(path.full_match(pattern) for patterns in filters.values() for pattern in patterns)
+
+
+@pytest.mark.parametrize(
+    "path,expected",
+    [
+        ("packages/a13n-service/a13n_service/app.py", {"service"}),
+        ("packages/a13n-service/a13n_service/database/migrations/versions/initial.py", {"service"}),
+        ("packages/a13n-service/README.md", {"service"}),
+        ("packages/a13n-harness/a13n_harness/types.py", {"service", "harness_ui"}),
+        ("packages/a13n-envd-client/a13n_envd_client/eip/client.py", {"service", "harness_ui"}),
+        ("packages/a13n-logging/a13n_logging/__init__.py", {"service", "harness_ui"}),
+        ("packages/a13n-harness/pyproject.toml", {"service", "harness_ui"}),
+        ("packages/a13n-harness/LICENSE", {"service", "harness_ui"}),
+        ("packages/a13n-harness-ui/pyproject.toml", {"service", "harness_ui"}),
+        ("packages/a13n-harness-ui/hatch_build.py", {"harness_ui"}),
+        ("packages/a13n-harness-ui/build_skills.py", {"harness_ui"}),
+        ("packages/a13n-harness-ui/a13n_harness_ui/app.py", {"harness_ui"}),
+        ("frontend/apps/a13n-harness-ui/src/shell/workbench.tsx", {"harness_ui"}),
+        ("frontend/packages/a13n-ui/src/components/button.tsx", {"harness_ui"}),
+        ("frontend/pnpm-lock.yaml", {"harness_ui"}),
+        ("frontend/tsconfig.base.json", {"harness_ui"}),
+        ("docs/a13n-harness-ui/configuration.md", {"harness_ui"}),
+        ("mkdocs.yml", {"harness_ui"}),
+        ("deploy/containers/a13n-service/service.toml", {"service"}),
+        ("deploy/containers/sandbox/Dockerfile", {"sandbox"}),
+        ("crates/a13n-envd/src/main.rs", {"sandbox"}),
+        ("uv.lock", {"service", "harness_ui"}),
+        ("frontend/apps/a13n-console/src/app.tsx", set()),
+    ],
+)
+def test_development_images_retain_real_build_inputs(path: str, expected: set[str]) -> None:
+    workflow = yaml.safe_load((ROOT / ".github/workflows/images.yml").read_text())
+    step = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "filter")
+    filters = yaml.safe_load(step["with"]["filters"])
+    assert all(not pattern.startswith("!") for patterns in filters.values() for pattern in patterns)
+    actual = {name for name, patterns in filters.items() if any(Path(path).full_match(pattern) for pattern in patterns)}
+    assert actual == expected
+    assert any(Path(path).full_match(pattern) for pattern in workflow[True]["push"]["paths"]) == bool(expected)
+
+
+def test_container_checks_retain_service_runtime_configuration() -> None:
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci-containers.yml").read_text())
+    path = Path("deploy/containers/a13n-service/service.toml")
+    assert any(path.full_match(pattern) for pattern in workflow[True]["pull_request"]["paths"])
+    step = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "filter")
+    filters = yaml.safe_load(step["with"]["filters"])
+    assert any(path.full_match(pattern) for pattern in filters["service"])
