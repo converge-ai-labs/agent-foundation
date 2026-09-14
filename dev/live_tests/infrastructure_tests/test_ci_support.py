@@ -45,13 +45,15 @@ def test_reviewed_ci_journeys_collect_once_without_external_or_stress_cases(coll
             for token in ("/model/", "/providers/", "/performance/", "/infrastructure_tests/", "e2b")
         )
     assert len(collected_suites["core"]) == 21
-    assert len(collected_suites["functional"]) == 35
-    assert len(seen) == 398
+    assert len(collected_suites["functional"]) == 69
+    assert len(seen) == 432
     files = {case.split("::")[0] for case in seen}
     root = ci.TEST_ROOT
     # All requested control/fault files and every non-cloud Environment module
     # must be represented, including both historical case-54 filenames.
     requested = [
+        *root.glob("skills/test_*.py"),
+        root / "harness_integration/test_24_skill_management.py",
         *root.glob("control/test_4[56789]_*.py"),
         *root.glob("control/test_5[0123456]_*.py"),
         *root.glob("control/test_38_*.py"),

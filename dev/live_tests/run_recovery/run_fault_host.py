@@ -135,6 +135,10 @@ def install(config, role):
         from ..control.control_fault_host import install as install_control
 
         install_control(faults, config["run_faults"]["control"])
+    if config["run_faults"].get("skills"):
+        from ..skills.fault_host import install as install_skills
+
+        install_skills(faults)
 
 
 def _install_attempt_faults(faults, options):

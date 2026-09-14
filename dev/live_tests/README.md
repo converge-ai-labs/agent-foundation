@@ -21,19 +21,20 @@ Tests are grouped by their primary feature, independently of their execution opt
 
 | Directory               | Primary responsibility                                                           | Modules | Collected cases |
 | ----------------------- | -------------------------------------------------------------------------------- | ------: | --------------: |
-| `environment/`          | Environment selection, access, files, providers, lifecycle and shared Worker use |      22 |             366 |
+| `environment/`          | Environment selection, access, files, providers, lifecycle and shared Worker use |      22 |             367 |
 | `control/`              | Run commands, waiting, inbox, queue, branches and acceptance races               |      25 |             217 |
 | `run_recovery/`         | Worker ownership, persistence, budgets, dependency failures and drain            |       9 |             657 |
-| `harness_integration/`  | Service configuration and resources reaching real Harness execution              |      12 |              30 |
+| `harness_integration/`  | Service configuration and resources reaching real Harness execution              |      13 |              34 |
+| `skills/`               | Skill successor locks, deletion races, shared materialization and corruption     |       3 |              30 |
 | `model/`                | Frozen Model settings and current Provider settings between requests             |       1 |               3 |
 | `protocol/`             | Native and Hosted streams, reconnect and recovery projection                     |       3 |              13 |
 | `iam/`                  | Workspace isolation, current authority and revocation                            |       3 |              10 |
 | `providers/`            | Optional real search, model, environment and Connector accounts                  |       1 |              14 |
 | `observability/`        | Cross-layer evidence and telemetry failure isolation                             |       1 |               2 |
 | `performance/`          | Concurrent PG/S3 calls and bounded Service operations                            |       2 |               2 |
-| `infrastructure_tests/` | Offline tests of fixtures, configuration, parsers and cleanup                    |      19 |             310 |
+| `infrastructure_tests/` | Offline tests of fixtures, configuration, parsers and cleanup                    |      19 |             305 |
 
-Counts are a collection snapshot: 98 modules and 1,624 parameterized cases, including inherited lifecycle cases and cases skipped unless explicitly enabled. A category does not enable infrastructure: the existing `--live*` fixture gates still apply. Mixed modules remain intact: `test_26_output_and_client_tools.py` and `test_32_multiworker_resources.py` live under `harness_integration/`, while `providers/test_31_real_providers.py` retains its real-account matrix.
+Counts are a collection snapshot: 102 modules and 1,654 parameterized cases, including inherited lifecycle cases and cases skipped unless explicitly enabled. A category does not enable infrastructure: the existing `--live*` fixture gates still apply. Mixed modules remain intact: `test_26_output_and_client_tools.py` and `test_32_multiworker_resources.py` live under `harness_integration/`, while `providers/test_31_real_providers.py` retains its real-account matrix.
 
 Subpackages inherit the root `conftest.py`. Feature-owned helpers live beside their tests; shared lab infrastructure lives in `infrastructure/`. The isolated launcher recursively selects the same first-round filenames and keeps their filename order.
 
@@ -48,17 +49,17 @@ uv run --locked python -m pytest dev/live_tests/model --live-management
 
 ## Manual correctness suites
 
-Live tests are opt-in local checks. No GitHub Actions workflow runs these suites. The existing `make live-test-ci` command and `ci.py` module remain the manual entry points for the 398 reviewed cases across seven suites; the full parameter matrices remain available through the ordinary live-test opt-ins below. Each invocation runs serially with its own dependencies and processes. Optional sharding keeps every selected node from a module together, preserving module-scoped backend setup.
+Live tests are opt-in local checks. No GitHub Actions workflow runs these suites. The existing `make live-test-ci` command and `ci.py` module remain the manual entry points for the 432 selected cases across seven suites; the full parameter matrices remain available through the ordinary live-test opt-ins below. Each invocation runs serially with its own dependencies and processes. Optional sharding keeps every selected node from a module together, preserving module-scoped backend setup.
 
-| Suite                 | Selected cases | Coverage                                                                                                                                                                                   |
-| --------------------- | -------------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `core`                |             21 | Cases 01–08, including Native/Hosted protocol contracts, in one owned lab                                                                                                                  |
-| `functional`          |             35 | Queue, Retry, Fork, async children, Workspace isolation, Agent/Plugin/Skill/Asset execution, structured output, client feedback, and direct-local Environment selection/access/inheritance |
-| `control`             |             63 | Cases 45–50: acceptance, waiting, concurrency, branches, queue and inbox boundaries                                                                                                        |
-| `fork-queue`          |             49 | Cases 51–56, including both case-54 files: child results, Steer/queue races and Fork independence                                                                                          |
-| `run-faults`          |             59 | Cases 37–42: persistence, control receipts, budgets/drain, acceptance/queue faults, current authority and dependency failures                                                              |
-| `environment-native`  |            112 | Local/Docker/envd files, lifecycle, transport failures, bootstrap boundaries and real ENOSPC                                                                                               |
-| `environment-service` |             59 | Docker case-21 variants, backend conformance and multi-Worker Environment lifecycle, sharing, policy, dependency and authority boundaries                                                  |
+| Suite                 | Selected cases | Coverage                                                                                                                                                                                                                               |
+| --------------------- | -------------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `core`                |             21 | Cases 01–08, including Native/Hosted protocol contracts, in one owned lab                                                                                                                                                              |
+| `functional`          |             69 | Queue, Retry, Fork, async children, Workspace isolation, Agent/Plugin/Skill/Asset execution, Skill lifecycle and shared materialization, structured output, client feedback, and direct-local Environment selection/access/inheritance |
+| `control`             |             63 | Cases 45–50: acceptance, waiting, concurrency, branches, queue and inbox boundaries                                                                                                                                                    |
+| `fork-queue`          |             49 | Cases 51–56, including both case-54 files: child results, Steer/queue races and Fork independence                                                                                                                                      |
+| `run-faults`          |             59 | Cases 37–42: persistence, control receipts, budgets/drain, acceptance/queue faults, current authority and dependency failures                                                                                                          |
+| `environment-native`  |            112 | Local/Docker/envd files, lifecycle, transport failures, bootstrap boundaries and real ENOSPC                                                                                                                                           |
+| `environment-service` |             59 | Docker case-21 variants, backend conformance and multi-Worker Environment lifecycle, sharing, policy, dependency and authority boundaries                                                                                              |
 
 The reviewed suites use scripted local model endpoints and local MCP/Connector fixtures. Each invocation creates its own PostgreSQL, Redis and RustFS, starts real Control/Worker processes, and uses real direct-local, Local Envd, Docker, HTTP Envd and reverse-WebSocket Envd targets. Model-update case 23, real Model/Connector/Search account tests, E2B, and performance benchmarks are excluded. E2B parameters in mixed Environment modules are deselected before fixture setup, so private Provider configuration is not read. Five selected unsupported Environment combinations remain explicitly skipped because external daemons have no managed creation, some providers admit only one concurrent Session, and Docker has no native TTL renewal; these skips are not passing lifecycle coverage.
 
@@ -123,6 +124,16 @@ The Environment fixture image is built from `environment/file_resources.Dockerfi
 `.state/` and `providers.local.toml` are local-only paths excluded by the root `.gitignore`. They contain generated test state and optional credentials, and must remain untracked. Existing local files stay on disk for test reuse and diagnosis. Never force-add these paths. Store custom Provider configuration selected with `LIVE_TEST_PROVIDERS_CONFIG` under `.state/` or outside the repository.
 
 Before submitting changes, `git ls-files -- dev/live_tests/.state dev/live_tests/providers.local.toml` must return no paths. Only the blank example configuration belongs in Git; each developer creates their own local copy.
+
+## Skill lifecycle and Worker journeys
+
+```sh
+make live-test-ci suite=functional LIVE_TEST_ARGS='-k skill --junitxml=var/skill-e2e/results.xml'
+```
+
+This selection includes the original ZIP execution journey, the HTTP management journeys, and `skills/`. Each Skill module owns a disposable lab; cases create independent Skill, Agent and Environment resources. The tests use real HTTP, PostgreSQL, object storage and separate Worker processes. Skill barriers pause only after transaction-free preparation, before entering a deletion operation, or after complete file publication; they never mutate database lifecycle records. The Worker cases use direct-local Environments with both `on_run` and `on_use` preparation.
+
+The suite checks ordinary turns against updated heads, Retry and waiting successors against exact locks, current deletion state, same-key recreation, deletion races and post-deletion idempotent replay, both commit orders of deletion versus Run acceptance/Agent revision publication/unarchive, disabled-Agent references, shared partial preparation, Worker crash recovery after Skill deletion, and rejection of corrupt files, completion metadata or unexpected entries before model invocation. A scripted model selects file tools and returns their observed results. Real GitHub credentials, browser UI, remote Environment backends and multi-day retention remain separate coverage.
 
 ## Installed test plugins
 
