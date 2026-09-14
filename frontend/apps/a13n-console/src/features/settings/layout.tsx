@@ -1,6 +1,10 @@
 import { Button, FormField, Input } from "a13n-ui";
 
-import { ArrowLeftIcon, CaretDownIcon } from "@phosphor-icons/react";
+import {
+  ArrowLeftIcon,
+  CaretDownIcon,
+  CaretRightIcon,
+} from "@phosphor-icons/react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
@@ -41,6 +45,7 @@ export function SettingsLayout({
   );
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [filter, setFilter] = useState("");
+  const [openScopes, setOpenScopes] = useState<ReadonlySet<string>>(new Set());
   const groups = useSettingsNavigation();
   const current = groups.find((group) => group.scope === scope)!;
   const selected =
@@ -100,37 +105,91 @@ export function SettingsLayout({
             </FormField>
           </div>
           <nav aria-label={t("Settings navigation")}>
-            {visible.map((group) => (
-              <section
-                className={styles.scopeGroup}
-                key={group.scope}
-                data-scope={group.scope}
-              >
-                <h2 className={styles.scopeLabel}>{t(group.label)}</h2>
-                {group.name && (
-                  <p className={styles.scopeName} title={group.name}>
-                    {group.name}
-                  </p>
-                )}
-                <div className={styles.sectionLinks}>
-                  {group.sections.map((item) => (
-                    <Link
-                      key={item.value}
-                      onClick={() => setNavigationOpen(false)}
-                      to={item.href ?? `${group.path}?section=${item.value}`}
-                      aria-current={
-                        group.scope === scope && item.value === selected.value
-                          ? "page"
-                          : undefined
-                      }
+            {visible.map((group) => {
+              const currentScope = group.scope === scope;
+              const open =
+                filter !== "" || currentScope || openScopes.has(group.scope);
+              const itemsId = `settings-scope-${group.scope}`;
+              return (
+                <section
+                  className={styles.scopeGroup}
+                  key={group.scope}
+                  data-scope={group.scope}
+                >
+                  {currentScope ? (
+                    <>
+                      <h2 className={styles.scopeLabel}>{t(group.label)}</h2>
+                      {group.name && (
+                        <p className={styles.scopeName} title={group.name}>
+                          {group.name}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className={styles.scopeToggle}
+                      aria-expanded={open}
+                      aria-controls={itemsId}
+                      onClick={() => {
+                        if (filter !== "") return;
+                        setOpenScopes((previous) => {
+                          const next = new Set(previous);
+                          if (next.has(group.scope)) next.delete(group.scope);
+                          else next.add(group.scope);
+                          return next;
+                        });
+                      }}
                     >
-                      <item.icon size={14} />
-                      {t(item.label)}
-                    </Link>
-                  ))}
-                </div>
-              </section>
-            ))}
+                      <span className={styles.scopeToggleText}>
+                        <span className={styles.scopeToggleLabel}>
+                          {t(group.label)}
+                        </span>
+                        {group.name && (
+                          <span
+                            className={styles.scopeToggleName}
+                            title={group.name}
+                          >
+                            {group.name}
+                          </span>
+                        )}
+                      </span>
+                      <CaretRightIcon
+                        size={12}
+                        weight="bold"
+                        aria-hidden="true"
+                        className={styles.scopeChevron}
+                      />
+                    </button>
+                  )}
+                  <div
+                    className={styles.scopeItems}
+                    id={itemsId}
+                    data-open={open}
+                  >
+                    <div className={styles.sectionLinks}>
+                      {group.sections.map((item) => (
+                        <Link
+                          key={item.value}
+                          onClick={() => setNavigationOpen(false)}
+                          to={
+                            item.href ?? `${group.path}?section=${item.value}`
+                          }
+                          aria-current={
+                            currentScope && item.value === selected.value
+                              ? "page"
+                              : undefined
+                          }
+                        >
+                          <item.icon size={14} />
+                          {t(item.label)}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                </section>
+              );
+            })}
             {!visible.length && (
               <p className={styles.noResults}>{t("No matching settings")}</p>
             )}

@@ -37,7 +37,8 @@
 }
 .outline nav {
   display: grid;
-  gap: 20px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
 }
 .scopeLabel {
   font-size: 11px;
@@ -55,8 +56,77 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.scopeToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 0 0 4px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.scopeToggle:hover {
+  background: var(--a13n-hover);
+}
+.scopeToggleText {
+  flex: 1;
+  min-width: 0;
+}
+.scopeToggleLabel {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  color: var(--a13n-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scopeToggleName {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--a13n-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scopeChevron {
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
+  transition: transform 160ms ease;
+}
+.scopeToggle[aria-expanded="true"] .scopeChevron {
+  transform: rotate(90deg);
+}
+.scopeItems {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 1fr;
+  transition:
+    grid-template-rows 160ms ease,
+    visibility 0s;
+}
+.scopeItems[data-open="false"] {
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition:
+    grid-template-rows 160ms ease,
+    visibility 0s 160ms;
+}
+.scopeItems .sectionLinks {
+  min-height: 0;
+  overflow: hidden;
+}
 .sectionLinks {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
 }
 .outline nav a {
   display: flex;
