@@ -126,7 +126,7 @@ The stream is lazy: entering it performs preparation but no model or tool work. 
 On a recoverable model interruption, the Harness:
 
 1. captures the latest complete public Pydantic message view;
-2. normalizes only an explicitly interrupted terminal tool-call boundary;
+2. normalizes the explicitly interrupted terminal message, retaining emitted text while excluding unfinished tool parts and invalid native tool groups under [Harness State and Resume](10-snapshot-and-resume.md#interrupted-history-normalization);
 3. leaves previously emitted Harness events visible because they cannot be retracted;
 4. waits using cancellation-aware backoff;
 5. builds the next semantic input;
@@ -134,7 +134,7 @@ On a recoverable model interruption, the Harness:
 
 The default continuation text says that the previous stream ended before completion, asks the model to continue from available history without repeating completed work, and warns that a side-effecting tool may have partially or fully completed even when no result was recorded.
 
-A tool call missing a result at an explicitly interrupted boundary receives a failed `ToolReturnPart` stating:
+A finalized ordinary tool call missing a result at an explicitly interrupted boundary receives a failed `ToolReturnPart` stating:
 
 > No tool result was recorded because execution was interrupted. The operation may have partially or fully completed. Check the current state before deciding whether to retry it.
 
