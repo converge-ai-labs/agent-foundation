@@ -93,3 +93,9 @@
   overflow-x: auto;
   justify-content: flex-start;
 }
+
+/* Sidebar animates between expanded and icon-rail widths. */
+[data-slot="sidebar-gap"],
+[data-slot="sidebar-container"] {
+  transition: width 180ms ease-out;
+}

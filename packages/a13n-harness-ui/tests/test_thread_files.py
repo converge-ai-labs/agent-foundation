@@ -15,7 +15,7 @@ from a13n_harness_ui.interactive.pastes import PendingPastes
 from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.thread_files import AttachmentUpload, ComposerAttachment, ComposerInput, ThreadFiles
-from anyio import fail_after, sleep, to_thread
+from anyio import Event, create_task_group, fail_after, sleep, to_thread
 from PIL import Image
 from pydantic_ai import BinaryContent
 from pydantic_ai.messages import ModelRequest, TextContent, UserPromptPart
@@ -349,3 +349,85 @@ async def test_native_generated_image_is_saved_in_thread_scratch_and_replayed_as
             await app.wait_root_operation(receipt.receipt_id)
         assert generated[0].name in json.dumps(requests[1]["input"])
         assert encoded not in json.dumps(requests[1]["input"])
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("image_only", [False, True])
+async def test_terminal_steering_retains_uploads_and_delivers_native_images(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, image_only: bool
+) -> None:
+    import a13n_harness.model_auth as runtime
+
+    path = await _seed(tmp_path, monkeypatch)
+    image = BytesIO()
+    Image.new("RGB", (2, 2), "red").save(image, format="PNG")
+    started, release = Event(), Event()
+    observed = []
+
+    async def model(messages, info):
+        observed.append(messages)
+        started.set()
+        await release.wait()
+        yield "Received"
+
+    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=model))
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        await backend.initialize()
+
+        async def execute() -> None:
+            await backend.execute(StreamRenderer(backend.status), prompt="Start working")
+
+        async with create_task_group() as tasks:
+            tasks.start_soon(execute)
+            with fail_after(10):
+                await started.wait()
+            receipt = backend.receipt_id
+            assert receipt is not None and backend.thread_id is not None
+            upload = ComposerAttachment(AttachmentUpload("steer.png", image.getvalue()), "image#1")
+            parts = (
+                (upload,)
+                if image_only
+                else (
+                    "before ",
+                    upload,
+                    " after ",
+                    ComposerAttachment(AttachmentUpload("binary.bin", b"\x00" * (65 * 1024)), "file#2"),
+                )
+            )
+            try:
+                with pytest.raises(ValueError, match="eight"):
+                    await backend.steer(ComposerInput((upload,) * 9), receipt_id=receipt)
+                with pytest.raises(ValueError, match="20 MiB"):
+                    await backend.steer(
+                        ComposerInput(
+                            tuple(
+                                ComposerAttachment(AttachmentUpload("large.bin", b"x" * (7 * 1024 * 1024)), "file#1")
+                                for _ in range(3)
+                            )
+                        ),
+                        receipt_id=receipt,
+                    )
+                assert await backend.steer(ComposerInput(parts), receipt_id=receipt) == "Guidance sent."
+            finally:
+                release.set()
+        assert len(observed) == 2
+        contents = [
+            item
+            for message in observed[-1]
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, UserPromptPart) and not isinstance(part.content, str)
+            for item in part.content
+        ]
+        assert any(isinstance(item, BinaryContent) and item.data == image.getvalue() for item in contents)
+        transcript = await app.get_thread_transcript(thread_id=backend.thread_id)
+        assert "steer.png" in transcript.model_dump_json()
+        retained = tmp_path / "data/threads" / backend.thread_id / "attachments"
+        assert len(tuple(retained.iterdir())) == (1 if image_only else 2)
+        for item in retained.iterdir():
+            metadata, data = await app.read_thread_attachment(thread_id=backend.thread_id, attachment_id=item.name)
+            assert data == (image.getvalue() if metadata.name == "steer.png" else b"\x00" * (65 * 1024))
+        with pytest.raises(ValueError, match="not accepted"):
+            await backend.steer(ComposerInput(parts), receipt_id=receipt)

@@ -201,10 +201,6 @@ export function Composer({
   const unknown = draft.submission.kind === "unknown";
   const input = values(draft.doc);
   const missing = attachments.some((attachment) => !attachment.data);
-  const unsupportedSteer = attachments.some(
-    (attachment) =>
-      !attachment.data?.source || attachment.data.size > 64 * 1024,
-  );
   const valid =
     !!(input.prompt.trim() || input.attachment_ids.length) && !missing;
   const canSend =
@@ -217,7 +213,6 @@ export function Composer({
         pending ||
         unknown ||
         !valid ||
-        unsupportedSteer ||
         !activity.available_actions?.includes("steer"))
     )
       return;
@@ -535,13 +530,7 @@ export function Composer({
           {busy && activity.available_actions?.includes("steer") && (
             <Button
               variant="outline"
-              disabled={
-                !draft.synchronized ||
-                pending ||
-                unknown ||
-                !valid ||
-                unsupportedSteer
-              }
+              disabled={!draft.synchronized || pending || unknown || !valid}
               onClick={() => void submit("steer")}
             >
               Send as instruction
@@ -561,13 +550,6 @@ export function Composer({
         {busy ? "Next message is not queued. " : ""}Enter adds a line ·
         Ctrl/⌘+Enter sends · Drafts are not saved across server restarts.
       </small>
-      {busy && unsupportedSteer && selections.length > 0 && (
-        <small>
-          Steering accepts only captured UTF-8 file/diff context up to 64 KiB
-          each, not ordinary uploads. Remove unsupported selections or keep this
-          for your next message.
-        </small>
-      )}
       <ModalFrame
         open={!!preview}
         onOpenChange={(open) => {

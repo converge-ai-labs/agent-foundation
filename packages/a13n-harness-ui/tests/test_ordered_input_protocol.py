@@ -94,15 +94,19 @@ async def test_ordered_submit_steer_and_restart_keep_identity_and_native_content
                 },
             )
             assert instruction.status_code == 200 and instruction.json()["accepted"], instruction.text
-            for unsupported in (identity, file):
-                rejected = await api.post(
-                    f"/api/operations/{receipt}/steer",
-                    json={
-                        "parts": ["keep ", {"attachment_id": captured}, {"attachment_id": unsupported}],
-                    },
-                )
-                assert rejected.status_code == 400, rejected.text
-                assert rejected.json()["error"]["code"] == "steer_context_unsupported"
+            instruction = await api.post(
+                f"/api/operations/{receipt}/steer",
+                json={
+                    "parts": [
+                        "Steer before ",
+                        {"attachment_id": identity},
+                        " between ",
+                        {"attachment_id": file},
+                        " after",
+                    ]
+                },
+            )
+            assert instruction.status_code == 200 and instruction.json()["accepted"], instruction.text
             release.set()
             with fail_after(10):
                 while (outcome := (await api.get(f"/api/operations/{receipt}")).json())["status"] in {
@@ -122,7 +126,7 @@ async def test_ordered_submit_steer_and_restart_keep_identity_and_native_content
             ]
             assert {part["metadata"]["harness_ui"]["composer"]["index"] for part in submitted} == {1, 5}
             source_ids = {part["metadata"]["source_id"] for part in submitted}
-            assert len(source_ids) == 1
+            assert len(source_ids) == 2
             assert "changed after capture" not in str(transcript)
             assert "captured instruction" in str(transcript)
             data = await api.get(prefix + f"/attachments/{identity}")
@@ -152,6 +156,16 @@ async def test_ordered_submit_steer_and_restart_keep_identity_and_native_content
         image.getvalue(),
         " end",
     ]
+    steering_start = next(
+        index
+        for index, item in enumerate(contents)
+        if isinstance(item, TextContent) and item.content == "Steer before "
+    )
+    steering = contents[steering_start : steering_start + 6]
+    assert isinstance(steering[2], BinaryContent) and steering[2].data == image.getvalue()
+    assert isinstance(steering[3], TextContent) and steering[3].content == " between "
+    assert isinstance(steering[4], TextContent) and file in steering[4].content
+    assert isinstance(steering[5], TextContent) and steering[5].content == " after"
     async with listener(tmp_path, configuration_path=root) as (http, _):
         async with httpx.AsyncClient(base_url=http, headers=headers, trust_env=False) as api:
             assert (await api.get(prefix + f"/attachments/{identity}")).content == image.getvalue()

@@ -724,7 +724,11 @@ class SessionBackend:
         return f"Run {operation.status.value}."
 
     async def steer(
-        self, message: str, *, receipt_id: str | None = None, skill_references: tuple[SkillReference, ...] = ()
+        self,
+        message: str | ComposerInput,
+        *,
+        receipt_id: str | None = None,
+        skill_references: tuple[SkillReference, ...] = (),
     ) -> str:
         # The Enter handler supplies its captured target; never substitute a newer receipt.
         receipt_id = self.receipt_id if receipt_id is None else receipt_id

@@ -110,7 +110,9 @@ async def test_unmatched_slash_steers_exact_active_run_with_notice() -> None:
             pipe.send_text("\r")
             await _until(lambda: steer.called)
             await shell._input_task
-            steer.assert_awaited_once_with(text, receipt_id="receipt-one", skill_references=())
+            from a13n_harness_ui.thread_files import ComposerInput
+
+            steer.assert_awaited_once_with(ComposerInput((text,)), receipt_id="receipt-one", skill_references=())
             assert "plain text" in _notices(shell)
             assert "Guidance sent" in _notices(shell)
         finally:

@@ -58,6 +58,23 @@ import { NativeWorkspace } from "../native/workspace";
 import { pageLink } from "./page-links";
 import { readPreference, writePreference } from "./preferences";
 
+const profileColors = [
+  { value: "#64748b", label: "Slate" },
+  { value: "#2563eb", label: "Blue" },
+  { value: "#7c3aed", label: "Purple" },
+  { value: "#059669", label: "Green" },
+  { value: "#d97706", label: "Amber" },
+].map((color) => ({
+  ...color,
+  icon: (
+    <span
+      aria-hidden="true"
+      className={styles.colorSwatch}
+      style={{ backgroundColor: color.value }}
+    />
+  ),
+}));
+
 export function Workbench({
   status: initialStatus,
   forget,
@@ -74,7 +91,9 @@ export function Workbench({
     display_name:
       readPreference("display-name", "").trim() ||
       `Guest ${crypto.randomUUID().slice(0, 6)}`,
-    color: readPreference("color", "#64748b"),
+    color:
+      readPreference("color", "") ||
+      profileColors[Math.floor(Math.random() * profileColors.length)]!.value,
   }));
   const [nativeFocus, setNativeFocus] = useState<Schema<"PageTarget"> | null>(
     null,
@@ -144,6 +163,18 @@ export function Workbench({
     { to: "/", label: "Overview", icon: House },
     { to: "/settings", label: "Settings", icon: Gear },
   ];
+  const themeToggle = (
+    <Button
+      variant="ghost"
+      size="icon"
+      aria-label={
+        theme === "dark" ? "Switch to light theme" : "Switch to dark theme"
+      }
+      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+    >
+      {theme === "dark" ? <Sun /> : <Moon />}
+    </Button>
+  );
   const navigation = (
     <>
       <ConversationNavigation />
@@ -168,18 +199,6 @@ export function Workbench({
             <Users />
             <span>{live.presence?.participants.length ?? 0} online</span>
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={
-              theme === "dark"
-                ? "Switch to light theme"
-                : "Switch to dark theme"
-            }
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          >
-            {theme === "dark" ? <Sun /> : <Moon />}
-          </Button>
           <Button variant="ghost" onClick={forget}>
             Log out
           </Button>
@@ -197,10 +216,13 @@ export function Workbench({
           Skip to content
         </a>
         <aside className={styles.sidebar} aria-label="Workbench navigation">
-          <Link to="/" className={styles.brand}>
-            <Wordmark className={styles.brandMark} />
-            <span>Harness UI</span>
-          </Link>
+          <header className={styles.sidebarHeader}>
+            <Link to="/" className={styles.brand}>
+              <Wordmark className={styles.brandMark} />
+              <span>Harness UI</span>
+            </Link>
+            {themeToggle}
+          </header>
           {navigation}
         </aside>
         <SheetPopup
@@ -208,7 +230,10 @@ export function Workbench({
           className={styles.mobileNavigation}
           closeProps={{ "aria-label": "Close navigation" }}
         >
-          <SheetTitle>Harness UI</SheetTitle>
+          <header className={styles.mobileNavigationHeader}>
+            <SheetTitle>Harness UI</SheetTitle>
+            {themeToggle}
+          </header>
           {navigation}
         </SheetPopup>
         <div className={styles.workspace}>
@@ -381,13 +406,7 @@ export function Workbench({
               label="Your color"
               value={profile.color}
               onValueChange={(color) => updateProfile({ ...profile, color })}
-              options={[
-                { value: "#64748b", label: "Slate" },
-                { value: "#2563eb", label: "Blue" },
-                { value: "#7c3aed", label: "Purple" },
-                { value: "#059669", label: "Green" },
-                { value: "#d97706", label: "Amber" },
-              ]}
+              options={profileColors}
             />
             <p>Presence: {live.presenceState}</p>
             <details>

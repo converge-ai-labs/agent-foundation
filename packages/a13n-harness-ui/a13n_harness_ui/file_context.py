@@ -56,7 +56,7 @@ CapturedSource = FileContextSource | GitContextSource | CommentContextSource
 
 
 def context_text(source: CapturedSource, data: bytes) -> str | None:
-    """Return the same attributed text for submission and text-only steering."""
+    """Return the same attributed text for submission and steering."""
     if len(data) > MAX_INLINE_CONTEXT_BYTES or b"\x00" in data:
         return None
     try:

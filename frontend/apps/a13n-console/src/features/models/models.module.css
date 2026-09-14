@@ -14,7 +14,6 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--a13n-canvas);
 }
 .listTable th:nth-child(1) {
   width: 40%;
