@@ -293,16 +293,19 @@ class HarnessUiSubagentOperator(SubagentOperator):
 
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
-        owned_task_group = self._task_group
-        if owned_task_group is not None:
-            owned_task_group.cancel_scope.shield = True
-        async with self._lock:
-            self._accepting = False
-            active = tuple(self._active.values())
-            context = self._task_group_context
-            task_group = self._task_group
-        for segment in active:
-            segment.stream.cancel()
+        context = self._task_group_context
+        task_group = self._task_group
+        if task_group is not None:
+            task_group.cancel_scope.shield = True
+        active: tuple[_ActiveSegment, ...] = ()
+        # Shield preparation even when this group's own task has failed.
+        # The shield must end before the task group's cancel scope is exited.
+        with CancelScope(shield=True):
+            async with self._lock:
+                self._accepting = False
+                active = tuple(self._active.values())
+            for segment in active:
+                segment.stream.cancel()
         if context is None or task_group is None:
             return
 

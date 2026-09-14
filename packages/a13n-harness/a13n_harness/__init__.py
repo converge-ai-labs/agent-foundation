@@ -1,6 +1,10 @@
 """Agent Foundation Harness primary code-first API."""
 
+import os
 from importlib.metadata import version
+
+# Suppress the upstream banner by default before importing Pydantic AI.
+os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 
 from a13n_harness.context import AgentContext, RunBindings
 from a13n_harness.environment import (
