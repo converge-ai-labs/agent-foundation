@@ -66,6 +66,8 @@ SUITES = {
             "skills/test_publication.py",
             "skills/test_authority.py",
             "skills/test_retention.py",
+            "skills/test_composition.py",
+            "skills/test_preparation_failures.py",
             "harness_integration/test_25_asset_execution.py",
             "harness_integration/test_26_output_and_client_tools.py",
         ),
