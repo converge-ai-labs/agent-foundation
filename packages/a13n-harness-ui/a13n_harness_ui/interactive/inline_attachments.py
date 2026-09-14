@@ -17,6 +17,7 @@ from a13n_harness_ui.thread_files import (
     AttachmentUpload,
     ComposerAttachment,
     ComposerInput,
+    composer_attachment_label,
 )
 
 
@@ -34,7 +35,8 @@ class PendingAttachment:
     @property
     def display(self) -> str:
         state = ": failed" if self.error else ": loading" if self.upload is None else ""
-        return f"[{self.label}{state}]"
+        label = composer_attachment_label(self.label, self.upload.name if self.upload else None)
+        return f"[{label}{state}]"
 
 
 class InlineAttachments:

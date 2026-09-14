@@ -48,6 +48,19 @@ class AttachmentUpload:
     source: CapturedSource | None = None
 
 
+def composer_attachment_label(label: str, name: str | None = None) -> str:
+    """Format a compact file label consistently before and after admission."""
+    if not label.startswith("file#") or not name:
+        return label
+    # Match retained attachment names; never expose a supplied parent path or
+    # allow a filename to introduce terminal controls or extra composer lines.
+    name = Path(name.replace("\\", "/")).name
+    name = "".join(char for char in name if char.isprintable())[:160]
+    if len(name) > 44:
+        name = name[:27] + "…" + name[-16:]
+    return f"{label}: {name}" if name else label
+
+
 @dataclass(frozen=True, slots=True)
 class ComposerAttachment:
     """An ordered draft attachment, resolved by the App before Harness admission."""
@@ -73,7 +86,10 @@ class ComposerInput:
 
     @property
     def display_text(self) -> str:
-        return "".join(part if isinstance(part, str) else f"[{part.label}]" for part in self.parts)
+        return "".join(
+            part if isinstance(part, str) else f"[{composer_attachment_label(part.label, part.upload.name)}]"
+            for part in self.parts
+        )
 
 
 @contextmanager

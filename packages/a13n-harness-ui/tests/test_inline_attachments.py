@@ -14,7 +14,7 @@ from a13n_harness_ui.interactive.inline_attachments import AttachmentBuffer, Att
 from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
 from a13n_harness_ui.interactive.shell import CliShell
 from a13n_harness_ui.surfaces import TranscriptEntry, TranscriptPage, TranscriptPart
-from a13n_harness_ui.thread_files import AttachmentUpload, ComposerAttachment
+from a13n_harness_ui.thread_files import AttachmentUpload, ComposerAttachment, composer_attachment_label
 from a13n_stream_protocol import HarnessAguiObserver
 from a13n_stream_protocol.messages import project_input_content
 from PIL import Image
@@ -203,14 +203,21 @@ async def test_async_multi_image_resolution_preserves_cursor_and_selection(monke
 
 
 def test_live_and_history_combine_parts_without_internal_details_or_duplicate_echo() -> None:
-    def metadata(index: int, label: str | None = None):
-        return {"source_id": "input-inline", "harness_ui": {"composer": {"index": index, "label": label}}}
+    def metadata(index: int, label: str | None = None, name: str | None = None):
+        return {
+            "source_id": "input-inline",
+            "harness_ui": {"composer": {"index": index, "label": label}, "attachment": {"name": name}},
+        }
 
     content = [
         TextContent("before " + "x" * 17000, metadata=metadata(0)),
         TextContent("internal path", metadata={**metadata(1), "display": False}),
-        BinaryContent(b"private pixels", media_type="image/png", vendor_metadata=metadata(1, "image#1")),
-        TextContent(" after", metadata=metadata(2)),
+        BinaryContent(
+            b"private pixels", media_type="image/png", vendor_metadata=metadata(1, "image#1", "clipboard.png")
+        ),
+        TextContent(" using ", metadata=metadata(2)),
+        TextContent("internal file path and metadata", metadata=metadata(3, "file#2", "requirements.md")),
+        TextContent(" after", metadata=metadata(4)),
     ]
     event = HarnessEvent(
         thread_id="thread-inline",
@@ -224,7 +231,7 @@ def test_live_and_history_combine_parts_without_internal_details_or_duplicate_ec
     events = observer.observe(event)
     for item in events:
         renderer.ingest(item.type.value, item.model_dump(mode="json"))
-    expected = "> before " + "x" * 17000 + "[image#1] after"
+    expected = "> before " + "x" * 17000 + "[image#1] using [file#2: requirements.md] after"
     assert _source(renderer) == expected
     for item in events:
         renderer.ingest(item.type.value, item.model_dump(mode="json"))
@@ -355,7 +362,8 @@ async def test_failed_admission_survives_help_and_recovers_numbering() -> None:
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("width", [20, 40, 80])
-async def test_rendered_wrapped_chinese_attachment_cursor_and_selection(monkeypatch, width: int) -> None:
+@pytest.mark.parametrize("file", [False, True])
+async def test_rendered_wrapped_chinese_attachment_cursor_and_selection(monkeypatch, width: int, file: bool) -> None:
     from prompt_toolkit.application.current import set_app
     from prompt_toolkit.data_structures import Size
 
@@ -365,7 +373,8 @@ async def test_rendered_wrapped_chinese_attachment_cursor_and_selection(monkeypa
         shell = CliShell(CliRequest())
         prefix = "中文" * (width // 4 - 1)
         shell.composer.buffer.document = Document(prefix, len(prefix))
-        shell.insert_attachments((_image(),))
+        upload = AttachmentUpload("需求.md", b"private contents", "text/markdown") if file else _image()
+        shell.insert_attachments((upload,))
         token = shell.inline.tokens(shell.composer.text)[0]
         shell.composer.buffer.insert_text("结尾", fire_event=False)
         with set_app(shell.app):
@@ -386,6 +395,45 @@ async def test_rendered_wrapped_chinese_attachment_cursor_and_selection(monkeypa
                 for _, cell in sorted(row.items())
                 if "selected" in cell.style
             )
-            assert selected == "[image#1]"
+            assert selected == ("[file#1: 需求.md]" if file else "[image#1]")
             assert token not in selected
         shell.renderer.transcript.close()
+
+
+@pytest.mark.parametrize(
+    ("name", "display_name"),
+    [
+        ("requirements.md", "requirements.md"),
+        ("需求说明.md", "需求说明.md"),
+        ("a" * 60 + ".csv", "a" * 27 + "…" + "a" * 12 + ".csv"),
+        ("/private/docs/notes\n\t.txt", "notes.txt"),
+        ("C:\\private\\notes.txt", "notes.txt"),
+    ],
+)
+def test_file_name_is_display_only_and_atomic(name: str, display_name: str) -> None:
+    registry = InlineAttachments()
+    token = registry.reserve()
+    upload = AttachmentUpload(name, b"private file contents", "text/plain")
+    registry.values[token].upload = upload
+    buffer = AttachmentBuffer(registry)
+    buffer.insert_attachment(token)
+    compiled = registry.compile(buffer.text)
+    assert registry.display(buffer.text) == compiled.display_text == f"[file#1: {display_name}]"
+    assert compiled.parts == (ComposerAttachment(upload, "file#1"),)
+    assert compiled.attachments == (upload,)
+    buffer.save_to_undo_stack()  # Native key processing saves before deletion.
+    assert buffer.delete_before_cursor() == token
+    assert not buffer.text
+    buffer.undo()
+    assert registry.compile(buffer.text) == compiled
+    assert composer_attachment_label("image#2", name) == "image#2"
+
+
+def test_old_file_metadata_without_name_keeps_label() -> None:
+    from a13n_harness_ui.interactive.input_display import composer_piece
+    from a13n_stream_protocol import ContentMetadata
+
+    metadata = ContentMetadata.from_native(
+        {"source_id": "old-input", "harness_ui": {"composer": {"index": 0, "label": "file#1"}}}
+    )
+    assert composer_piece(metadata) == (0, "file#1")

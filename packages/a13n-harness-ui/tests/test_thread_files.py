@@ -211,7 +211,7 @@ async def test_composer_inputs_survive_restart_and_scratch_prune(
         history = StreamRenderer(Status())
         restore_transcript(history, await app.get_thread_transcript(thread_id=thread_id))
         sources = [block.source for block in history.transcript.blocks.values()]
-        assert "> " + text + "[image#1] compare with [image#2] using [file#3] end" in sources
+        assert "> " + text + "[image#1] compare with [image#2] using [file#3: notes.txt] end" in sources
         assert not any("attachments/" in source or "image/png" in source for source in sources)
         history.transcript.close()
         receipt = await app.submit_thread(thread_id=thread_id, prompt="Recall both inputs")

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from a13n_harness_ui.thread_files import composer_attachment_label
+
 if TYPE_CHECKING:
     from a13n_stream_protocol import ContentMetadata
 
@@ -14,12 +16,18 @@ def composer_piece(metadata: ContentMetadata) -> tuple[int, str | None] | None:
     if not metadata.source_id:
         return None
     namespace = (metadata.model_extra or {}).get("harness_ui")
-    composer = namespace.get("composer") if isinstance(namespace, dict) else None
+    if not isinstance(namespace, dict):
+        return None
+    composer = namespace.get("composer")
     if not isinstance(composer, dict):
         return None
     index, label = composer.get("index"), composer.get("label")
     if not isinstance(index, int) or index < 0 or (label is not None and not isinstance(label, str)):
         return None
+    attachment = namespace.get("attachment")
+    name = attachment.get("name") if isinstance(attachment, dict) else None
+    if label is not None:
+        label = composer_attachment_label(label, name if isinstance(name, str) else None)
     return index, label
 
 
