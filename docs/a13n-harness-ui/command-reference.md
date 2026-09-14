@@ -233,7 +233,7 @@ Authenticate a compatible Model provider.
 
 Type these in the terminal composer, not your shell. Tab completes supported syntax; `/help` and `/?` show native help. There are no `/setup`, `/login`, `/approve`, `/deny`, or `/result` commands. Decisions use their typed selector.
 
-“While busy” means the command parser allows it during work; it is not permission to bypass a pending interaction or operate on an unavailable resource. `/steer` requires a currently steerable root operation. Attachment commands change the draft; active Enter steering accepts text only. See [Use the terminal](everyday-use.md).
+“While busy” means the command parser allows it during work; it is not permission to bypass a pending interaction or operate on an unavailable resource. `/steer` requires a currently steerable root operation. Attachment commands change the draft; active Enter steering sends its text and attachments together. See [Use the terminal](everyday-use.md).
 
 | Command grammar                         | Aliases | While busy | Purpose                                                                   |
 | --------------------------------------- | ------- | ---------- | ------------------------------------------------------------------------- |

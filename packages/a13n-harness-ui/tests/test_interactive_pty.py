@@ -214,7 +214,7 @@ class Backend:
         Path("cancelled").touch()
         return "fixture-cancelled"
     async def steer(self, text, *, receipt_id, skill_references=()):
-        Path("steering.json").write_text(json.dumps([text, receipt_id]))
+        Path("steering.json").write_text(json.dumps([text.text, receipt_id]))
         return "Guidance sent"
     async def interaction(self):
         return None

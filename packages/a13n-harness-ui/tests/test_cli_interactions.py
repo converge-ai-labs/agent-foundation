@@ -473,7 +473,7 @@ async def test_rejected_steering_can_be_recovered_without_overwriting_newer_draf
 
     entered, release = asyncio.Event(), asyncio.Event()
 
-    async def reject(message):
+    async def reject(message, *, skill_references):
         entered.set()
         await release.wait()
         raise ValueError("Receipt is no longer running")
@@ -491,7 +491,9 @@ async def test_rejected_steering_can_be_recovered_without_overwriting_newer_draf
         assert shell.composer.text == "new draft"
         await shell.command(shell.registry.parse("/recover"))
         assert shell.composer.text == "/steer important guidance"
-        backend.steer.assert_awaited_once_with("important guidance")
+        from a13n_harness_ui.thread_files import ComposerInput
+
+        backend.steer.assert_awaited_once_with(ComposerInput(("important guidance",)), skill_references=())
 
 
 def test_cursor_edit_expands_paste_and_atomic_backspace_preserves_other_text(tmp_path: Path) -> None:

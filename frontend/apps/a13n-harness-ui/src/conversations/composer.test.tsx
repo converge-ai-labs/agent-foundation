@@ -131,3 +131,102 @@ it("reserves an upload before joining and resolves it after the initial draft id
   captured.doc.destroy();
   query.clear();
 });
+
+it.each(["accepted", "rejected", "unknown"] as const)(
+  "steers ordered attachments and preserves uncaptured edits when %s",
+  async (outcome) => {
+    const draft = new ThreadDraft();
+    vi.spyOn(draft, "connect").mockReturnValue({
+      presence: () => {},
+      close: () => {},
+    });
+    draft.doc.getText("text").insert(0, "before after");
+    draft.addAttachment("attachment-image", 7);
+    draft.receive({
+      draft_id: "draft-one",
+      participant_id: "participant-one",
+      participants: {},
+      update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+    });
+    const capture = draft.capture();
+    const input = { parts: capture.parts };
+    capture.doc.destroy();
+    const attachment = {
+      attachment_id: "attachment-image",
+      name: "image.png",
+      size: 128 * 1024,
+      media_type: "image/png",
+    };
+    let finish!: (value: unknown) => void;
+    const request = new Promise((resolve) => {
+      finish = resolve;
+    });
+    const post = vi.fn().mockReturnValue(request);
+    const transport = {
+      client: {
+        GET: vi.fn().mockResolvedValue({ data: attachment }),
+        POST: post,
+      },
+      fetch: vi.fn().mockResolvedValue(new Response(new Blob())),
+    } as unknown as Transport;
+    const query = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const view = render(
+      <QueryClientProvider client={query}>
+        <TransportContext value={transport}>
+          <ComposerDrafts value={new Map([["thread-one", draft]])}>
+            <Composer
+              threadId="thread-one"
+              canRun
+              activity={
+                {
+                  state: "running",
+                  receipt_id: "receipt-original",
+                  available_actions: ["steer", "cancel"],
+                } as Schema<"RootActivityView">
+              }
+              profile={{ display_name: "Alice", color: "#2563eb" }}
+              unauthorized={() => {}}
+              reconcile={() => {}}
+            />
+          </ComposerDrafts>
+        </TransportContext>
+      </QueryClientProvider>,
+    );
+    const button = screen.getByRole("button", {
+      name: "Send as instruction",
+    }) as HTMLButtonElement;
+    await waitFor(() => expect(button.disabled).toBe(false));
+    fireEvent.click(button);
+    expect(post).toHaveBeenCalledWith("/api/operations/{receipt_id}/steer", {
+      params: { path: { receipt_id: "receipt-original" } },
+      body: input,
+    });
+    act(() => {
+      draft.doc.getText("text").insert(0, "NEXT ");
+      draft.addAttachment("attachment-next", 0);
+      finish(
+        outcome === "unknown"
+          ? {}
+          : {
+              data: {
+                receipt_id: "receipt-original",
+                accepted: outcome === "accepted",
+              },
+            },
+      );
+    });
+    await waitFor(() => expect(draft.submission.kind).toBe(outcome));
+    expect(values(draft.doc)).toEqual({
+      prompt: outcome === "accepted" ? "NEXT " : "NEXT before after",
+      attachment_ids:
+        outcome === "accepted"
+          ? ["attachment-next"]
+          : ["attachment-next", "attachment-image"],
+    });
+    expect(post).toHaveBeenCalledTimes(1);
+    view.unmount();
+    query.clear();
+  },
+);

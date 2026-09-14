@@ -56,7 +56,7 @@ To discuss feedback with the Agent, a participant explicitly captures a selected
 
 Capture uses the existing Thread-scoped retained-input owner and shared attachment selection, not another composer document root or a model-side comment-read Capability. Model input contains the captured text; existing input metadata identifies its comment provenance so the browser can render an inspectable reference card instead of duplicating the expanded text in the editor. The actual captured model-visible text remains available for review before submission and in input history. Opening, publishing or capturing a comment never starts a Run. The explicit Add feedback action changes the shared selection only after capture succeeds.
 
-Existing input bounds, immutable capture, admission, capture-only clearing and text-only steering rules apply. Comments and their original saved targets remain independent publications after the resulting input is submitted. Captured bytes are fixed at selection time; later navigation, comment publication, continuation changes or source inspection do not replace them. No comment-read or navigation action changes the shared prompt implicitly.
+Existing input bounds, immutable capture, admission, capture-only clearing and root steering rules apply. Comments and their original saved targets remain independent publications after the resulting input is submitted. Captured bytes are fixed at selection time; later navigation, comment publication, continuation changes or source inspection do not replace them. No comment-read or navigation action changes the shared prompt implicitly.
 
 ## Failure and Recovery
 

@@ -1639,29 +1639,6 @@ class HarnessUiApp:
                 skill_references,
                 thread_id=operation.receipt.thread_id,
             )
-            references = message.attachment_ids if isinstance(message, ComposerInput) else ()
-            uploads = message.attachments if isinstance(message, ComposerInput) else ()
-            if len(attachment_ids) + len(references) + len(uploads) > MAX_ATTACHMENTS:
-                raise HarnessUiError("An input supports up to eight attachments.", code="input_invalid")
-            for upload in uploads:
-                if upload.source is None or context_text(upload.source, upload.data) is None:
-                    raise HarnessUiError(
-                        "Steering supports only captured UTF-8 text context up to 64 KiB; keep the draft for ordinary submission.",
-                        code="steer_context_unsupported",
-                    )
-            for identity in (*references, *attachment_ids):
-                try:
-                    item, data = await self._thread_files.read(operation.receipt.thread_id, identity)
-                except ValueError as exc:
-                    raise HarnessUiError(str(exc), code="input_invalid") from exc
-                text = None if item.source is None else context_text(item.source, data)
-                if text is None:
-                    raise HarnessUiError(
-                        "Steering supports only captured UTF-8 text context up to 64 KiB; keep the draft for ordinary submission.",
-                        code="steer_context_unsupported",
-                    )
-            # Reuse submission's retained-input metadata without widening the
-            # text-only steering boundary. All attachments were validated above.
             prepared = (
                 await self._prepare_input(operation.receipt.thread_id, message, attachment_ids)
                 if attachment_ids or isinstance(message, ComposerInput)

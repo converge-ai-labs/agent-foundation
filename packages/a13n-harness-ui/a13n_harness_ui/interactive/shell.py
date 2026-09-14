@@ -758,7 +758,8 @@ class CliShell:
             try:
                 if self.inline.tokens(text):
                     self.inline.compile(self.pastes.expand(text))
-                    if text.startswith("!") or (text.startswith("/") and self.registry.lookup(text) is not None):
+                    command = self.registry.lookup(text) if text.startswith("/") else None
+                    if text.startswith("!") or (command is not None and command.name != "steer"):
                         raise ValueError("Attachments belong to prompts, not commands. Your draft is preserved.")
                 if text.startswith("/") and self.registry.lookup(text) is not None:
                     invocation = self.registry.parse(text, busy=self.busy)
@@ -770,6 +771,12 @@ class CliShell:
                         raise ValueError("Finish this interaction or /cancel first. Your input is preserved.")
                     if self._input_task is not None and not self._input_task.done() and name not in local:
                         raise ValueError("Finishing the previous action. Your input is preserved.")
+                    if name == "steer":
+                        if not self.can_steer:
+                            raise ValueError("No running receipt accepts steering. Your draft is preserved.")
+                        assert self.backend is not None
+                        steering_receipt = self.backend.receipt_id
+                        text = invocation.arguments[0]
                 elif text.startswith("!"):
                     self._validate_local_shell(text)
                 elif (self._input_task is not None and not self._input_task.done()) or not self.ready:
@@ -780,10 +787,6 @@ class CliShell:
                     if not self.can_steer:
                         raise ValueError(
                             "Still preparing or working. Your draft is preserved; /cancel stops active work."
-                        )
-                    if self.inline.tokens(text):
-                        raise ValueError(
-                            "Active-run guidance accepts text only. Text and attachments remain in your draft."
                         )
                     assert self.backend is not None
                     # Freeze at Enter, before scheduling: never retarget a later Run.
@@ -1387,6 +1390,28 @@ class CliShell:
         slash_command = text.startswith("/") and self.registry.lookup(text) is not None
         if text.startswith("/") and not slash_command:
             self.emit("No matching command; treating the original input as plain text.")
+        if steering_receipt is not None:
+            draft = self._submitted_draft or Document(text, len(text))
+            self._submitted_draft = None
+            self._sending_draft = draft
+            self._draft_generation += 1
+            generation = self._draft_generation
+            try:
+                assert self.backend is not None
+                prompt = self.inline.compile(text)
+                result = await self.backend.steer(
+                    prompt, receipt_id=steering_receipt, skill_references=self.registry.skill_references(prompt.text)
+                )
+                self.emit(result)
+            except asyncio.CancelledError:
+                self._restore_rejected_command(text, generation, draft=draft)
+                raise
+            except Exception as exc:
+                self.emit(str(exc))
+                self._restore_rejected_command(text, generation, draft=draft)
+            finally:
+                self._sending_draft = None
+            return
         if text.startswith("!"):
             try:
                 if self.inline.tokens(text):
@@ -1397,22 +1422,6 @@ class CliShell:
                 self._restore_rejected_command(text, self._draft_generation)
                 return
             self.launch(self._local_shell(text[1:]), kind="local shell", failure_input=text)
-            return
-        if steering_receipt is not None:
-            self._draft_generation += 1
-            generation = self._draft_generation
-            try:
-                assert self.backend is not None
-                result = await self.backend.steer(
-                    text, receipt_id=steering_receipt, skill_references=self.registry.skill_references(text)
-                )
-                self.emit(result)
-            except asyncio.CancelledError:
-                self._restore_rejected_command(text, generation)
-                raise
-            except Exception as exc:
-                self.emit(str(exc))
-                self._restore_rejected_command(text, generation)
             return
         if slash_command:
             generation = self._draft_generation
@@ -1562,7 +1571,8 @@ class CliShell:
                     else:
                         self._recoverable = draft
                         self.emit("Prompt was not admitted. /recover restores it; no automatic retry occurred.")
-                self._sending_draft = None
+                if self._sending_draft is draft:
+                    self._sending_draft = None
 
         self.view.latest()
         self.launch(send(), kind="run")
@@ -1793,7 +1803,8 @@ class CliShell:
                 self.launch(choose_codex_reset(self) if argument == "reset" else show_codex_usage(self), kind="usage")
         elif name == "steer":
             assert argument is not None
-            result = await self.backend.steer(argument)
+            prompt = self.inline.compile(argument)
+            result = await self.backend.steer(prompt, skill_references=self.registry.skill_references(prompt.text))
             self.emit(result)
         elif name == "resume" and argument is None:
             self.open_resume()
