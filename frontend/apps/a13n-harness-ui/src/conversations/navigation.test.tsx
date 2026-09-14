@@ -59,6 +59,7 @@ let failMore: boolean;
 let failSave: boolean;
 let pauseMore: Promise<void> | null;
 let pageAborted: boolean;
+let recentTitle: string;
 let queryClient: QueryClient;
 beforeEach(() => {
   localStorage.clear();
@@ -68,6 +69,7 @@ beforeEach(() => {
   failSave = false;
   pauseMore = null;
   pageAborted = false;
+  recentTitle = "Recent 1";
   vi.mocked(watchSummary).mockClear();
   vi.stubGlobal("matchMedia", () => ({
     matches: false,
@@ -126,7 +128,7 @@ beforeEach(() => {
         if (url.searchParams.get("project_id") === "project-one")
           return json(
             page(
-              ["Recent 1", "Recent 2", "Recent 3", "Recent 4", "Recent 5"],
+              [recentTitle, "Recent 2", "Recent 3", "Recent 4", "Recent 5"],
               "one-next",
             ),
           );
@@ -425,9 +427,17 @@ it("does not cancel an in-flight Show more when a summary event refreshes naviga
   await waitFor(() =>
     expect(activity.at(-1)?.searchParams.get("cursor")).toBe("one-next"),
   );
-  act(() => vi.mocked(watchSummary).mock.calls.at(-1)![1]());
+  recentTitle = "Renamed during pagination";
+  act(() => {
+    vi.mocked(watchSummary).mock.calls.at(-1)![1]();
+    vi.mocked(watchSummary).mock.calls.at(-1)![1]();
+  });
   expect(pageAborted).toBe(false);
   await act(async () => release());
   await screen.findByText("Older two");
+  await screen.findByText("Renamed during pagination");
+  expect(screen.queryByText("Recent 1")).toBeNull();
+  expect(screen.getByText("Older two")).toBeTruthy();
+  expect(activity).toHaveLength(4); // first + next, then one coalesced two-page refresh
   expect(pageAborted).toBe(false);
 });

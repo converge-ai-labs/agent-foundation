@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "react-router";
 import { useSources, useTransport } from "../transport/context";
 import { watchSummary } from "../transport/events";
+import { refreshThreadLists } from "../conversations/queries";
 import type { Schema } from "../transport/client";
 
 export type Profile = { display_name: string; color: string };
@@ -102,11 +103,7 @@ export function useLiveWorkbench(
                 : ["comments"],
             });
           else {
-            // A background hint must not cancel a user's in-flight Show more.
-            void queries.invalidateQueries(
-              { queryKey: ["threads"] },
-              { cancelRefetch: false },
-            );
+            void refreshThreadLists(queries);
             void queries.invalidateQueries({
               // Native observations refresh on return/actions/reconnect, not each
               // unrelated conversation event. They are not a filesystem watcher.
